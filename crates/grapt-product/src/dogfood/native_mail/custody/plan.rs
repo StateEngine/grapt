@@ -182,8 +182,9 @@ impl NativeMailPlan {
         }
         self.lease.as_ref().ok_or(E::Incomplete)?.decode_warning()
     }
-    /// Proceed without mail after any failure: nothing is taken, so the mail
-    /// stays pending, and the plan tells the model why.
+    /// Proceed without mail after an outage: nothing is taken, so the mail
+    /// stays pending, and the plan tells the model why. The caller refuses
+    /// every other failure.
     pub(in crate::dogfood) fn degrade(&mut self, failure: E) {
         crate::diagnostics::report(format!(
             "stateengine-continuity stage=inbox state=degraded failure={failure:?}"

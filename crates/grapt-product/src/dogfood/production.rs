@@ -680,10 +680,20 @@ impl grapt_runtime::AttemptPlan for ProductPlan {
             }
             if let Some(resume) = &mut self.continuity_resume {
                 self.preparation_progress.send_replace(Stage::Continuity);
-                // No StateEngine failure fails the turn: it proceeds without
-                // that continuity, and its input says why.
-                if let Err(failure) = resume.refresh().await {
-                    resume.degrade(failure);
+                match resume.refresh().await {
+                    Ok(()) => {}
+                    // An outage never fails the turn; it proceeds and says why.
+                    Err(failure) if resume.degrades(failure) => resume.degrade(failure),
+                    Err(failure) => {
+                        crate::diagnostics::report(format!(
+                            "stateengine-continuity stage=resume failure={failure:?}"
+                        ));
+                        return Err(
+                            grapt_runtime::provider_source::ContextPreparationFailure::Continuity(
+                                failure,
+                            ),
+                        );
+                    }
                 }
             }
             if let Some(mail) = &mut self.native_mail {
@@ -696,8 +706,19 @@ impl grapt_runtime::AttemptPlan for ProductPlan {
                             seconds: budget.as_secs(),
                         },
                     ));
-                if let Err(failure) = refreshed {
-                    mail.degrade(failure);
+                match refreshed {
+                    Ok(()) => {}
+                    Err(failure) if failure.degrades_mail() => mail.degrade(failure),
+                    Err(failure) => {
+                        crate::diagnostics::report(format!(
+                            "stateengine-continuity stage=inbox failure={failure:?}"
+                        ));
+                        return Err(
+                            grapt_runtime::provider_source::ContextPreparationFailure::Continuity(
+                                failure,
+                            ),
+                        );
+                    }
                 }
             }
             Ok(())

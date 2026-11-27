@@ -441,16 +441,22 @@ impl ProductPlan {
                 ))
             })
             .transpose();
-        // A mail failure leaves the batch pending and tells the model why; it
-        // never refuses the plan.
+        // A mail outage leaves the batch pending and tells the model why; an
+        // authority or identity failure still refuses the plan.
         let (mail, warning) = match prepared_mail {
             Ok(prepared) => prepared.unwrap_or((None, None)),
-            Err(failure) => (
+            Err(failure) if failure.degrades_mail() => (
                 None,
                 Some(format!(
                     "StateEngine mail is unavailable this turn: {failure}"
                 )),
             ),
+            Err(error) => {
+                return Err(PlanRefusal::new(
+                    format!("Native inbox preparation refused: {error}"),
+                    None,
+                ))
+            }
         };
         if let Some(warning) = warning {
             input.push(grapt_provider::CodexInputItem::Message(

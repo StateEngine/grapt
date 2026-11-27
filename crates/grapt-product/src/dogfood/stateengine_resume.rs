@@ -78,6 +78,9 @@ pub(super) struct ResumeContext {
     degraded: Option<ContinuityUnavailable>,
     /// This Session's location, read once to scope its continuity level.
     placement: Option<grapt_types::LocationRef>,
+    /// A seat's launch packet not yet delivered by this service: its first
+    /// work comes from the packet, so continuity cannot degrade without it.
+    packet_pending: bool,
     preparation_progress:
         Option<tokio::sync::watch::Sender<grapt_runtime::step::ContextPreparationStage>>,
 }
@@ -106,6 +109,7 @@ impl ResumeContext {
             prepared: false,
             degraded: None,
             placement: None,
+            packet_pending: false,
             preparation_progress: None,
         }
     }
@@ -138,8 +142,12 @@ impl ResumeContext {
 
     /// Whether this failure may proceed without continuity: an outage, and no
     /// undelivered launch packet. The caller refuses every other failure.
-    /// Proceed without continuity after any failure: this step's input is a
-    /// notice saying why, and no unverified or partial context is used.
+    pub(super) fn degrades(&self, failure: ContinuityUnavailable) -> bool {
+        failure.degrades() && !self.packet_pending
+    }
+
+    /// Proceed without continuity after an outage: this step's input is a
+    /// notice saying why. The caller refuses every other failure.
     pub(super) fn degrade(&mut self, failure: ContinuityUnavailable) {
         if self.degraded.replace(failure) != Some(failure) {
             crate::diagnostics::report(format!(
@@ -180,6 +188,7 @@ impl ResumeContext {
     async fn refresh_inner(&mut self) -> Result<(), ContinuityUnavailable> {
         use ContinuityUnavailable as E;
         self.input = None;
+        self.packet_pending = false;
         let (binding, project, external_agent, window, packet_source) = {
             let inbox = self.inbox.lock().map_err(|_| E::Binding)?;
             let entries = InstructionService::entries(inbox.store(), &self.session)
@@ -218,6 +227,15 @@ impl ResumeContext {
             .as_deref()
             .map(packet::Pointer::parse)
             .transpose()?;
+        // Delivered once a resume with this packet was accepted here; a
+        // restart forgets that, as it forgets the packet bytes.
+        self.packet_pending = pointer.as_ref().is_some_and(|pointer| {
+            self.custody.lock().map_or(true, |held| {
+                !held.resumes.get(&self.session).is_some_and(|old| {
+                    old.packet.as_ref().map(|packet| &packet.pointer) == Some(pointer)
+                })
+            })
+        });
         let route = self.published.routes.iter().find(|(_, route)| {
             route.server == "stateengine" && route.tool.as_str() == "stateengine_resume"
         });

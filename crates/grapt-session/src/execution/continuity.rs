@@ -49,6 +49,22 @@ impl StateEngineServerFailure {
 }
 
 impl ContinuityFailure {
+    /// A transport outage, the only failure that degrades: the turn proceeds
+    /// without continuity and the model is told why. A refused or missing
+    /// capability, a server that cannot start or is blocked, an incomplete or
+    /// rebound reply, packet and identity failures all stop before the
+    /// provider.
+    pub fn degrades(self) -> bool {
+        matches!(self, Self::Transport | Self::TimedOut { .. })
+    }
+
+    /// Mail degrades on a transport outage and also on a missing or refused
+    /// mail capability: that capability only gates inbox access and gives the
+    /// turn no authority, so the turn proceeds and the rebind state shows.
+    pub fn degrades_mail(self) -> bool {
+        self.degrades() || matches!(self, Self::Capability)
+    }
+
     /// Product-authored text only: no identity, capability, cursor or remote
     /// error text can enter the public failure message.
     pub fn message(self) -> String {
@@ -121,5 +137,37 @@ mod tests {
         assert!(ContinuityFailure::Principal
             .message()
             .contains("unverified"));
+    }
+
+    #[test]
+    fn outages_degrade_and_authority_boundaries_fail_closed() {
+        for outage in [
+            ContinuityFailure::Transport,
+            ContinuityFailure::TimedOut { seconds: 60 },
+        ] {
+            assert!(outage.degrades(), "{outage:?}");
+        }
+        for boundary in [
+            ContinuityFailure::Capability,
+            ContinuityFailure::ServerUnavailable(StateEngineServerFailure::Disconnected),
+            ContinuityFailure::ServerUnavailable(StateEngineServerFailure::ConfigurationBlocked),
+            ContinuityFailure::Incomplete,
+            ContinuityFailure::Rebound,
+            ContinuityFailure::Binding,
+            ContinuityFailure::Contract,
+            ContinuityFailure::Principal,
+            ContinuityFailure::Bounds,
+            ContinuityFailure::PacketMissing,
+            ContinuityFailure::PacketUnreadable,
+            ContinuityFailure::PacketInvalid,
+            ContinuityFailure::PacketAcknowledgement,
+        ] {
+            assert!(!boundary.degrades(), "{boundary:?}");
+            assert_eq!(
+                boundary.degrades_mail(),
+                boundary == ContinuityFailure::Capability,
+                "{boundary:?}"
+            );
+        }
     }
 }
