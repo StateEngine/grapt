@@ -18,6 +18,7 @@ pub(super) fn classify(
     timed_out: bool,
     attempts_used: u32,
     rebuilds: u32,
+    rate_limit_waits: u32,
 ) -> AttemptDecision {
     if matches!(report.outcome, StepOutcome::OwnerRejected { .. })
         || matches!(report.outcome, StepOutcome::Ended { .. })
@@ -114,6 +115,20 @@ pub(super) fn classify(
             },
         };
     }
+    let rate_limit_retry_after = matches!(
+        detail.class,
+        ProviderFailureClass::RateLimit {
+            retry_after: Some(_)
+        }
+    );
+    if rate_limit_retry_after
+        && policy.max_attempts > 1
+        && rate_limit_waits < super::MAX_RATE_LIMIT_WAITS
+    {
+        return AttemptDecision::Retry {
+            after: policy.delay_for(rate_limit_waits.saturating_add(1), &detail.class),
+        };
+    }
     if exhausted {
         return AttemptDecision::Stop {
             reason: StepTerminalReason::PolicyLimit {
@@ -170,14 +185,18 @@ pub(super) fn with_retry_diagnosis(
     let super::StepResult::Failed { failure } = &mut result else {
         return result;
     };
-    if !matches!(failure.reason(), StepTerminalReason::PolicyLimit { .. }) || receipts.len() > 5 {
+    if !matches!(failure.reason(), StepTerminalReason::PolicyLimit { .. }) || receipts.is_empty() {
         return result;
     }
-    let mut classes = Vec::with_capacity(receipts.len());
-    for receipt in receipts {
-        if matches!(receipt.decision, AttemptDecision::Rebuild) {
-            return result;
-        }
+    if receipts
+        .iter()
+        .any(|receipt| matches!(receipt.decision, AttemptDecision::Rebuild))
+    {
+        return result;
+    }
+    let window = &receipts[receipts.len().saturating_sub(5)..];
+    let mut classes = Vec::with_capacity(window.len());
+    for receipt in window {
         let StepOutcome::Failed { failure } = &receipt.outcome else {
             return result;
         };
@@ -195,7 +214,9 @@ pub(super) fn with_retry_diagnosis(
         };
         classes.push(class);
     }
-    if let Some(diagnostic) = RetryExhaustion::new(&classes) {
+    let total_attempts =
+        u32::try_from(receipts.len()).unwrap_or(RetryExhaustion::MAX_TOTAL_ATTEMPTS);
+    if let Some(diagnostic) = RetryExhaustion::with_total_attempts(&classes, total_attempts) {
         failure.set_retry_diagnostic(diagnostic);
     }
     result

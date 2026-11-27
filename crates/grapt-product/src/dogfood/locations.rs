@@ -335,9 +335,12 @@ fn command(cwd: &Path, args: &[&str], program: &std::ffi::OsStr) -> tokio::proce
     command
 }
 
-async fn run(mut command: tokio::process::Command) -> Result<(i32, String), String> {
-    let mut child = command
-        .spawn()
+async fn run(command: tokio::process::Command) -> Result<(i32, String), String> {
+    // Git can start helpers of its own; the group ends them with it.
+    let group = processkit::ProcessGroup::new()
+        .map_err(|error| format!("Git discovery containment failed: {error}"))?;
+    let mut child = group
+        .spawn(command)
         .map_err(|error| format!("Git discovery could not start: {error}"))?;
     let stdout = child.stdout.take().ok_or("Git stdout pipe is absent")?;
     let stderr = child.stderr.take().ok_or("Git stderr pipe is absent")?;

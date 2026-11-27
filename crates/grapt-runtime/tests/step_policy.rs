@@ -34,8 +34,24 @@ fn hostile_retry_after_is_capped_by_policy() {
     let hostile = ProviderFailureClass::RateLimit {
         retry_after: Some(Duration::from_secs(u64::MAX)),
     };
-    assert_eq!(policy.delay_for(1, &hostile), Duration::from_secs(16));
+    assert_eq!(
+        policy.delay_for(1, &hostile),
+        grapt_runtime::step::RATE_LIMIT_MAX_RETRY_DELAY
+    );
     assert_eq!(policy.max_retry_delay(), Duration::from_secs(16));
+
+    let tighter = match StepPolicy::new_with_max_retry_delay(
+        test_version(),
+        5,
+        Duration::from_secs(2),
+        Duration::from_secs(10),
+        1,
+        Duration::from_secs(30),
+    ) {
+        Ok(policy) => policy,
+        Err(error) => panic!("tighter test policy must be valid: {error}"),
+    };
+    assert_eq!(tighter.delay_for(1, &hostile), Duration::from_secs(10));
 }
 
 #[test]

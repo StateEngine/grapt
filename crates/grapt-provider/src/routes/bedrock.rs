@@ -309,20 +309,42 @@ impl BedrockDecoder {
             }
             "exception" => {
                 self.failed = true;
-                let class = match value["type"].as_str() {
-                    Some("throttlingException") => {
-                        ProviderFailureClass::RateLimit { retry_after: None }
+                let (safe_kind, class) = match value["type"].as_str() {
+                    Some("throttlingException") => (
+                        "throttlingException",
+                        ProviderFailureClass::RateLimit { retry_after: None },
+                    ),
+                    Some("serviceUnavailableException") => (
+                        "serviceUnavailableException",
+                        ProviderFailureClass::ProviderInternal { retry_after: None },
+                    ),
+                    Some("internalServerException") => (
+                        "internalServerException",
+                        ProviderFailureClass::ProviderInternal { retry_after: None },
+                    ),
+                    Some("modelStreamErrorException") => (
+                        "modelStreamErrorException",
+                        ProviderFailureClass::ProviderInternal { retry_after: None },
+                    ),
+                    Some("validationException") => {
+                        ("validationException", ProviderFailureClass::InvalidRequest)
                     }
-                    Some(
-                        "serviceUnavailableException"
-                        | "internalServerException"
-                        | "modelStreamErrorException",
-                    ) => ProviderFailureClass::ProviderInternal { retry_after: None },
-                    Some("validationException") => ProviderFailureClass::InvalidRequest,
-                    Some("accessDeniedException") => ProviderFailureClass::Authentication,
-                    _ => ProviderFailureClass::Transport,
+                    Some("accessDeniedException") => (
+                        "accessDeniedException",
+                        ProviderFailureClass::Authentication,
+                    ),
+                    _ => ("unknown", ProviderFailureClass::Transport),
                 };
-                sink.fail(class, "Bedrock returned a stream exception");
+                let mut detail = format!("Bedrock returned a stream exception ({safe_kind})");
+                if let Some(message) = value["message"]
+                    .as_str()
+                    .map(str::trim)
+                    .filter(|message| !message.is_empty())
+                {
+                    detail.push_str(": ");
+                    detail.push_str(message);
+                }
+                sink.fail(class, &detail);
             }
             _ => sink.unmodeled(),
         }

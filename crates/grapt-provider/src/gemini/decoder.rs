@@ -54,7 +54,8 @@ impl Decoder {
             }
         };
         if let Some(error) = value.get("error") {
-            let class = match error["status"].as_str() {
+            let status = error["status"].as_str();
+            let class = match status {
                 Some("UNAUTHENTICATED" | "PERMISSION_DENIED") => Failure::Authentication,
                 Some("RESOURCE_EXHAUSTED") => Failure::RateLimit { retry_after: None },
                 Some("INTERNAL" | "UNAVAILABLE") => Failure::ProviderInternal { retry_after: None },
@@ -62,7 +63,30 @@ impl Decoder {
                 Some("NOT_FOUND") => Failure::NoRoute,
                 _ => Failure::InvalidProviderOutput,
             };
-            sink.fail(class, "Gemini returned an error in the stream");
+            let mut detail = "Gemini returned an error in the stream".to_owned();
+            if let Some(status) = status.map(str::trim).filter(|s| !s.is_empty()) {
+                detail.push_str("; status: ");
+                detail.push_str(status);
+            }
+            if let Some(code) = error["code"].as_u64() {
+                detail.push_str(&format!("; code: {code}"));
+            } else if let Some(code) = error["code"]
+                .as_str()
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+            {
+                detail.push_str("; code: ");
+                detail.push_str(code);
+            }
+            if let Some(message) = error["message"]
+                .as_str()
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+            {
+                detail.push_str("; message: ");
+                detail.push_str(message);
+            }
+            sink.fail(class, &detail);
             return;
         }
         match crate::usage::normalize_gemini_usage(&value) {

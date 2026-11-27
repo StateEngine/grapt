@@ -16,7 +16,7 @@ impl HttpConnection {
         StreamBinding::new(
             self.address.to_string(),
             fingerprint.finish(),
-            self.session.clone(),
+            self.watched_session().cloned(),
             positions,
         )
     }

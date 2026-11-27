@@ -65,17 +65,24 @@ async fn actual_backoff_notifies_then_clears_before_the_next_attempt() {
     let harness = harness("ses_feedback_success", opener, plan);
     let task = tokio::spawn(async move { run(harness, policy(Duration::from_secs(1))).await });
     ready.notified().await;
-    assert_eq!(
-        *notices.lock().unwrap_or_else(|error| panic!("{error}")),
-        vec![Some(RetryNotice {
-            attempt: 1,
-            after: Duration::from_secs(7),
-            class: Some(TerminalClass::RateLimit),
-            preparation_stage: None,
-            capacity_wait: None,
-        })]
+    let first = {
+        let recorded = notices.lock().unwrap_or_else(|error| panic!("{error}"));
+        assert_eq!(recorded.len(), 1);
+        recorded[0].unwrap_or_else(|| panic!("expected initial retry notice"))
+    };
+    let base = Duration::from_secs(7);
+    let max_jittered = base + base / 4;
+    assert_eq!(first.attempt, 1);
+    assert_eq!(first.class, Some(TerminalClass::RateLimit));
+    assert_eq!(first.preparation_stage, None);
+    assert_eq!(first.capacity_wait, None);
+    assert!(
+        first.after >= base && first.after <= max_jittered,
+        "expected jittered backoff in {base:?}..={max_jittered:?}, got {:?}",
+        first.after
     );
-    tokio::time::advance(Duration::from_secs(6)).await;
+    let almost = first.after.saturating_sub(Duration::from_millis(50));
+    tokio::time::advance(almost).await;
     assert_eq!(
         notices
             .lock()
@@ -83,7 +90,7 @@ async fn actual_backoff_notifies_then_clears_before_the_next_attempt() {
             .len(),
         1
     );
-    tokio::time::advance(Duration::from_secs(1)).await;
+    tokio::time::advance(Duration::from_millis(50)).await;
     let (_, report) = task.await.unwrap_or_else(|error| panic!("{error}"));
     assert!(matches!(report.result, StepResult::Ended { .. }));
     assert_eq!(report.receipts.len(), 2);

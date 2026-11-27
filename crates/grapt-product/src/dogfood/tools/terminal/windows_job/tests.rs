@@ -59,18 +59,29 @@ fn fixture() -> Result<(), String> {
                     .creation_flags(CreationFlags::NO_WINDOW),
             )
             .map_err(|e| e.to_string())?;
-        let mut escaped = command(root, "escaped")?
-            .spawn_with(
-                SpawnOptions::new()
-                    .drop_policy(DropPolicy::Detach)
-                    .creation_flags(CreationFlags::NO_WINDOW | CreationFlags::BREAKAWAY_FROM_JOB),
-            )
-            .map_err(|e| e.to_string())?;
+        let escaped = command(root, "escaped")?.spawn_with(
+            SpawnOptions::new()
+                .drop_policy(DropPolicy::Detach)
+                .creation_flags(CreationFlags::NO_WINDOW | CreationFlags::BREAKAWAY_FROM_JOB),
+        );
         publish(&root.join("ordinary.pid"), ordinary.id().to_string())?;
-        publish(&root.join("escaped.pid"), escaped.id().to_string())?;
+        // A breakaway request must be refused at creation; a child that starts
+        // anyway is published so the witness can name the escape.
+        let mut escaped = match escaped {
+            Ok(child) => {
+                publish(&root.join("escaped.pid"), child.id().to_string())?;
+                Some(child)
+            }
+            Err(error) => {
+                publish(&root.join("breakaway-refused"), error.to_string())?;
+                None
+            }
+        };
         wait_file(&root.join("stop-root"))?;
         ordinary.kill().map_err(|e| e.to_string())?;
-        escaped.kill().map_err(|e| e.to_string())?;
+        if let Some(child) = escaped.as_mut() {
+            child.kill().map_err(|e| e.to_string())?;
+        }
         return Ok(());
     }
     publish(&root.join(format!("{role}-ready")), b"ready")?;
@@ -165,62 +176,51 @@ fn msys_observation_belongs_to_the_owned_command_tree() -> Result<(), String> {
 }
 
 #[test]
-fn explicit_daemon_survives_but_ordinary_children_die_on_job_close() -> Result<(), String> {
+fn a_breakaway_request_is_refused_and_every_child_dies_on_job_close() -> Result<(), String> {
     let scratch = crate::dogfood::tools::tests::Scratch::new()?;
     let job = ConfirmedJob::create()?;
     let mut root = job.spawn(&mut command(&scratch.0, "root")?, CreationFlags::NO_WINDOW)?;
     wait_file(&scratch.0.join("ordinary-ready"))?;
-    wait_file(&scratch.0.join("escaped-ready"))?;
-    wait_file(&scratch.0.join("escaped.pid"))?;
-    let read_pid = |name: &str| -> Result<u32, String> {
-        std::fs::read_to_string(scratch.0.join(name))
-            .map_err(|e| e.to_string())?
-            .parse::<u32>()
-            .map_err(|e| e.to_string())
-    };
-    let pid = read_pid("escaped.pid")?;
-    // Pin each live child while its parent remains alive. The independent
-    // witness jobs own cleanup even when an assertion fails afterward.
-    let escaped = processkit::ProcessGroup::new().map_err(|e| e.to_string())?;
-    escaped.adopt_external(pid).map_err(|e| e.to_string())?;
-    let ordinary = processkit::ProcessGroup::new().map_err(|e| e.to_string())?;
-    ordinary
-        .adopt_external(read_pid("ordinary.pid")?)
+    wait_file(&scratch.0.join("ordinary.pid"))?;
+    for _ in 0..500 {
+        let refused = scratch.0.join("breakaway-refused").try_exists();
+        let escaped = scratch.0.join("escaped.pid").try_exists();
+        if refused.map_err(|e| e.to_string())? || escaped.map_err(|e| e.to_string())? {
+            break;
+        }
+        std::thread::sleep(CONFIRM_POLL);
+    }
+    assert!(
+        !scratch
+            .0
+            .join("escaped.pid")
+            .try_exists()
+            .map_err(|e| e.to_string())?,
+        "a descendant broke away from the kill-on-close job"
+    );
+    wait_file(&scratch.0.join("breakaway-refused"))?;
+    let pid = std::fs::read_to_string(scratch.0.join("ordinary.pid"))
+        .map_err(|e| e.to_string())?
+        .parse::<u32>()
         .map_err(|e| e.to_string())?;
+    // An independent witness job pins the ordinary child, so cleanup stays
+    // owned even when an assertion fails afterward.
+    let ordinary = processkit::ProcessGroup::new().map_err(|e| e.to_string())?;
+    ordinary.adopt_external(pid).map_err(|e| e.to_string())?;
     assert_eq!(
         job.active()?,
         2,
         "root and ordinary child must both stay contained"
     );
     drop(job);
-    let mut observed = false;
     for _ in 0..150 {
         if root.try_wait().map_err(|e| e.to_string())?.is_some()
             && ordinary.members().map_err(|e| e.to_string())?.is_empty()
         {
-            observed = true;
-            break;
-        }
-        std::thread::sleep(CONFIRM_POLL);
-    }
-    assert!(
-        observed,
-        "closing the job did not kill its root and ordinary child"
-    );
-    assert_eq!(escaped.members().map_err(|e| e.to_string())?, vec![pid]);
-    publish(&scratch.0.join("job-closed"), b"closed")?;
-    wait_file(&scratch.0.join("escaped-survived"))?;
-    assert!(!scratch
-        .0
-        .join("ordinary-survived")
-        .try_exists()
-        .map_err(|e| e.to_string())?);
-    publish(&scratch.0.join("stop-escaped"), b"stop")?;
-    for _ in 0..150 {
-        if escaped.members().map_err(|e| e.to_string())?.is_empty() {
+            publish(&scratch.0.join("job-closed"), b"closed")?;
             return Ok(());
         }
         std::thread::sleep(CONFIRM_POLL);
     }
-    Err("escaped fixture did not exit after its stop".into())
+    Err("closing the job did not kill its root and ordinary child".into())
 }

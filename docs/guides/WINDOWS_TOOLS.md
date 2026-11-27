@@ -54,7 +54,6 @@ establish visible conhost/Windows Terminal behavior, performance or a real
 producer seat-day. Current results qualify these two transport paths on the
 pinned package; repeat after a relevant tool or platform change.
 
-Windows shell jobs stop ordinary descendants when their command ends or is
-cancelled. Programs that explicitly request Windows breakaway can start a daemon
-that outlives the command, such as `se up --detach`; close that daemon through its
-own shutdown command. An outer job imposed by your host can still refuse breakaway.
+Windows shell jobs stop every descendant when their command ends or is
+cancelled. A program that requests Windows breakaway to leave a daemon running is
+refused when it starts that process; start long-lived daemons outside Grapt.

@@ -31,6 +31,7 @@ impl StepDriver {
         let mut interrupt_available = true;
         let mut receipts: Vec<AttemptReceipt> = Vec::new();
         let mut ordinal = 0u32;
+        let mut rate_limit_waits = 0u32;
         let mut rebuilds = 0u32;
         let mut preparation_timeouts = 0u32;
         let mut history_reloads = 0u32;
@@ -49,9 +50,9 @@ impl StepDriver {
                 };
             }
 
-            // The bound covers the Step's coding attempts. Summary calls have
-            // their own bound and do not spend it.
-            if ordinal >= policy.max_attempts {
+            // The bound covers the Step's coding attempts. Summary calls and
+            // explicit provider Retry-After waits have their own bounds.
+            if ordinal.saturating_sub(rate_limit_waits) >= policy.max_attempts {
                 break StepResult::Failed {
                     failure: StepFailure::new(
                         StepTerminalReason::PolicyLimit {
@@ -197,7 +198,7 @@ impl StepDriver {
                             &mut cancel,
                             &mut interrupt_available,
                             &policy,
-                            ordinal,
+                            (step, ordinal),
                             refusal,
                         )
                         .await
@@ -279,8 +280,17 @@ impl StepDriver {
             };
             owner = progress_owner.inner;
 
-            let decision = classify(&report, &policy, timed_out, ordinal, rebuilds);
+            let effective_attempts = ordinal.saturating_sub(rate_limit_waits);
+            let decision = classify(
+                &report,
+                &policy,
+                timed_out,
+                effective_attempts,
+                rebuilds,
+                rate_limit_waits,
+            );
 
+            let attempt_salt = backoff::salt_from_str(attempt.as_str());
             receipts.push(AttemptReceipt {
                 attempt,
                 step,
@@ -309,6 +319,25 @@ impl StepDriver {
                     };
                 }
                 AttemptDecision::Retry { after } => {
+                    let is_retry_after_rate_limit = matches!(
+                        report.provider_failure.as_ref().map(|detail| &detail.class),
+                        Some(ProviderFailureClass::RateLimit {
+                            retry_after: Some(_)
+                        })
+                    );
+                    if is_retry_after_rate_limit
+                        && policy.max_attempts > 1
+                        && rate_limit_waits < MAX_RATE_LIMIT_WAITS
+                    {
+                        rate_limit_waits += 1;
+                    }
+                    let ceiling = report
+                        .provider_failure
+                        .as_ref()
+                        .map_or(policy.max_retry_delay, |detail| {
+                            policy.retry_ceiling_for(&detail.class)
+                        });
+                    let after = backoff::jittered(after, step, ordinal, attempt_salt, ceiling);
                     if let Err(failure) = backoff::wait(
                         source,
                         &mut cancel,

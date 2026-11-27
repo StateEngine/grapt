@@ -4,7 +4,7 @@ use crate::config::Config;
 use grapt_client::supervise::{self, ConnectionView, Event};
 use grapt_client::{
     Bounds, Connection, FramePoll, HttpConnection, StreamCancellation, Transport, TransportError,
-    WireRequest, WireResponse,
+    WatchedSessions, WireRequest, WireResponse,
 };
 use std::sync::{
     atomic::{AtomicBool, AtomicU64, Ordering},
@@ -65,7 +65,7 @@ pub struct Bridge {
     /// The Session this window watches, shared with the reader thread so every
     /// (re)subscription it opens names the same Session. `None` until a Session
     /// is selected: an unnamed subscription is not a window on anything.
-    session: Arc<std::sync::Mutex<Option<grapt_types::SessionId>>>,
+    session: Arc<std::sync::Mutex<WatchedSessions>>,
     /// Counts selection changes, shared with the reader thread.
     ///
     /// A replacement takes time to build: connect, name a Session, read the
@@ -158,45 +158,33 @@ impl ReadPeer {
     }
 }
 
-/// The shared name of the Session a window watches, starting from the launch
-/// Session when one was named.
-fn watched_session(config: &Config) -> Arc<std::sync::Mutex<Option<grapt_types::SessionId>>> {
-    Arc::new(std::sync::Mutex::new(
+/// The Sessions a window watches, shared with every subscription it opens,
+/// starting from the launch Session when one was named.
+fn watched_session(config: &Config) -> Arc<std::sync::Mutex<WatchedSessions>> {
+    Arc::new(std::sync::Mutex::new(WatchedSessions::showing(
         config
             .session
             .as_ref()
             .map(|session| session.as_inner().clone()),
-    ))
+    )))
 }
 
-/// The Session currently named by a window. A poisoned lock still holds the
-/// last name this process wrote, so it is read rather than lost.
-fn current_session(
-    shared: &Arc<std::sync::Mutex<Option<grapt_types::SessionId>>>,
-) -> Option<grapt_types::SessionId> {
+/// The Sessions a window watches now. A poisoned lock still holds the last
+/// state this process wrote, so it is read rather than lost.
+fn current_watched(shared: &Arc<std::sync::Mutex<WatchedSessions>>) -> WatchedSessions {
     match shared.lock() {
         Ok(held) => held.clone(),
         Err(poisoned) => poisoned.into_inner().clone(),
     }
 }
 
-/// Record a window's Session name, reporting whether it actually changed.
-fn replace_session(
-    held: &mut Option<grapt_types::SessionId>,
-    session: Option<grapt_types::SessionId>,
-) -> bool {
-    let changed = *held != session;
-    *held = session;
-    changed
-}
-
 /// The first subscription, naming the watched Session; a refusal is returned
 /// so the bridge reports its cause rather than a quiet reconnect.
 fn first_subscribe(
     stream: &mut HttpConnection,
-    session: &Arc<std::sync::Mutex<Option<grapt_types::SessionId>>>,
+    session: &Arc<std::sync::Mutex<WatchedSessions>>,
 ) -> Option<TransportError> {
-    stream.watch_session(current_session(session));
+    stream.adopt_watched(current_watched(session));
     stream.resubscribe();
     (!stream.subscribed())
         .then(|| stream.poll_frame().err())
@@ -286,7 +274,7 @@ impl Bridge {
             retired: false,
             legacy: Arc::new(AtomicBool::new(false)),
             legacy_generation: None,
-            session: Arc::new(std::sync::Mutex::new(None)),
+            session: Arc::new(std::sync::Mutex::new(WatchedSessions::default())),
             generation: Arc::new(AtomicU64::new(0)),
             stream_cancel: None,
             state: supervise::Connection::Live,
@@ -418,8 +406,8 @@ impl Connection for Bridge {
         // The stream itself is owned by the reader thread, which reads this
         // shared name on every (re)subscription it opens.
         let changed = match self.session.lock() {
-            Ok(mut held) => replace_session(&mut held, session),
-            Err(poisoned) => replace_session(&mut poisoned.into_inner(), session),
+            Ok(mut held) => held.show(session),
+            Err(poisoned) => poisoned.into_inner().show(session),
         };
         if changed {
             // The open stream still names the previous Session. Drop it so the
