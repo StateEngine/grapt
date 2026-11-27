@@ -322,10 +322,17 @@ fn only_the_store_may_open_a_transaction() {
                 continue;
             }
             if *opener == "set_db_config" && path == crates.join("grapt-run-store/src/sqlite.rs") {
-                assert_eq!(
-                    hits.len(),
-                    1,
-                    "only the run store writer's close mode is exempt"
+                let exempt = hits.len() == 1
+                    && hits.iter().all(|line| {
+                        source.lines().nth(line - 1).is_some_and(|text| {
+                            text.contains(
+                                "set_db_config(DbConfig::SQLITE_DBCONFIG_NO_CKPT_ON_CLOSE,",
+                            )
+                        })
+                    });
+                assert!(
+                    exempt,
+                    "only the run store writer's close mode is exempt: {hits:?}"
                 );
                 continue;
             }

@@ -18,16 +18,16 @@ use rusqlite::backup::{Backup, StepResult};
 use rusqlite::Connection;
 use same_file::Handle;
 use std::fs::{self, DirBuilder, File, OpenOptions};
-use std::io::{self, ErrorKind, Read, Write};
+use std::io::{self, ErrorKind};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 const STAGING: &str = ".backup-staging";
 const COPY: &str = "copy";
 /// Names this directory as the store's own staging, so cleanup never removes
-/// files from a directory someone else made under the same name.
-const MARKER: &str = ".grapt-staging";
-const MARKER_BYTES: &[u8] = b"grapt run-store backup staging v1\n";
+/// files from a directory someone else made under the same name. It is empty,
+/// so a crash cannot leave it half-written.
+const MARKER: &str = ".grapt-backup-staging-v1";
 /// The copy and the sidecars SQLite may leave beside it.
 const STAGED: [&str; 4] = [COPY, "copy-journal", "copy-wal", "copy-shm"];
 const PAGES_PER_STEP: i32 = 1024;
@@ -71,7 +71,7 @@ pub(super) fn take(source: &Connection, path: &Path, from: u32) -> Result<PathBu
 /// Remove a staging directory left by a crash or by this backup. Every entry
 /// is judged before anything is removed: the directory must hold only regular
 /// files, each the marker, the copy or one of its SQLite sidecars, and any
-/// copy needs the marker beside it with this store's bytes. An empty directory
+/// copy needs the marker beside it, empty as the store makes it. An empty directory
 /// is one a crash left before its marker. Anything else refuses and is left in
 /// place.
 fn clear(staging: &Path) -> io::Result<()> {
@@ -90,10 +90,10 @@ fn clear(staging: &Path) -> io::Result<()> {
         }
         let name = entry.file_name();
         if name == MARKER {
-            marked = is_marker(&path)?;
-            if !marked {
+            if entry.metadata()?.len() != 0 {
                 return Err(not_ours(&path));
             }
+            marked = true;
         } else if STAGED.iter().any(|staged| name == *staged) {
             staged.push(path);
         } else {
@@ -110,14 +110,6 @@ fn clear(staging: &Path) -> io::Result<()> {
         fs::remove_file(staging.join(MARKER))?;
     }
     fs::remove_dir(staging)
-}
-
-fn is_marker(path: &Path) -> io::Result<bool> {
-    let mut bytes = Vec::with_capacity(MARKER_BYTES.len() + 1);
-    File::open(path)?
-        .take(MARKER_BYTES.len() as u64 + 1)
-        .read_to_end(&mut bytes)?;
-    Ok(bytes == MARKER_BYTES)
 }
 
 fn not_ours(path: &Path) -> io::Error {
@@ -149,9 +141,7 @@ fn stage(staging: &Path) -> io::Result<()> {
         use std::os::unix::fs::OpenOptionsExt;
         options.mode(0o600);
     }
-    let mut marker = options.open(staging.join(MARKER))?;
-    marker.write_all(MARKER_BYTES)?;
-    marker.sync_all()
+    options.open(staging.join(MARKER))?.sync_all()
 }
 
 /// The staged copy, held open from its creation until it is linked out.

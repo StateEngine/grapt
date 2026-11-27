@@ -36,12 +36,12 @@ const WAL_VERSION: u32 = 3_007_000;
 /// its first transaction, before it ever has a WAL.
 pub(super) fn check(path: &Path, application_id: u32, max_supported: u32) -> Result<(), OpenError> {
     let file = file_header(path)?;
-    let wal = committed_header(&sidecar(path, "-wal"))?;
-    if file.is_none() && wal.is_some() {
+    let wal = committed(&sidecar(path, "-wal"))?;
+    if file.is_none() && wal.any {
         // SQLite would delete this WAL; it belongs to no database here.
         return Err(OpenError::Schema(0));
     }
-    for header in file.iter().chain(wal.iter()) {
+    for header in file.iter().chain(wal.header.iter()) {
         judge(header, application_id, max_supported)?;
     }
     Ok(())
@@ -75,18 +75,26 @@ fn judge(header: &[u8], application_id: u32, max_supported: u32) -> Result<(), O
     Ok(())
 }
 
-/// The first bytes of the newest page 1 a committed WAL transaction holds, or
-/// `None` when the WAL is absent, unrecognised or commits no page 1: SQLite
-/// would then read the header from the file itself.
-fn committed_header(path: &Path) -> Result<Option<Vec<u8>>, OpenError> {
+/// What a WAL's committed transactions hold, as SQLite would recover them.
+#[derive(Default)]
+struct Committed {
+    /// Whether any transaction committed at all.
+    any: bool,
+    /// The first bytes of the newest committed page 1, if one was committed;
+    /// otherwise SQLite reads the header from the file itself.
+    header: Option<Vec<u8>>,
+}
+
+/// Nothing is committed when the WAL is absent or unrecognised.
+fn committed(path: &Path) -> Result<Committed, OpenError> {
     let mut wal = match File::open(path) {
         Ok(file) => BufReader::new(file),
-        Err(error) if error.kind() == ErrorKind::NotFound => return Ok(None),
+        Err(error) if error.kind() == ErrorKind::NotFound => return Ok(Committed::default()),
         Err(error) => return Err(error.into()),
     };
     let mut header = [0; WAL_HEADER];
     if !fill(&mut wal, &mut header)? {
-        return Ok(None);
+        return Ok(Committed::default());
     }
     let magic = u32::from_be_bytes(word(&header, 0));
     let page = u32::from_be_bytes(word(&header, 8)) as usize;
@@ -95,15 +103,15 @@ fn committed_header(path: &Path) -> Result<Option<Vec<u8>>, OpenError> {
         || !(512..=65_536).contains(&page)
         || !page.is_power_of_two()
     {
-        return Ok(None);
+        return Ok(Committed::default());
     }
     let big_endian = magic & 1 == 1;
     let mut sum = checksum(big_endian, (0, 0), &header[..24]);
     if sum != stored(&header, 24) {
-        return Ok(None);
+        return Ok(Committed::default());
     }
     let mut frame = vec![0; FRAME_HEADER + page];
-    let (mut pending, mut committed) = (None, None);
+    let (mut pending, mut committed) = (None, Committed::default());
     while fill(&mut wal, &mut frame)? {
         if frame[8..16] != header[16..24] {
             break;
@@ -117,8 +125,9 @@ fn committed_header(path: &Path) -> Result<Option<Vec<u8>>, OpenError> {
             pending = Some(frame[FRAME_HEADER..FRAME_HEADER + HEADER].to_vec());
         }
         if u32::from_be_bytes(word(&frame, 4)) != 0 {
+            committed.any = true;
             if let Some(page_one) = pending.take() {
-                committed = Some(page_one);
+                committed.header = Some(page_one);
             }
         }
     }

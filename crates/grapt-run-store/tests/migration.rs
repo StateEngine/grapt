@@ -20,8 +20,8 @@ const LINKS: MigrationSpec = MigrationSpec::new(3, "links", "CREATE TABLE link(i
 const V1: &[MigrationSpec] = &[NOTES];
 const V2: &[MigrationSpec] = &[NOTES, TAGS];
 const V3: &[MigrationSpec] = &[NOTES, TAGS, LINKS];
-/// What the store writes to mark a backup staging directory as its own.
-const STAGING_MARKER: &[u8] = b"grapt run-store backup staging v1\n";
+/// The empty file that marks a backup staging directory as the store's own.
+const STAGING_MARKER: &str = ".grapt-backup-staging-v1";
 
 /// Schema version, table names and note bodies, read outside the writer.
 fn contents(path: &Path) -> TestResult<(i64, Vec<String>, Vec<String>)> {
@@ -83,7 +83,7 @@ async fn an_upgrade_backs_up_the_old_schema_first_and_replaces_a_stale_partial_c
     open(&path, V1).await?;
     let staging = dir.path().join("run.db.backup-staging");
     std::fs::create_dir(&staging)?;
-    std::fs::write(staging.join(".grapt-staging"), STAGING_MARKER)?;
+    std::fs::write(staging.join(STAGING_MARKER), b"")?;
     std::fs::write(staging.join("copy"), b"left by a crash")?;
     let backup = std::fs::canonicalize(dir.path())?.join("run.db.v1.backup");
     assert_eq!(open(&path, V3).await?, migrated(1, 3, Some(backup.clone())));
@@ -186,7 +186,7 @@ async fn an_unmarked_staging_directory_is_left_untouched() -> TestResult {
     let staging = dir.path().join("run.db.backup-staging");
     std::fs::create_dir(&staging)?;
     std::fs::write(staging.join("copy"), b"someone else's copy")?;
-    for (name, bytes) in [("notes.txt", &b"theirs"[..]), (".grapt-staging", b"forged")] {
+    for (name, bytes) in [("notes.txt", &b"theirs"[..]), (STAGING_MARKER, b"forged")] {
         std::fs::write(staging.join(name), bytes)?;
         assert!(matches!(
             open(&path, V2).await,
@@ -305,6 +305,26 @@ async fn a_newer_schema_committed_only_to_the_wal_is_refused_untouched() -> Test
         "{refused:?}"
     );
     assert_eq!((std::fs::read(&path)?, std::fs::read(wal(&path))?), before);
+    Ok(())
+}
+
+/// A WAL whose committed transactions never rewrote page 1, left beside no
+/// database, belongs to no store here and is refused, not deleted.
+#[tokio::test]
+async fn a_committed_wal_beside_no_database_is_refused_untouched() -> TestResult {
+    let dir = TempDir::new()?;
+    let (live, path) = (dir.path().join("live.db"), dir.path().join("run.db"));
+    let wal = |path: &Path| PathBuf::from(format!("{}-wal", path.display()));
+    open(&live, V1).await?;
+    let writer = Connection::open(&live)?;
+    writer.execute_batch("PRAGMA wal_autocheckpoint=0; UPDATE note SET body = 'changed';")?;
+    std::fs::copy(wal(&live), wal(&path))?;
+    drop(writer);
+    let before = std::fs::read(wal(&path))?;
+    let refused = open(&path, V1).await;
+    assert!(matches!(refused, Err(OpenError::Schema(0))), "{refused:?}");
+    assert_eq!(std::fs::read(wal(&path))?, before);
+    assert!(!path.exists());
     Ok(())
 }
 
