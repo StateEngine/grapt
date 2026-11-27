@@ -1,7 +1,7 @@
 use grapt_run_store::RunStore;
 use grapt_session_actor::{
-    load, ActorConfig, Event, SessionActor, SessionRuntimeState as S, SubmitError, SubmitKey,
-    SCHEMA,
+    load, ActorConfig, Event, SessionActor, SessionRuntimeState as S, SpawnError, SubmitError,
+    SubmitKey, SCHEMA,
 };
 use grapt_types::SessionId;
 use std::error::Error;
@@ -270,6 +270,88 @@ async fn settling_a_transition_another_actor_published_does_not_publish_it_again
     assert!(matches!(changes.try_recv(), Err(TryRecvError::Empty)));
     first.shutdown().await?;
     second.shutdown().await?;
+    store.shutdown().await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_replay_whose_snapshot_cannot_be_reloaded_fails_closed() -> TestResult {
+    let dir = TempDir::new()?;
+    let config = ActorConfig {
+        read_timeout: Duration::from_millis(200),
+        ..ActorConfig::default()
+    };
+    let (store, first) = start(&dir.path().join("run.db"), config).await?;
+    let second = spawn(&store, config).await?;
+    first
+        .handle()
+        .submit(key("turn")?, Event::StartTurn)
+        .await?;
+    // Hold every read slot so the second actor cannot reload.
+    let (mut releases, mut holders) = (Vec::new(), Vec::new());
+    let (started, mut ready) = tokio::sync::mpsc::channel(16);
+    for _ in 0..16 {
+        let (release, wait) = std::sync::mpsc::channel::<()>();
+        let started = started.clone();
+        releases.push(release);
+        let readers = store.readers();
+        holders.push(tokio::spawn(async move {
+            readers
+                .snapshot(soon(), move |_| {
+                    let _ = started.blocking_send(());
+                    let _ = wait.recv();
+                    Ok(())
+                })
+                .await
+        }));
+    }
+    for _ in 0..16 {
+        ready.recv().await.ok_or("a read slot holder stopped")?;
+    }
+    let two = second.handle();
+    let replayed = two.submit(key("turn")?, Event::StartTurn).await;
+    assert!(
+        matches!(replayed, Err(SubmitError::Load(_))),
+        "{replayed:?}"
+    );
+    assert_eq!(two.snapshot().state, S::Idle);
+    assert!(matches!(
+        second.shutdown().await,
+        Err(SpawnError::Unsettled)
+    ));
+    drop(releases);
+    for holder in holders {
+        holder.await??;
+    }
+    first.shutdown().await?;
+    store.shutdown().await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn an_unchecked_retry_without_a_keyed_record_stays_unsettled() -> TestResult {
+    let dir = TempDir::new()?;
+    let path = dir.path().join("run.db");
+    let (store, actor) = start(&path, ActorConfig::default()).await?;
+    let handle = actor.handle();
+    // Another connection holds the write lock, so every writer batch aborts
+    // before it reads any receipt.
+    let blocker = rusqlite::Connection::open(&path)?;
+    blocker.execute_batch("BEGIN IMMEDIATE")?;
+    tokio::time::pause();
+    let unknown = handle.submit(key("start")?, Event::StartTurn).await;
+    tokio::time::resume();
+    assert!(
+        matches!(unknown, Err(SubmitError::OutcomeUnknown)),
+        "{unknown:?}"
+    );
+    let blocked = handle.submit(key("fail")?, Event::Fail).await;
+    assert!(
+        matches!(blocked, Err(SubmitError::PriorUnsettled)),
+        "{blocked:?}"
+    );
+    assert!(matches!(actor.shutdown().await, Err(SpawnError::Unsettled)));
+    blocker.execute_batch("ROLLBACK")?;
     store.shutdown().await?;
     Ok(())
 }
