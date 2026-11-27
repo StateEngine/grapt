@@ -1,6 +1,6 @@
 //! Ordinary startup must exercise both platform inspection and the owned opener.
 use super::shared::{scratch, FixedAuthorities, TestResult};
-use grapt_platform::{FirstContactKind, PlatformFirstContact, StoreDirective};
+use grapt_platform::{FirstContactKind, PlatformFirstContact};
 use grapt_store::{preflight_read_only, OwnedEventStore, StoreReadiness};
 use grapt_types::ClockAuthority;
 use rusqlite::Connection;
@@ -10,7 +10,6 @@ fn open_ready(root: &Path) -> TestResult<OwnedEventStore> {
     let inspected = PlatformFirstContact::inspect(root);
     assert_eq!(inspected.kind(), FirstContactKind::Ready);
     Ok(inspected.open_with_authorities(
-        StoreDirective::OpenReady,
         "warm-ready-integration",
         &FixedAuthorities,
         &FixedAuthorities,
@@ -22,7 +21,6 @@ fn a_large_ready_store_opens_without_a_historical_integrity_walk() -> TestResult
     let root = scratch("large-ready-history")?;
     let database = root.join("database.sqlite3");
     drop(PlatformFirstContact::inspect(&root).open_with_authorities(
-        StoreDirective::Initialize,
         "warm-ready-integration",
         &FixedAuthorities,
         &FixedAuthorities,

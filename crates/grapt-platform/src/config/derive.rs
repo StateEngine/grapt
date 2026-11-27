@@ -61,13 +61,7 @@ pub(super) fn derive_spec_with_connections(
     root: &Path,
     proposed: Option<grapt_connections::store::Connections>,
 ) -> Result<PlatformSpec, ConfigPublicationError> {
-    let store =
-        match required_string(resolution, &["store", "authority"], "$.store.authority")?.as_str() {
-            "open-ready" => StoreDirective::OpenReady,
-            "initialize" => StoreDirective::Initialize,
-            "migrate" => StoreDirective::Migrate,
-            other => return Err(ConfigPublicationError::StoreDirective(other.to_owned())),
-        };
+    let legacy_store_authority = legacy_store_authority(resolution)?;
     let build = required_string(resolution, &["product", "build"], "$.product.build")?;
     let catalog = match proposed {
         Some(connections) => super::connections::catalog(resolution, connections)?,
@@ -77,7 +71,7 @@ pub(super) fn derive_spec_with_connections(
         },
     };
     Ok(PlatformSpec {
-        store,
+        legacy_store_authority,
         build,
         catalog,
     })
@@ -867,6 +861,21 @@ pub(super) fn required_string(
 ) -> Result<String, ConfigPublicationError> {
     optional_string(resolution, path, rendered)?
         .ok_or(ConfigPublicationError::Missing { path: rendered })
+}
+
+/// Whether `store.authority` is still named. Configurations written before the
+/// store chose its own action keep loading; a value no build ever wrote is
+/// still refused, so a damaged configuration is not read as current.
+pub(super) fn legacy_store_authority(
+    resolution: &Resolution<'_>,
+) -> Result<bool, ConfigPublicationError> {
+    match optional_string(resolution, &["store", "authority"], "$.store.authority")? {
+        None => Ok(false),
+        Some(value) if matches!(value.as_str(), "initialize" | "migrate" | "open-ready") => {
+            Ok(true)
+        }
+        Some(other) => Err(ConfigPublicationError::StoreDirective(other)),
+    }
 }
 
 pub(super) fn optional_string(

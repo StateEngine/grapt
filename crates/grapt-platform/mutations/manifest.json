@@ -16,14 +16,14 @@
     },
     {
       "id": "IGPX02",
-      "law": "A migration-needed store opens only under the exact migrate directive.",
+      "law": "A migration-needed store is migrated when opened, never opened as if ready.",
       "package": "grapt-platform",
       "test_target": "platform_vertical",
-      "test": "exact_owned_open_authority_is_required_before_any_write",
+      "test": "a_store_pending_migration_is_migrated_when_opened",
       "file": "crates/grapt-platform/src/store.rs",
-      "old": "            (StoreReadiness::MigrationNeeded(plan), StoreDirective::Migrate) => {",
-      "new": "            (StoreReadiness::MigrationNeeded(plan), StoreDirective::Initialize | StoreDirective::Migrate) => { // MUTATED: IGPX02",
-      "red": "unauthorized directive opened a migration-needed store"
+      "old": "        StoreReadiness::MigrationNeeded(plan) => Ok(OwnedOpenAuthority::Migrate(plan)),",
+      "new": "        StoreReadiness::MigrationNeeded(_) => Ok(OwnedOpenAuthority::OpenReady), // MUTATED: IGPX02",
+      "red": "a migration-needed store was opened without migrating"
     },
     {
       "id": "IGPX03",

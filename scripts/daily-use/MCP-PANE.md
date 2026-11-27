@@ -22,8 +22,7 @@ bash scripts/daily-use/mcp_pane.sh "$BIN" "$SCRATCH" "$REPO" "$NEW_EVIDENCE" ref
 
 The valid-config fixture names its local stdio server `journey` and its missing
 executable server `doomed` (`/nonexistent/mcppane-fail-server`). The refusal
-fixture carries an invalid `grapt.jsonc`. A copied committed database needs
-`store.authority = "open-ready"`. Do not copy a previous ready receipt or service
+fixture carries an invalid `grapt.jsonc`. Do not copy a previous ready receipt or service
 registration into a new scratch profile. A service with a ready receipt is
 refused before launch. Captures, serve output and the connected process snapshot
 are retained after cleanup.

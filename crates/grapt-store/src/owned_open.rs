@@ -79,9 +79,7 @@ pub enum OwnedOpenError {
     QuarantinedOrCorrupt(Box<Obstruction>),
     #[error(
         "owned-open authority {authority:?} does not authorize the observed store state \
-         {observed:?}; in grapt.jsonc set store.authority to the directive matching that \
-         state: \"initialize\" creates an absent store, \"migrate\" applies a pending \
-         migration plan, \"open-ready\" opens a ready store"
+         {observed:?}; {RESTART}"
     )]
     AuthorityMismatch {
         observed: Box<StoreReadiness>,
@@ -96,17 +94,7 @@ pub enum OwnedOpenError {
         authorized: Box<MigrationPlan>,
         observed: Box<StoreReadiness>,
     },
-    #[error(
-        "initialized store requires explicit migration authority: {0:?}; in grapt.jsonc set \
-         store.authority to \"migrate\" to apply the pending migration plan, then to \
-         \"open-ready\" to open the store once it is ready"
-    )]
-    MigrationAuthorizationRequired(Box<MigrationPlan>),
-    #[error(
-        "another creator won absent-path initialization; current state is {0:?}; in \
-         grapt.jsonc set store.authority to the directive matching that state (\"migrate\" \
-         while a migration is pending, \"open-ready\" once the store is ready) and re-open"
-    )]
+    #[error("another creator won absent-path initialization; current state is {0:?}; {RESTART}")]
     InitializationConflict(Box<StoreReadiness>),
     #[error("database file identity could not be established: {0}")]
     FileIdentity(std::io::Error),
@@ -127,35 +115,21 @@ pub enum OwnedOpenError {
     PostActionNotReady(Box<StoreReadiness>),
 }
 
+/// The way out when the store changed between its read-only observation and
+/// the open: the next start observes it again and acts on what it finds.
+const RESTART: &str = "the store changed while it was being opened; close any other Grapt \
+                       process using this profile and start again";
+
 impl OwnedOpenError {
-    /// The grapt.jsonc directive matching the observed state named in a
-    /// stale-plan refusal: initialize an absent store, migrate only a
-    /// current pending plan, open-ready a ready store. Obstructed states
-    /// keep the refusal — no directive, because none would succeed.
+    /// What to do about a stale plan, given the state observed now. An
+    /// obstructed store keeps its refusal: no restart would get past it.
     fn stale_plan_advice(observed: &StoreReadiness) -> &'static str {
         match observed {
-            StoreReadiness::Absent => {
-                "the observed store is absent; in grapt.jsonc set \
-                                      store.authority to \"initialize\" — a migration plan \
-                                      applies only to an existing store"
-            }
-            StoreReadiness::MigrationNeeded(_) => {
-                "in grapt.jsonc set store.authority to \
-                                                   \"migrate\" against the current store state, \
-                                                   then to \"open-ready\" once the migration \
-                                                   has been applied"
-            }
-            StoreReadiness::Ready | StoreReadiness::Slow | StoreReadiness::HotJournal => {
-                "the observed store is ready; \
-                                                                   in grapt.jsonc set \
-                                                                   store.authority to \
-                                                                   \"open-ready\" — the stale \
-                                                                   plan has nothing to apply"
-            }
             StoreReadiness::Unreadable(_) | StoreReadiness::QuarantinedOrCorrupt(_) => {
                 "the observed store is obstructed; the refusal stands until the obstruction \
                  is resolved"
             }
+            _ => RESTART,
         }
     }
 }
@@ -732,139 +706,35 @@ mod tests {
     }
 
     #[test]
-    #[expect(clippy::too_many_lines, reason = "legacy")]
-    fn migration_authority_refusals_name_the_setting_and_the_fix() {
-        use crate::{
-            BackupCapacity, BackupDirectory, BackupPermissions, CreateBackupFile, FutureBackup,
-            WriteBackupFile,
-        };
-        let Some(migration) = grapt_types::MigrationId::new("0001") else {
-            panic!("test fixture migration id must be valid");
-        };
+    fn refusals_after_the_store_changes_name_a_restart_not_a_setting() {
         let plan = MigrationPlan {
-            pending: vec![migration],
-            backup: FutureBackup {
+            pending: Vec::new(),
+            backup: crate::FutureBackup {
                 location: PathBuf::from("/backups/store"),
                 minimum_free_bytes: 1024,
-                capacity: BackupCapacity::Sufficient,
-                directory: BackupDirectory::Readable,
-                permissions: BackupPermissions {
-                    create_file: CreateBackupFile::Authorized,
-                    write_file: WriteBackupFile::Authorized,
+                capacity: crate::BackupCapacity::Sufficient,
+                directory: crate::BackupDirectory::Readable,
+                permissions: crate::BackupPermissions {
+                    create_file: crate::CreateBackupFile::Authorized,
+                    write_file: crate::WriteBackupFile::Authorized,
                 },
             },
         };
-
-        let required =
-            OwnedOpenError::MigrationAuthorizationRequired(Box::new(plan.clone())).to_string();
-        assert!(
-            required.starts_with("initialized store requires explicit migration authority:"),
-            "{required}"
-        );
-        assert!(required.contains("in grapt.jsonc set store.authority to \"migrate\" to apply the pending migration plan"), "{required}");
-        assert!(
-            required.contains("then to \"open-ready\" to open the store once it is ready"),
-            "{required}"
-        );
-
-        // The advice follows the observed state: a ready store has no plan
-        // to migrate, and pointing the user at "migrate" would refuse again
-        // on the next open.
-        let stale = OwnedOpenError::StaleMigrationPlan {
-            authorized: Box::new(plan.clone()),
-            observed: Box::new(StoreReadiness::Ready),
+        let changed = [
+            OwnedOpenError::StaleMigrationPlan {
+                authorized: Box::new(plan.clone()),
+                observed: Box::new(StoreReadiness::Ready),
+            },
+            OwnedOpenError::AuthorityMismatch {
+                observed: Box::new(StoreReadiness::Ready),
+                authority: Box::new(OwnedOpenAuthority::Initialize),
+            },
+            OwnedOpenError::InitializationConflict(Box::new(StoreReadiness::Ready)),
+        ];
+        for refusal in changed {
+            let message = refusal.to_string();
+            assert!(message.contains("start again"), "{message}");
+            assert!(!message.contains("store.authority"), "{message}");
         }
-        .to_string();
-        assert!(
-            stale.starts_with("migration authorization is stale:"),
-            "{stale}"
-        );
-        assert!(
-            stale.contains(
-                "the observed store is ready; in grapt.jsonc set store.authority to \"open-ready\""
-            ),
-            "{stale}"
-        );
-        assert!(
-            !stale.contains("store.authority to \"migrate\""),
-            "a ready store has no plan to migrate: {stale}"
-        );
-
-        let stale_absent = OwnedOpenError::StaleMigrationPlan {
-            authorized: Box::new(plan.clone()),
-            observed: Box::new(StoreReadiness::Absent),
-        }
-        .to_string();
-        assert!(
-            stale_absent.contains(
-                "the observed store is absent; in grapt.jsonc set store.authority to \"initialize\""
-            ),
-            "{stale_absent}"
-        );
-        assert!(
-            !stale_absent.contains("store.authority to \"migrate\""),
-            "an absent store has no plan to migrate: {stale_absent}"
-        );
-
-        let stale_pending = OwnedOpenError::StaleMigrationPlan {
-            authorized: Box::new(plan.clone()),
-            observed: Box::new(StoreReadiness::MigrationNeeded(plan.clone())),
-        }
-        .to_string();
-        assert!(
-            stale_pending.contains(
-                "in grapt.jsonc set store.authority to \"migrate\" against the current store state"
-            ),
-            "{stale_pending}"
-        );
-        assert!(
-            stale_pending.contains("then to \"open-ready\" once the migration has been applied"),
-            "{stale_pending}"
-        );
-
-        let mismatch = OwnedOpenError::AuthorityMismatch {
-            observed: Box::new(StoreReadiness::Ready),
-            authority: Box::new(OwnedOpenAuthority::Initialize),
-        }
-        .to_string();
-        assert!(mismatch.starts_with("owned-open authority"), "{mismatch}");
-        assert!(
-            mismatch.contains(
-                "in grapt.jsonc set store.authority to the directive matching that state"
-            ),
-            "{mismatch}"
-        );
-        assert!(
-            mismatch.contains("\"initialize\" creates an absent store"),
-            "{mismatch}"
-        );
-        assert!(
-            mismatch.contains("\"migrate\" applies a pending migration plan"),
-            "{mismatch}"
-        );
-        assert!(
-            mismatch.contains("\"open-ready\" opens a ready store"),
-            "{mismatch}"
-        );
-
-        let conflict =
-            OwnedOpenError::InitializationConflict(Box::new(StoreReadiness::Ready)).to_string();
-        assert!(
-            conflict.starts_with("another creator won absent-path initialization;"),
-            "{conflict}"
-        );
-        assert!(
-            conflict.contains(
-                "in grapt.jsonc set store.authority to the directive matching that state"
-            ),
-            "{conflict}"
-        );
-        assert!(
-            conflict.contains(
-                "\"migrate\" while a migration is pending, \"open-ready\" once the store is ready"
-            ),
-            "{conflict}"
-        );
-        assert!(conflict.contains("and re-open"), "{conflict}");
     }
 }

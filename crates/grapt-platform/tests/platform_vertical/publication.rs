@@ -7,8 +7,7 @@
 use grapt_config::StdSourceReader;
 use grapt_platform::{
     ConfigPublicationError, CredentialRefusal, CredentialResolutionRequest, FirstContactKind,
-    PlatformFirstContact, PlatformOwner, PlatformRefusal, PlatformStoreRefusal, PublishedConfig,
-    StoreDirective, MAX_CATALOG_ROWS,
+    PlatformFirstContact, PlatformOwner, PlatformRefusal, PublishedConfig, MAX_CATALOG_ROWS,
 };
 use grapt_provider::{CredentialPlacement, ProtocolFamily};
 use grapt_types::CredentialRecordId;
@@ -23,21 +22,6 @@ fn first_contact_keeps_all_five_states_distinct_and_read_only() -> TestResult {
         absent.kind(),
         FirstContactKind::Absent,
         "first contact collapsed absent into another readiness state"
-    );
-    assert!(
-        matches!(
-            absent.open_with_authorities(
-                StoreDirective::OpenReady,
-                "df0-test",
-                &FixedAuthorities,
-                &FixedAuthorities,
-            ),
-            Err(PlatformStoreRefusal::DirectiveMismatch {
-                observed: FirstContactKind::Absent,
-                ..
-            })
-        ),
-        "absent store was not kept distinct at first contact"
     );
     assert!(!root.join("database.sqlite3").exists());
 
@@ -78,35 +62,25 @@ fn first_contact_keeps_all_five_states_distinct_and_read_only() -> TestResult {
     Ok(())
 }
 
+/// A store with pending migrations is migrated behind a verified backup when
+/// it is opened, with no configuration naming that step.
 #[test]
-fn exact_owned_open_authority_is_required_before_any_write() -> TestResult {
+fn a_store_pending_migration_is_migrated_when_opened() -> TestResult {
     let root = scratch("authority")?;
     legacy_database(&root.join("database.sqlite3"))?;
-    let before = std::fs::read(root.join("database.sqlite3"))?;
-    let first = PlatformFirstContact::inspect(&root);
-    assert!(
-        matches!(
-            first.open_with_authorities(
-                StoreDirective::Initialize,
-                "df0-test",
-                &FixedAuthorities,
-                &FixedAuthorities,
-            ),
-            Err(PlatformStoreRefusal::DirectiveMismatch {
-                observed: FirstContactKind::MigrationNeeded,
-                ..
-            })
-        ),
-        "unauthorized directive opened a migration-needed store"
-    );
-    assert_eq!(std::fs::read(root.join("database.sqlite3"))?, before);
-
     let owner = PlatformFirstContact::inspect(&root).open_with_authorities(
-        StoreDirective::Migrate,
         "df0-test",
         &FixedAuthorities,
         &FixedAuthorities,
     )?;
+    assert!(
+        matches!(
+            owner.receipt(),
+            grapt_store::OwnedOpenReceipt::Migrated { .. }
+        ),
+        "a store pending migration was not migrated: {:?}",
+        owner.receipt()
+    );
     drop(owner);
     assert_eq!(
         PlatformFirstContact::inspect(&root).kind(),

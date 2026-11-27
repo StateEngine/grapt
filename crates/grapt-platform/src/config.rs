@@ -22,13 +22,6 @@ const MAX_SECONDARY_ACCOUNTS: usize = 7;
 const PRIMARY_DISCOVERY_FILE: &str = "account-models.json";
 const LOCAL_DOGFOOD_CREDENTIAL_RECORD: &str = "cred_local_dogfood_provider_file_v1";
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum StoreDirective {
-    OpenReady,
-    Initialize,
-    Migrate,
-}
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BuildAttribution {
     build: String,
@@ -518,7 +511,9 @@ impl ProviderTargetAuthority {
 }
 
 struct PlatformSpec {
-    store: StoreDirective,
+    /// Whether the configuration still names `store.authority`, which the
+    /// store no longer reads.
+    legacy_store_authority: bool,
     build: String,
     catalog: CatalogSpec,
 }
@@ -534,7 +529,7 @@ pub struct PublishedConfig {
     registry: ModelRegistry,
     catalog: CatalogSpec,
     target: TargetState,
-    store: StoreDirective,
+    legacy_store_authority: bool,
     build: BuildAttribution,
     credentials: CredentialGrants,
 }
@@ -562,7 +557,7 @@ impl core::fmt::Debug for PublishedConfig {
         formatter
             .debug_struct("PublishedConfig")
             .field("generation", &self.session.generation())
-            .field("store", &self.store)
+            .field("legacy_store_authority", &self.legacy_store_authority)
             .field("build", &self.build)
             .field("credentials", &"<credential-grants>")
             .field("target", &"<catalog-issued>")
@@ -621,11 +616,7 @@ impl PublishedConfig {
         )
         .map_err(|error| ConfigPublicationError::Load(error.to_string()))?;
         let resolution = grapt_config::resolve(session.configuration());
-        let store =
-            derive::required_string(&resolution, &["store", "authority"], "$.store.authority")?;
-        if !matches!(store.as_str(), "initialize" | "migrate" | "open-ready") {
-            return Err(ConfigPublicationError::StoreDirective(store).into());
-        }
+        derive::legacy_store_authority(&resolution)?;
         let build = derive::required_string(&resolution, &["product", "build"], "$.product.build")?;
         if expected.is_some_and(|expected| expected != build) {
             return Err(crate::PlatformRefusal::HandoverBuildChanged);
@@ -701,7 +692,7 @@ impl PublishedConfig {
             registry,
             catalog: spec.catalog,
             target: TargetState::Current(Box::new(target)),
-            store: spec.store,
+            legacy_store_authority: spec.legacy_store_authority,
             build: BuildAttribution {
                 build: spec.build,
                 generation,
@@ -714,8 +705,10 @@ impl PublishedConfig {
         self.session.generation()
     }
 
-    pub fn store_directive(&self) -> StoreDirective {
-        self.store
+    /// Whether the configuration still names `store.authority`. The store is
+    /// created, migrated or opened as it is found, so the key is ignored.
+    pub fn names_legacy_store_authority(&self) -> bool {
+        self.legacy_store_authority
     }
 
     pub fn build(&self) -> &BuildAttribution {
@@ -849,7 +842,7 @@ impl PublishedConfig {
         self.target = TargetState::Current(Box::new(target));
         self.credentials = grants(&spec.catalog)?;
         self.catalog = spec.catalog;
-        self.store = spec.store;
+        self.legacy_store_authority = spec.legacy_store_authority;
         self.build = BuildAttribution {
             build: spec.build,
             generation: to,

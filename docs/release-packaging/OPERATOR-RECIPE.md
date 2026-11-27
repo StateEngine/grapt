@@ -223,20 +223,10 @@ that are easy to get wrong:
    second provider account names its credential and discovery files; copying
    only a hardcoded set leaves the product refusing to boot with
    `openrouter-account-models.json is unreadable`.
-2. **Store authority has THREE phases, not two.** `grapt.jsonc` carries
-   `store.authority`, and it must match the store's actual state:
-
-       initialize   first run. Refuses with "requires explicit migration
-                    authority" and leaves an initialized store behind. That
-                    refusal is the product working, not a fault.
-       migrate      the run that migrates the store.
-       open-ready   EVERY LATER RUN against an already-migrated store.
-
-   Restarting a migrated store while the config still says `migrate` is refused:
-   *"store directive Migrate does not authorize first-contact state Ready"*.
-   This is the step most likely to bite you, because the first two phases
-   happen during setup and are easy to remember, while the third only matters
-   the next time you start the product — which is usually another day.
+2. **The store needs no setting.** The product creates an absent store,
+   migrates one with pending migrations behind a verified backup, and opens a
+   ready one. A `store.authority` left in `grapt.jsonc` is ignored, and each
+   start says it can be removed.
 3. **A git boundary at the root.** Without it, project discovery walks up and
    resolves the product's project to whatever repository happens to contain your
    directory.

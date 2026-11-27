@@ -3,7 +3,7 @@
 
 use std::collections::BTreeSet;
 use std::fs::File;
-use std::io::{Read, Write};
+use std::io::Read;
 use std::path::Path;
 
 use grapt_config::{
@@ -29,25 +29,14 @@ pub(crate) fn initialize_empty(requested: &Path) -> Result<String, String> {
     let staged = staging::StagedProfile::begin(requested)?;
     let root = staged.root();
     let build = super::executable_build()?;
-    // This is the same first-contact authority as explicit import, scoped to
-    // this initializer's unpublished private directory. No target is needed.
-    match grapt_platform::PlatformFirstContact::inspect(root)
-        .open(grapt_platform::StoreDirective::Initialize, &build)
-    {
-        Ok(store) => drop(store),
-        Err(grapt_platform::PlatformStoreRefusal::OwnedOpen(
-            grapt_store::OwnedOpenError::MigrationAuthorizationRequired(_),
-        )) => {
-            drop(
-                grapt_platform::PlatformFirstContact::inspect(root)
-                    .open(grapt_platform::StoreDirective::Migrate, &build)
-                    .map_err(|error| error.to_string())?,
-            );
-        }
-        Err(error) => return Err(error.to_string()),
-    }
+    // This is the same first contact as explicit import, scoped to this
+    // initializer's unpublished private directory. No target is needed.
+    drop(
+        grapt_platform::PlatformFirstContact::inspect(root)
+            .open(&build)
+            .map_err(|error| error.to_string())?,
+    );
     let config = serde_json::json!({
-        "store":{"authority":"open-ready"},
         "product":{"build":build},
     });
     super::write_new(
@@ -115,7 +104,7 @@ pub(crate) fn initialize(requested: &Path, source: &Path) -> Result<String, Stri
         capture_legacy(source, &parsed)?
     };
     let build = super::executable_build()?;
-    let initial = bootstrap(&original, &parsed, "initialize", &build)?;
+    let initial = bootstrap(&original, &parsed, &build)?;
     let staged = staging::StagedProfile::begin(requested)?;
     let root = staged.root();
     #[cfg(test)]
@@ -144,22 +133,13 @@ pub(crate) fn initialize(requested: &Path, source: &Path) -> Result<String, Stri
     }
     #[cfg(test)]
     tests::fresh_crash::cut(requested, "inputs")?;
-    match grapt_platform::PlatformOwner::prepare(root) {
-        Ok(platform) => drop(platform.settle()),
-        Err(grapt_platform::PlatformRefusal::Store(
-            grapt_platform::PlatformStoreRefusal::OwnedOpen(
-                grapt_store::OwnedOpenError::MigrationAuthorizationRequired(_),
-            ),
-        )) => {
-            publish(root, &bootstrap(&original, &parsed, "migrate", &build)?)?;
-            let platform = grapt_platform::PlatformOwner::prepare(root).map_err(feedback)?;
-            drop(platform.settle());
-        }
-        Err(error) => return Err(feedback(error)),
-    }
+    drop(
+        grapt_platform::PlatformOwner::prepare(root)
+            .map_err(feedback)?
+            .settle(),
+    );
     #[cfg(test)]
     tests::fresh_crash::cut(requested, "store")?;
-    publish(root, &bootstrap(&original, &parsed, "open-ready", &build)?)?;
     #[cfg(test)]
     tests::fresh_crash::cut(requested, "final-config")?;
     // First run and explicit import publish the managed connection generation
@@ -371,76 +351,43 @@ fn decode(raw: &[u8]) -> Result<Spanned<ConfigValue>, String> {
         .map_err(|_| "account configuration is invalid JSONC; repair grapt.jsonc".into())
 }
 
-/// Replace only this new profile's store authority and executable attribution;
-/// provider selection and every other configuration byte keep their meaning.
-fn bootstrap(
-    raw: &[u8],
-    parsed: &Spanned<ConfigValue>,
-    directive: &str,
-    build: &str,
-) -> Result<Vec<u8>, String> {
-    let mut changes = Vec::new();
-    for (object, field, value) in [
-        ("store", "authority", directive),
-        ("product", "build", build),
-    ] {
-        let encoded =
-            serde_json::to_string(value).map_err(|_| "bootstrap input encoding failed")?;
-        if let Some(parent) = parsed.value().get(object) {
-            if parent.value().as_object().is_none() {
-                return Err("store and product configuration must be objects".into());
-            }
-            if let Some(old) = parent.value().get(field) {
-                changes.push((old.span().start(), old.span().end(), encoded));
-            } else {
-                changes.push((
-                    parent.span().start() + 1,
-                    parent.span().start() + 1,
-                    format!("\"{field}\":{encoded},"),
-                ));
-            }
-        } else {
-            if parsed.value().as_object().is_none() {
-                return Err("account configuration must be an object".into());
-            }
-            changes.push((
-                parsed.span().start() + 1,
-                parsed.span().start() + 1,
-                format!("\"{object}\":{{\"{field}\":{encoded}}},"),
-            ));
+/// Replace only this new profile's executable attribution; provider
+/// selection and every other configuration byte keep their meaning.
+fn bootstrap(raw: &[u8], parsed: &Spanned<ConfigValue>, build: &str) -> Result<Vec<u8>, String> {
+    let encoded = serde_json::to_string(build).map_err(|_| "bootstrap input encoding failed")?;
+    let (start, end, replacement) = if let Some(product) = parsed.value().get("product") {
+        if product.value().as_object().is_none() {
+            return Err("product configuration must be an object".into());
         }
-    }
+        match product.value().get("build") {
+            Some(old) => (old.span().start(), old.span().end(), encoded),
+            None => {
+                let at = product.span().start() + 1;
+                (at, at, format!("\"build\":{encoded},"))
+            }
+        }
+    } else {
+        if parsed.value().as_object().is_none() {
+            return Err("account configuration must be an object".into());
+        }
+        let at = parsed.span().start() + 1;
+        (at, at, format!("\"product\":{{\"build\":{encoded}}},"))
+    };
     let mut text =
         String::from_utf8(raw.to_vec()).map_err(|_| "account configuration must be UTF-8")?;
-    changes.sort_by_key(|change| std::cmp::Reverse(change.0));
-    for (start, end, replacement) in changes {
-        if !text.is_char_boundary(start) || !text.is_char_boundary(end) || end > text.len() {
-            return Err("configuration span is invalid".into());
-        }
-        if text
-            .len()
-            .saturating_sub(end - start)
-            .saturating_add(replacement.len())
-            > CONFIG_BYTES
-        {
-            return Err("profile configuration exceeds its byte bound".into());
-        }
-        text.replace_range(start..end, &replacement);
+    if !text.is_char_boundary(start) || !text.is_char_boundary(end) || end > text.len() {
+        return Err("configuration span is invalid".into());
     }
+    if text
+        .len()
+        .saturating_sub(end - start)
+        .saturating_add(replacement.len())
+        > CONFIG_BYTES
+    {
+        return Err("profile configuration exceeds its byte bound".into());
+    }
+    text.replace_range(start..end, &replacement);
     Ok(text.into_bytes())
-}
-
-fn publish(root: &Path, bytes: &[u8]) -> Result<(), String> {
-    // Only the exclusive NEW profile's file can be rewritten during bootstrap.
-    let path = root.join("grapt.jsonc");
-    let mut file = std::fs::OpenOptions::new()
-        .write(true)
-        .truncate(true)
-        .open(path)
-        .map_err(|_| "new profile configuration cannot be finalized")?;
-    file.write_all(bytes)
-        .and_then(|()| file.sync_all())
-        .map_err(|_| "new profile configuration could not be finalized".into())
 }
 
 #[cfg(test)]
@@ -464,7 +411,7 @@ mod tests {
             let source = self.0.join("account");
             std::fs::create_dir(&source).map_err(|error| error.to_string())?;
             super::super::write_new(&source.join("grapt.jsonc"), br#"{
-                // Existing configuration is kept; setup owns only store/build.
+                // Existing configuration is kept; setup owns only the build.
                 "provider":{"id":"openai","model":"test-model","base_model":"test-model","family":"test-model",
                     "route":"test-route","account":"test-account","credential_version":"test-v1","policy_version":"test-policy","variants":[]},
                 "precise":9007199254740993,"explicit_null":null,
@@ -508,13 +455,9 @@ mod tests {
         assert_eq!(capture(&source.join("grapt.jsonc"), CONFIG_BYTES)?, before);
         let after = capture(&target.join("grapt.jsonc"), CONFIG_BYTES)?;
         let parsed = decode(&after)?;
-        assert_eq!(
-            parsed
-                .value()
-                .get("store")
-                .and_then(|value| value.value().get("authority"))
-                .and_then(|value| value.value().as_str()),
-            Some("open-ready")
+        assert!(
+            parsed.value().get("store").is_none(),
+            "setup wrote a store setting the store no longer reads"
         );
         assert!(String::from_utf8(after)
             .map_err(|error| error.to_string())?
