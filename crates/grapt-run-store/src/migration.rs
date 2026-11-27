@@ -3,13 +3,15 @@
 //! applied in `rust_migration` with a checksum of its SQL, and mirrors the
 //! newest in `user_version`.
 //!
-//! Opening refuses, on a read-only connection and before any change, a file
-//! that is not a run store, was migrated by a newer build, or records a
-//! migration whose SQL differs from this build's. Pending migrations then run
-//! under the write lock, behind a verified backup taken while that lock is
-//! held, in one transaction with their ledger rows, so a failure leaves the
-//! database as it was. SQLite refuses transaction control, attachment,
-//! pragmas and access to the store's own tables from migration SQL.
+//! Opening checks, with reads only, that the file is a run store, was not
+//! migrated by a newer build, and records no migration whose SQL differs from
+//! this build's; otherwise it refuses before any change. SQLite may first roll
+//! back a hot journal, restoring the file's last committed state. Pending
+//! migrations then run behind a verified backup, in one transaction with their
+//! ledger rows, and only if no other connection committed since the plan, so
+//! a failure leaves the database as it was. SQLite refuses transaction
+//! control, attachment, pragmas and access to the store's own tables from
+//! migration SQL.
 use crate::error::{LedgerError, OpenError};
 use crate::sqlite::{self, INTERNAL, LEDGER, RECEIPTS_DDL};
 use rusqlite::hooks::{AuthAction, AuthContext, Authorization};
@@ -18,6 +20,8 @@ use sha2::{Digest, Sha256};
 use std::path::{Path, PathBuf};
 
 mod backup;
+#[cfg(test)]
+mod tests;
 
 const APPLICATION_ID: i64 = 0x4752_4150;
 
@@ -53,18 +57,9 @@ pub struct Migrated {
 }
 
 /// The read-only verdict on a database before anything is written to it.
-#[derive(Debug, PartialEq, Eq)]
 pub(crate) struct Plan {
     from: u32,
     fresh: bool,
-}
-
-impl Plan {
-    /// A database file that does not exist yet.
-    pub(crate) const NEW: Self = Self {
-        from: 0,
-        fresh: true,
-    };
 }
 
 /// Check `ledger` and the database against each other without changing either.
@@ -79,7 +74,10 @@ pub(crate) fn plan(connection: &Connection, ledger: &[MigrationSpec]) -> Result<
         |row| row.get(0),
     )?;
     if app == 0 && found == 0 && empty {
-        return Ok(Plan::NEW);
+        return Ok(Plan {
+            from: 0,
+            fresh: true,
+        });
     }
     if app != APPLICATION_ID {
         return Err(OpenError::Schema(found));
@@ -168,12 +166,11 @@ fn applied(connection: &Connection, max_supported: u32) -> Result<Vec<Applied>, 
     Ok(rows)
 }
 
-/// Apply what `plan` found pending. `source` is the read-only connection the
-/// plan was made on, kept to back up an existing store; `path` is the
-/// database's real location, beside which the backup is written.
+/// Apply what `plan` found pending on the same connection, so the backup and
+/// the migration both read the one file this connection holds open. `path` is
+/// that file's real location, beside which the backup is written.
 pub(crate) fn apply(
     connection: &mut Connection,
-    source: Option<Connection>,
     path: &Path,
     ledger: &[MigrationSpec],
     planned: Plan,
@@ -186,38 +183,41 @@ pub(crate) fn apply(
             backup: None,
         });
     }
+    // Changes only when another connection commits; compared once this
+    // connection holds the write lock.
+    let seen = data_version(connection)?;
+    let backup = if planned.fresh {
+        None
+    } else {
+        Some(backup::take(connection, path, planned.from)?)
+    };
     connection.execute_batch("BEGIN IMMEDIATE")?;
-    let result = migrate(connection, source, path, ledger, &planned);
-    let result = result.and_then(|backup| {
-        connection.execute_batch("COMMIT")?;
-        Ok(backup)
-    });
+    let result = if data_version(connection)? == seen {
+        migrate(connection, ledger, &planned)
+    } else {
+        Err(LedgerError::Moved.into())
+    };
+    let result = result.and_then(|()| Ok(connection.execute_batch("COMMIT")?));
     if result.is_err() && !connection.is_autocommit() {
         let _ = connection.execute_batch("ROLLBACK");
     }
-    result.map(|backup| Migrated {
+    result.map(|()| Migrated {
         from: planned.from,
         to,
         backup,
     })
 }
 
-/// Runs holding the write lock, so no writer can commit between the backup
-/// and the migrations it protects.
+fn data_version(connection: &Connection) -> Result<i64, OpenError> {
+    Ok(connection.pragma_query_value(None, "data_version", |row| row.get(0))?)
+}
+
+/// Runs holding the write lock, with no other commit since the plan.
 fn migrate(
     connection: &mut Connection,
-    source: Option<Connection>,
-    path: &Path,
     ledger: &[MigrationSpec],
     planned: &Plan,
-) -> Result<Option<PathBuf>, OpenError> {
-    if plan(connection, ledger)? != *planned {
-        return Err(LedgerError::Moved.into());
-    }
-    let backup = match source {
-        Some(source) if !planned.fresh => Some(backup::take(&source, path, planned.from)?),
-        _ => None,
-    };
+) -> Result<(), OpenError> {
     if planned.fresh {
         connection.execute_batch(RECEIPTS_DDL)?;
         connection.execute_batch(&format!(
@@ -237,8 +237,7 @@ fn migrate(
     }
     connection.pragma_update(None, "application_id", APPLICATION_ID)?;
     connection.pragma_update(None, "user_version", ledger.len() as u32)?;
-    sqlite::verify_pager(connection)?;
-    Ok(backup)
+    sqlite::verify_pager(connection)
 }
 
 /// Run one migration's SQL with SQLite refusing, before it executes, anything

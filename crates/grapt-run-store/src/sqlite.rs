@@ -60,23 +60,7 @@ pub(crate) fn sidecar(path: &Path, suffix: &str) -> PathBuf {
     name.into()
 }
 
-/// A read-only connection to an existing database for the schema check, or
-/// `None` when no file exists yet. Being read-only, it cannot recover a hot
-/// journal or otherwise change the file it checks.
-pub(crate) fn preflight(path: &Path) -> Result<Option<Connection>, OpenError> {
-    match fs::metadata(path) {
-        Ok(_) => {}
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-        Err(error) => return Err(error.into()),
-    }
-    let connection = Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_ONLY)?;
-    connection.busy_timeout(WRITE_BUSY)?;
-    connection.set_limit(Limit::SQLITE_LIMIT_LENGTH, MAX_COMMAND_BYTES as i32)?;
-    connection.execute_batch("PRAGMA query_only=ON; PRAGMA trusted_schema=OFF;")?;
-    Ok(Some(connection))
-}
-
-/// The writer's connection, opened once the read-only check has passed.
+/// The writer's connection, before its schema is checked or changed.
 pub(crate) fn writer(path: &Path) -> Result<Connection, OpenError> {
     let connection = Connection::open(path)?;
     connection.busy_timeout(WRITE_BUSY)?;
@@ -85,6 +69,8 @@ pub(crate) fn writer(path: &Path) -> Result<Connection, OpenError> {
         "PRAGMA temp_store=FILE; PRAGMA foreign_keys=ON; PRAGMA trusted_schema=OFF;
          PRAGMA synchronous=FULL;",
     )?;
+    #[cfg(test)]
+    page_limit::apply(&connection, path)?;
     Ok(connection)
 }
 
@@ -234,4 +220,44 @@ pub(crate) fn install_guard(
         }
     }))?;
     Ok(guard)
+}
+
+/// Test-only: cap one database's pages on its writer connection, so SQLite
+/// itself reports a full disk on the real open path. Not in other builds.
+#[cfg(test)]
+pub(crate) mod page_limit {
+    use rusqlite::Connection;
+    use std::path::{Path, PathBuf};
+    use std::sync::Mutex;
+
+    static LIMIT: Mutex<Option<(PathBuf, u32)>> = Mutex::new(None);
+
+    /// Holds the cap on the canonical `path` until dropped.
+    pub(crate) struct PageLimit;
+
+    impl PageLimit {
+        pub(crate) fn set(path: &Path, pages: u32) -> std::io::Result<Self> {
+            let path = std::fs::canonicalize(path)?;
+            *LIMIT.lock().map_err(|_| std::io::ErrorKind::Other)? = Some((path, pages));
+            Ok(Self)
+        }
+    }
+
+    impl Drop for PageLimit {
+        fn drop(&mut self) {
+            if let Ok(mut limit) = LIMIT.lock() {
+                *limit = None;
+            }
+        }
+    }
+
+    pub(super) fn apply(connection: &Connection, path: &Path) -> rusqlite::Result<()> {
+        let limit = LIMIT.lock().ok().and_then(|limit| limit.clone());
+        match limit {
+            Some((limited, pages)) if limited == path => {
+                connection.pragma_update(None, "max_page_count", pages)
+            }
+            _ => Ok(()),
+        }
+    }
 }

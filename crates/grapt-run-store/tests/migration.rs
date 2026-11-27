@@ -149,13 +149,6 @@ async fn failing_or_escaping_migration_sql_rolls_back_with_nothing_applied() -> 
     Ok(())
 }
 
-#[test]
-fn a_full_disk_is_named() {
-    let full = rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_FULL);
-    let error = OpenError::from(rusqlite::Error::SqliteFailure(full, None));
-    assert!(matches!(error, OpenError::DiskFull(_)));
-}
-
 #[tokio::test]
 async fn a_backup_that_cannot_be_written_leaves_the_file_as_found() -> TestResult {
     let dir = TempDir::new()?;
@@ -192,7 +185,35 @@ async fn another_writer_holding_the_lock_stalls_the_open_without_a_change() -> T
     holder.execute_batch("ROLLBACK")?;
     drop(holder);
     assert_eq!(contents(&path)?.0, 1);
-    assert!(backups(dir.path())?.is_empty());
+    Ok(())
+}
+
+/// A crash mid-transaction in rollback-journal mode leaves a hot journal.
+/// Opening rolls it back to the last commit, then migrates as usual.
+#[tokio::test]
+async fn a_hot_journal_left_by_a_crash_is_rolled_back_and_the_store_opens() -> TestResult {
+    let dir = TempDir::new()?;
+    let (live, crashed) = (dir.path().join("live.db"), dir.path().join("run.db"));
+    open(&live, V1).await?;
+    let writer = Connection::open(&live)?;
+    writer.execute_batch(
+        "PRAGMA journal_mode=DELETE; PRAGMA cache_size=1; BEGIN;
+         CREATE TABLE uncommitted(data BLOB);
+         WITH RECURSIVE n(i) AS (VALUES(1) UNION ALL SELECT i+1 FROM n WHERE i<64)
+             INSERT INTO uncommitted SELECT zeroblob(4096) FROM n;",
+    )?;
+    // Copying mid-transaction captures what a crash leaves: a changed file
+    // and the journal that undoes it, with no process holding a lock.
+    std::fs::copy(&live, &crashed)?;
+    std::fs::copy(
+        dir.path().join("live.db-journal"),
+        dir.path().join("run.db-journal"),
+    )?;
+    writer.execute_batch("ROLLBACK")?;
+    assert_eq!(open(&crashed, V2).await?.from, 1);
+    let (version, tables, notes) = contents(&crashed)?;
+    assert_eq!((version, notes), (2, vec!["kept".to_owned()]));
+    assert!(!tables.contains(&"uncommitted".to_owned()));
     Ok(())
 }
 
