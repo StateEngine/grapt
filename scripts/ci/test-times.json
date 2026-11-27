@@ -2233,7 +2233,7 @@
         "unknown_effect::sc_rel_01_nested_and_older_than_ledger_unknown_effects_keep_their_notice": 6.59,
         "unknown_effect::sc_rel_01_undo_refuses_to_restore_over_an_uncertain_effect": 2.143,
         "unknown_effect::sc_rel_01b_a_live_nested_call_never_reads_as_a_lost_run": 0.437,
-        "unknown_effect::sc_rel_01b_reconcile_settles_a_nested_run_lost_with_its_process": 0.824,
+        "unknown_effect::sc_rel_01b_restart_settles_a_nested_run_lost_with_its_process": 0.824,
         "unknown_effect::sc_rel_01c_a_late_reply_to_an_interrupted_call_never_poisons_the_next": 0.503,
         "unknown_effect::undo_preview_does_not_retry_an_unrelated_conflict": 0.011,
         "unknown_effect::undo_preview_waits_for_workspace_release_then_keeps_the_restore_refusal": 0.028,

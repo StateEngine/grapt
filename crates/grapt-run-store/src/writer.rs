@@ -2,6 +2,7 @@ use crate::checkpoint::{Checkpoint, Wal, WalState, TICK};
 use crate::command::{Command, Durability, Receipt, MAX_COMMAND_BYTES};
 use crate::error::{OpenError, WriteError};
 use crate::key::RequestKey;
+use crate::migration::{self, Migrated, MigrationSpec};
 use crate::read::ReadPool;
 use crate::wal_budget::WalBudget;
 use crate::{sqlite, transaction};
@@ -41,13 +42,13 @@ impl Request {
 
 pub(crate) fn run(
     path: PathBuf,
-    schema: &'static str,
+    ledger: &'static [MigrationSpec],
     queue: Receiver<Request>,
-    ready: oneshot::Sender<Result<ReadPool, OpenError>>,
+    ready: oneshot::Sender<Result<(ReadPool, Migrated), OpenError>>,
     state: Arc<WalState>,
     notices: broadcast::Sender<CommitNotice>,
 ) -> Result<(), OpenError> {
-    let (path, _writer_lease, mut connection) = match initialize(&path, schema) {
+    let (path, _writer_lease, mut connection, migrated) = match initialize(&path, ledger) {
         Ok(value) => value,
         Err(error) => {
             let _ = ready.send(Err(error));
@@ -57,7 +58,7 @@ pub(crate) fn run(
     let budget = Arc::new(WalBudget::new(
         &connection,
         sqlite::sidecar(&path, "-wal"),
-        sqlite::RECEIPTS,
+        &sqlite::INTERNAL,
     )?);
     let restricted = sqlite::install_guard(&mut connection, Arc::clone(&budget))?;
     let mut wal = Wal::new(budget, Arc::clone(&state));
@@ -71,7 +72,7 @@ pub(crate) fn run(
         wal,
         notices,
     };
-    if ready.send(Ok(readers.clone())).is_ok() {
+    if ready.send(Ok((readers.clone(), migrated))).is_ok() {
         executor.drain(&queue);
     }
     // Close the checkpointer first so the writer owns SQLite's last writable
@@ -82,13 +83,20 @@ pub(crate) fn run(
     cache.map_err(|_| OpenError::Worker)
 }
 
+/// Lock, check the header without SQLite and the schema with reads only,
+/// migrate, then switch to WAL and restrict. A refusal or failed backup leaves the file's content and journal
+/// mode as found.
 fn initialize(
     path: &std::path::Path,
-    schema: &str,
-) -> Result<(PathBuf, std::fs::File, Connection), OpenError> {
+    ledger: &[MigrationSpec],
+) -> Result<(PathBuf, std::fs::File, Connection, Migrated), OpenError> {
     let (path, lease) = sqlite::lock_writer(path)?;
-    let connection = sqlite::writer(&path, schema)?;
-    Ok((path, lease, connection))
+    migration::check_header(&path, ledger)?;
+    let mut connection = sqlite::writer(&path)?;
+    let migrated = migration::open(&mut connection, &path, ledger)?;
+    sqlite::enable_wal(&connection)?;
+    sqlite::restrict(&connection)?;
+    Ok((path, lease, connection, migrated))
 }
 
 struct Executor {

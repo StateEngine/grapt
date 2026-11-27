@@ -9,6 +9,7 @@ description = "A profile's provider connections: sign-in, replacement and their 
 loopback-testkit = ["grapt-login/loopback-testkit"]
 
 [dependencies]
+grapt-connections-catalog = { path = "../grapt-connections-catalog" }
 grapt-config = { path = "../grapt-config" }
 grapt-login = { path = "../grapt-login" }
 grapt-types = { path = "../grapt-types" }

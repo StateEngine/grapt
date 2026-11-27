@@ -2,7 +2,7 @@
 //! per session. On Linux, eio, enospc and stall modes run the corresponding
 //! syscall injection and verify the observed storage behavior.
 use grapt_run_store::{
-    Command, Durability, RequestKey, RunStore, Scope, Statement, Value, WriteError,
+    Command, Durability, MigrationSpec, RequestKey, RunStore, Scope, Statement, Value, WriteError,
 };
 use grapt_types::SessionId;
 use std::error::Error;
@@ -18,6 +18,7 @@ const SCHEMA: &str = "CREATE TABLE event(
     session TEXT, seq INTEGER, text BLOB, PRIMARY KEY(session, seq));
     CREATE TABLE session_list(id TEXT PRIMARY KEY, updated INTEGER);
     CREATE INDEX session_order ON session_list(updated DESC, id DESC);";
+const LEDGER: &[MigrationSpec] = &[MigrationSpec::new(1, "initial", SCHEMA)];
 type BenchResult<T> = Result<T, Box<dyn Error + Send + Sync>>;
 
 #[derive(Default)]
@@ -210,7 +211,7 @@ async fn main() -> BenchResult<()> {
     }
     let folder = TempDir::new()?;
     let path = folder.path().join("run.db");
-    let store = RunStore::open(&path, SCHEMA).await?;
+    let store = RunStore::open(&path, LEDGER).await?;
     let writer = store.writer();
     let (stop, done) = tokio::sync::oneshot::channel();
     let reads = tokio::spawn(list_sessions(store.readers(), done));

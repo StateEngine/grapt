@@ -189,9 +189,9 @@ impl Pane {
             .as_ref()
             .is_some_and(|provider| provider.id().get().as_str() == "custom")
     }
-    fn endpoint_provider(&self) -> Option<&'static grapt_connections::catalog::EndpointProvider> {
+    fn endpoint_provider(&self) -> Option<&'static grapt_connections_catalog::EndpointProvider> {
         self.provider.as_ref().and_then(|provider| {
-            grapt_connections::catalog::endpoint_provider(provider.id().get().as_str())
+            grapt_connections_catalog::endpoint_provider(provider.id().get().as_str())
         })
     }
     fn endpoint_inputs(&self) -> bool {
