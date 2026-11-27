@@ -1771,6 +1771,7 @@ name = "grapt-connections"
 version = "0.1.0"
 dependencies = [
  "grapt-config",
+ "grapt-connections-catalog",
  "grapt-login",
  "grapt-types",
  "libc",
@@ -1779,6 +1780,10 @@ dependencies = [
  "tokio",
  "zeroize",
 ]
+
+[[package]]
+name = "grapt-connections-catalog"
+version = "0.1.0"
 
 [[package]]
 name = "grapt-console"
@@ -2016,6 +2021,7 @@ version = "0.1.0"
 dependencies = [
  "base64 0.22.1",
  "grapt-diagnostics",
+ "grapt-plugin-prompt",
  "grapt-sandbox",
  "grapt-types",
  "nix 0.30.1",
@@ -2033,6 +2039,10 @@ dependencies = [
  "url",
  "windows-spawn",
 ]
+
+[[package]]
+name = "grapt-plugin-prompt"
+version = "0.1.0"
 
 [[package]]
 name = "grapt-policy"
@@ -2378,10 +2388,10 @@ dependencies = [
  "grapt-api",
  "grapt-cli",
  "grapt-client",
- "grapt-connections",
+ "grapt-connections-catalog",
  "grapt-console",
  "grapt-image",
- "grapt-plugin",
+ "grapt-plugin-prompt",
  "grapt-schema",
  "grapt-tui-forms",
  "grapt-tui-transcript",
