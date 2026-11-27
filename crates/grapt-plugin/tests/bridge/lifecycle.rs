@@ -561,6 +561,60 @@ export default {
     Ok(())
 }
 
+/// A plugin that cannot start, or times out starting, costs only itself: its
+/// sibling still registers and publishes, and the candidate names the plugins
+/// it runs without.
+#[test]
+fn one_failed_plugin_leaves_its_siblings_running() -> Result<(), Box<dyn Error>> {
+    let (root, good) = fixture(
+        "sibling",
+        "export default {id:'fixture.sibling',async setup(){}}\n",
+    )?;
+    let bad = root.join("bad.mjs");
+    std::fs::write(
+        &bad,
+        "export default {id:'fixture.bad',setup(){throw new Error('deliberate setup failure')}}\n",
+    )?;
+    let slow = root.join("slow.mjs");
+    std::fs::write(
+        &slow,
+        "export default {id:'fixture.slow',setup(){return new Promise(()=>{})}}\n",
+    )?;
+    let mut both = declarations(&good)?;
+    both.extend(declarations(&bad)?);
+    both.extend(declarations(&slow)?);
+    let (runtime, _root_cleanup) = runtime()?;
+    let limits = BridgeLimits {
+        startup_millis: 2_000,
+        cleanup_millis: 100,
+        ..DEFAULT_BRIDGE_LIMITS
+    };
+    let supervisor = PluginSupervisor::new(runtime, limits)?;
+    let candidate = {
+        let _permit = FixtureActivationPermit::acquire();
+        supervisor.prepare(both, serde_json::json!({}))?
+    };
+    let skipped = candidate.skipped();
+    assert_eq!(skipped.len(), 2, "{skipped:?}");
+    assert!(skipped[1].target.contains("slow.mjs"), "{skipped:?}");
+    assert!(skipped[0].target.contains("bad.mjs"), "{skipped:?}");
+    assert!(
+        skipped[0].reason.contains("deliberate setup failure"),
+        "{skipped:?}"
+    );
+    let ids: Vec<_> = candidate
+        .generation()
+        .registrations()
+        .iter()
+        .map(|r| r.plugin_id.clone())
+        .collect();
+    assert_eq!(ids, ["fixture.sibling"]);
+    supervisor.publish(candidate)?;
+    supervisor.shutdown()?;
+    std::fs::remove_dir_all(root)?;
+    Ok(())
+}
+
 #[test]
 #[expect(clippy::too_many_lines, reason = "legacy")]
 fn malformed_oversized_crashed_late_and_duplicate_bridge_frames_fail_closed(

@@ -20,7 +20,7 @@ pub(in crate::dogfood) use matcher::aliases as claude_tool_aliases;
 pub(in crate::dogfood) mod plugin;
 pub(in crate::dogfood) mod session_end;
 mod waiting;
-pub(in crate::dogfood) use decision::{HookResult, PermissionDecision};
+pub(in crate::dogfood) use decision::{HookError, HookResult, PermissionDecision};
 pub(in crate::dogfood) mod plan;
 use super::tools::shell_environment::Environment;
 pub(in crate::dogfood) use config::Event;
@@ -149,8 +149,17 @@ impl HookRuntime {
         } else {
             EVENT_TIMEOUT
         };
-        let result = tokio::time::timeout(deadline, async {
-            let mut result = HookResult::default();
+        // A failed hook stops the turn only when the user marked it required.
+        // Tool-call events keep their own per-call outcome: their failure
+        // refuses or annotates that one call and never fails the turn.
+        let skippable = |hook: &config::HookCommand| !hook.required && !per_call(event);
+        let mut warnings = Vec::new();
+        // How many matching hooks ran to completion before any event timeout.
+        let finished = std::sync::atomic::AtomicUsize::new(0);
+        // Hooks that complete before an event timeout keep their result.
+        let mut completed = HookResult::default();
+        let outcome = tokio::time::timeout(deadline, async {
+            let result = &mut completed;
             let mut bytes = 0usize;
             for hook in commands.iter().filter(|hook| hook.matches(name, alias)) {
                 // Legacy bindings retain their metadata-only input contract.
@@ -160,49 +169,50 @@ impl HookRuntime {
                     &self.workspace,
                     tool,
                     hook.matcher.as_ref().and(result.input.as_ref().or(payload)),
-                )?;
-                let output = match &self.process_owner {
-                    Some(terminals) => {
+                );
+                let output = match (input, &self.process_owner) {
+                    (Err(reason), _) => Err(HookError::Failed(reason)),
+                    (Ok(input), Some(terminals)) => {
                         let hook = hook.clone();
                         let environment = environment.clone();
                         terminals
                             .run_helper_owned(session.clone(), move |control| async move {
-                                command::run_controlled(&hook, &environment, &input, Some(&control))
-                                    .await
+                                Ok(command::run_controlled(
+                                    &hook,
+                                    &environment,
+                                    &input,
+                                    Some(&control),
+                                )
+                                .await)
                             })
                             .await
+                            .unwrap_or_else(|reason| Err(HookError::Failed(reason)))
                     }
-                    None => command::run(hook, environment, &input).await,
+                    (Ok(input), None) => command::run(hook, environment, &input).await,
                 }
-                .map_err(|reason| {
-                    format!("{} hook {}: {reason}", event.as_str(), hook.name.as_str())
-                })?;
-                if hook.matcher.is_some()
-                    && output
-                        .event
-                        .as_deref()
-                        .is_some_and(|name| name != event.as_str())
-                {
-                    return Err("hook output names a different lifecycle event".into());
-                }
-                if event == Event::PermissionRequest
-                    && (output.input.is_some()
-                        || (output.permission != PermissionDecision::Default
-                            && output.event.as_deref() != Some("PermissionRequest")))
-                {
-                    return Err(
-                        "PermissionRequest requires decision.behavior and cannot replace input"
-                            .into(),
-                    );
-                }
+                .and_then(|output| conforms(event, hook, output).map_err(HookError::Failed));
+                finished.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                let output = match output {
+                    Ok(output) => output,
+                    Err(HookError::Failed(reason)) if skippable(hook) => {
+                        warnings.push(format!(
+                            "{} hook {} failed and was skipped: {reason}",
+                            event.as_str(),
+                            hook.name.as_str()
+                        ));
+                        continue;
+                    }
+                    Err(error) => {
+                        return Err(format!(
+                            "{} hook {}: {error}",
+                            event.as_str(),
+                            hook.name.as_str()
+                        ))
+                    }
+                };
                 if matches!(event, Event::PreToolUse | Event::PermissionRequest)
                     && hook.matcher.is_some()
                 {
-                    if output.input.is_some() && !hook.permits_allow {
-                        return Err(
-                            "project hook cannot replace tool input after user enforcement".into(),
-                        );
-                    }
                     // Approval is bound to the arguments the approving hook saw.
                     // A later replacement cannot carry an earlier allow to a new call.
                     if output.input.is_some() && result.permission == PermissionDecision::Allow {
@@ -223,16 +233,32 @@ impl HookRuntime {
                     result.notes.push(note);
                 }
             }
-            Ok::<_, String>(result)
+            Ok::<_, String>(())
         })
-        .await
-        .unwrap_or_else(|_| {
-            Err(format!(
-                "{} hook event exceeded {} ms",
-                event.as_str(),
-                deadline.as_millis()
-            ))
-        });
+        .await;
+        let result = match outcome {
+            Ok(ran) => ran.map(|()| completed),
+            Err(_) => {
+                let reason = format!(
+                    "{} hook event exceeded {} ms",
+                    event.as_str(),
+                    deadline.as_millis()
+                );
+                // Only a hook that never completed can be the cause.
+                let done = finished.load(std::sync::atomic::Ordering::Relaxed);
+                if commands
+                    .iter()
+                    .filter(|hook| hook.matches(name, alias))
+                    .skip(done)
+                    .any(|hook| !skippable(hook))
+                {
+                    Err(reason)
+                } else {
+                    warnings.push(format!("{reason}; its unfinished hooks were skipped"));
+                    Ok(completed)
+                }
+            }
+        };
         let text = match &result {
             Ok(output) => serde_json::to_string(&serde_json::json!({
                 "decision":format!("{:?}", output.permission),
@@ -242,6 +268,13 @@ impl HookRuntime {
             Err(reason) => reason.clone(),
         };
         self.record(session, event, &bounded_notice(&text))?;
+        for warning in &warnings {
+            self.record(
+                session,
+                event,
+                &bounded_notice(&format!("warning: {warning}")),
+            )?;
+        }
         result
     }
 
@@ -307,6 +340,47 @@ impl HookRuntime {
         // Ending the advisory stream here would drop its approver before authorization.
         Ok(())
     }
+}
+
+/// Events whose outcome belongs to one tool call: a failure refuses that call
+/// before its effect, or annotates it after, and the turn goes on.
+fn per_call(event: Event) -> bool {
+    matches!(
+        event,
+        Event::PreToolUse | Event::PermissionRequest | Event::PostToolUse
+    )
+}
+
+/// A hook's decision must fit its event and its owner's authority; one that
+/// does not is a failure of that hook, never a decision to apply.
+fn conforms(
+    event: Event,
+    hook: &config::HookCommand,
+    output: HookResult,
+) -> Result<HookResult, String> {
+    if hook.matcher.is_some()
+        && output
+            .event
+            .as_deref()
+            .is_some_and(|name| name != event.as_str())
+    {
+        return Err("hook output names a different lifecycle event".into());
+    }
+    if event == Event::PermissionRequest
+        && (output.input.is_some()
+            || (output.permission != PermissionDecision::Default
+                && output.event.as_deref() != Some("PermissionRequest")))
+    {
+        return Err("PermissionRequest requires decision.behavior and cannot replace input".into());
+    }
+    if matches!(event, Event::PreToolUse | Event::PermissionRequest)
+        && hook.matcher.is_some()
+        && output.input.is_some()
+        && !hook.permits_allow
+    {
+        return Err("project hook cannot replace tool input after user enforcement".into());
+    }
+    Ok(output)
 }
 
 fn bounded_notice(text: &str) -> String {

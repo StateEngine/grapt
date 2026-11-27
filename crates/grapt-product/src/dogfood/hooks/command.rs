@@ -20,6 +20,7 @@ use std::time::Duration;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWriteExt};
 
 use super::config::HookCommand;
+use super::decision::HookError;
 use super::helper;
 use crate::dogfood::tools::shell_environment::Environment;
 use crate::dogfood::tools::ShellControl;
@@ -34,7 +35,7 @@ pub(super) async fn run(
     command: &HookCommand,
     environment: &Environment,
     input: &[u8],
-) -> Result<super::decision::HookResult, String> {
+) -> Result<super::decision::HookResult, HookError> {
     run_controlled(command, environment, input, None).await
 }
 
@@ -43,7 +44,7 @@ pub(super) async fn run_controlled(
     environment: &Environment,
     input: &[u8],
     control: Option<&ShellControl>,
-) -> Result<super::decision::HookResult, String> {
+) -> Result<super::decision::HookResult, HookError> {
     let (status, out, err) = ConfiguredCommand {
         argv: &command.command,
         directory: &command.directory,
@@ -177,16 +178,19 @@ fn interpret(
     out: &[u8],
     err: &[u8],
     controls: bool,
-) -> Result<super::decision::HookResult, String> {
-    let out = std::str::from_utf8(out).map_err(|_| "hook stdout is not UTF-8")?;
-    let err = std::str::from_utf8(err).map_err(|_| "hook stderr is not UTF-8")?;
+) -> Result<super::decision::HookResult, HookError> {
     match status.code() {
-        Some(0) => super::decision::parse(out, controls),
-        Some(2) => Err(format!(
+        Some(0) => {
+            let out = std::str::from_utf8(out).map_err(|_| "hook stdout is not UTF-8")?;
+            std::str::from_utf8(err).map_err(|_| "hook stderr is not UTF-8")?;
+            super::decision::parse(out, controls)
+        }
+        // Exit 2 is the hook's refusal; an unreadable reason never weakens it.
+        Some(2) => Err(HookError::Refused(format!(
             "hook denied (exit 2): {}",
-            nonempty(err).unwrap_or("no reason supplied")
-        )),
-        Some(code) => Err(format!("hook failed with exit code {code}")),
+            nonempty(&String::from_utf8_lossy(err)).unwrap_or("no reason supplied")
+        ))),
+        Some(code) => Err(format!("hook failed with exit code {code}").into()),
         None => Err("hook terminated without an exit code".into()),
     }
 }

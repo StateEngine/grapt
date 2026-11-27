@@ -77,7 +77,11 @@ fn command(
     if !document.directory.is_absolute() {
         return Err("hook command declaration directory must be absolute".into());
     }
-    fields(value, &["type", "command", "timeout"])?;
+    // Only the user may make a hook's failure stop the turn; a plugin may not.
+    match context {
+        Some(_) => fields(value, &["type", "command", "timeout"])?,
+        None => fields(value, &["type", "command", "timeout", "required"])?,
+    }
     if value.get("type").and_then(|value| value.value().as_str()) != Some("command") {
         return Err("hook type must be command".into());
     }
@@ -124,6 +128,7 @@ fn command(
         matcher,
         permits_allow: true,
         plugin: context.cloned(),
+        required: super::required(value)?,
     })
 }
 

@@ -1,12 +1,14 @@
 //! Composition boundary for authority-bound external plugin generations.
 
 mod authority;
+mod callback_chain;
 mod command;
 mod generate;
 mod host;
 mod integration;
 mod materialize;
 mod websearch;
+pub(crate) use callback_chain::OnCallbackFailure;
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
@@ -170,6 +172,8 @@ struct PluginState {
     generation: Option<Arc<PluginGeneration>>,
     declarations: Vec<grapt_plugin::PluginDeclaration>,
     blocked: Vec<Value>,
+    /// Declared plugins the running generation started without.
+    skipped: Vec<grapt_plugin::SkippedPlugin>,
     websearch: WebSearchRegistry,
     integrations: IntegrationRegistry,
     commands: CommandRegistry,
@@ -225,6 +229,7 @@ struct CommandDefinition {
 }
 
 struct Materialized {
+    skipped: Vec<grapt_plugin::SkippedPlugin>,
     websearch: WebSearchRegistry,
     integrations: IntegrationRegistry,
     commands: CommandRegistry,
@@ -351,6 +356,7 @@ impl PluginRuntime {
             state.generation = None;
             state.declarations = resolved.active;
             state.blocked = blocked;
+            state.skipped = Vec::new();
             state.websearch = WebSearchRegistry::default();
             state.integrations = IntegrationRegistry::default();
             state.commands = CommandRegistry::default();
@@ -406,6 +412,7 @@ impl PluginRuntime {
         state.generation = Some(generation);
         state.declarations = resolved.active;
         state.blocked = blocked;
+        state.skipped = materialized.skipped;
         state.websearch = materialized.websearch;
         state.integrations = materialized.integrations;
         state.commands = materialized.commands;
@@ -417,6 +424,7 @@ impl PluginRuntime {
         application: &super::DogfoodApplication,
     ) -> Result<Materialized, String> {
         Ok(Materialized {
+            skipped: candidate.skipped().to_vec(),
             websearch: materialize_websearch(candidate)?,
             integrations: materialize_integrations(candidate)?,
             commands: materialize_commands(
@@ -444,6 +452,13 @@ impl PluginRuntime {
     /// declared there is reported here instead of silently never loading.
     pub(crate) fn blocked_at(&self, directory: &Path) -> Result<Vec<Value>, String> {
         project_blocked(&self.declarations_at(directory)?, &self.blocked())
+    }
+
+    /// Declared plugins the running generation started without, each with
+    /// its reason.
+    pub(crate) fn skipped(&self) -> Vec<grapt_plugin::SkippedPlugin> {
+        self.state()
+            .map_or_else(|_| Vec::new(), |state| state.skipped.clone())
     }
 
     pub(crate) fn blocked(&self) -> Vec<Value> {
@@ -596,11 +611,10 @@ impl PluginRuntime {
 
     pub(crate) async fn apply_callbacks(
         self: &Arc<Self>,
-        generation: &PluginGeneration,
-        domain: &str,
-        name: &str,
+        (generation, domain, name): (&PluginGeneration, &str, &str),
         value: Value,
         authority: CallAuthority,
+        on_failure: OnCallbackFailure,
     ) -> Result<Option<Value>, String> {
         if Self::callbacks(generation, domain, name).is_empty() {
             return Ok(None);
@@ -613,37 +627,60 @@ impl PluginRuntime {
                 .generation()
                 .filter(|current| current.id() == generation)
                 .ok_or_else(|| "plugin generation is no longer active".to_owned())?;
-            runtime.apply_callbacks_blocking(&generation, &domain, &name, value, authority)
+            let mut skipped = Vec::new();
+            runtime.apply_callbacks_blocking(
+                (&generation, &domain, &name),
+                value,
+                authority,
+                (on_failure, &mut skipped),
+            )
         })
         .await
         .map_err(|error| format!("plugin callback task was lost: {error}"))?
     }
 
+    /// Chain every plugin's `domain.name` callback over `value`. Under
+    /// [`OnCallbackFailure::Skip`] a callback that fails is skipped, its plugin
+    /// and reason added to `skipped`, and the chain goes on from the value
+    /// before it; under [`OnCallbackFailure::Refuse`] the first failure is the
+    /// result.
     pub(crate) fn apply_callbacks_blocking(
         &self,
-        generation: &PluginGeneration,
-        domain: &str,
-        name: &str,
-        mut value: Value,
+        callbacks: (&PluginGeneration, &str, &str),
+        value: Value,
         authority: CallAuthority,
+        failures: (OnCallbackFailure, &mut Vec<String>),
+    ) -> Result<Option<Value>, String> {
+        self.apply_checked_callbacks_blocking(callbacks, value, authority, failures, &|_| Ok(()))
+    }
+
+    /// The same, where a callback's result must also pass `check`; a result
+    /// that does not counts as that callback's failure.
+    pub(crate) fn apply_checked_callbacks_blocking(
+        &self,
+        (generation, domain, name): (&PluginGeneration, &str, &str),
+        value: Value,
+        authority: CallAuthority,
+        failures: (OnCallbackFailure, &mut Vec<String>),
+        check: &dyn Fn(&Value) -> Result<(), String>,
     ) -> Result<Option<Value>, String> {
         let callbacks = Self::callbacks(generation, domain, name);
         if callbacks.is_empty() {
             return Ok(None);
         }
         let supervisor = self.supervisor()?;
-        for (plugin_id, callback) in callbacks {
-            value = supervisor
-                .invoke_callback(
-                    generation.id(),
-                    &plugin_id,
-                    callback,
-                    value,
-                    authority.clone(),
-                )
-                .map_err(|error| error.to_string())?;
-        }
-        Ok(Some(value))
+        callback_chain::run(
+            callbacks,
+            (domain, name),
+            value,
+            failures,
+            check,
+            |plugin, callback, value| {
+                supervisor
+                    .invoke_callback(generation.id(), plugin, callback, value, authority.clone())
+                    .map_err(|error| error.to_string())
+            },
+        )
     }
 
     pub(crate) async fn transform_current(
@@ -655,11 +692,10 @@ impl PluginRuntime {
             return Ok(value);
         };
         self.apply_callbacks(
-            &generation,
-            domain,
-            "transform",
+            (&generation, domain, "transform"),
             value.clone(),
             CallAuthority::Unscoped,
+            OnCallbackFailure::Skip,
         )
         .await
         .map(|transformed| transformed.unwrap_or(value))

@@ -259,9 +259,7 @@ impl PermissionToolRunner {
                     match runner
                         .plugins
                         .apply_callbacks(
-                            generation,
-                            "tool",
-                            "hook.execute.before",
+                            (generation, "tool", "hook.execute.before"),
                             event,
                             super::executor::hook_authority(
                                 &runner.principal,
@@ -270,6 +268,7 @@ impl PermissionToolRunner {
                                 &runner.message,
                                 &call,
                             ),
+                            crate::dogfood::plugins::OnCallbackFailure::Refuse,
                         )
                         .await
                     {

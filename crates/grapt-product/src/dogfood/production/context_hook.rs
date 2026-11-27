@@ -52,23 +52,55 @@ pub(super) fn apply_session_context_hook(
         }),
         call: format!("session-context:{}", hook.session.as_str()),
     };
-    let Some(value) = hook.plugins.apply_callbacks_blocking(
-        &hook.generation,
-        "session",
-        "hook.context",
+    // A callback whose result cannot be applied is skipped like one that
+    // failed: the chain keeps the context from before it.
+    let project = |value: &serde_json::Value| {
+        let encoded = serde_json::to_vec(value).map_err(|error| error.to_string())?;
+        if encoded.len() > MAX_HOOK_CONTEXT_BYTES {
+            return Err(format!(
+                "session context hook exceeds the {MAX_HOOK_CONTEXT_BYTES}-byte bound"
+            ));
+        }
+        let transformed = transformed_input(input, value, structural, &original_messages)?;
+        Ok((transformed, updated_tools(tools, value)?))
+    };
+    let mut skipped = Vec::new();
+    let applied = hook.plugins.apply_checked_callbacks_blocking(
+        (&hook.generation, "session", "hook.context"),
         value,
         authority,
-    )?
-    else {
+        (super::super::plugins::OnCallbackFailure::Skip, &mut skipped),
+        &|value| project(value).map(drop),
+    )?;
+    // A plugin whose context hook failed is skipped; the turn goes on and the
+    // model is told which context it lacks, after any transformed input.
+    let notices = skipped.into_iter().map(|warning| {
+        grapt_provider::CodexInputItem::Message(grapt_provider::InputMessage {
+            role: grapt_provider::MessageRole::User,
+            content: format!("[Harness notice: {warning}]"),
+        })
+    });
+    let Some(value) = applied else {
+        input.extend(notices);
         return Ok(());
     };
-    let encoded = serde_json::to_vec(&value).map_err(|error| error.to_string())?;
-    if encoded.len() > MAX_HOOK_CONTEXT_BYTES {
-        return Err(format!(
-            "session context hook exceeds the {MAX_HOOK_CONTEXT_BYTES}-byte bound"
-        ));
-    }
-    let transformed = transformed_input(input, &value, structural, &original_messages)?;
+    let (transformed, updated_tools) = project(&value)?;
+    boundary.after_hook(
+        system_prefix_len(input),
+        system_prefix_len(&transformed),
+        structural,
+    );
+    *input = transformed;
+    input.extend(notices);
+    *tools = updated_tools;
+    Ok(())
+}
+
+/// The tool definitions a context hook's result leaves, in their original order.
+fn updated_tools(
+    tools: &[grapt_provider::ToolDefinition],
+    value: &serde_json::Value,
+) -> Result<Vec<grapt_provider::ToolDefinition>, String> {
     let transformed_tools = value
         .get("tools")
         .and_then(serde_json::Value::as_object)
@@ -101,14 +133,7 @@ pub(super) fn apply_session_context_hook(
             input_schema: serde_json::to_string(schema).map_err(|error| error.to_string())?,
         });
     }
-    boundary.after_hook(
-        system_prefix_len(input),
-        system_prefix_len(&transformed),
-        structural,
-    );
-    *input = transformed;
-    *tools = updated_tools;
-    Ok(())
+    Ok(updated_tools)
 }
 
 fn system_prefix_len(input: &[grapt_provider::CodexInputItem]) -> usize {

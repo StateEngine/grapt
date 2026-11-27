@@ -601,9 +601,6 @@
     "crates/grapt-product/src/dogfood/history_notices.rs": {
       "fn append :: clippy::too_many_lines": 1
     },
-    "crates/grapt-product/src/dogfood/hooks/decision.rs": {
-      "fn parse :: clippy::too_many_lines": 1
-    },
     "crates/grapt-product/src/dogfood/hooks/mod.rs": {
       "impl HookRuntime::fn dispatch :: clippy::too_many_lines": 1
     },

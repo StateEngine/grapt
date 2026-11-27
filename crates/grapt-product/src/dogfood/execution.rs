@@ -58,7 +58,7 @@ mod revision_order_tests;
 mod side_context;
 mod state;
 mod transient;
-pub(in crate::dogfood) use transient::TransientContext;
+pub(in crate::dogfood) use transient::{check_generation_patch, TransientContext};
 mod principals;
 mod task_application;
 mod timing;

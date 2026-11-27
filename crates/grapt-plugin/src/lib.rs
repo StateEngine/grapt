@@ -30,7 +30,7 @@ pub use source::{PinnedFile, SnapshotError, SourceSnapshot};
 pub use supervisor::{
     ActiveGrant, BridgeRuntime, CallAuthority, CandidateGeneration, ContainmentKind, GrantScope,
     PluginError, PluginHost, PluginHostContext, PluginSupervisor, RecoveryJournal, RuntimeIdentity,
-    RuntimePin,
+    RuntimePin, SkippedPlugin,
 };
 
 /// Exists only for this compile-time witness (SC-MAC-02b): the authority to
