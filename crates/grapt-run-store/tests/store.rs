@@ -103,7 +103,9 @@ async fn restart_recovers_receipt_and_rejects_key_collision() -> ResultTest {
     let reopened = RunStore::open(&path, LEDGER).await?;
     let writer = reopened.writer();
     let mut live = writer.subscribe();
-    assert_eq!(writer.write(original()?, deadline()).await?, receipt);
+    let replay = writer.write(original()?, deadline()).await?;
+    assert!(!receipt.replayed && replay.replayed);
+    assert_eq!(replay.affected_rows, receipt.affected_rows);
     let conflict = command("delivery", Durability::Full, vec![put("child", 2, 0)])?;
     assert!(matches!(
         writer.write(conflict, deadline()).await,
@@ -115,7 +117,7 @@ async fn restart_recovers_receipt_and_rejects_key_collision() -> ResultTest {
             .readers()
             .resolve(RequestKey::new("delivery")?, deadline())
             .await?,
-        Some(receipt)
+        Some(replay)
     );
     reopened.shutdown().await?;
     Ok(())

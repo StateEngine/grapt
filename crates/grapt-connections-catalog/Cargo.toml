@@ -1,0 +1,9 @@
+[package]
+name = "grapt-connections-catalog"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+description = "Static coordinates for connection providers whose API address belongs to an account."
+
+[lints]
+workspace = true
