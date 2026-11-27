@@ -37280,6 +37280,7 @@
   "grapt-diagnostics",
   "grapt-engined:grapt-engined",
   "grapt-event",
+  "grapt-fault-harness",
   "grapt-form",
   "grapt-image",
   "grapt-inbox",

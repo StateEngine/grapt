@@ -124,6 +124,10 @@
    ],
    "dev": []
   },
+  "grapt-fault-harness": {
+   "deps": [],
+   "dev": []
+  },
   "grapt-form": {
    "deps": [
     "grapt-store",
