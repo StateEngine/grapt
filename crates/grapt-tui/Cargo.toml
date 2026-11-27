@@ -7,8 +7,8 @@ description = "Native terminal interface for Grapt"
 
 [dependencies]
 grapt-cli = { path = "../grapt-cli" }
-grapt-connections = { path = "../grapt-connections" }
-grapt-plugin = { path = "../grapt-plugin" }
+grapt-connections-catalog = { path = "../grapt-connections-catalog" }
+grapt-plugin-prompt = { path = "../grapt-plugin-prompt" }
 grapt-schema = { path = "../grapt-schema" }
 url = "2.5.8"
 grapt-image = { path = "../grapt-image" }

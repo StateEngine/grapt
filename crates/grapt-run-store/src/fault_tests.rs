@@ -1,5 +1,5 @@
 //! Re-execute the test harness and terminate the writer at the commit boundary.
-use crate::{Command, Durability, RequestKey, RunStore, Scope, Statement};
+use crate::{Command, Durability, MigrationSpec, RequestKey, RunStore, Scope, Statement};
 use std::error::Error;
 use std::io::{self, BufRead, Write};
 use std::process::{Command as Process, Stdio};
@@ -14,6 +14,7 @@ CREATE TABLE delivery(id INTEGER);
 CREATE TABLE follow_up(id INTEGER);
 CREATE TABLE session_list(id TEXT PRIMARY KEY, updated INTEGER);
 INSERT INTO session_list VALUES ('existing', 1);";
+const LEDGER: &[MigrationSpec] = &[MigrationSpec::new(1, "initial", SCHEMA)];
 type ResultTest = Result<(), Box<dyn Error + Send + Sync>>;
 
 pub(crate) fn cut(point: &str) {
@@ -52,7 +53,7 @@ async fn crash_child() -> ResultTest {
     let Some(path) = std::env::var_os(DATABASE) else {
         return Ok(());
     };
-    let store = RunStore::open(path, SCHEMA).await?;
+    let store = RunStore::open(path, LEDGER).await?;
     store.writer().write(handoff()?, deadline()).await?;
     store.shutdown().await?;
     Ok(())
@@ -79,7 +80,7 @@ async fn process_loss_preserves_the_atomic_delivery_and_original_key() -> Result
         assert!(reached, "child did not reach {point}: {status}");
         killed?;
         assert!(!status.success());
-        let store = RunStore::open(path, SCHEMA).await?;
+        let store = RunStore::open(path, LEDGER).await?;
         let read = store.readers();
         let counts = read
             .snapshot(deadline(), |view| {
@@ -133,7 +134,7 @@ pub(crate) fn stall(key: &str) {
 async fn sqlite_stall_keeps_the_runtime_and_admission_bounded() -> ResultTest {
     let folder = TempDir::new()?;
     let path = folder.path().join("run.db");
-    let store = RunStore::open(&path, SCHEMA).await?;
+    let store = RunStore::open(&path, LEDGER).await?;
     let (at_cut, reached) = tokio::sync::oneshot::channel();
     let (release, proceed) = std::sync::mpsc::sync_channel(1);
     *STALL.lock().map_err(|_| "stall fixture poisoned")? = Some((at_cut, proceed));
@@ -176,7 +177,7 @@ async fn sqlite_stall_keeps_the_runtime_and_admission_bounded() -> ResultTest {
     release.send(())?;
     first.await??;
     store.shutdown().await?;
-    let store = RunStore::open(&path, SCHEMA).await?;
+    let store = RunStore::open(&path, LEDGER).await?;
     let original = slots.2.ok_or("no expired admitted key")?;
     let original_key = RequestKey::new(&original)?;
     assert!(store

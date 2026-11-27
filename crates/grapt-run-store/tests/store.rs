@@ -1,6 +1,6 @@
 use grapt_run_store::{
-    Command, Durability, OpenError, ReadError, RequestKey, RunStore, Scope, Statement, Value,
-    WriteError,
+    Command, Durability, MigrationSpec, OpenError, ReadError, RequestKey, RunStore, Scope,
+    Statement, Value, WriteError,
 };
 use std::error::Error;
 use std::sync::mpsc;
@@ -14,6 +14,7 @@ const SCHEMA: &str = "
 CREATE TABLE event (session TEXT, seq INTEGER, data BLOB, PRIMARY KEY (session, seq));
 CREATE TABLE session_list (id TEXT PRIMARY KEY, updated INTEGER);
 ";
+const LEDGER: &[MigrationSpec] = &[MigrationSpec::new(1, "initial", SCHEMA)];
 
 fn deadline() -> Instant {
     Instant::now() + Duration::from_secs(10)
@@ -41,7 +42,7 @@ fn command(
 #[tokio::test]
 async fn savepoint_refusal_drops_the_effect_and_commit_notice() -> ResultTest {
     let dir = TempDir::new()?;
-    let store = RunStore::open(dir.path().join("run.db"), SCHEMA).await?;
+    let store = RunStore::open(dir.path().join("run.db"), LEDGER).await?;
     let writer = store.writer();
     let mut live = writer.subscribe();
     let poison = command(
@@ -80,9 +81,9 @@ async fn savepoint_refusal_drops_the_effect_and_commit_notice() -> ResultTest {
 async fn restart_recovers_receipt_and_rejects_key_collision() -> ResultTest {
     let dir = TempDir::new()?;
     let path = dir.path().join("run.db");
-    let store = RunStore::open(&path, SCHEMA).await?;
+    let store = RunStore::open(&path, LEDGER).await?;
     assert!(matches!(
-        RunStore::open(&path, SCHEMA).await,
+        RunStore::open(&path, LEDGER).await,
         Err(OpenError::WriterExists)
     ));
     let writer = store.writer();
@@ -99,10 +100,12 @@ async fn restart_recovers_receipt_and_rejects_key_collision() -> ResultTest {
         writer.write(original()?, deadline()).await,
         Err(WriteError::Closed)
     ));
-    let reopened = RunStore::open(&path, SCHEMA).await?;
+    let reopened = RunStore::open(&path, LEDGER).await?;
     let writer = reopened.writer();
     let mut live = writer.subscribe();
-    assert_eq!(writer.write(original()?, deadline()).await?, receipt);
+    let replay = writer.write(original()?, deadline()).await?;
+    assert!(!receipt.replayed && replay.replayed);
+    assert_eq!(replay.affected_rows, receipt.affected_rows);
     let conflict = command("delivery", Durability::Full, vec![put("child", 2, 0)])?;
     assert!(matches!(
         writer.write(conflict, deadline()).await,
@@ -114,7 +117,7 @@ async fn restart_recovers_receipt_and_rejects_key_collision() -> ResultTest {
             .readers()
             .resolve(RequestKey::new("delivery")?, deadline())
             .await?,
-        Some(receipt)
+        Some(replay)
     );
     reopened.shutdown().await?;
     Ok(())
@@ -123,7 +126,7 @@ async fn restart_recovers_receipt_and_rejects_key_collision() -> ResultTest {
 #[tokio::test]
 async fn snapshot_holds_a_stable_keyset_while_new_commits_appear() -> ResultTest {
     let dir = TempDir::new()?;
-    let store = RunStore::open(dir.path().join("run.db"), SCHEMA).await?;
+    let store = RunStore::open(dir.path().join("run.db"), LEDGER).await?;
     let writer = store.writer();
     let step = |key: &str, id: &str, updated| {
         command(
@@ -172,7 +175,7 @@ async fn snapshot_holds_a_stable_keyset_while_new_commits_appear() -> ResultTest
 #[tokio::test]
 async fn pinned_snapshot_refuses_growth_then_writer_resets_wal() -> ResultTest {
     let dir = TempDir::new()?;
-    let store = RunStore::open(dir.path().join("run.db"), SCHEMA).await?;
+    let store = RunStore::open(dir.path().join("run.db"), LEDGER).await?;
     let writer = store.writer();
     let read = store.readers();
     let (pinned, reached) = tokio::sync::oneshot::channel();
@@ -235,7 +238,7 @@ async fn pinned_snapshot_refuses_growth_then_writer_resets_wal() -> ResultTest {
 #[tokio::test]
 async fn write_sql_cannot_take_transaction_control_or_mint_receipts() -> ResultTest {
     let dir = TempDir::new()?;
-    let store = RunStore::open(dir.path().join("run.db"), SCHEMA).await?;
+    let store = RunStore::open(dir.path().join("run.db"), LEDGER).await?;
     let writer = store.writer();
     for (key, sql) in [
         ("control", "COMMIT"),
@@ -274,15 +277,14 @@ async fn write_sql_cannot_take_transaction_control_or_mint_receipts() -> ResultT
 async fn short_sql_cannot_commit_a_wal_larger_than_the_cap() -> ResultTest {
     let dir = TempDir::new()?;
     let path = dir.path().join("run.db");
-    let store = RunStore::open(
-        &path,
-        "
-        CREATE TABLE event(seq INTEGER PRIMARY KEY, data BLOB NOT NULL);
+    const SEEDED: &[MigrationSpec] = &[MigrationSpec::new(
+        1,
+        "seeded",
+        "CREATE TABLE event(seq INTEGER PRIMARY KEY, data BLOB NOT NULL);
         WITH RECURSIVE n(i) AS (VALUES(1) UNION ALL SELECT i+1 FROM n WHERE i<80)
-            INSERT INTO event SELECT i, X'' FROM n;
-    ",
-    )
-    .await?;
+            INSERT INTO event SELECT i, X'' FROM n;",
+    )];
+    let store = RunStore::open(&path, SEEDED).await?;
     let writer = store.writer();
     let mut notices = writer.subscribe();
     let read = store.readers();
@@ -336,7 +338,7 @@ async fn short_sql_cannot_commit_a_wal_larger_than_the_cap() -> ResultTest {
 #[tokio::test]
 async fn automatic_transaction_rollback_keeps_the_original_constraint_error() -> ResultTest {
     let dir = TempDir::new()?;
-    let store = RunStore::open(dir.path().join("run.db"), SCHEMA).await?;
+    let store = RunStore::open(dir.path().join("run.db"), LEDGER).await?;
     let writer = store.writer();
     let poison = command(
         "rollback",

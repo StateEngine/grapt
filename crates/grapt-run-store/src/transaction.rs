@@ -158,6 +158,7 @@ fn apply(connection: &mut Connection, restricted: &Guard, command: &Command) -> 
     }
     let receipt = Receipt {
         affected_rows: affected?,
+        replayed: false,
     };
     restricted.check_wal()?;
     connection
