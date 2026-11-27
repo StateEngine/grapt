@@ -321,6 +321,14 @@ fn only_the_store_may_open_a_transaction() {
                 assert_eq!(hits.len(), 1, "only the fixed directory function is exempt");
                 continue;
             }
+            if *opener == "set_db_config" && path == crates.join("grapt-run-store/src/sqlite.rs") {
+                assert_eq!(
+                    hits.len(),
+                    1,
+                    "only the run store writer's close mode is exempt"
+                );
+                continue;
+            }
             for line in hits {
                 escapes.push(format!("{}:{line} ({opener})", path.display()));
             }

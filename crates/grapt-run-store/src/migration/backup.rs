@@ -2,12 +2,12 @@
 //!
 //! The copy is built beside the database's real file, so a symlinked path
 //! still backs up onto the database's own filesystem. It is staged in a
-//! directory created new for this backup (`0700` on Unix) as a file created
-//! new (`0600` on Unix), whose identity is taken at creation. Each step that
-//! names the copy by path first checks the path still names that file:
-//! syncing, hard-linking it to a name no earlier backup holds (a hard link
-//! fails rather than replace one), and removing the staging. Nothing here
-//! writes to the live database.
+//! directory created new for this backup (`0700` on Unix) and marked as the
+//! store's, as a file created new (`0600` on Unix), whose identity is taken at
+//! creation. Each step that names the copy by path first checks the path still
+//! names that file: syncing, hard-linking it to a name no earlier backup holds
+//! (a hard link fails rather than replace one), and removing the staging.
+//! Nothing here writes to the live database.
 //!
 //! On Windows the staging and the backup take the directory's inherited ACL,
 //! as any new file there does; an explicit ACL set on the database file itself
@@ -18,12 +18,18 @@ use rusqlite::backup::{Backup, StepResult};
 use rusqlite::Connection;
 use same_file::Handle;
 use std::fs::{self, DirBuilder, File, OpenOptions};
-use std::io::{self, ErrorKind};
+use std::io::{self, ErrorKind, Read, Write};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 const STAGING: &str = ".backup-staging";
 const COPY: &str = "copy";
+/// Names this directory as the store's own staging, so cleanup never removes
+/// files from a directory someone else made under the same name.
+const MARKER: &str = ".grapt-staging";
+const MARKER_BYTES: &[u8] = b"grapt run-store backup staging v1\n";
+/// The copy and the sidecars SQLite may leave beside it.
+const STAGED: [&str; 4] = [COPY, "copy-journal", "copy-wal", "copy-shm"];
 const PAGES_PER_STEP: i32 = 1024;
 const MAX_NAMES: u32 = 1024;
 /// A source lock held past this many pauses stalls the backup, about two
@@ -62,10 +68,12 @@ pub(super) fn take(source: &Connection, path: &Path, from: u32) -> Result<PathBu
     })
 }
 
-/// Remove a staging directory left by a crash or by this backup: the copy and
-/// its SQLite sidecars if they are regular files, then the directory if it is
-/// then empty. A link, a non-directory, or anything else inside refuses and is
-/// left in place.
+/// Remove a staging directory left by a crash or by this backup. Every entry
+/// is judged before anything is removed: the directory must hold only regular
+/// files, each the marker, the copy or one of its SQLite sidecars, and any
+/// copy needs the marker beside it with this store's bytes. An empty directory
+/// is one a crash left before its marker. Anything else refuses and is left in
+/// place.
 fn clear(staging: &Path) -> io::Result<()> {
     match fs::symlink_metadata(staging) {
         Ok(meta) if meta.file_type().is_dir() => {}
@@ -73,21 +81,43 @@ fn clear(staging: &Path) -> io::Result<()> {
         Err(error) if error.kind() == ErrorKind::NotFound => return Ok(()),
         Err(error) => return Err(error),
     }
-    let copy = staging.join(COPY);
-    for file in [
-        copy.clone(),
-        sidecar(&copy, "-journal"),
-        sidecar(&copy, "-wal"),
-        sidecar(&copy, "-shm"),
-    ] {
-        match fs::symlink_metadata(&file) {
-            Ok(meta) if meta.file_type().is_file() => fs::remove_file(&file)?,
-            Ok(_) => return Err(not_ours(&file)),
-            Err(error) if error.kind() == ErrorKind::NotFound => {}
-            Err(error) => return Err(error),
+    let (mut marked, mut staged) = (false, Vec::new());
+    for entry in fs::read_dir(staging)? {
+        let entry = entry?;
+        let path = entry.path();
+        if !entry.file_type()?.is_file() {
+            return Err(not_ours(&path));
+        }
+        let name = entry.file_name();
+        if name == MARKER {
+            marked = is_marker(&path)?;
+            if !marked {
+                return Err(not_ours(&path));
+            }
+        } else if STAGED.iter().any(|staged| name == *staged) {
+            staged.push(path);
+        } else {
+            return Err(not_ours(&path));
         }
     }
+    if !staged.is_empty() && !marked {
+        return Err(not_ours(staging));
+    }
+    for file in staged {
+        fs::remove_file(file)?;
+    }
+    if marked {
+        fs::remove_file(staging.join(MARKER))?;
+    }
     fs::remove_dir(staging)
+}
+
+fn is_marker(path: &Path) -> io::Result<bool> {
+    let mut bytes = Vec::with_capacity(MARKER_BYTES.len() + 1);
+    File::open(path)?
+        .take(MARKER_BYTES.len() as u64 + 1)
+        .read_to_end(&mut bytes)?;
+    Ok(bytes == MARKER_BYTES)
 }
 
 fn not_ours(path: &Path) -> io::Error {
@@ -100,17 +130,28 @@ fn not_ours(path: &Path) -> io::Error {
     )
 }
 
-/// Create the staging directory new, readable only by its owner on Unix.
+/// Create the staging directory new, readable only by its owner on Unix, and
+/// mark it as this store's before anything is staged in it.
 fn stage(staging: &Path) -> io::Result<()> {
     #[cfg(unix)]
     {
         use std::os::unix::fs::DirBuilderExt;
-        DirBuilder::new().mode(0o700).create(staging)
+        DirBuilder::new().mode(0o700).create(staging)?;
     }
     #[cfg(not(unix))]
     {
-        DirBuilder::new().create(staging)
+        DirBuilder::new().create(staging)?;
     }
+    let mut options = OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    let mut marker = options.open(staging.join(MARKER))?;
+    marker.write_all(MARKER_BYTES)?;
+    marker.sync_all()
 }
 
 /// The staged copy, held open from its creation until it is linked out.

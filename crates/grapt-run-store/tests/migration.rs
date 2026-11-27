@@ -20,6 +20,8 @@ const LINKS: MigrationSpec = MigrationSpec::new(3, "links", "CREATE TABLE link(i
 const V1: &[MigrationSpec] = &[NOTES];
 const V2: &[MigrationSpec] = &[NOTES, TAGS];
 const V3: &[MigrationSpec] = &[NOTES, TAGS, LINKS];
+/// What the store writes to mark a backup staging directory as its own.
+const STAGING_MARKER: &[u8] = b"grapt run-store backup staging v1\n";
 
 /// Schema version, table names and note bodies, read outside the writer.
 fn contents(path: &Path) -> TestResult<(i64, Vec<String>, Vec<String>)> {
@@ -81,6 +83,7 @@ async fn an_upgrade_backs_up_the_old_schema_first_and_replaces_a_stale_partial_c
     open(&path, V1).await?;
     let staging = dir.path().join("run.db.backup-staging");
     std::fs::create_dir(&staging)?;
+    std::fs::write(staging.join(".grapt-staging"), STAGING_MARKER)?;
     std::fs::write(staging.join("copy"), b"left by a crash")?;
     let backup = std::fs::canonicalize(dir.path())?.join("run.db.v1.backup");
     assert_eq!(open(&path, V3).await?, migrated(1, 3, Some(backup.clone())));
@@ -172,6 +175,32 @@ async fn a_backup_that_cannot_be_written_leaves_the_file_as_found() -> TestResul
     Ok(())
 }
 
+/// A directory under the staging name that the store did not mark keeps every
+/// entry, even one named like the store's copy.
+#[tokio::test]
+async fn an_unmarked_staging_directory_is_left_untouched() -> TestResult {
+    let dir = TempDir::new()?;
+    let path = dir.path().join("run.db");
+    open(&path, V1).await?;
+    let before = std::fs::read(&path)?;
+    let staging = dir.path().join("run.db.backup-staging");
+    std::fs::create_dir(&staging)?;
+    std::fs::write(staging.join("copy"), b"someone else's copy")?;
+    for (name, bytes) in [("notes.txt", &b"theirs"[..]), (".grapt-staging", b"forged")] {
+        std::fs::write(staging.join(name), bytes)?;
+        assert!(matches!(
+            open(&path, V2).await,
+            Err(OpenError::BackupFailed(_))
+        ));
+        assert_eq!(std::fs::read(staging.join("copy"))?, b"someone else's copy");
+        assert_eq!(std::fs::read(staging.join(name))?, bytes);
+        std::fs::remove_file(staging.join(name))?;
+    }
+    assert_eq!(std::fs::read(&path)?, before);
+    assert!(backups(dir.path())?.is_empty());
+    Ok(())
+}
+
 #[tokio::test]
 async fn another_writer_holding_the_lock_stalls_the_open_without_a_change() -> TestResult {
     let dir = TempDir::new()?;
@@ -241,6 +270,41 @@ async fn a_foreign_or_newer_file_keeps_its_hot_journal_untouched() -> TestResult
         std::fs::remove_file(&crashed)?;
         std::fs::remove_file(&journal)?;
     }
+    Ok(())
+}
+
+/// A newer build's commit that lives only in the WAL, as a crash leaves it, is
+/// refused before SQLite opens the file, so neither the file nor the WAL is
+/// checkpointed or removed.
+#[tokio::test]
+async fn a_newer_schema_committed_only_to_the_wal_is_refused_untouched() -> TestResult {
+    let dir = TempDir::new()?;
+    let (live, path) = (dir.path().join("live.db"), dir.path().join("run.db"));
+    let wal = |path: &Path| PathBuf::from(format!("{}-wal", path.display()));
+    open(&live, V1).await?;
+    let newer = Connection::open(&live)?;
+    newer.execute_batch("PRAGMA wal_autocheckpoint=0; PRAGMA user_version=2;")?;
+    std::fs::copy(&live, &path)?;
+    std::fs::copy(wal(&live), wal(&path))?;
+    drop(newer);
+    let before = (std::fs::read(&path)?, std::fs::read(wal(&path))?);
+    assert_eq!(
+        before.0[60..64],
+        1_u32.to_be_bytes(),
+        "the file still says 1"
+    );
+    let refused = open(&path, V1).await;
+    assert!(
+        matches!(
+            refused,
+            Err(OpenError::FutureSchemaVersion {
+                found: 2,
+                max_supported: 1
+            })
+        ),
+        "{refused:?}"
+    );
+    assert_eq!((std::fs::read(&path)?, std::fs::read(wal(&path))?), before);
     Ok(())
 }
 

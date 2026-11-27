@@ -1,6 +1,7 @@
 use crate::command::{MAX_COMMAND_BYTES, MAX_PARAMS, MAX_SQL_BYTES};
 use crate::error::{OpenError, WriteError};
 use crate::wal_budget::{WalBudget, CACHE_KIB};
+use rusqlite::config::DbConfig;
 use rusqlite::hooks::{AuthAction, AuthContext, Authorization};
 use rusqlite::limits::Limit;
 use rusqlite::{Connection, OpenFlags};
@@ -63,6 +64,9 @@ pub(crate) fn sidecar(path: &Path, suffix: &str) -> PathBuf {
 /// The writer's connection, before its schema is checked or changed.
 pub(crate) fn writer(path: &Path) -> Result<Connection, OpenError> {
     let connection = Connection::open(path)?;
+    // A file refused before its migrations commit must close as it was found,
+    // so closing never checkpoints or deletes its WAL until `enable_wal`.
+    checkpoint_on_close(&connection, false)?;
     connection.busy_timeout(WRITE_BUSY)?;
     connection.set_limit(Limit::SQLITE_LIMIT_LENGTH, MAX_COMMAND_BYTES as i32)?;
     connection.execute_batch(
@@ -74,14 +78,27 @@ pub(crate) fn writer(path: &Path) -> Result<Connection, OpenError> {
     Ok(connection)
 }
 
-/// Switch the run store to WAL. Runs only after migrations commit, so a file
-/// that is refused, or whose backup fails, keeps its journal mode.
+/// Switch the run store to WAL and let its last close checkpoint again. Runs
+/// only after migrations commit, so a file that is refused, or whose backup
+/// fails, keeps its journal mode and its WAL.
 pub(crate) fn enable_wal(connection: &Connection) -> Result<(), OpenError> {
     verify_pager(connection)?;
+    checkpoint_on_close(connection, true)?;
     let mode: String = connection.query_row("PRAGMA journal_mode=WAL", [], |row| row.get(0))?;
     if mode != "wal" {
         return Err(OpenError::JournalMode(mode));
     }
+    Ok(())
+}
+
+/// The writer's only SQLite configuration change: whether its close may
+/// checkpoint and remove the WAL.
+fn checkpoint_on_close(connection: &Connection, enabled: bool) -> Result<(), OpenError> {
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "the run store's own writer; it changes no schema protection"
+    )]
+    connection.set_db_config(DbConfig::SQLITE_DBCONFIG_NO_CKPT_ON_CLOSE, !enabled)?;
     Ok(())
 }
 
