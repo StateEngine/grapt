@@ -1,5 +1,6 @@
 //! One total per dispatched attempt, rather than per usage frame or assistant row.
 use grapt_provider::DispatchSample;
+use grapt_types::usage::ReconciledUsage;
 use grapt_types::{AttemptUsage, UsageObservationPhase};
 mod cost;
 #[derive(Default)]
@@ -23,6 +24,53 @@ fn add(total: &mut u64, value: u64, overflow: &mut bool) {
         None => *overflow = true,
     }
 }
+/// The attempt's usage, reconciled once it reported a terminal observation
+/// within its bound; otherwise nothing is known of it.
+fn reconciled(sample: &DispatchSample) -> Option<ReconciledUsage> {
+    let observations: Vec<_> = sample
+        .usage
+        .iter()
+        .take(grapt_provider::DISPATCH_USAGE_CAPACITY)
+        .map(|(phase, usage)| {
+            AttemptUsage::observed(
+                usage.input_total().clone(),
+                usage.input_fresh().clone(),
+                usage.output().clone(),
+                usage.reasoning().clone(),
+                usage.cache_read().clone(),
+                usage.cache_write().clone(),
+                usage.total().clone(),
+                *phase,
+            )
+        })
+        .collect();
+    (!sample.usage_overflowed
+        && sample.usage.len() <= grapt_provider::DISPATCH_USAGE_CAPACITY
+        && sample.terminal_observed
+        && sample
+            .usage
+            .iter()
+            .any(|(phase, _)| *phase == UsageObservationPhase::Terminal))
+    .then(|| grapt_types::usage::reconcile_usage(&observations).ok())
+    .flatten()
+}
+
+/// Input and cache-read tokens, only when both were reported and consistent.
+fn input_and_read(usage: &ReconciledUsage) -> Option<(u64, u64)> {
+    Some((
+        usage.input_total()?.count().value(),
+        usage.cache_read()?.count().value(),
+    ))
+    .filter(|(input, read)| read <= input)
+}
+
+/// The share of one attempt's input the provider read from its cache, from 0
+/// to 1. Absent when either count was unreported; a zero input has no share.
+pub(super) fn cache_read_share(sample: &DispatchSample) -> Option<f64> {
+    let (input, read) = input_and_read(&reconciled(sample)?)?;
+    (input > 0).then(|| read as f64 / input as f64)
+}
+
 impl Totals {
     pub(super) fn observe(&mut self, sample: &DispatchSample) {
         self.scope.get_or_insert_with(|| {
@@ -31,42 +79,9 @@ impl Totals {
             ))
         });
         add(&mut self.attempts, 1, &mut self.overflow);
-        let observations: Vec<_> = sample
-            .usage
-            .iter()
-            .take(grapt_provider::DISPATCH_USAGE_CAPACITY)
-            .map(|(phase, usage)| {
-                AttemptUsage::observed(
-                    usage.input_total().clone(),
-                    usage.input_fresh().clone(),
-                    usage.output().clone(),
-                    usage.reasoning().clone(),
-                    usage.cache_read().clone(),
-                    usage.cache_write().clone(),
-                    usage.total().clone(),
-                    *phase,
-                )
-            })
-            .collect();
-        let usage = (!sample.usage_overflowed
-            && sample.usage.len() <= grapt_provider::DISPATCH_USAGE_CAPACITY
-            && sample.terminal_observed
-            && sample
-                .usage
-                .iter()
-                .any(|(phase, _)| *phase == UsageObservationPhase::Terminal))
-        .then(|| grapt_types::usage::reconcile_usage(&observations).ok())
-        .flatten();
+        let usage = reconciled(sample);
         self.cost.observe(sample.model.as_ref(), usage.as_ref());
-        let pair = usage
-            .as_ref()
-            .and_then(|usage| {
-                Some((
-                    usage.input_total()?.count().value(),
-                    usage.cache_read()?.count().value(),
-                ))
-            })
-            .filter(|(input, read)| read <= input);
+        let pair = usage.as_ref().and_then(input_and_read);
         if let Some((input, read)) = pair {
             let sums = self
                 .input
@@ -265,6 +280,42 @@ mod tests {
         assert!(sessions
             .request_observation(&other, &observed.attempt)
             .is_none());
+        Ok(())
+    }
+    #[test]
+    fn cache_read_share_and_prefix_reuse_follow_each_turn() -> Result<(), String> {
+        use super::super::Observation;
+        use grapt_provider::RequestDelta;
+        let turn = |change, input, read| -> Result<serde_json::Value, String> {
+            let sample = sample(
+                "turn",
+                vec![(UsageObservationPhase::Terminal, usage(input, read)?)],
+            )?;
+            Ok(Observation {
+                change,
+                previous: None,
+                body_bytes: None,
+                tools_bytes: None,
+                instructions_bytes: None,
+                usage_warning: None,
+                cache_read_share: cache_read_share(&sample),
+            }
+            .metadata())
+        };
+        let unchanged = turn(Some(RequestDelta::AppendOnly), 1_000, Some(900))?;
+        assert_eq!(unchanged["localPrefixUnchanged"], true);
+        assert_eq!(unchanged["cacheReadShare"], 0.9);
+        let changed = turn(
+            Some(RequestDelta::InputChanged { index: 2 }),
+            1_000,
+            Some(0),
+        )?;
+        assert_eq!(changed["localPrefixUnchanged"], false);
+        assert_eq!(changed["cacheReadShare"], 0.0);
+        // Nothing to compare and an unreported read are absent, not false or zero.
+        let first = turn(Some(RequestDelta::FirstObservation), 1_000, None)?;
+        assert!(first["localPrefixUnchanged"].is_null());
+        assert!(first["cacheReadShare"].is_null());
         Ok(())
     }
 }

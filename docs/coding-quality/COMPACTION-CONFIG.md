@@ -129,20 +129,15 @@ moves the threshold; a summary still above the buffer commits and the execution
 continues without a second compaction; `auto: false`
 turns it off; `keep` loads and changes nothing).
 
-Automatic compaction recovery follows the failure cause. Context overflow waits for a
-model/context-budget change or rewind; authentication waits for changed account credentials;
-credit/quota waits for a successful model response; a transient failure may retry on the
-next user input. A summary call the Step's no-progress watchdog cancelled is transient:
-its provider class travels in the attempt's terminal reason, and a stall says nothing
-against the compaction. `/compact` remains an explicit retry for every cause. While automatic
-compaction is paused, ordinary work continues below the reported-usage ceiling
-when it fits the actual context window. At the ceiling, the compactor reports the
-blocked recovery condition before another coding request is sent. All summary calls,
-including the existing fallback, remain within the owning Step's physical-attempt budget.
-
-Suppression is process-memory state for at most 256 blocked Sessions. A restart resets it;
-at capacity a new automatic compaction refuses rather than evicting another Session's
-block. Manual retry remains available.
+A failed automatic compaction ends the Step with a message that names its cause
+(context overflow, authentication, credit or quota, usage limit, transient) and the step to
+take. Nothing pauses later compactions: the next input tries again, and `/compact` remains
+an explicit retry. A summary call the Step's no-progress watchdog cancelled is transient:
+its provider class travels in the attempt's terminal reason. When a compaction makes no
+progress, or its summary still leaves the context at the ceiling, the next input runs on a
+visibly trimmed context instead. All summary calls, including the existing fallback, remain
+within the owning Step's physical-attempt budget. The last failure per Session is
+process-memory state for at most 256 Sessions; a restart forgets it.
 
 After a client-written compaction, SE keeps the newest whole original user
 messages within an approximate 4096-token budget, then presents them in their

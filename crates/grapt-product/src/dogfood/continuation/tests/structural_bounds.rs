@@ -266,3 +266,49 @@ fn history_past_the_read_bounds_summarizes_its_newest_window() -> Result<(), Str
     assert!(newest.removed_bytes > 0);
     Ok(())
 }
+
+/// After a compaction that did not fit, history still past the read bounds
+/// runs the next input as a trimmed request from the newest window those
+/// bounds serve, not as another compaction.
+#[test]
+fn a_trimmed_retry_past_the_read_bounds_plans_instead_of_compacting() -> Result<(), String> {
+    let fixture = Fixture::new("fix1-trim-past-bounds")?;
+    fixture.record_exchange()?;
+    settle_to(&fixture, MAX_CONTINUATION_ROWS, "at")?;
+    settled_step(&fixture, 1_000, 1, "over")?;
+    let mut ordinary = product_plan(&fixture, fixture.input.clone(), "use the tool")?;
+    assert_structural_refusal(&mut ordinary)?;
+
+    // The next input, after a compaction that did not fit ended the last.
+    let next: MessageId = "msg_trim_past_bounds_next"
+        .parse()
+        .map_err(|error: grapt_types::IdError| error.to_string())?;
+    promote_test_input(fixture.inbox()?, &fixture.session, &next, "carry on")?;
+    let registry = super::super::compaction_recovery::Registry::default();
+    registry.did_not_fit(&fixture.session);
+    let targets = crate::dogfood::production::tests::projection_targets_with_window(
+        grapt_provider::ProtocolFamily::ChatGptCodex,
+        1_000_000,
+    )?;
+    let first = targets.issue()?;
+    let mut plan = crate::dogfood::production::ProductPlan::new(
+        grapt_provider::ProtocolFamily::ChatGptCodex,
+        "carry on".to_owned(),
+        grapt_provider::PromptCacheKey::for_session(&fixture.session)
+            .map_err(|error| error.to_string())?,
+        Some(first),
+        targets,
+        Arc::new(crate::dogfood::mcp::PublishedTools::default()),
+        fixture
+            .continuation(next)?
+            .with_compaction_recovery(registry),
+        StepNumber::new(1).ok_or("step")?,
+    );
+    plan.plan(
+        StepNumber::new(1).ok_or("step")?,
+        1,
+        grapt_runtime::HistoryGeneration::new(1),
+    )
+    .map_err(|refusal| format!("the trimmed retry compacted again: {}", refusal.detail))?;
+    Ok(())
+}

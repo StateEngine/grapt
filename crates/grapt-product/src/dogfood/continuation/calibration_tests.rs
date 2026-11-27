@@ -476,10 +476,11 @@ fn cq_output_reserve_is_the_bound_the_request_actually_asks_for() -> Result<(), 
     Ok(())
 }
 
-/// A rebuilt request is content SE sizes against the window, so it keeps the
-/// conservative packing bound [`DiagnosisSlot::summary_bytes`] inverts.
+/// A rebuilt request is judged at the count ordinary admission gives the
+/// request it becomes, not at the packing margin: at twice the ratio, a
+/// summary leaving 60,000 tokens read as 120,000 against a 100,000 window.
 #[test]
-fn cq_rebuilt_request_is_judged_by_the_packing_calibration() -> Result<(), String> {
+fn cq_rebuilt_request_is_judged_as_admission_judges_it() -> Result<(), String> {
     let target = crate::dogfood::production::tests::projection_target()?;
     let request = prior()?;
     let slot = DiagnosisSlot::default();
@@ -497,7 +498,7 @@ fn cq_rebuilt_request_is_judged_by_the_packing_calibration() -> Result<(), Strin
     slot.record_calibration(Calibration::new(TargetKey::new(&target), 1200, 4384));
     assert_eq!(
         slot.rebuilt_estimate(&history),
-        Ok(Some(((full * 2400).div_ceil(4384), OUTPUT_RESERVE)))
+        Ok(Some(((full * 1200).div_ceil(4384), OUTPUT_RESERVE)))
     );
     Ok(())
 }

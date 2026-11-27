@@ -1,4 +1,4 @@
-//! Cause-specific recovery through the shipped process, real HTTP decoding and Step owner.
+//! A failed compaction names its cause and the next input retries, through the shipped process.
 use super::*;
 
 // SC-REL-13 sits beside the recovery it protects, outside the shared registry.
@@ -20,22 +20,14 @@ mod usage_exhaustion;
 mod steer_boundary;
 
 const SUMMARY: &str = "Output exactly the Markdown structure shown inside <template>";
-const BUFFER: u64 = 128_000 - 16_384 - 30_000;
+const LIMIT: u64 = 60_000;
 const OBJECTIVE: &str = "## Objective\n- continue the user task; the seed files were already read";
-/// The summary calls one overflowing compaction makes before it fails.
-const OVERFLOW_TRIES: usize = 4;
-const READS: [(&str, &str); 2] = [("call_cr_a", "a.txt"), ("call_cr_b", "b.txt")];
-
-// Keep later automatic admission under pressure: the provider's confirmed
-// usage must not make a large retained conversation look like eleven tokens.
-fn ordinary_response(text: &str) -> Script {
-    Script::Raw(format!(
-        "data: {{\"type\":\"response.output_text.delta\",\"delta\":{}}}\n\n\
-         data: {{\"type\":\"response.output_text.done\"}}\n\n\
-         data: {{\"type\":\"response.completed\",\"response\":{{\"usage\":{{\"input_tokens\":50000,\"output_tokens\":4,\"total_tokens\":50004}}}}}}\n\n",
-        serde_json::to_string(text).unwrap_or_else(|error| panic!("recovery response: {error}"))
-    ))
-}
+const READS: [(&str, &str); 4] = [
+    ("call_cr_a", "a.txt"),
+    ("call_cr_b", "b.txt"),
+    ("call_cr_c", "c.txt"),
+    ("call_cr_d", "d.txt"),
+];
 
 struct Journey {
     root: PathBuf,
@@ -46,32 +38,21 @@ struct Journey {
 }
 
 impl Journey {
-    fn failed(label: &str, failure: Script, afterwards: Vec<Script>, provider_first: bool) -> Self {
+    fn failed(label: &str, failure: Script, afterwards: Vec<Script>) -> Self {
         let root = root(label);
         prepare(&root, 120_000);
         set_compaction(
             &root,
-            serde_json::json!({"buffer":BUFFER,"server_side":provider_first}),
+            serde_json::json!({"model_auto_compact_token_limit":LIMIT,"server_side":false}),
         );
         for (_, path) in READS {
-            fs::write(root.join(path), text_lines(b'x', 36_000))
+            fs::write(root.join(path), text_lines(b'x', 50_000))
                 .unwrap_or_else(|error| panic!("recovery seed failed: {error}"));
         }
-        // A summary the provider refuses as a context overflow is made again
-        // with less history, up to its own bound or until nothing is left to
-        // quote (the journey then passes a request-driven refusal); every
-        // other failure ends the compaction at its first call.
-        let overflow = matches!(&failure, Script::ForRequest(_));
-        let mut scripts = vec![Script::ToolReads {
-            calls: READS.to_vec(),
-        }];
+        let mut scripts = vec![Script::reads_unmetered(READS.to_vec())];
         scripts.push(failure);
         scripts.extend(afterwards);
-        let provider = if provider_first {
-            ProviderFixture::start_compacting(scripts)
-        } else {
-            ProviderFixture::start(scripts)
-        };
+        let provider = ProviderFixture::start(scripts);
         let mut child = spawn(&root, provider.address);
         let address = await_ready(&root, &mut child);
         let session = create(address);
@@ -95,11 +76,7 @@ impl Journey {
         );
         permission_residuals::wait_session_idle(address, &journey.session);
         let summaries = journey.summary_calls();
-        if overflow {
-            assert!((2..=OVERFLOW_TRIES).contains(&summaries), "{summaries}");
-        } else {
-            assert_eq!(summaries, 1);
-        }
+        assert_eq!(summaries, 1);
         assert_eq!(
             journey.provider.calls.load(Ordering::SeqCst),
             1 + summaries,
@@ -164,19 +141,6 @@ impl Journey {
         );
     }
 
-    fn manual_retry(&self) {
-        json(
-            self.address,
-            "POST",
-            &format!("/api/session/{}/compact", self.session),
-            "{}",
-        );
-        self.succeeds(
-            "msg_cr_manual",
-            "continue after the explicit compaction retry",
-        );
-    }
-
     fn finish(mut self, expected_calls: usize, expected_summaries: usize) {
         self.child.stop_after_witness(&self.root);
         assert_eq!(self.provider.calls.load(Ordering::SeqCst), expected_calls);
@@ -199,148 +163,6 @@ impl Journey {
     }
 }
 
-static REFUSE_SUMMARIES: AtomicBool = AtomicBool::new(false);
-
-/// A summary request is refused as a context overflow while the flag holds and
-/// answered with an objective after; any other request is an ordinary answer.
-fn refuse_summaries_then_answer() -> Script {
-    Script::ForRequest(|body| {
-        if !body.contains(SUMMARY) {
-            ordinary_response("answered")
-        } else if REFUSE_SUMMARIES.load(Ordering::SeqCst) {
-            Script::Refused {
-                status: 400,
-                body: r#"{"error":{"type":"invalid_request_error","code":"context_length_exceeded","message":"maximum context length exceeded"}}"#,
-            }
-        } else {
-            Script::SuccessText(OBJECTIVE)
-        }
-    })
-}
-
-#[test]
-fn cr_recovery_context_waits_for_a_context_change_or_manual_retry() {
-    let _journey = process_journey_custody();
-    // Every summary request is refused as an overflow until the rewind; any
-    // other request is an ordinary answer.
-    REFUSE_SUMMARIES.store(true, Ordering::SeqCst);
-    let journey = Journey::failed(
-        "cr-context",
-        refuse_summaries_then_answer(),
-        vec![refuse_summaries_then_answer(); 8],
-        false,
-    );
-    journey.assert_cause("context overflow");
-    let tried = journey.summary_calls();
-    journey.succeeds(
-        "msg_cr_kept",
-        "continue without another futile automatic summary",
-    );
-    assert_eq!(
-        journey.summary_calls(),
-        tried,
-        "a model response must not clear the context block"
-    );
-    assert_eq!(journey.provider.calls.load(Ordering::SeqCst), tried + 2);
-    REFUSE_SUMMARIES.store(false, Ordering::SeqCst);
-    let preview = json(
-        journey.address,
-        "POST",
-        &format!("/api/session/{}/rewind/preview", journey.session),
-        r#"{"prompts":1}"#,
-    );
-    let request =
-        serde_json::json!({"messageID":preview["data"]["messageID"],"tip":preview["data"]["tip"]});
-    json(
-        journey.address,
-        "POST",
-        &format!("/api/session/{}/rewind", journey.session),
-        &request.to_string(),
-    );
-    journey.succeeds(
-        "msg_cr_rewound",
-        "continue the task on the changed conversation",
-    );
-    journey.finish(tried + 4, tried + 1);
-}
-
-#[test]
-fn cr_recovery_authentication_waits_for_explicit_recovery() {
-    let _journey = process_journey_custody();
-    let journey = Journey::failed(
-        "cr-auth",
-        Script::Unauthorized,
-        vec![
-            ordinary_response("one response is not credential recovery"),
-            ordinary_response("a second response is not credential recovery"),
-            // An explicit retry now has the ordinary request snapshot, so
-            // provider-first compaction runs before the text fallback.
-            Script::ForRequest(|body| {
-                let request: serde_json::Value = serde_json::from_str(body)
-                    .unwrap_or_else(|error| panic!("manual provider compaction: {error}"));
-                assert_eq!(
-                    request["input"].as_array().and_then(|items| items.last()),
-                    Some(&serde_json::json!({"type":"compaction_trigger"}))
-                );
-                Script::Refused {
-                    status: 400,
-                    body: r#"{"error":{"message":"provider compaction unsupported"}}"#,
-                }
-            }),
-            Script::SuccessText(OBJECTIVE),
-            Script::SuccessText("answered after manual retry"),
-        ],
-        true,
-    );
-    journey.assert_cause("authentication failure");
-    journey.succeeds("msg_cr_auth_first", "ordinary work after an auth failure");
-    journey.succeeds(
-        "msg_cr_auth_second",
-        "another ordinary input does not reset auth suppression",
-    );
-    assert_eq!(
-        journey.summary_calls(),
-        1,
-        "a 200 must not clear authentication suppression"
-    );
-    assert_eq!(journey.provider.calls.load(Ordering::SeqCst), 4);
-    journey.manual_retry();
-    journey.finish(7, 3);
-}
-
-#[test]
-fn cr_recovery_quota_waits_for_confirmed_provider_success() {
-    let _journey = process_journey_custody();
-    let journey = Journey::failed(
-        "cr-quota",
-        Script::Refused {
-            status: 429,
-            body: r#"{"error":{"code":"insufficient_quota","message":"credit exhausted"}}"#,
-        },
-        vec![
-            ordinary_response("credit has been restored"),
-            Script::SuccessText(OBJECTIVE),
-            Script::SuccessText("answered after quota recovery"),
-        ],
-        false,
-    );
-    journey.succeeds(
-        "msg_cr_quota_success",
-        "ordinary work confirms provider recovery",
-    );
-    assert_eq!(
-        journey.summary_calls(),
-        1,
-        "quota must remain blocked until a response succeeds"
-    );
-    journey.assert_cause("usage limit");
-    journey.succeeds(
-        "msg_cr_quota_recovered",
-        "continue after confirmed recovery",
-    );
-    journey.finish(5, 2);
-}
-
 #[test]
 fn cr_recovery_transient_retries_on_the_next_input() {
     let _journey = process_journey_custody();
@@ -354,7 +176,6 @@ fn cr_recovery_transient_retries_on_the_next_input() {
             Script::SuccessText(OBJECTIVE),
             Script::SuccessText("answered after transient recovery"),
         ],
-        false,
     );
     journey.assert_cause("transient failure");
     journey.succeeds("msg_cr_transient_next", "retry on this new input");

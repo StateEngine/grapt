@@ -77,13 +77,18 @@ pub(super) fn set_compaction(root: &Path, keys: serde_json::Value) {
         &fs::read(&path).unwrap_or_else(|error| panic!("config read failed: {error}")),
     )
     .unwrap_or_else(|error| panic!("config decode failed: {error}"));
-    let compaction = config["compaction"]
-        .as_object_mut()
-        .unwrap_or_else(|| panic!("the fixture config has no compaction object"));
     for (key, value) in keys
         .as_object()
         .unwrap_or_else(|| panic!("compaction keys must be an object"))
     {
+        // The model limit is a root key of the config, beside `compaction`.
+        if key == "model_auto_compact_token_limit" {
+            config[key] = value.clone();
+            continue;
+        }
+        let compaction = config["compaction"]
+            .as_object_mut()
+            .unwrap_or_else(|| panic!("the fixture config has no compaction object"));
         compaction.insert(key.clone(), value.clone());
     }
     fs::write(&path, serde_json::to_vec(&config).unwrap_or_default())

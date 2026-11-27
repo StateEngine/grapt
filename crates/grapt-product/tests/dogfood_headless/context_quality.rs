@@ -805,12 +805,6 @@ fn cq_identical_reread_that_still_fits_goes_out_uncompacted(
     let root = root("cq-reread-fits");
     prepare(&root, 500_000);
     prepare_model_inventory(&root, 128_000);
-    // A buffer that compacts after one round of reads (as server_compaction's):
-    // the threshold sits far below the window, so a repeat still fits.
-    set_compaction(
-        &root,
-        serde_json::json!({"buffer": 128_000 - 16_384 - 30_000}),
-    );
     for (_, file) in READS {
         fs::write(root.join(file), text_lines(b'f', LARGE_READ))?;
     }
@@ -818,7 +812,6 @@ fn cq_identical_reread_that_still_fits_goes_out_uncompacted(
         Script::ToolReads {
             calls: READS.to_vec(),
         },
-        Script::Output(2_000),
         Script::ToolReads {
             calls: REREADS.to_vec(),
         },
@@ -840,22 +833,18 @@ fn cq_identical_reread_that_still_fits_goes_out_uncompacted(
     permission_residuals::wait_session_idle(address, &session);
 
     let bodies = locked(&provider.bodies).clone();
-    assert_eq!(bodies.len(), 4, "reads, summary, rereads, answer");
-    assert!(
-        bodies[1].contains(SUMMARY_REQUEST),
-        "the first round compacts"
-    );
+    assert_eq!(bodies.len(), 3, "reads, rereads, answer");
     assert_eq!(
         bodies
             .iter()
             .filter(|body| body.contains(SUMMARY_REQUEST))
             .count(),
-        1,
+        0,
         "the repeat spent a summary call"
     );
     // The repeat's results went out as they are.
     assert!(
-        bodies[3].contains(&"f".repeat(99)),
+        bodies[2].contains(&"f".repeat(99)),
         "the repeated reads were not sent uncompacted"
     );
     let page = json(

@@ -176,6 +176,9 @@ pub(super) struct ProductPlan {
     admission_diagnosis: super::continuation::admission::DiagnosisSlot,
     trim_feedback: Option<super::execution::context_trim::TrimFeedback>,
     trimmed_request: bool,
+    /// Where this request's history starts when a trimmed retry reads from
+    /// the newest window the read bounds serve; what lies before is omitted.
+    window_floor: Option<grapt_types::EventSeq>,
     context_hook: Option<ContextHook>,
     lifecycle: Option<super::hooks::plan::LifecyclePlan>,
     /// The Session's `compaction` config: threshold on/off and headroom.
@@ -320,6 +323,7 @@ impl ProductPlan {
             admission_diagnosis: super::continuation::admission::DiagnosisSlot::default(),
             trim_feedback: None,
             trimmed_request: false,
+            window_floor: None,
             context_hook: None,
             lifecycle: None,
             compaction: super::compaction_config::CompactionSettings::default(),
@@ -368,6 +372,7 @@ impl ProductPlan {
             admission_diagnosis: super::continuation::admission::DiagnosisSlot::default(),
             trim_feedback: None,
             trimmed_request: false,
+            window_floor: None,
             context_hook: None,
             lifecycle: None,
             compaction: super::compaction_config::CompactionSettings::default(),
@@ -561,11 +566,13 @@ impl ProductPlan {
         // reported no usage, judge the ceiling on this request's local estimate:
         // otherwise a provider that omits usage leaves 90% of the window
         // unreachable and the Session runs until the provider overflows.
-        if admission::auto_compact_reached(
-            admission::ceiling_size(context_usage, estimate.tokens.into()),
-            budget,
-            self.compaction.model_auto_compact_token_limit,
-        ) {
+        if self.compaction.auto
+            && admission::auto_compact_reached(
+                admission::ceiling_size(context_usage, estimate.tokens.into()),
+                budget,
+                self.compaction.model_auto_compact_token_limit,
+            )
+        {
             return Ok(Some(trigger));
         }
         let reserve = admission::output_reserve(&planned.request);
@@ -591,35 +598,18 @@ impl ProductPlan {
         if !compactable {
             return Ok((!admission::fits(estimate.tokens, reserve, budget)).then_some(trigger));
         }
-        // `compaction.auto: false` turns off only this threshold trigger; a
-        // structural bound and a requested compaction still compact.
-        // A blocked threshold does not justify another summary call. Keep ordinary
-        // work available while it fits the actual window; hard/structural bounds
-        // still reach the Step-owned compactor and refuse before provider I/O.
+        // `compaction.auto: false` turns off the proactive ceiling above; a
+        // request that cannot fit the window still compacts, as the provider's
+        // own overflow would make it, and so do a structural bound and a
+        // requested compaction.
         //
-        // One honest size guards the window and the threshold: the request at
-        // this target's observed ratio, the count the provider charges for the
-        // same bytes. A margin here compacted a Session at about half its real
-        // usage and refused a summary that fit. An under-count instead
-        // reaches the provider's own overflow classification, which the Step
-        // recovers with its single bounded rebuild.
-        if admission::fits(estimate.tokens, reserve, budget) {
-            if let Some(continuation) = continuation {
-                if continuation
-                    .compaction_suppressed()
-                    .map_err(|_| grapt_types::ContextFailure::CompactionFailed)?
-                    .is_some()
-                {
-                    return Ok(None);
-                }
-            }
-        }
-        if self.compaction.auto
-            && !admission::fits_with(estimate.tokens, reserve, budget, self.compaction.headroom())
-        {
-            return Ok(Some(trigger));
-        }
-        Ok(None)
+        // One honest size guards the window: the request at this target's
+        // observed ratio, the count the provider charges for the same bytes. A
+        // margin here compacted a Session at about half its real usage and
+        // refused a summary that fit. An under-count instead reaches the
+        // provider's own overflow classification, which the Step recovers with
+        // its single bounded rebuild.
+        Ok((!admission::fits(estimate.tokens, reserve, budget)).then_some(trigger))
     }
 }
 

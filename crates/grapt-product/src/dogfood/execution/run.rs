@@ -153,6 +153,7 @@ impl LiveExecutor {
             }
             let result = woke.map_err(|error| ExecutionRefusal::Run(error.to_string()));
             self.report_dispatch_samples();
+            self.location.persist_calibration(&session);
             let was_interrupted = self.interrupted.take(&session) || scoped_interrupted;
             #[cfg(feature = "handover-crash-fixture")]
             if was_interrupted {
