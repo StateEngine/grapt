@@ -16,9 +16,73 @@ fn is_production_src(path: &str) -> bool {
     )
 }
 
-type FragmentCounts = BTreeMap<String, usize>;
+struct IncludeTokenScan {
+    count: usize,
+}
 
-fn listed(root: &Path) -> Result<BTreeMap<String, FragmentCounts>, String> {
+impl syn::parse::Parse for IncludeTokenScan {
+    fn parse(input: syn::parse::ParseStream<'_>) -> syn::Result<Self> {
+        let mut count = 0usize;
+        let mut prev_was_include = false;
+        while !input.is_empty() {
+            if prev_was_include && input.peek(syn::Token![!]) {
+                let _bang: syn::Token![!] = input.parse()?;
+                if input.peek(syn::token::Paren)
+                    || input.peek(syn::token::Bracket)
+                    || input.peek(syn::token::Brace)
+                {
+                    count = count.saturating_add(1);
+                }
+                prev_was_include = false;
+                continue;
+            }
+            if input.peek(syn::token::Paren) {
+                let inner;
+                syn::parenthesized!(inner in input);
+                count = count.saturating_add(inner.parse::<Self>()?.count);
+                prev_was_include = false;
+            } else if input.peek(syn::token::Bracket) {
+                let inner;
+                syn::bracketed!(inner in input);
+                count = count.saturating_add(inner.parse::<Self>()?.count);
+                prev_was_include = false;
+            } else if input.peek(syn::token::Brace) {
+                let inner;
+                syn::braced!(inner in input);
+                count = count.saturating_add(inner.parse::<Self>()?.count);
+                prev_was_include = false;
+            } else if let Ok(ident) = input.parse::<syn::Ident>() {
+                prev_was_include = ident == "include";
+            } else {
+                input.step(|cursor| match cursor.token_tree() {
+                    Some((_, next)) => Ok(((), next)),
+                    None => Err(cursor.error("unexpected end of token stream")),
+                })?;
+                prev_was_include = false;
+            }
+        }
+        Ok(Self { count })
+    }
+}
+
+fn scan_src_includes(files: &BTreeMap<String, Vec<u8>>) -> Result<BTreeMap<String, usize>, String> {
+    let mut found = BTreeMap::new();
+    for (path, bytes) in files {
+        if !is_production_src(path) {
+            continue;
+        }
+        let src = std::str::from_utf8(bytes)
+            .map_err(|_| format!("{path}: production src/ file is not valid UTF-8"))?;
+        let scan: IncludeTokenScan = syn::parse_str(src)
+            .map_err(|error| format!("{path}: failed to tokenize Rust source: {error}"))?;
+        if scan.count > 0 {
+            found.insert(path.clone(), scan.count);
+        }
+    }
+    Ok(found)
+}
+
+fn ensure_ratchet_empty(root: &Path) -> Result<(), String> {
     let bytes = read_bounded(&root.join(RATCHET), MAX_FILE_BYTES)?;
     let document: serde_json::Value =
         serde_json::from_slice(&bytes).map_err(|error| format!("{RATCHET}: {error}"))?;
@@ -30,159 +94,80 @@ fn listed(root: &Path) -> Result<BTreeMap<String, FragmentCounts>, String> {
             "{RATCHET}: carriers must remain empty; zero include!() sites are permitted under crates/*/src/"
         ));
     }
-    Ok(BTreeMap::new())
-}
-
-/// Every production `src/` carrier and its stitched fragment occurrence counts.
-fn stitched_src(
-    files: &BTreeMap<String, Vec<u8>>,
-) -> Result<BTreeMap<String, FragmentCounts>, String> {
-    let mut out: BTreeMap<String, FragmentCounts> = BTreeMap::new();
-    for (path, bytes) in files {
-        if !is_production_src(path) {
-            continue;
-        }
-        for site in detect_sites(path, bytes).map_err(|error| format!("{path}: {error}"))? {
-            if !files.contains_key(&site.target) {
-                return Err(format!("{path} includes missing {}", site.target));
-            }
-            *out.entry(path.clone())
-                .or_default()
-                .entry(site.target)
-                .or_insert(0) += 1;
-        }
-    }
-    Ok(out)
-}
-
-fn evaluate_ratchet(
-    found: &BTreeMap<String, FragmentCounts>,
-    allowed: &BTreeMap<String, FragmentCounts>,
-) -> Vec<String> {
-    let mut problems = Vec::new();
-    for (carrier, fragments) in found {
-        let Some(limit) = allowed.get(carrier) else {
-            problems.push(format!(
-                "{carrier}: new include! in production src/; use a submodule with a real interface"
-            ));
-            continue;
-        };
-        for (fragment, count) in fragments {
-            let allowed_count = limit.get(fragment).copied().unwrap_or(0);
-            if *count > allowed_count {
-                problems.push(format!(
-                    "{carrier}: new include!(\"{fragment}\") in production src/ ({count} > {allowed_count}); use a submodule with a real interface"
-                ));
-            }
-        }
-    }
-    for (carrier, limit) in allowed {
-        let now = found.get(carrier);
-        for (fragment, allowed_count) in limit {
-            let now_count = now
-                .and_then(|counts| counts.get(fragment))
-                .copied()
-                .unwrap_or(0);
-            if now_count == 0 {
-                problems.push(format!(
-                    "{carrier}: {fragment} is no longer stitched; delete it from {RATCHET}"
-                ));
-            } else if now_count < *allowed_count {
-                problems.push(format!(
-                    "{carrier}: {fragment} occurrences shrank from {allowed_count} to {now_count}; update {RATCHET}"
-                ));
-            }
-        }
-    }
-    problems
+    Ok(())
 }
 
 #[test]
 fn production_src_include_sites_only_shrink() -> Result<(), Box<dyn Error>> {
     let _tree = lock_tree();
     let root = workspace_root();
+    ensure_ratchet_empty(&root)?;
     let inventory = inventory(&root)?;
-    let allowed = listed(&root)?;
-    let found = stitched_src(&inventory.files)?;
-    let problems = evaluate_ratchet(&found, &allowed);
-    if problems.is_empty() {
+    let found = scan_src_includes(&inventory.files)?;
+    if found.is_empty() {
         return Ok(());
     }
+    let problems: Vec<String> = found
+        .into_iter()
+        .map(|(carrier, count)| {
+            format!(
+                "{carrier}: {count} include!() site(s) in production src/; use a submodule with a real interface"
+            )
+        })
+        .collect();
     Err(bounded_diagnostic(
-        "include! ratchet: ",
+        "include! ban: ",
         &problems.iter().map(String::as_str).collect::<Vec<_>>(),
     )?
     .into())
 }
 
 #[test]
-fn ratchet_tracks_only_production_src_and_refuses_growth_or_stale_entries(
+fn token_scanner_catches_src_includes_across_lifetimes_unicode_escapes_and_groups(
 ) -> Result<(), Box<dyn Error>> {
+    // Ignores crates/*/tests/ and comments/strings, catches crates/*/src/.
     let mut files = BTreeMap::new();
     files.insert(
-        "crates/example/src/lib.rs".to_owned(),
-        b"include!(\"part.rs\");\n".to_vec(),
-    );
-    files.insert(
-        "crates/example/src/part.rs".to_owned(),
-        b"fn a() {}\n".to_vec(),
+        "crates/example/src/clean.rs".to_owned(),
+        b"// include!(\"ignored.rs\");\nconst S: &str = \"include!(\\\"ignored.rs\\\");\";\nfn f() { let _ = ['\\u{a________________}', '\"']; }\n".to_vec(),
     );
     files.insert(
         "crates/example/tests/suite.rs".to_owned(),
         b"include!(\"helper.rs\");\n".to_vec(),
     );
-    files.insert(
-        "crates/example/tests/helper.rs".to_owned(),
-        b"fn helper() {}\n".to_vec(),
-    );
+    assert!(scan_src_includes(&files)?.is_empty());
 
-    let found = stitched_src(&files)?;
-    assert_eq!(found.len(), 1);
-    assert!(found.contains_key("crates/example/src/lib.rs"));
-
-    let empty = BTreeMap::new();
-    let added = evaluate_ratchet(&found, &empty);
-    assert_eq!(added.len(), 1);
-    assert!(added[0].contains("new include! in production src/"));
-
-    let stale = evaluate_ratchet(&empty, &found);
-    assert_eq!(stale.len(), 1);
-    assert!(stale[0].contains("no longer stitched"));
-
-    let mut duplicate_files = files.clone();
-    duplicate_files.insert(
-        "crates/example/src/lib.rs".to_owned(),
-        b"include!(\"part.rs\");\ninclude!(\"part.rs\");\n".to_vec(),
-    );
-    let duplicate_found = stitched_src(&duplicate_files)?;
-    let duplicate_problems = evaluate_ratchet(&duplicate_found, &found);
-    assert_eq!(duplicate_problems.len(), 1);
-    assert!(duplicate_problems[0].contains("new include!"));
-    assert!(duplicate_problems[0].contains("2 > 1"));
-    Ok(())
-}
-
-#[test]
-fn two_lifetimes_on_one_line_cannot_hide_include_macro() -> Result<(), Box<dyn Error>> {
-    let mut same_line = BTreeMap::new();
-    same_line.insert(
+    // Two lifetimes on one line cannot hide include!().
+    let mut same_line_lifetimes = BTreeMap::new();
+    same_line_lifetimes.insert(
         "crates/example/src/lib.rs".to_owned(),
         b"fn f<'a>() { include!(\"part.rs\"); let _: &'a str = \"\"; }\n".to_vec(),
     );
-    same_line.insert("crates/example/src/part.rs".to_owned(), b"".to_vec());
-    assert!(
-        stitched_src(&same_line).is_err(),
-        "two lifetimes on one line must not swallow include!() as a char literal"
+    assert_eq!(
+        scan_src_includes(&same_line_lifetimes)?.get("crates/example/src/lib.rs"),
+        Some(&1)
     );
 
-    let mut multi_line = BTreeMap::new();
-    multi_line.insert(
+    // Long Unicode escape followed by quote char literal cannot hide include!().
+    let mut unicode_escape = BTreeMap::new();
+    unicode_escape.insert(
         "crates/example/src/lib.rs".to_owned(),
-        b"fn f<'a>() {\n    include!(\"part.rs\");\n    let _: &'a str = \"\";\n}\n".to_vec(),
+        b"fn f() { let _ = ['\\u{a________________}','\"']; include!(\"part.rs\"); }\n".to_vec(),
     );
-    multi_line.insert("crates/example/src/part.rs".to_owned(), b"".to_vec());
-    let found = stitched_src(&multi_line)?;
-    assert_eq!(found.len(), 1);
-    assert_eq!(evaluate_ratchet(&found, &BTreeMap::new()).len(), 1);
+    assert_eq!(
+        scan_src_includes(&unicode_escape)?.get("crates/example/src/lib.rs"),
+        Some(&1)
+    );
+
+    // Macro definitions and nested groups are also traversed.
+    let mut inside_macro = BTreeMap::new();
+    inside_macro.insert(
+        "crates/example/src/lib.rs".to_owned(),
+        b"macro_rules! m { () => { include!(\"part.rs\"); }; }\n".to_vec(),
+    );
+    assert_eq!(
+        scan_src_includes(&inside_macro)?.get("crates/example/src/lib.rs"),
+        Some(&1)
+    );
     Ok(())
 }
