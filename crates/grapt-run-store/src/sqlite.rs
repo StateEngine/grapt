@@ -1,0 +1,226 @@
+use crate::command::{MAX_COMMAND_BYTES, MAX_PARAMS, MAX_SQL_BYTES};
+use crate::error::{OpenError, WriteError};
+use crate::wal_budget::{WalBudget, CACHE_KIB};
+use rusqlite::hooks::{AuthAction, AuthContext, Authorization};
+use rusqlite::limits::Limit;
+use rusqlite::{Connection, OpenFlags};
+use std::fs::{self, File, OpenOptions};
+use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, AtomicU16, Ordering};
+use std::sync::Arc;
+use std::time::Duration;
+
+mod plan;
+
+pub(crate) use plan::check_write_plan;
+
+pub(crate) const RECEIPTS: &str = "run_store_receipt";
+pub(crate) const WRITE_BUSY: Duration = Duration::from_millis(50);
+const APPLICATION_ID: i64 = 0x4752_4150;
+const VERSION: i64 = 1;
+// The transfer optimizer can copy index entries in a separate VM loop.
+// Sample that loop as well as the ordinary row callbacks.
+const PROGRESS_STEPS: i32 = 8;
+const MAX_PROGRESS_CALLS: u16 = 32_000;
+
+pub(crate) fn lock_writer(path: &Path) -> Result<(PathBuf, File), OpenError> {
+    let path = match fs::canonicalize(path) {
+        Ok(path) => path,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            let name = path.file_name().ok_or(error)?;
+            let parent = path.parent().filter(|path| !path.as_os_str().is_empty());
+            fs::canonicalize(parent.unwrap_or(Path::new(".")))?.join(name)
+        }
+        Err(error) => return Err(error.into()),
+    };
+    let lease = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .open(sidecar(&path, ".writer-lock"))?;
+    match fs2::FileExt::try_lock_exclusive(&lease) {
+        Ok(()) => Ok((path, lease)),
+        Err(error) if error.raw_os_error() == fs2::lock_contended_error().raw_os_error() => {
+            Err(OpenError::WriterExists)
+        }
+        Err(error) => Err(error.into()),
+    }
+}
+
+pub(crate) fn sidecar(path: &Path, suffix: &str) -> PathBuf {
+    let mut name = path.as_os_str().to_os_string();
+    name.push(suffix);
+    name.into()
+}
+
+pub(crate) fn writer(path: &Path, schema: &str) -> Result<Connection, OpenError> {
+    let connection = Connection::open(path)?;
+    connection.busy_timeout(WRITE_BUSY)?;
+    connection.set_limit(Limit::SQLITE_LIMIT_LENGTH, MAX_COMMAND_BYTES as i32)?;
+    connection.execute_batch(
+        "PRAGMA temp_store=FILE; PRAGMA foreign_keys=ON; PRAGMA trusted_schema=OFF;
+         PRAGMA synchronous=FULL;",
+    )?;
+    let app: i64 = connection.pragma_query_value(None, "application_id", |row| row.get(0))?;
+    let version: i64 = connection.pragma_query_value(None, "user_version", |row| row.get(0))?;
+    let empty: bool = connection.query_row(
+        "SELECT NOT EXISTS (SELECT 1 FROM sqlite_schema)",
+        [],
+        |row| row.get(0),
+    )?;
+    if !(app == APPLICATION_ID && version == VERSION || app == 0 && version == 0 && empty) {
+        return Err(OpenError::Schema(version));
+    }
+    verify_pager(&connection)?;
+    let mode: String = connection.query_row("PRAGMA journal_mode=WAL", [], |row| row.get(0))?;
+    if mode != "wal" {
+        return Err(OpenError::JournalMode(mode));
+    }
+    if empty {
+        connection.execute_batch("BEGIN IMMEDIATE")?;
+        connection.execute_batch(schema)?;
+        verify_pager(&connection)?;
+        connection.execute_batch(
+            "CREATE TABLE run_store_receipt (
+                request_key TEXT PRIMARY KEY,
+                digest BLOB NOT NULL CHECK(length(digest) = 32),
+                receipt BLOB NOT NULL
+            ) WITHOUT ROWID;",
+        )?;
+        connection.pragma_update(None, "application_id", APPLICATION_ID)?;
+        connection.pragma_update(None, "user_version", VERSION)?;
+        connection.execute_batch("COMMIT")?;
+    }
+    connection.execute_batch(
+        "PRAGMA temp_store=MEMORY; PRAGMA wal_autocheckpoint=0;
+         PRAGMA cache_spill=ON; PRAGMA mmap_size=0; PRAGMA threads=0;",
+    )?;
+    connection.pragma_update(None, "cache_size", -CACHE_KIB)?;
+    connection.set_limit(Limit::SQLITE_LIMIT_ATTACHED, 0)?;
+    connection.set_limit(Limit::SQLITE_LIMIT_SQL_LENGTH, MAX_SQL_BYTES as i32)?;
+    connection.set_limit(Limit::SQLITE_LIMIT_FUNCTION_ARG, 8)?;
+    connection.set_limit(Limit::SQLITE_LIMIT_EXPR_DEPTH, 16)?;
+    connection.set_limit(Limit::SQLITE_LIMIT_COLUMN, 32)?;
+    connection.set_limit(Limit::SQLITE_LIMIT_VARIABLE_NUMBER, MAX_PARAMS as i32)?;
+    connection.set_limit(Limit::SQLITE_LIMIT_VDBE_OP, 1024)?;
+    Ok(connection)
+}
+
+fn verify_pager(connection: &Connection) -> Result<(), OpenError> {
+    let auto_vacuum: i64 = connection.pragma_query_value(None, "auto_vacuum", |row| row.get(0))?;
+    if auto_vacuum != 0 {
+        return Err(OpenError::AutoVacuum);
+    }
+    Ok(())
+}
+
+pub(crate) fn reader(path: &Path) -> rusqlite::Result<Connection> {
+    let connection = Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_ONLY)?;
+    connection.execute_batch(
+        "PRAGMA query_only=ON; PRAGMA temp_store=FILE; PRAGMA trusted_schema=OFF;
+         PRAGMA cache_size=-2048; PRAGMA mmap_size=0; PRAGMA threads=0;",
+    )?;
+    connection.busy_timeout(Duration::ZERO)?;
+    Ok(connection)
+}
+
+/// Only storage-owned statements execute with the authorizer in control mode.
+/// The mode is restored before SAVEPOINT release or receipt insertion.
+pub(crate) struct Guard {
+    budget: Arc<WalBudget>,
+    active: AtomicBool,
+    vm_left: AtomicU16,
+}
+
+pub(crate) struct DomainSql<'a>(&'a Guard);
+
+impl Guard {
+    pub(crate) fn enter(&self) -> DomainSql<'_> {
+        self.budget.start_request();
+        self.vm_left.store(MAX_PROGRESS_CALLS, Ordering::Relaxed);
+        self.active.store(true, Ordering::Relaxed);
+        DomainSql(self)
+    }
+    pub(crate) fn check_wal(&self) -> Result<(), WriteError> {
+        self.budget.check()
+    }
+
+    pub(crate) fn take_refusal(&self) -> Option<WriteError> {
+        self.budget.take_refusal()
+    }
+}
+
+impl Drop for DomainSql<'_> {
+    fn drop(&mut self) {
+        self.0.active.store(false, Ordering::Relaxed);
+    }
+}
+
+pub(crate) fn install_guard(
+    connection: &mut Connection,
+    budget: Arc<WalBudget>,
+) -> rusqlite::Result<Arc<Guard>> {
+    let guard = Arc::new(Guard {
+        budget,
+        active: AtomicBool::new(false),
+        vm_left: AtomicU16::new(0),
+    });
+    let auth = Arc::clone(&guard);
+    connection.authorizer(Some(move |context: AuthContext<'_>| {
+        if !auth.active.load(Ordering::Relaxed) {
+            return Authorization::Allow;
+        }
+        match context.action {
+            AuthAction::Read { table_name, .. }
+                if !table_name.eq_ignore_ascii_case(RECEIPTS)
+                    && !table_name.starts_with("sqlite_")
+                    && context.database_name == Some("main") =>
+            {
+                Authorization::Allow
+            }
+            AuthAction::Insert { table_name } | AuthAction::Update { table_name, .. }
+                if context.database_name == Some("main") && auth.budget.can_write(table_name) =>
+            {
+                Authorization::Allow
+            }
+            // Disable the truncate fast path so DELETE runs the row callback.
+            AuthAction::Delete { table_name }
+                if context.database_name == Some("main") && auth.budget.can_write(table_name) =>
+            {
+                Authorization::Ignore
+            }
+            AuthAction::Select | AuthAction::Recursive => Authorization::Allow,
+            AuthAction::Function { function_name }
+                if !["load_extension", "sqlite_rename_table"].contains(&function_name) =>
+            {
+                Authorization::Allow
+            }
+            _ => Authorization::Deny,
+        }
+    }))?;
+    let progress = Arc::clone(&guard);
+    connection.progress_handler(
+        PROGRESS_STEPS,
+        Some(move || {
+            if !progress.active.load(Ordering::Relaxed) {
+                return false;
+            }
+            progress.budget.interrupted()
+                || progress
+                    .vm_left
+                    .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |left| {
+                        left.checked_sub(1)
+                    })
+                    .map_or(true, |left| left <= 1)
+        }),
+    )?;
+    let rows = Arc::clone(&guard);
+    let interrupt = connection.get_interrupt_handle();
+    connection.update_hook(Some(move |_, schema: &str, table: &str, _| {
+        if schema == "main" && rows.active.load(Ordering::Relaxed) && rows.budget.changed(table) {
+            interrupt.interrupt();
+        }
+    }))?;
+    Ok(guard)
+}

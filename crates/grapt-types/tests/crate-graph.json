@@ -285,6 +285,12 @@
    ],
    "dev": []
   },
+  "grapt-run-store": {
+   "deps": [
+    "grapt-types"
+   ],
+   "dev": []
+  },
   "grapt-runtime": {
    "deps": [
     "grapt-artifact",
