@@ -1,23 +1,29 @@
 //! A verified copy of a run database, taken before a migration changes it.
 //!
-//! The copy is written beside the database's real file, so a symlinked path
-//! still backs up onto the database's own filesystem. It is built in a fixed
-//! partial file, created new and held open for the whole backup so its
-//! identity is known. Every step that names the partial by path first checks
-//! that the path still names that file: verifying, syncing, linking it to a
-//! name no earlier backup holds (a hard link fails rather than replace one),
-//! and removing it. Nothing here writes to the live database.
+//! The copy is built beside the database's real file, so a symlinked path
+//! still backs up onto the database's own filesystem. It is staged in a
+//! directory created new for this backup (`0700` on Unix) as a file created
+//! new (`0600` on Unix), whose identity is taken at creation. Each step that
+//! names the copy by path first checks the path still names that file:
+//! syncing, hard-linking it to a name no earlier backup holds (a hard link
+//! fails rather than replace one), and removing the staging. Nothing here
+//! writes to the live database.
+//!
+//! On Windows the staging and the backup take the directory's inherited ACL,
+//! as any new file there does; an explicit ACL set on the database file itself
+//! is not copied.
 use crate::error::OpenError;
 use crate::sqlite::sidecar;
 use rusqlite::backup::{Backup, StepResult};
 use rusqlite::Connection;
 use same_file::Handle;
-use std::fs::{self, File, OpenOptions};
+use std::fs::{self, DirBuilder, File, OpenOptions};
 use std::io::{self, ErrorKind};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-const PARTIAL: &str = ".backup-partial";
+const STAGING: &str = ".backup-staging";
+const COPY: &str = "copy";
 const PAGES_PER_STEP: i32 = 1024;
 const MAX_NAMES: u32 = 1024;
 /// A source lock held past this many pauses stalls the backup, about two
@@ -29,56 +35,85 @@ const STALL_PAUSE: Duration = Duration::from_millis(20);
 /// return where the verified copy now lives. Storage pressure is reported as
 /// itself; any other failure as [`OpenError::BackupFailed`].
 pub(super) fn take(source: &Connection, path: &Path, from: u32) -> Result<PathBuf, OpenError> {
-    let partial = sidecar(path, PARTIAL);
-    let result = discard(&partial)
-        .and_then(|()| Lease::create(&partial, path))
+    let staging = sidecar(path, STAGING);
+    let result = clear(&staging)
+        .and_then(|()| stage(&staging))
+        .and_then(|()| Lease::create(&staging.join(COPY)))
         .map_err(OpenError::from)
         .and_then(|lease| {
-            let published = copy(source, &partial)
-                .and_then(|()| verify(&partial, from))
+            let published = copy(source, &lease.path)
+                .and_then(|()| verify(&lease.path, from))
                 .and_then(|()| lease.sync())
                 .and_then(|()| publish(&lease, path, from));
-            match published {
-                Ok(name) => lease.release().map(|()| name).map_err(OpenError::from),
-                Err(error) => {
-                    // Best effort: the error that stopped the backup is reported.
-                    let _ = lease.abandon();
-                    Err(error)
-                }
-            }
+            let released = lease.release();
+            let name = published?;
+            released?;
+            clear(&staging)?;
+            sync_directory(path)?;
+            Ok(name)
         });
+    if result.is_err() {
+        // Best effort: the error that stopped the backup is the one reported.
+        let _ = clear(&staging);
+    }
     result.map_err(|error| match error {
         OpenError::DiskFull(_) | OpenError::StorageStalled(_) => error,
         other => OpenError::BackupFailed(Box::new(other)),
     })
 }
 
-/// Remove a partial copy left by a crash, with its SQLite sidecars. Only
-/// regular files are removed; a link, directory or anything else at one of
-/// these names refuses and is left in place.
-fn discard(partial: &Path) -> io::Result<()> {
+/// Remove a staging directory left by a crash or by this backup: the copy and
+/// its SQLite sidecars if they are regular files, then the directory if it is
+/// then empty. A link, a non-directory, or anything else inside refuses and is
+/// left in place.
+fn clear(staging: &Path) -> io::Result<()> {
+    match fs::symlink_metadata(staging) {
+        Ok(meta) if meta.file_type().is_dir() => {}
+        Ok(_) => return Err(not_ours(staging)),
+        Err(error) if error.kind() == ErrorKind::NotFound => return Ok(()),
+        Err(error) => return Err(error),
+    }
+    let copy = staging.join(COPY);
     for file in [
-        partial.to_owned(),
-        sidecar(partial, "-journal"),
-        sidecar(partial, "-wal"),
-        sidecar(partial, "-shm"),
+        copy.clone(),
+        sidecar(&copy, "-journal"),
+        sidecar(&copy, "-wal"),
+        sidecar(&copy, "-shm"),
     ] {
         match fs::symlink_metadata(&file) {
             Ok(meta) if meta.file_type().is_file() => fs::remove_file(&file)?,
-            Ok(_) => {
-                return Err(io::Error::new(
-                    ErrorKind::AlreadyExists,
-                    format!("{} is not a regular file; move it away", file.display()),
-                ))
-            }
+            Ok(_) => return Err(not_ours(&file)),
             Err(error) if error.kind() == ErrorKind::NotFound => {}
             Err(error) => return Err(error),
         }
     }
-    Ok(())
+    fs::remove_dir(staging)
 }
 
-/// The partial file this backup created, held open from creation to removal.
+fn not_ours(path: &Path) -> io::Error {
+    io::Error::new(
+        ErrorKind::AlreadyExists,
+        format!(
+            "{} is not this store's backup staging; move it away",
+            path.display()
+        ),
+    )
+}
+
+/// Create the staging directory new, readable only by its owner on Unix.
+fn stage(staging: &Path) -> io::Result<()> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::DirBuilderExt;
+        DirBuilder::new().mode(0o700).create(staging)
+    }
+    #[cfg(not(unix))]
+    {
+        DirBuilder::new().create(staging)
+    }
+}
+
+/// The staged copy, held open from its creation until it is linked out.
 struct Lease {
     path: PathBuf,
     file: File,
@@ -86,44 +121,44 @@ struct Lease {
 }
 
 impl Lease {
-    /// Create the partial new, never opening an existing file. On Unix it gets
-    /// the database's permission bits, so the copy is no more readable than
-    /// its source. On Windows it takes the directory's inherited ACL, as any
-    /// new file there does; an explicit ACL set on the database file itself is
-    /// not copied. The handle refuses delete sharing there, so the partial
-    /// cannot be renamed or replaced while it is held.
-    fn create(partial: &Path, path: &Path) -> io::Result<Self> {
+    /// Create the copy new, never opening an existing file, readable only by
+    /// its owner on Unix. On Windows the handle refuses delete sharing, so the
+    /// copy cannot be renamed or replaced while it is held. Its identity comes
+    /// from a separate handle that allows deletion, confirmed against the
+    /// created file, so closing the creating handle is enough to unlink it.
+    fn create(path: &Path) -> io::Result<Self> {
         let mut options = OpenOptions::new();
         options.write(true).create_new(true);
         #[cfg(unix)]
         {
-            use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
-            options.mode(fs::metadata(path)?.permissions().mode() & 0o777);
+            use std::os::unix::fs::OpenOptionsExt;
+            options.mode(0o600);
         }
         #[cfg(windows)]
         {
             use std::os::windows::fs::OpenOptionsExt;
             const SHARE_READ_WRITE: u32 = 3;
             options.share_mode(SHARE_READ_WRITE);
-            let _ = path;
         }
-        let file = options.open(partial)?;
-        let identity = Handle::from_file(file.try_clone()?)?;
+        let file = options.open(path)?;
+        let identity = Handle::from_path(path)?;
+        if identity != Handle::from_file(file.try_clone()?)? {
+            return Err(replaced(path));
+        }
         Ok(Self {
-            path: partial.to_owned(),
+            path: path.to_owned(),
             file,
             identity,
         })
     }
 
     fn ensure(&self, name: &Path) -> io::Result<()> {
-        if names(&self.identity, name)? {
-            return Ok(());
+        match Handle::from_path(name) {
+            Ok(handle) if handle == self.identity => Ok(()),
+            Ok(_) => Err(replaced(name)),
+            Err(error) if error.kind() == ErrorKind::NotFound => Err(replaced(name)),
+            Err(error) => Err(error),
         }
-        Err(io::Error::new(
-            ErrorKind::InvalidData,
-            format!("{} was replaced during the backup", name.display()),
-        ))
     }
 
     /// Sync the copy through the held handle once the path is known to still
@@ -133,38 +168,33 @@ impl Lease {
         Ok(self.file.sync_all()?)
     }
 
-    /// Release the partial name once the copy is linked elsewhere. The handle
-    /// closes first, since Windows refuses to unlink a file held without
-    /// delete sharing, and the name is removed only if it is still ours.
+    /// Close both handles and remove the staged name if it is still this copy.
+    /// A linked-out backup keeps the data under its own name.
     fn release(self) -> io::Result<()> {
-        drop(self.file);
-        if names(&self.identity, &self.path)? {
-            fs::remove_file(&self.path)?;
-        }
-        Ok(())
-    }
-
-    /// Remove what this backup created after a failure, and nothing else.
-    fn abandon(self) -> io::Result<()> {
-        drop(self.file);
-        if names(&self.identity, &self.path)? {
-            discard(&self.path)?;
+        let ours = self.ensure(&self.path).is_ok();
+        let Self {
+            path,
+            file,
+            identity,
+        } = self;
+        drop(file);
+        drop(identity);
+        if ours {
+            fs::remove_file(&path)?;
         }
         Ok(())
     }
 }
 
-/// Whether `name` is the file `identity` holds; a missing name is not.
-fn names(identity: &Handle, name: &Path) -> io::Result<bool> {
-    match Handle::from_path(name) {
-        Ok(handle) => Ok(handle == *identity),
-        Err(error) if error.kind() == ErrorKind::NotFound => Ok(false),
-        Err(error) => Err(error),
-    }
+fn replaced(name: &Path) -> io::Error {
+    io::Error::new(
+        ErrorKind::InvalidData,
+        format!("{} was replaced during the backup", name.display()),
+    )
 }
 
-fn copy(source: &Connection, partial: &Path) -> Result<(), OpenError> {
-    let mut copy = Connection::open(partial)?;
+fn copy(source: &Connection, staged: &Path) -> Result<(), OpenError> {
+    let mut copy = Connection::open(staged)?;
     {
         let backup = Backup::new(source, &mut copy)?;
         let mut stalls = 0;
@@ -191,8 +221,8 @@ fn copy(source: &Connection, partial: &Path) -> Result<(), OpenError> {
 
 /// Reopen the copy from disk, make it one self-contained file, and check it is
 /// intact and at the version it was taken from.
-fn verify(partial: &Path, from: u32) -> Result<(), OpenError> {
-    let copy = Connection::open(partial)?;
+fn verify(staged: &Path, from: u32) -> Result<(), OpenError> {
+    let copy = Connection::open(staged)?;
     let mode: String = copy.query_row("PRAGMA journal_mode=DELETE", [], |row| row.get(0))?;
     if mode != "delete" {
         return Err(OpenError::BackupUnverified(format!("journal mode {mode}")));
@@ -211,9 +241,8 @@ fn verify(partial: &Path, from: u32) -> Result<(), OpenError> {
     Ok(())
 }
 
-/// Link the copy to the first free `<database>.v<from>[-n].backup` name, then
-/// release the partial name. A hard link fails when the name exists, so no
-/// earlier backup is replaced.
+/// Link the copy to the first free `<database>.v<from>[-n].backup` name. A
+/// hard link fails when the name exists, so no earlier backup is replaced.
 fn publish(lease: &Lease, path: &Path, from: u32) -> Result<PathBuf, OpenError> {
     for attempt in 0..MAX_NAMES {
         let suffix = match attempt {
@@ -228,7 +257,6 @@ fn publish(lease: &Lease, path: &Path, from: u32) -> Result<PathBuf, OpenError> 
             Err(error) => return Err(error.into()),
         }
         lease.ensure(&name)?;
-        sync_directory(path)?;
         return Ok(name);
     }
     Err(io::Error::new(

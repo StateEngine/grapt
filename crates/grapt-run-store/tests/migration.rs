@@ -79,11 +79,12 @@ async fn an_upgrade_backs_up_the_old_schema_first_and_replaces_a_stale_partial_c
     let dir = TempDir::new()?;
     let path = dir.path().join("run.db");
     open(&path, V1).await?;
-    let partial = dir.path().join("run.db.backup-partial");
-    std::fs::write(&partial, b"left by a crash")?;
+    let staging = dir.path().join("run.db.backup-staging");
+    std::fs::create_dir(&staging)?;
+    std::fs::write(staging.join("copy"), b"left by a crash")?;
     let backup = std::fs::canonicalize(dir.path())?.join("run.db.v1.backup");
     assert_eq!(open(&path, V3).await?, migrated(1, 3, Some(backup.clone())));
-    assert!(!partial.exists());
+    assert!(!staging.exists());
     let (version, tables, notes) = contents(&backup)?;
     assert_eq!((version, notes), (1, vec!["kept".to_owned()]));
     assert!(!tables.contains(&"tag".to_owned()));
@@ -160,14 +161,14 @@ async fn a_backup_that_cannot_be_written_leaves_the_file_as_found() -> TestResul
     assert_eq!(mode, "delete");
     let before = std::fs::read(&path)?;
     // Something that is not a file holds the partial name; it is not removed.
-    let blocker = dir.path().join("run.db.backup-partial");
-    std::fs::create_dir(&blocker)?;
+    let blocker = dir.path().join("run.db.backup-staging");
+    std::fs::write(&blocker, b"someone else's file")?;
     assert!(matches!(
         open(&path, V2).await,
         Err(OpenError::BackupFailed(_))
     ));
     assert_eq!(std::fs::read(&path)?, before);
-    assert!(blocker.is_dir() && backups(dir.path())?.is_empty());
+    assert!(blocker.is_file() && backups(dir.path())?.is_empty());
     Ok(())
 }
 
@@ -188,32 +189,58 @@ async fn another_writer_holding_the_lock_stalls_the_open_without_a_change() -> T
     Ok(())
 }
 
-/// A crash mid-transaction in rollback-journal mode leaves a hot journal.
-/// Opening rolls it back to the last commit, then migrates as usual.
-#[tokio::test]
-async fn a_hot_journal_left_by_a_crash_is_rolled_back_and_the_store_opens() -> TestResult {
-    let dir = TempDir::new()?;
-    let (live, crashed) = (dir.path().join("live.db"), dir.path().join("run.db"));
-    open(&live, V1).await?;
-    let writer = Connection::open(&live)?;
+/// Leave at `crashed` what a crash mid-transaction in rollback-journal mode
+/// leaves of `live`: a changed file and the hot journal that undoes it. The
+/// copy is taken mid-transaction, so no process holds a lock on it.
+fn crash(live: &Path, crashed: &Path) -> TestResult {
+    let writer = Connection::open(live)?;
     writer.execute_batch(
         "PRAGMA journal_mode=DELETE; PRAGMA cache_size=1; BEGIN;
          CREATE TABLE uncommitted(data BLOB);
          WITH RECURSIVE n(i) AS (VALUES(1) UNION ALL SELECT i+1 FROM n WHERE i<64)
              INSERT INTO uncommitted SELECT zeroblob(4096) FROM n;",
     )?;
-    // Copying mid-transaction captures what a crash leaves: a changed file
-    // and the journal that undoes it, with no process holding a lock.
-    std::fs::copy(&live, &crashed)?;
-    std::fs::copy(
-        dir.path().join("live.db-journal"),
-        dir.path().join("run.db-journal"),
-    )?;
+    let journal = |path: &Path| PathBuf::from(format!("{}-journal", path.display()));
+    std::fs::copy(live, crashed)?;
+    std::fs::copy(journal(live), journal(crashed))?;
     writer.execute_batch("ROLLBACK")?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_hot_journal_left_by_a_crash_is_rolled_back_and_the_store_opens() -> TestResult {
+    let dir = TempDir::new()?;
+    let (live, crashed) = (dir.path().join("live.db"), dir.path().join("run.db"));
+    open(&live, V1).await?;
+    crash(&live, &crashed)?;
     assert_eq!(open(&crashed, V2).await?.from, 1);
     let (version, tables, notes) = contents(&crashed)?;
     assert_eq!((version, notes), (2, vec!["kept".to_owned()]));
     assert!(!tables.contains(&"uncommitted".to_owned()));
+    Ok(())
+}
+
+/// A foreign or newer file is refused from its header, before SQLite could
+/// replay its hot journal, so the file and the journal stay as they were.
+#[tokio::test]
+async fn a_foreign_or_newer_file_keeps_its_hot_journal_untouched() -> TestResult {
+    let dir = TempDir::new()?;
+    let (newer, foreign) = (dir.path().join("newer.db"), dir.path().join("foreign.db"));
+    open(&newer, V2).await?;
+    Connection::open(&foreign)?.execute_batch("CREATE TABLE other(id INTEGER);")?;
+    for (live, ledger) in [(&newer, V1), (&foreign, V2)] {
+        let crashed = dir.path().join("crashed.db");
+        let journal = dir.path().join("crashed.db-journal");
+        crash(live, &crashed)?;
+        let before = (std::fs::read(&crashed)?, std::fs::read(&journal)?);
+        assert!(matches!(
+            open(&crashed, ledger).await,
+            Err(OpenError::FutureSchemaVersion { .. } | OpenError::Schema(_))
+        ));
+        assert_eq!((std::fs::read(&crashed)?, std::fs::read(&journal)?), before);
+        std::fs::remove_file(&crashed)?;
+        std::fs::remove_file(&journal)?;
+    }
     Ok(())
 }
 

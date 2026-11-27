@@ -3,13 +3,14 @@
 //! applied in `rust_migration` with a checksum of its SQL, and mirrors the
 //! newest in `user_version`.
 //!
-//! Opening checks, with reads only, that the file is a run store, was not
-//! migrated by a newer build, and records no migration whose SQL differs from
-//! this build's; otherwise it refuses before any change. SQLite may first roll
-//! back a hot journal, restoring the file's last committed state. Pending
-//! migrations then run behind a verified backup, in one transaction with their
-//! ledger rows, and only if no other connection committed since the plan, so
-//! a failure leaves the database as it was. SQLite refuses transaction
+//! Before SQLite opens the file, its header must name this store at a version
+//! this build knows; a foreign or newer file is refused with its hot journal,
+//! if any, untouched. SQLite may then roll back a hot journal, restoring the
+//! store's last committed state. Reads check that no applied migration's SQL
+//! differs from this build's. Pending migrations run behind a verified backup,
+//! in one transaction with their ledger rows, after the plan is checked again
+//! under the write lock and only if nothing committed since the backup, so a
+//! failure leaves the database as it was. SQLite refuses transaction
 //! control, attachment, pragmas and access to the store's own tables from
 //! migration SQL.
 use crate::error::{LedgerError, OpenError};
@@ -20,6 +21,7 @@ use sha2::{Digest, Sha256};
 use std::path::{Path, PathBuf};
 
 mod backup;
+mod header;
 #[cfg(test)]
 mod tests;
 
@@ -57,14 +59,21 @@ pub struct Migrated {
 }
 
 /// The read-only verdict on a database before anything is written to it.
-pub(crate) struct Plan {
+#[derive(Debug, PartialEq, Eq)]
+struct Plan {
     from: u32,
     fresh: bool,
 }
 
-/// Check `ledger` and the database against each other without changing either.
-pub(crate) fn plan(connection: &Connection, ledger: &[MigrationSpec]) -> Result<Plan, OpenError> {
+/// Before SQLite opens `path`: check the ledger, then refuse a foreign or newer
+/// file from its header alone, leaving it and any hot journal untouched.
+pub(crate) fn check_header(path: &Path, ledger: &[MigrationSpec]) -> Result<(), OpenError> {
     validate(ledger)?;
+    header::check(path, APPLICATION_ID as u32, ledger.len() as u32)
+}
+
+/// Check `ledger` and the database against each other without changing either.
+fn plan(connection: &Connection, ledger: &[MigrationSpec]) -> Result<Plan, OpenError> {
     let max_supported = ledger.len() as u32;
     let app: i64 = connection.pragma_query_value(None, "application_id", |row| row.get(0))?;
     let found: i64 = connection.pragma_query_value(None, "user_version", |row| row.get(0))?;
@@ -166,37 +175,26 @@ fn applied(connection: &Connection, max_supported: u32) -> Result<Vec<Applied>, 
     Ok(rows)
 }
 
-/// Apply what `plan` found pending on the same connection, so the backup and
-/// the migration both read the one file this connection holds open. `path` is
-/// that file's real location, beside which the backup is written.
-pub(crate) fn apply(
+/// Plan and apply `ledger` on the connection that holds the file open, so the
+/// backup and the migration both read the one file. `path` is that file's
+/// real location, beside which the backup is written.
+pub(crate) fn open(
     connection: &mut Connection,
     path: &Path,
     ledger: &[MigrationSpec],
-    planned: Plan,
 ) -> Result<Migrated, OpenError> {
-    let to = ledger.len() as u32;
-    if planned.from == to {
-        return Ok(Migrated {
-            from: to,
-            to,
-            backup: None,
-        });
-    }
-    // Changes only when another connection commits; compared once this
-    // connection holds the write lock.
+    // Changes only when another connection commits; sampled before the plan
+    // so no commit after this point goes unseen.
     let seen = data_version(connection)?;
-    let backup = if planned.fresh {
-        None
-    } else {
+    let planned = plan(connection, ledger)?;
+    let to = ledger.len() as u32;
+    let backup = if planned.from < to && !planned.fresh {
         Some(backup::take(connection, path, planned.from)?)
+    } else {
+        None
     };
     connection.execute_batch("BEGIN IMMEDIATE")?;
-    let result = if data_version(connection)? == seen {
-        migrate(connection, ledger, &planned)
-    } else {
-        Err(LedgerError::Moved.into())
-    };
+    let result = locked(connection, ledger, &planned, seen, backup.is_some());
     let result = result.and_then(|()| Ok(connection.execute_batch("COMMIT")?));
     if result.is_err() && !connection.is_autocommit() {
         let _ = connection.execute_batch("ROLLBACK");
@@ -206,6 +204,25 @@ pub(crate) fn apply(
         to,
         backup,
     })
+}
+
+/// Holding the write lock: the plan must still describe the file, and nothing
+/// may have committed since a backup of it was taken.
+fn locked(
+    connection: &mut Connection,
+    ledger: &[MigrationSpec],
+    planned: &Plan,
+    seen: i64,
+    backed_up: bool,
+) -> Result<(), OpenError> {
+    let changed = data_version(connection)? != seen;
+    if changed && backed_up || plan(connection, ledger)? != *planned {
+        return Err(LedgerError::Moved.into());
+    }
+    if planned.from < ledger.len() as u32 {
+        migrate(connection, ledger, planned)?;
+    }
+    Ok(())
 }
 
 fn data_version(connection: &Connection) -> Result<i64, OpenError> {
