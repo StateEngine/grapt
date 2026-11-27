@@ -98,10 +98,30 @@ pub(in crate::dogfood) fn require_resolved_effects(
 /// Nested starts with no terminal, oldest first: what process loss left
 /// running. An unknown outcome is a terminal; it settles admission, not the
 /// effect, so the model sees its notice and undo keeps its own preconditions.
+/// Why a Session's lost tool runs could not be listed.
+#[derive(Debug, thiserror::Error)]
+pub(in crate::dogfood) enum OrphanScan {
+    /// The history could not be read just now; a later read may succeed.
+    #[error("{0}")]
+    Unreadable(String),
+    /// The history is corrupt or holds more than reconciliation may settle;
+    /// `/reconcile` refuses it the same way.
+    #[error("{0}")]
+    Unsettleable(String),
+}
+
+impl From<OrphanScan> for String {
+    fn from(scan: OrphanScan) -> Self {
+        scan.to_string()
+    }
+}
+
 pub(in crate::dogfood) fn orphaned_nested(
     store: &EventStore,
     session: &SessionId,
-) -> Result<Vec<(grapt_types::PhysicalAttemptId, ToolCallId)>, String> {
+) -> Result<Vec<(grapt_types::PhysicalAttemptId, ToolCallId)>, OrphanScan> {
+    let unreadable = |error: rusqlite::Error| OrphanScan::Unreadable(error.to_string());
+    let unsettleable = |reason: &str| OrphanScan::Unsettleable(reason.to_owned());
     // One streaming cursor, no transcript cut and no lifetime-sized collection:
     // only unresolved starts are held, each with its seq for ordering. A
     // larger unresolved set than reconciliation may settle is itself
@@ -114,7 +134,7 @@ pub(in crate::dogfood) fn orphaned_nested(
          FROM event WHERE aggregate_family = 'session'
          AND aggregate_id = ?1 AND type IN ('session.tool.nested.started.1', 'session.tool.terminal.1')
          ORDER BY seq"
-    )).map_err(|e| e.to_string())?;
+    )).map_err(unreadable)?;
     let mapped = statement
         .query_map([session.as_str()], |row| {
             Ok((
@@ -123,24 +143,25 @@ pub(in crate::dogfood) fn orphaned_nested(
                 grapt_store::stored_terminal::classify_optional(row, 3)?,
             ))
         })
-        .map_err(|e| e.to_string())?;
+        .map_err(unreadable)?;
     for row in mapped {
-        let (seq, nested, terminal) = row.map_err(|e| e.to_string())?;
+        let (seq, nested, terminal) = row.map_err(unreadable)?;
         if seq < 0 {
-            return Err("tool effect has negative sequence".into());
+            return Err(unsettleable("tool effect has negative sequence"));
         }
         if let Some(data) = nested {
-            let value = serde_json::from_str(&data).map_err(|_| "nested admission is not JSON")?;
+            let value = serde_json::from_str(&data)
+                .map_err(|_| unsettleable("nested admission is not JSON"))?;
             let fact = grapt_event::session_tool_nested::decode(&value)
-                .map_err(|_| "nested admission is corrupt")?;
+                .map_err(|_| unsettleable("nested admission is corrupt"))?;
             let key = (fact.attempt().clone(), fact.call().clone());
             if pending.insert(key, seq).is_some() {
-                return Err("nested admission is duplicated".into());
+                return Err(unsettleable("nested admission is duplicated"));
             }
             if pending.len() > grapt_runtime::MAX_ORPHANED_NESTED {
-                return Err(
-                    "unresolved nested effects exceed what /reconcile may settle; this session cannot continue".into(),
-                );
+                return Err(unsettleable(
+                    "unresolved nested effects exceed what /reconcile may settle; this session cannot continue",
+                ));
             }
         } else if let Some(StoredTerminal::Readable(fact)) = terminal {
             // An unreadable terminal settles nothing: its start stays an

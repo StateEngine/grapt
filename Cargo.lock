@@ -1771,6 +1771,7 @@ name = "grapt-connections"
 version = "0.1.0"
 dependencies = [
  "grapt-config",
+ "grapt-connections-catalog",
  "grapt-login",
  "grapt-types",
  "libc",
@@ -1779,6 +1780,10 @@ dependencies = [
  "tokio",
  "zeroize",
 ]
+
+[[package]]
+name = "grapt-connections-catalog"
+version = "0.1.0"
 
 [[package]]
 name = "grapt-console"
@@ -1828,6 +1833,16 @@ dependencies = [
  "serde_json",
  "sha2 0.10.9",
  "trybuild",
+]
+
+[[package]]
+name = "grapt-fault-harness"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "thiserror 2.0.20",
+ "tokio",
 ]
 
 [[package]]
@@ -2016,6 +2031,7 @@ version = "0.1.0"
 dependencies = [
  "base64 0.22.1",
  "grapt-diagnostics",
+ "grapt-plugin-prompt",
  "grapt-sandbox",
  "grapt-types",
  "nix 0.30.1",
@@ -2033,6 +2049,10 @@ dependencies = [
  "url",
  "windows-spawn",
 ]
+
+[[package]]
+name = "grapt-plugin-prompt"
+version = "0.1.0"
 
 [[package]]
 name = "grapt-policy"
@@ -2166,6 +2186,7 @@ dependencies = [
  "fs2",
  "grapt-types",
  "rusqlite",
+ "same-file",
  "sha2 0.10.9",
  "tempfile",
  "thiserror 2.0.20",
@@ -2187,6 +2208,7 @@ dependencies = [
  "grapt-types",
  "rusqlite",
  "serde_json",
+ "tempfile",
  "thiserror 2.0.20",
  "tokio",
  "trybuild",
@@ -2245,6 +2267,7 @@ dependencies = [
  "rusqlite",
  "serde",
  "serde_json",
+ "tempfile",
 ]
 
 [[package]]
@@ -2261,6 +2284,19 @@ dependencies = [
  "serde_json",
  "sha2 0.10.9",
  "thiserror 2.0.20",
+]
+
+[[package]]
+name = "grapt-session-actor"
+version = "0.1.0"
+dependencies = [
+ "grapt-run-store",
+ "grapt-types",
+ "rusqlite",
+ "sha2 0.10.9",
+ "tempfile",
+ "thiserror 2.0.20",
+ "tokio",
 ]
 
 [[package]]
@@ -2365,10 +2401,10 @@ dependencies = [
  "grapt-api",
  "grapt-cli",
  "grapt-client",
- "grapt-connections",
+ "grapt-connections-catalog",
  "grapt-console",
  "grapt-image",
- "grapt-plugin",
+ "grapt-plugin-prompt",
  "grapt-schema",
  "grapt-tui-forms",
  "grapt-tui-transcript",

@@ -1,5 +1,6 @@
 use grapt_run_store::{
-    Command, Durability, ReadError, RequestKey, RunStore, Scope, Statement, Value, WriteError,
+    Command, Durability, MigrationSpec, ReadError, RequestKey, RunStore, Scope, Statement, Value,
+    WriteError,
 };
 use std::error::Error;
 use std::path::Path;
@@ -11,6 +12,7 @@ type ResultTest = Result<(), Box<dyn Error + Send + Sync>>;
 const DATABASE: &str = "GRAPT_TEST_WAL_LIMIT_DATABASE";
 const SCHEMA: &str = "CREATE TABLE records(id INTEGER PRIMARY KEY, payload BLOB NOT NULL);
 CREATE TABLE ordered_records(id INTEGER PRIMARY KEY, payload BLOB NOT NULL);";
+const LEDGER: &[MigrationSpec] = &[MigrationSpec::new(1, "initial", SCHEMA)];
 const ROWS: i64 = 80;
 const PAYLOAD_LEN: usize = 960 * 1024;
 const WAL_CAP: u64 = 64 * 1024 * 1024;
@@ -70,7 +72,7 @@ fn isolated(test: &str, path: &Path) -> ResultTest {
 }
 
 async fn seed(path: &Path) -> ResultTest {
-    let store = RunStore::open(path, SCHEMA).await?;
+    let store = RunStore::open(path, LEDGER).await?;
     let writer = store.writer();
     for id in 1..=ROWS {
         let key = RequestKey::new(&format!("seed-{id}"))?;
@@ -99,7 +101,7 @@ async fn seed(path: &Path) -> ResultTest {
 }
 
 async fn rewrite(path: &Path) -> ResultTest {
-    let store = RunStore::open(path, SCHEMA).await?;
+    let store = RunStore::open(path, LEDGER).await?;
     let reader = store.readers();
     let (pinned, reached) = tokio::sync::oneshot::channel();
     let (release, proceed) = mpsc::sync_channel(1);
@@ -178,7 +180,7 @@ async fn rewrite(path: &Path) -> ResultTest {
 }
 
 async fn ordered_insert(path: &Path) -> ResultTest {
-    let store = RunStore::open(path, SCHEMA).await?;
+    let store = RunStore::open(path, LEDGER).await?;
     let writer = store.writer();
     let mut notices = writer.subscribe();
     let key = RequestKey::new("ordered-insert")?;
@@ -228,7 +230,7 @@ async fn ordered_insert(path: &Path) -> ResultTest {
 }
 
 async fn scalar_insert(path: &Path) -> ResultTest {
-    let store = RunStore::open(path, SCHEMA).await?;
+    let store = RunStore::open(path, LEDGER).await?;
     let writer = store.writer();
     let mut notices = writer.subscribe();
     let key = RequestKey::new("scalar-insert")?;

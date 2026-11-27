@@ -5,7 +5,7 @@
 //! bounded input, namespaced identities and explicit failures.
 mod manifest;
 mod marketplace;
-pub mod prompt;
+pub use grapt_plugin_prompt as prompt;
 mod source;
 pub use manifest::{CommandSource, HookSource, Manifest};
 pub use marketplace::Marketplace;

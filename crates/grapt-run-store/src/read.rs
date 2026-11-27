@@ -188,6 +188,11 @@ impl Pool {
 
 fn read_only(context: AuthContext<'_>) -> Authorization {
     match context.action {
+        // The schema ledger belongs to the store; receipts stay readable for
+        // the pool's own receipt lookups.
+        AuthAction::Read { table_name, .. } if table_name.eq_ignore_ascii_case(sqlite::LEDGER) => {
+            Authorization::Deny
+        }
         AuthAction::Select | AuthAction::Read { .. } | AuthAction::Recursive => {
             Authorization::Allow
         }
@@ -245,7 +250,8 @@ mod tests {
     async fn canceled_shutdown_drops_while_the_reader_cache_is_locked(
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let folder = tempfile::TempDir::new()?;
-        let store = RunStore::open(folder.path().join("run.db"), "").await?;
+        const EMPTY: &[crate::MigrationSpec] = &[crate::MigrationSpec::new(1, "empty", "")];
+        let store = RunStore::open(folder.path().join("run.db"), EMPTY).await?;
         let readers = store.readers();
         let pool = readers.0.clone();
         let (held, locked) = tokio::sync::oneshot::channel();
