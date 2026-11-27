@@ -328,13 +328,17 @@ fn write_service(root: &Path) -> Result<(PathBuf, PathBuf), Box<dyn Error>> {
             project_plugin.to_string_lossy().replace('\\', "\\\\")
         ),
     )?;
-    let cleanup = root.join("plugin-cleanup.txt");
-    let event = root.join("plugin-event.json");
+    let plugin_output = root.join("plugin-output");
+    fs::create_dir_all(&plugin_output)?;
+    let cleanup = plugin_output.join("plugin-cleanup.txt");
+    let event = plugin_output.join("plugin-event.json");
     let reference = root.join("plugin-reference");
     fs::create_dir_all(&reference)?;
     let skill = root.join("plugin-skill.md");
     fs::write(&skill, "# Plugin skill\n")?;
-    let external = root.join("external-plugin.mjs");
+    let plugin_dir = root.join("external-plugin");
+    fs::create_dir_all(&plugin_dir)?;
+    let external = plugin_dir.join("external-plugin.mjs");
     fs::write(
         &external,
         r#"import { writeFile } from "node:fs/promises"
@@ -395,6 +399,9 @@ export default {
         serde_json::to_vec_pretty(&serde_json::json!({
             "plugins": [{
                 "package": external.to_string_lossy(),
+                "permissions": {
+                    "write": [plugin_output.to_string_lossy()]
+                },
                 "options": {
                     "cleanup": cleanup.to_string_lossy(),
                     "event": event.to_string_lossy(),
@@ -705,7 +712,7 @@ fn explicit_plugin_registers_and_project_code_is_blocked_then_cleanup_runs(
         .iter()
         .any(|skill| skill["id"] == "plugin-skill" && skill["name"] == "Plugin Skill")));
     let refusals: Vec<String> = product.step("read plugin-event.json", |_| {
-        fs::read(scratch.0.join("plugin-event.json"))
+        fs::read(scratch.0.join("plugin-output").join("plugin-event.json"))
             .map_err(|error| -> Box<dyn Error> { error.into() })
             .and_then(|bytes| serde_json::from_slice(&bytes).map_err(Into::into))
     })?;
@@ -757,7 +764,10 @@ fn explicit_disable_survives_product_restart_without_an_active_generation(
     // The first product has exited and its cleanup is proven.
     first.settle()?;
 
-    let external = scratch.0.join("external-plugin.mjs");
+    let external = scratch
+        .0
+        .join("external-plugin")
+        .join("external-plugin.mjs");
     fs::write(
         &explicit,
         serde_json::to_vec_pretty(&serde_json::json!({
