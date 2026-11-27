@@ -31,7 +31,7 @@ mod mail;
 mod output_recovery;
 mod queries;
 use queries::effect_withheld;
-pub(super) use queries::{orphaned_nested, require_resolved_effects};
+pub(super) use queries::{orphaned_nested, require_resolved_effects, OrphanScan};
 pub(in crate::dogfood) mod files;
 pub(in crate::dogfood) mod progress;
 pub(in crate::dogfood) mod recent;

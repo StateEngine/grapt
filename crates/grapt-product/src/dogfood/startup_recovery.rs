@@ -9,11 +9,16 @@
 //! already idle is not process loss this pass can prove, so it keeps
 //! `/reconcile`, and startup never scans every Session's history.
 //!
+//! An open receipt or an active status is the only durable mark that a crash
+//! interrupted its Session, so a Session's lost runs are settled before either
+//! mark is cleared. If they cannot be, the marks stay and the next start finds
+//! the Session again. Sessions are visited page by page as each pass reads
+//! them, so nothing here grows with the number of interrupted Sessions.
+//!
 //! Every step reports what it skipped as a warning and lets startup continue.
 //! A Session's settlement commits on its own; nothing after it can undo or
 //! misreport it.
 use super::*;
-use std::collections::BTreeSet;
 
 pub(super) fn recover(
     store: &mut grapt_store::EventStore,
@@ -21,10 +26,16 @@ pub(super) fn recover(
     clock: &Arc<SystemClock>,
     receipt_bytes: NonZeroU32,
 ) -> Result<(), DogfoodRefusal> {
+    let runtime_ids = execution::RuntimeEventIds(Arc::clone(ids));
+    let runtime_clock = execution::RuntimeClock(Arc::clone(clock));
+    let mut first = |store: &mut grapt_store::EventStore, session: &SessionId| {
+        settle_lost_tool_runs(store, session, &runtime_ids, &runtime_clock)
+    };
     let attempts = recover_process_loss_attempts(
         store,
         clock.as_ref(),
         AttemptRecordCeiling::new(receipt_bytes),
+        &mut first,
     )
     .map_err(|error| DogfoodRefusal::Compose(error.to_string()))?;
     for warning in &attempts.warnings {
@@ -32,7 +43,12 @@ pub(super) fn recover(
             "startup warning reason=attempt-recovery-skipped detail={warning}"
         ));
     }
-    omitted("attempt-recovery-skipped", attempts.warnings_omitted);
+    if attempts.warnings_omitted > 0 {
+        crate::server_log::warn(format_args!(
+            "startup warning reason=attempt-recovery-skipped detail={} more not listed",
+            attempts.warnings_omitted
+        ));
+    }
     let forms = elicitation::recover(store, ids.as_ref(), clock.as_ref())
         .map_err(DogfoodRefusal::Compose)?;
     for warning in &forms {
@@ -40,62 +56,42 @@ pub(super) fn recover(
             "startup warning reason=form-recovery-skipped detail={warning}"
         ));
     }
-    let statuses = session_status::SessionStatusEmitter::recover(store, clock, ids);
-    let interrupted: BTreeSet<SessionId> = statuses.into_iter().chain(attempts.touched).collect();
-    settle_lost_tool_runs(store, &interrupted, ids, clock);
+    session_status::SessionStatusEmitter::recover(store, clock, ids, &mut first);
     Ok(())
 }
 
-fn omitted(reason: &str, count: usize) {
-    if count > 0 {
-        crate::server_log::warn(format_args!(
-            "startup warning reason={reason} detail={count} more not listed"
-        ));
-    }
-}
-
-/// Record each interrupted Session's lost tool runs as unknown, one Session
-/// per transaction. A Session whose runs cannot be read or settled, including
-/// one with more than reconciliation may settle, is skipped with a warning and
-/// keeps its `/reconcile` refusal.
+/// Record one interrupted Session's lost tool runs as unknown, in one
+/// transaction; the caller holds its writer. An error keeps the Session's
+/// crash marks for the next start. A history `/reconcile` refuses too, being
+/// corrupt or larger than reconciliation may settle, is reported and does not
+/// hold the Session's marks back, since no later start could settle it either.
 fn settle_lost_tool_runs(
     store: &mut grapt_store::EventStore,
-    sessions: &BTreeSet<SessionId>,
-    ids: &Arc<OsRandomIds>,
-    clock: &Arc<SystemClock>,
-) {
-    let ids = execution::RuntimeEventIds(Arc::clone(ids));
-    let clock = execution::RuntimeClock(Arc::clone(clock));
-    for session in sessions {
-        let settled = continuation::orphaned_nested(store, session).and_then(|orphans| {
-            if orphans.is_empty() {
-                return Ok(0);
-            }
-            elected(store, session)?;
-            grapt_runtime::reconcile_orphaned_nested(store, session, &orphans, &ids, &clock)?;
-            Ok(orphans.len())
-        });
-        match settled {
-            Ok(0) => {}
-            Ok(count) => crate::server_log::info(format_args!(
-                "session {session}: recorded {count} tool runs lost at restart as unknown"
-            )),
-            Err(reason) => crate::server_log::warn(format_args!(
-                "startup warning reason=lost-tool-runs-skipped detail=session {session}: {reason}; \
-                 /reconcile records them"
-            )),
+    session: &SessionId,
+    ids: &execution::RuntimeEventIds,
+    clock: &execution::RuntimeClock,
+) -> Result<(), String> {
+    let orphans = match continuation::orphaned_nested(store, session) {
+        Ok(orphans) => orphans,
+        Err(continuation::OrphanScan::Unsettleable(reason)) => {
+            crate::server_log::warn(format_args!(
+                "startup warning reason=lost-tool-runs-unsettleable detail=session {session}: \
+                 {reason}; neither restart nor /reconcile can record them"
+            ));
+            return Ok(());
         }
+        Err(continuation::OrphanScan::Unreadable(reason)) => {
+            return Err(format!("its lost tool runs could not be read: {reason}"))
+        }
+    };
+    if orphans.is_empty() {
+        return Ok(());
     }
-}
-
-fn elected(store: &mut grapt_store::EventStore, session: &SessionId) -> Result<(), String> {
-    let aggregate = grapt_store::AggregateId::Session(session.clone());
-    match store.fencing_token(&aggregate) {
-        Ok(_) => Ok(()),
-        Err(grapt_store::WriteError::NotElected { .. }) => store
-            .elect_writer(&aggregate)
-            .map(drop)
-            .map_err(|error| error.to_string()),
-        Err(error) => Err(error.to_string()),
-    }
+    grapt_runtime::reconcile_orphaned_nested(store, session, &orphans, ids, clock)
+        .map_err(|reason| format!("its lost tool runs could not be recorded: {reason}"))?;
+    crate::server_log::info(format_args!(
+        "session {session}: recorded {} tool runs lost at restart as unknown",
+        orphans.len()
+    ));
+    Ok(())
 }
