@@ -356,6 +356,7 @@ mod tests {
             readable: vec![root.clone()],
             writable: vec![root.clone()],
             protected: vec![],
+            denied: Vec::new(),
             network: false,
         };
         let environment = super::super::super::shell_environment::Environment::parent()?;

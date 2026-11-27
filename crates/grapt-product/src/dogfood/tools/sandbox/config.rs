@@ -77,6 +77,7 @@ pub(super) fn read(root: &Path, sources: &CatalogSources) -> Result<Option<Plan>
         sources.environment.service_root().to_path_buf(),
         binaries,
         root.join(".stateengine"),
+        root.join("AGENTS.md"),
     ]);
     protected.extend(
         crate::dogfood::legacy_names::PROJECT_DIRECTORIES
@@ -90,6 +91,11 @@ pub(super) fn read(root: &Path, sources: &CatalogSources) -> Result<Option<Plan>
         .collect::<Result<_, _>>()?;
     protected.sort();
     protected.dedup();
+    let mut denied = vec![PathBuf::from(
+        crate::dogfood::permission_preset::resolved_path(&sources.environment.home.join(".ssh"))?,
+    )];
+    denied.sort();
+    denied.dedup();
     // This write-only policy permits normal toolchains to read their installed
     // libraries. Read authority is explicit for every drive touched by the plan.
     let mut readable = writable
@@ -112,7 +118,7 @@ pub(super) fn read(root: &Path, sources: &CatalogSources) -> Result<Option<Plan>
     }
     readable.sort();
     readable.dedup();
-    if readable.len() + writable.len() + protected.len() > 128 {
+    if readable.len() + writable.len() + protected.len() + denied.len() > 128 {
         return Err("sandbox policy exceeds 128 paths".into());
     }
     Ok(Some(Plan {
@@ -120,6 +126,7 @@ pub(super) fn read(root: &Path, sources: &CatalogSources) -> Result<Option<Plan>
         readable,
         writable,
         protected,
+        denied,
         network,
     }))
 }
@@ -179,6 +186,12 @@ fn git_control_paths(root: &Path, metadata_read_only: bool) -> Result<Vec<PathBu
         }
     };
     let mut protected = Vec::new();
+    // Protect repository-root AGENTS.md when a session starts inside a subdir.
+    if let Some(repo_root) = dot_git.parent() {
+        if repo_root != root {
+            protected.push(repo_root.join("AGENTS.md"));
+        }
+    }
     // Reserve session-local metadata unless .git is already a pointer file.
     // Nested sessions still cannot create a repository to shadow this one.
     if dot_git != root.join(".git") || !entry.as_ref().is_some_and(|metadata| metadata.is_file()) {

@@ -38,6 +38,7 @@ pub(super) fn program(network: bool) -> Result<BpfProgram, String> {
             libc::SYS_accept,
             libc::SYS_accept4,
             libc::SYS_sendto,
+            libc::SYS_sendmsg,
             libc::SYS_sendmmsg,
             libc::SYS_socket,
         ] {
@@ -116,4 +117,50 @@ pub(super) fn install(network: bool) -> Result<(), String> {
     nix::sys::prctl::set_no_new_privs()
         .map_err(|e| format!("Linux sandbox no-new-privileges failed: {e}"))?;
     seccompiler::apply_filter(&program).map_err(|e| format!("Linux sandbox seccomp failed: {e}"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const PROBE_ENV: &str = "GRAPT_SECCOMP_SENDMSG_PROBE";
+
+    #[test]
+    fn sendmsg_probe_child() -> Result<(), Box<dyn std::error::Error>> {
+        let Some(mode) = std::env::var_os(PROBE_ENV) else {
+            return Ok(());
+        };
+        let network = mode == "on";
+        install(network)?;
+        let status = std::process::Command::new("python3")
+            .args([
+                "-c",
+                "import socket, sys\na, b = socket.socketpair(socket.AF_UNIX, socket.SOCK_DGRAM)\ntry:\n    a.sendmsg([b'probe'])\n    sys.exit(0)\nexcept PermissionError:\n    sys.exit(77)\n",
+            ])
+            .status()?;
+        let expected = if network { 0 } else { 77 };
+        assert_eq!(status.code(), Some(expected));
+        Ok(())
+    }
+
+    #[test]
+    fn network_off_seccomp_blocks_sendmsg_with_eperm() -> Result<(), Box<dyn std::error::Error>> {
+        let exe = std::env::current_exe()?;
+        for mode in ["off", "on"] {
+            let output = std::process::Command::new(&exe)
+                .env(PROBE_ENV, mode)
+                .args([
+                    "--exact",
+                    "linux::seccomp::tests::sendmsg_probe_child",
+                    "--nocapture",
+                ])
+                .output()?;
+            assert!(
+                output.status.success(),
+                "seccomp sendmsg probe ({mode}) failed: {}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+        }
+        Ok(())
+    }
 }

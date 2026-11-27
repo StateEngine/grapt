@@ -138,6 +138,52 @@ fn isolation_defaults_off_and_repository_settings_cannot_widen_a_user_policy() -
 }
 
 #[test]
+fn default_policy_denies_ssh_and_protects_agents_md_and_git_controls() -> Result<(), String> {
+    let root = std::env::temp_dir().join(format!(
+        "grapt-sandbox-defaults-{}-{:?}",
+        std::process::id(),
+        std::thread::current().id()
+    ));
+    std::fs::create_dir(&root).map_err(|e| e.to_string())?;
+    let result = (|| {
+        let workspace = root.join("work");
+        let nested = workspace.join("sub");
+        for path in [
+            &workspace,
+            &nested,
+            &workspace.join(".git"),
+            &root.join("config"),
+        ] {
+            std::fs::create_dir(path).map_err(|e| e.to_string())?;
+        }
+        std::fs::write(
+            root.join("config/grapt.json"),
+            serde_json::json!({"sandbox":{"enabled":true}}).to_string(),
+        )
+        .map_err(|e| e.to_string())?;
+        let sources = CatalogSources::read(&nested, CatalogEnvironment::isolated(&root))?;
+        let plan = Plan::read(&nested, &sources)?.ok_or("sandbox plan absent")?;
+        let workspace_root = std::fs::canonicalize(&workspace).map_err(|e| e.to_string())?;
+        let nested_root = std::fs::canonicalize(&nested).map_err(|e| e.to_string())?;
+        let expected_ssh = PathBuf::from(crate::dogfood::permission_preset::resolved_path(
+            &root.join("home").join(".ssh"),
+        )?);
+        assert!(plan.denied.contains(&expected_ssh));
+        assert!(plan.policy().denied_paths.contains(&expected_ssh));
+        assert!(plan.protected.contains(&workspace_root.join("AGENTS.md")));
+        assert!(plan.protected.contains(&nested_root.join("AGENTS.md")));
+        for control in ["config", "config.worktree", "hooks"] {
+            assert!(plan
+                .protected
+                .contains(&workspace_root.join(".git").join(control)));
+        }
+        Ok(())
+    })();
+    std::fs::remove_dir_all(&root).map_err(|e| e.to_string())?;
+    result
+}
+
+#[test]
 fn callback_output_cannot_replace_native_receipts_or_change_interpolation_bytes(
 ) -> Result<(), String> {
     let actual = Receipt::started(RealizedEnforcement::PlatformSandbox {

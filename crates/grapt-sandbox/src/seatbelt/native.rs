@@ -1,15 +1,13 @@
 //! The system launcher installs Seatbelt before the trusted image reports ready.
 //! Process groups, terminal streams and cancellation stay with the caller.
 pub(crate) use super::launch::Child;
-use super::{launch, profile::Profile, refused, INNER_ARGUMENT};
+pub(super) use super::ready::READY;
+use super::{launch, profile::Profile, ready::wait_ready, refused, INNER_ARGUMENT};
 use crate::{ShellRequest, SpawnFailure};
-use nix::poll::{poll, PollFd, PollFlags};
 use std::ffi::OsString;
-use std::io::{Read, Write};
+use std::io::Write;
 use std::os::fd::{AsFd, AsRawFd};
 use std::path::Path;
-
-pub(super) const READY: &[u8] = b"GRAPT_SEATBELT_READY\n";
 
 pub(super) fn spawn(
     executable: &Path,
@@ -75,7 +73,7 @@ pub(super) fn spawn(
     drop(original_stderr);
     drop(inherited_stderr);
     let started = (|| {
-        let prefix = ready(&mut pipe, request.timeout_ms)?;
+        let prefix = wait_ready(&mut pipe, request.timeout_ms)?;
         std::io::stderr().write_all(&prefix).map_err(|error| {
             refused(
                 format!("Seatbelt startup diagnostics failed: {error}"),
@@ -91,57 +89,4 @@ pub(super) fn spawn(
             Err(error)
         }
     }
-}
-
-fn ready(pipe: &mut std::io::PipeReader, timeout_ms: u32) -> Result<Vec<u8>, SpawnFailure> {
-    let mut bytes = Vec::new();
-    let interval = u16::try_from((timeout_ms.min(5000) / 32).max(1))
-        .map_err(|_| refused("Seatbelt startup bound is invalid", false))?;
-    for _ in 0..32 {
-        let mut descriptors = [PollFd::new(pipe.as_fd(), PollFlags::POLLIN)];
-        match poll(&mut descriptors, interval) {
-            Ok(0) | Err(nix::errno::Errno::EINTR) => continue,
-            Ok(_) => (),
-            Err(error) => {
-                return Err(refused(
-                    format!("Seatbelt startup observation failed: {error}"),
-                    true,
-                ))
-            }
-        }
-        let mut chunk = [0; 128];
-        let count = pipe
-            .read(&mut chunk)
-            .map_err(|error| refused(format!("Seatbelt startup read failed: {error}"), true))?;
-        bytes.extend_from_slice(&chunk[..count]);
-        let position = bytes
-            .windows(READY.len())
-            .position(|window| window == READY);
-        if String::from_utf8_lossy(&bytes[..position.unwrap_or(bytes.len())])
-            .to_ascii_lowercase()
-            .contains("deprecated")
-        {
-            return Err(refused(
-                "sandbox-exec reports that Seatbelt is deprecated on this host",
-                position.is_some(),
-            ));
-        }
-        if let Some(position) = position {
-            bytes.drain(position..position + READY.len());
-            return Ok(bytes);
-        }
-        if count == 0 {
-            return Err(refused(
-                format!(
-                    "sandbox-exec did not establish containment: {}",
-                    String::from_utf8_lossy(&bytes).trim()
-                ),
-                false,
-            ));
-        }
-    }
-    Err(refused(
-        "Seatbelt startup timed out or exceeded 4096 bytes",
-        true,
-    ))
 }
