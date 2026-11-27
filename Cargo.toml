@@ -34,6 +34,7 @@ members = [
     "crates/grapt-web",
     "crates/grapt-provider",
     "crates/grapt-run-store",
+    "crates/grapt-session-actor",
     "crates/grapt-runtime",
     "crates/grapt-instruction",
     "crates/grapt-mail-transport",

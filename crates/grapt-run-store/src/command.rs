@@ -209,6 +209,9 @@ fn hash_value(hash: &mut Sha256, value: &Value) {
 #[derive(Debug, Eq, PartialEq)]
 pub struct Receipt {
     pub affected_rows: Vec<u64>,
+    /// True when an earlier commit under this key answered the request and
+    /// its effects were not applied again.
+    pub replayed: bool,
 }
 
 impl Receipt {
@@ -231,7 +234,10 @@ impl Receipt {
                 u64::from_le_bytes(rows)
             })
             .collect();
-        Some(Self { affected_rows })
+        Some(Self {
+            affected_rows,
+            replayed: true,
+        })
     }
 }
 
