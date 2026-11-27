@@ -341,6 +341,13 @@
    ],
    "dev": []
   },
+  "grapt-session-actor": {
+   "deps": [
+    "grapt-run-store",
+    "grapt-types"
+   ],
+   "dev": []
+  },
   "grapt-session-history": {
    "deps": [
     "grapt-event",

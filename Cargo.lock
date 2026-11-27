@@ -2264,6 +2264,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "grapt-session-actor"
+version = "0.1.0"
+dependencies = [
+ "grapt-run-store",
+ "grapt-types",
+ "sha2 0.10.9",
+ "tempfile",
+ "thiserror 2.0.20",
+ "tokio",
+]
+
+[[package]]
 name = "grapt-session-history"
 version = "0.1.0"
 dependencies = [

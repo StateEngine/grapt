@@ -37325,6 +37325,7 @@
   "grapt-service",
   "grapt-service-state",
   "grapt-session",
+  "grapt-session-actor",
   "grapt-session-history",
   "grapt-shell",
   "grapt-stateengine-api",
