@@ -75,6 +75,7 @@ fn foreign_unreadable_terminals_leave_positions_and_declared_bytes_alone() -> Re
             None,
             1_000_000,
             1_000_000,
+            None,
         )?;
         assert_eq!(over, None, "{data}");
     }

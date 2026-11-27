@@ -3,6 +3,10 @@
 
 use super::*;
 
+pub(super) fn tool_artifact_read_bound() -> usize {
+    usize::try_from(grapt_runtime::TOOL_ARTIFACT_MAX_BYTES).unwrap_or(MAX_CODEX_TOOL_TEXT_BYTES)
+}
+
 fn read_bytes(
     artifacts: &FilesystemArtifactStore,
     reference: &grapt_types::ArtifactRef,
@@ -28,13 +32,29 @@ pub(super) fn fetch_bytes(
     disposition: CaptureDisposition,
     label: &str,
 ) -> Result<Result<Vec<u8>, grapt_artifact::FetchError>, String> {
+    fetch_bytes_bounded(
+        artifacts,
+        reference,
+        disposition,
+        label,
+        MAX_CODEX_TOOL_TEXT_BYTES,
+    )
+}
+
+pub(super) fn fetch_bytes_bounded(
+    artifacts: &FilesystemArtifactStore,
+    reference: &grapt_types::ArtifactRef,
+    disposition: CaptureDisposition,
+    label: &str,
+    max_bytes: usize,
+) -> Result<Result<Vec<u8>, grapt_artifact::FetchError>, String> {
     if !disposition.is_complete() {
         return Err(format!("{label} artifact is truncated"));
     }
-    if reference.length() > MAX_CODEX_TOOL_TEXT_BYTES as u64 {
+    if reference.length() > max_bytes as u64 {
         return Err(format!("{label} artifact exceeds the continuation bound"));
     }
-    let budget = ReadBudget::new(MAX_CODEX_TOOL_TEXT_BYTES as u64)
+    let budget = ReadBudget::new(max_bytes as u64)
         .ok_or_else(|| "continuation artifact read bound is zero".to_owned())?;
     let mut offset = 0u64;
     let mut bytes = Vec::new();
@@ -43,7 +63,7 @@ pub(super) fn fetch_bytes(
             Ok(page) => page,
             Err(error) => return Ok(Err(error)),
         };
-        if bytes.len().saturating_add(page.bytes().len()) > MAX_CODEX_TOOL_TEXT_BYTES {
+        if bytes.len().saturating_add(page.bytes().len()) > max_bytes {
             return Err(format!("{label} artifact exceeded the continuation bound"));
         }
         #[cfg(test)]
@@ -109,6 +129,21 @@ impl<'a> OutputReads<'a> {
         unreadable_output(label)
     }
 
+    pub(super) fn string(
+        &self,
+        reference: &grapt_types::ArtifactRef,
+        disposition: CaptureDisposition,
+        label: &str,
+    ) -> Result<String, String> {
+        let max_bytes = tool_artifact_read_bound();
+        let bytes =
+            match fetch_bytes_bounded(self.artifacts, reference, disposition, label, max_bytes)? {
+                Ok(bytes) => bytes,
+                Err(_) => return Ok(self.notice(label)),
+            };
+        output_string(bytes, max_bytes)
+    }
+
     pub(super) fn text(
         &self,
         reference: &grapt_types::ArtifactRef,
@@ -119,18 +154,19 @@ impl<'a> OutputReads<'a> {
             Ok(bytes) => bytes,
             Err(_) => return CodexToolText::try_new(self.notice(label)).map_err(|e| e.to_string()),
         };
-        output_text(bytes)
+        let text = output_string(bytes, MAX_CODEX_TOOL_TEXT_BYTES)?;
+        CodexToolText::try_new(text).map_err(|error| error.to_string())
     }
 }
 
-fn output_text(bytes: Vec<u8>) -> Result<CodexToolText, String> {
+fn output_string(bytes: Vec<u8>, max_bytes: usize) -> Result<String, String> {
     match String::from_utf8(bytes) {
-        Ok(text) => CodexToolText::try_new(text).map_err(|error| error.to_string()),
+        Ok(text) => Ok(text),
         Err(error) => {
             const MARKER: &str =
                 "\n[tool output projection: invalid UTF-8 bytes were replaced explicitly]";
             let lossy = String::from_utf8_lossy(error.as_bytes());
-            let budget = MAX_CODEX_TOOL_TEXT_BYTES.saturating_sub(MARKER.len());
+            let budget = max_bytes.saturating_sub(MARKER.len());
             let mut end = lossy.len().min(budget);
             while !lossy.is_char_boundary(end) {
                 end = end
@@ -139,7 +175,7 @@ fn output_text(bytes: Vec<u8>) -> Result<CodexToolText, String> {
             }
             let mut text = lossy[..end].to_owned();
             text.push_str(MARKER);
-            CodexToolText::try_new(text).map_err(|error| error.to_string())
+            Ok(text)
         }
     }
 }

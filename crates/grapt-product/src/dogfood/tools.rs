@@ -698,6 +698,8 @@ impl ToolRunner for PermissionToolRunner {
 
 mod ephemeral;
 mod executor;
+#[cfg(test)]
+pub(in crate::dogfood) use executor::{annotate_failure_detail, annotate_success_output};
 mod runner;
 #[cfg(test)]
 use runner::settle_authorized_effect;

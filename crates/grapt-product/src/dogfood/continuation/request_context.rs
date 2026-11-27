@@ -91,7 +91,14 @@ impl DurableContinuation {
         self.refuse_declared_overflow(&inbox, from, until)?;
         let permissions = permission_calls(inbox.store(), &self.session, from, until)?;
         let calls = stored_calls(inbox.store(), &self.session, &self.artifacts, from, until)?;
-        let outputs = stored_outputs(inbox.store(), &self.session, &self.artifacts, from, until)?;
+        let outputs = stored_outputs_projected(
+            inbox.store(),
+            &self.session,
+            &self.artifacts,
+            from,
+            until,
+            &calls,
+        )?;
         let reader = SessionHistoryStore::over(inbox.store());
         let history = match (from, until) {
             (Some(from), Some(until)) => reader.fold_window_from(&self.session, from, until),

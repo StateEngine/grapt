@@ -478,9 +478,6 @@
     "crates/grapt-product/src/dogfood/continuation/compaction/plans.rs": {
       "impl ProductCompactor::fn plan :: clippy::too_many_lines": 1
     },
-    "crates/grapt-product/src/dogfood/continuation/history_tool.rs": {
-      "fn assemble_outputs :: clippy::too_many_lines": 1
-    },
     "crates/grapt-product/src/dogfood/continuation/history_tool/page.rs": {
       "impl ToolProjection::fn read_group :: clippy::too_many_lines": 1
     },
