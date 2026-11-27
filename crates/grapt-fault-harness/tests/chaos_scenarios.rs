@@ -1,15 +1,18 @@
 //! Deterministic end-to-end chaos scenarios for `grapt-fault-harness`.
 
 use std::error::Error;
+use std::io::ErrorKind;
 use std::net::SocketAddr;
+use std::sync::Arc;
 
 use grapt_fault_harness::{
     ChaosProxy, FailureTranscript, FaultAction, FaultPlan, FaultSchedule, FaultSeed, FaultTrigger,
-    StorageFault, StorageFaultScript, StorageOperation, StorageOutcome, TerminalCommitError,
-    TerminalLedger,
+    StorageError, StorageFault, StorageFaultScript, StorageOperation, StorageOutcome,
+    TerminalCommitError, TerminalLedger,
 };
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
+use tokio::sync::Notify;
 
 async fn send_http_get(
     addr: SocketAddr,
@@ -75,30 +78,45 @@ fn parse_sse_events(body: &[u8]) -> Vec<(u64, String)> {
     events
 }
 
-async fn spawn_sse_upstream() -> Result<SocketAddr, Box<dyn Error>> {
+/// Live SSE upstream that holds the first stream open after frame 2 until `release` fires.
+///
+/// Proves the proxy streams frames live and triggers `MidStreamEofFrames` at the frame-2
+/// boundary without buffering the full response or waiting for upstream to close.
+async fn spawn_live_sse_upstream(release_tail: Arc<Notify>) -> Result<SocketAddr, Box<dyn Error>> {
     let listener = TcpListener::bind("127.0.0.1:0").await?;
     let addr = listener.local_addr()?;
     tokio::spawn(async move {
         while let Ok((mut stream, _)) = listener.accept().await {
-            let mut req_buf = [0_u8; 2048];
-            let Ok(n) = stream.read(&mut req_buf).await else {
-                continue;
-            };
-            let req_text = String::from_utf8_lossy(&req_buf[..n]);
-            let after_id = extract_header(&req_text, "Last-Event-ID")
-                .and_then(|v| v.parse::<u64>().ok())
-                .unwrap_or(0);
+            let release = Arc::clone(&release_tail);
+            tokio::spawn(async move {
+                let mut req_buf = [0_u8; 2048];
+                let Ok(n) = stream.read(&mut req_buf).await else {
+                    return;
+                };
+                let req_text = String::from_utf8_lossy(&req_buf[..n]);
+                let after_id = extract_header(&req_text, "Last-Event-ID")
+                    .and_then(|v| v.parse::<u64>().ok())
+                    .unwrap_or(0);
 
-            let mut body = String::new();
-            for id in (after_id + 1)..=4 {
-                body.push_str(&format!("id: {id}\ndata: chunk-{id}\n\n"));
-            }
-            let resp = format!(
-                "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
-                body.len()
-            );
-            let _ = stream.write_all(resp.as_bytes()).await;
-            let _ = stream.shutdown().await;
+                let headers =
+                    "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nConnection: close\r\n\r\n";
+                if stream.write_all(headers.as_bytes()).await.is_err() {
+                    return;
+                }
+                for id in (after_id + 1)..=4 {
+                    let frame = format!("id: {id}\ndata: chunk-{id}\n\n");
+                    if stream.write_all(frame.as_bytes()).await.is_err()
+                        || stream.flush().await.is_err()
+                    {
+                        return;
+                    }
+                    if after_id == 0 && id == 2 {
+                        // Hold open until test releases; live proxy must EOF at frame 2 anyway.
+                        release.notified().await;
+                    }
+                }
+                let _ = stream.shutdown().await;
+            });
         }
     });
     Ok(addr)
@@ -148,7 +166,8 @@ fn seed_reproducibility_and_transcript_replay() -> Result<(), Box<dyn Error>> {
 
 #[tokio::test]
 async fn sse_mid_stream_drop_and_cursor_reconnect() -> Result<(), Box<dyn Error>> {
-    let upstream = spawn_sse_upstream().await?;
+    let release_tail = Arc::new(Notify::new());
+    let upstream = spawn_live_sse_upstream(Arc::clone(&release_tail)).await?;
     let plan = FaultPlan::new("sse-drop-reconnect", FaultSeed::new(42)).with_rule(
         FaultTrigger::OnRequest(1),
         FaultAction::MidStreamEofFrames { after_frames: 2 },
@@ -156,6 +175,7 @@ async fn sse_mid_stream_drop_and_cursor_reconnect() -> Result<(), Box<dyn Error>
     let schedule = FaultSchedule::new(plan);
     let proxy = ChaosProxy::new(upstream, schedule.clone()).start().await?;
 
+    // Request 1 returns EOF immediately after frame 2 even though upstream is still open!
     let first_raw = send_http_get(proxy.addr(), "/v1/events", None).await?;
     let (status1, _, body1) = split_http_response(&first_raw)?;
     assert_eq!(status1, 200);
@@ -165,6 +185,7 @@ async fn sse_mid_stream_drop_and_cursor_reconnect() -> Result<(), Box<dyn Error>
         vec![(1, "chunk-1".to_owned()), (2, "chunk-2".to_owned())]
     );
 
+    release_tail.notify_waiters();
     let last_id = first_events.last().map_or(0, |(id, _)| *id);
     schedule.record_event(
         "client",
@@ -184,10 +205,45 @@ async fn sse_mid_stream_drop_and_cursor_reconnect() -> Result<(), Box<dyn Error>
 
     let mut combined = first_events;
     combined.extend(second_events);
-    assert_eq!(combined.len(), 4);
     assert_eq!(
         combined.iter().map(|(id, _)| *id).collect::<Vec<_>>(),
         vec![1, 2, 3, 4]
+    );
+
+    proxy.shutdown().await;
+    Ok(())
+}
+
+#[tokio::test]
+async fn mid_stream_rst_delivers_connection_reset_not_eof() -> Result<(), Box<dyn Error>> {
+    let upstream = spawn_static_upstream("0123456789abcdef").await?;
+    let plan = FaultPlan::new("mid-stream-rst", FaultSeed::new(88)).with_rule(
+        FaultTrigger::OnRequest(1),
+        FaultAction::MidStreamRst { after_bytes: 4 },
+    );
+    let proxy = ChaosProxy::new(upstream, FaultSchedule::new(plan))
+        .start()
+        .await?;
+
+    let mut stream = TcpStream::connect(proxy.addr()).await?;
+    stream
+        .write_all(b"GET /v1/stream HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n")
+        .await?;
+
+    let mut buf = Vec::new();
+    let err = match stream.read_to_end(&mut buf).await {
+        Ok(n) => {
+            return Err(format!("expected TCP RST error, got clean EOF after {n} bytes").into())
+        }
+        Err(err) => err,
+    };
+    assert!(
+        matches!(
+            err.kind(),
+            ErrorKind::ConnectionReset | ErrorKind::ConnectionAborted | ErrorKind::BrokenPipe
+        ),
+        "expected connection reset error, got {:?}",
+        err.kind()
     );
 
     proxy.shutdown().await;
@@ -244,7 +300,7 @@ async fn http_429_retry_after_chaos_replay() -> Result<(), Box<dyn Error>> {
 }
 
 #[tokio::test]
-async fn partial_utf8_truncation_and_gated_chunk_delay() -> Result<(), Box<dyn Error>> {
+async fn partial_utf8_truncation_and_deterministic_delay_gate() -> Result<(), Box<dyn Error>> {
     // "data: café\n\n" -> 'é' is 2 UTF-8 bytes (0xc3, 0xa9) at byte offsets 9..11.
     let upstream = spawn_static_upstream("data: caf\u{00e9}\n\n").await?;
     let plan = FaultPlan::new("utf8-and-delay", FaultSeed::new(909))
@@ -256,7 +312,15 @@ async fn partial_utf8_truncation_and_gated_chunk_delay() -> Result<(), Box<dyn E
             FaultTrigger::OnRequest(2),
             FaultAction::DelayChunk {
                 after_bytes: 6,
-                yield_steps: 2,
+                yield_steps: 0,
+                wait_for_gate: true,
+            },
+        )
+        .with_rule(
+            FaultTrigger::OnRequest(3),
+            FaultAction::DelayChunk {
+                after_bytes: 6,
+                yield_steps: 0,
                 wait_for_gate: true,
             },
         );
@@ -270,25 +334,81 @@ async fn partial_utf8_truncation_and_gated_chunk_delay() -> Result<(), Box<dyn E
     assert_eq!(truncated_body.len(), 10);
     assert!(std::str::from_utf8(&truncated_body).is_err());
 
-    // Request 2: delayed behind a deterministic release gate (zero wall-clock sleeps).
+    // Request 2: await exact gate entry (zero yield guessing), then release.
     let addr = proxy.addr();
     let client_task = tokio::spawn(async move { send_http_get(addr, "/v1/stream", None).await });
-    for _ in 0..8 {
-        tokio::task::yield_now().await;
-    }
+    proxy.wait_until_delayed().await;
     proxy.release_delayed();
-    let delayed_raw = client_task.await??;
-    let (status, _, full_body) = split_http_response(&delayed_raw)?;
+    let (status, _, full_body) = split_http_response(&client_task.await??)?;
     assert_eq!(status, 200);
     assert_eq!(std::str::from_utf8(&full_body)?, "data: caf\u{00e9}\n\n");
+
+    // Request 3: pre-arm release BEFORE request arrives — stateful semaphore never loses it.
+    proxy.release_delayed();
+    let (status3, _, full_body3) =
+        split_http_response(&send_http_get(proxy.addr(), "/v1/stream", None).await?)?;
+    assert_eq!(status3, 200);
+    assert_eq!(std::str::from_utf8(&full_body3)?, "data: caf\u{00e9}\n\n");
 
     proxy.shutdown().await;
     Ok(())
 }
 
 #[tokio::test]
+async fn shutdown_aborts_and_joins_in_flight_handlers() -> Result<(), Box<dyn Error>> {
+    let upstream = spawn_static_upstream("head-and-tail-payload").await?;
+    let plan = FaultPlan::new("shutdown-joins", FaultSeed::new(314)).with_rule(
+        FaultTrigger::OnRequest(1),
+        FaultAction::DelayChunk {
+            after_bytes: 4,
+            yield_steps: 0,
+            wait_for_gate: true,
+        },
+    );
+    let proxy = ChaosProxy::new(upstream, FaultSchedule::new(plan))
+        .start()
+        .await?;
+
+    let addr = proxy.addr();
+    let client_task = tokio::spawn(async move { send_http_get(addr, "/v1/slow", None).await });
+    proxy.wait_until_delayed().await;
+
+    // Shut down while handler is parked at the gate; it must be aborted before shutdown returns.
+    proxy.shutdown().await;
+
+    let raw = client_task.await??;
+    let (_, _, body) = split_http_response(&raw)?;
+    assert_eq!(body, b"head");
+    Ok(())
+}
+
+async fn probe_and_run_solo_turn(
+    stateengine_addr: SocketAddr,
+    ledger: &mut TerminalLedger,
+    schedule: &FaultSchedule,
+    turn_key: &str,
+) -> Result<(Option<String>, StorageOutcome), Box<dyn Error>> {
+    let raw = send_http_get(stateengine_addr, "/v1/stateengine/status", None).await?;
+    let (status, _, body) = split_http_response(&raw)?;
+    let warning = if status == 200 {
+        None
+    } else {
+        let reason = String::from_utf8_lossy(&body).into_owned();
+        let msg = format!(
+            "warning: stateengine unavailable (HTTP {status}: {reason}); continuing in solo mode"
+        );
+        schedule.record_event("solo-mode", "stateengine-probe", msg.clone());
+        Some(msg)
+    };
+    let outcome = ledger.commit_terminal(turn_key, "solo-turn-completed")?;
+    Ok((warning, outcome))
+}
+
+#[tokio::test]
 async fn simulated_stateengine_down_solo_degradation() -> Result<(), Box<dyn Error>> {
-    let plan = FaultPlan::new("stateengine-down-solo", FaultSeed::new(503)).with_rule(
+    // Case A: ChaosProxy explicitly simulates UpstreamDown (503).
+    let seed = FaultSeed::new(503);
+    let plan = FaultPlan::new("stateengine-down-solo", seed).with_rule(
         FaultTrigger::Always,
         FaultAction::UpstreamDown {
             status: 503,
@@ -297,31 +417,69 @@ async fn simulated_stateengine_down_solo_degradation() -> Result<(), Box<dyn Err
     );
     let schedule = FaultSchedule::new(plan);
     let proxy = ChaosProxy::disconnected(schedule.clone()).start().await?;
+    let mut ledger =
+        TerminalLedger::new(StorageFaultScript::new(seed)).with_schedule(schedule.clone());
 
-    let raw = send_http_get(proxy.addr(), "/v1/stateengine/status", None).await?;
-    let (status, _, body) = split_http_response(&raw)?;
-    assert_eq!(status, 503);
-    let body_text = String::from_utf8_lossy(&body);
-    assert!(body_text.contains("unreachable"));
-
-    // Simulate solo degradation: record an explicit warning and complete local work.
-    let degraded_warning = format!(
-        "warning: stateengine unavailable (HTTP {status}: {body_text}); continuing in solo mode"
+    let (warning, outcome) =
+        probe_and_run_solo_turn(proxy.addr(), &mut ledger, &schedule, "solo-turn-1").await?;
+    let warning_text = warning.ok_or("expected explicit degraded warning on 503")?;
+    assert!(warning_text.contains("HTTP 503"));
+    assert!(warning_text.contains("solo mode"));
+    assert!(
+        matches!(outcome, StorageOutcome::Committed(ref r) if r.payload == "solo-turn-completed")
     );
-    schedule.record_event("solo-mode", "stateengine-probe", degraded_warning.clone());
-    let local_result = "solo-turn-completed";
-
-    assert!(degraded_warning.contains("solo mode"));
-    assert_eq!(local_result, "solo-turn-completed");
-    assert_eq!(proxy.transcript().events.len(), 2);
-
+    ledger.assert_no_duplicate_terminals()?;
     proxy.shutdown().await;
+
+    // Case B: ChaosProxy points at a closed upstream port -> real HTTP 502 from connection refusal.
+    let closed_listener = TcpListener::bind("127.0.0.1:0").await?;
+    let closed_addr = closed_listener.local_addr()?;
+    drop(closed_listener);
+
+    let proxy2 = ChaosProxy::new(
+        closed_addr,
+        FaultSchedule::new(FaultPlan::new("stateengine-refused", FaultSeed::new(502))),
+    )
+    .start()
+    .await?;
+    let (warning2, outcome2) =
+        probe_and_run_solo_turn(proxy2.addr(), &mut ledger, &schedule, "solo-turn-2").await?;
+    let warning2_text = warning2.ok_or("expected explicit degraded warning on 502")?;
+    assert!(warning2_text.contains("HTTP 502"));
+    assert!(matches!(outcome2, StorageOutcome::Committed(ref r) if r.sequence == 2));
+    ledger.assert_no_duplicate_terminals()?;
+    proxy2.shutdown().await;
     Ok(())
 }
 
 #[test]
-fn storage_lifecycle_faults_prevent_duplicate_terminals_across_restart(
+fn storage_lifecycle_faults_catch_duplicates_and_verify_reconciled_recovery(
 ) -> Result<(), Box<dyn Error>> {
+    // Negative proof: a naive caller that blindly retries write_terminal_raw after
+    // CrashAfterCommitBeforeAck produces a duplicate durable terminal, and the assertion fails.
+    let naive_script = StorageFaultScript::new(FaultSeed::new(100)).inject(
+        StorageOperation::CommitTerminal,
+        1,
+        StorageFault::CrashAfterCommitBeforeAck,
+    );
+    let mut naive_ledger = TerminalLedger::new(naive_script);
+    assert_eq!(
+        naive_ledger.write_terminal_raw("dup-turn", "done"),
+        Err(TerminalCommitError::CrashAfterCommitBeforeAck {
+            key: "dup-turn".to_owned()
+        })
+    );
+    naive_ledger.simulate_restart();
+    let _ = naive_ledger.write_terminal_raw("dup-turn", "done")?;
+    assert_eq!(naive_ledger.durable_records().len(), 2);
+    assert_eq!(
+        naive_ledger.assert_no_duplicate_terminals(),
+        Err(StorageError::DuplicateTerminal {
+            key: "dup-turn".to_owned()
+        })
+    );
+
+    // Positive proof: reconciling durable state across restart prevents duplicates under all faults.
     let seed = FaultSeed::new(2026);
     let schedule = FaultSchedule::new(FaultPlan::new("storage-lifecycle", seed));
     let script = StorageFaultScript::new(seed)
@@ -335,17 +493,16 @@ fn storage_lifecycle_faults_prevent_duplicate_terminals_across_restart(
             2,
             StorageFault::CrashAfterCommitBeforeAck,
         )
-        .inject(StorageOperation::CommitTerminal, 4, StorageFault::Enospc)
+        .inject(StorageOperation::CommitTerminal, 3, StorageFault::Enospc)
         .inject(
             StorageOperation::CommitTerminal,
-            5,
+            4,
             StorageFault::SqliteBusy,
         )
-        .inject(StorageOperation::CommitTerminal, 6, StorageFault::Stalled);
+        .inject(StorageOperation::CommitTerminal, 5, StorageFault::Stalled);
 
     let mut ledger = TerminalLedger::new(script).with_schedule(schedule.clone());
 
-    // Attempt 1: crash before commit -> nothing durable yet.
     assert_eq!(
         ledger.commit_terminal("turn-1", "done-1"),
         Err(TerminalCommitError::CrashBeforeCommit {
@@ -354,7 +511,6 @@ fn storage_lifecycle_faults_prevent_duplicate_terminals_across_restart(
     );
     assert!(ledger.durable_records().is_empty());
 
-    // Attempt 2: crash after durable commit before ack -> record is durable, client sees crash.
     assert_eq!(
         ledger.commit_terminal("turn-1", "done-1"),
         Err(TerminalCommitError::CrashAfterCommitBeforeAck {
@@ -363,13 +519,11 @@ fn storage_lifecycle_faults_prevent_duplicate_terminals_across_restart(
     );
     assert_eq!(ledger.durable_records().len(), 1);
 
-    // Simulated restart + reconnect retry of turn-1 -> deduplicated, no second durable terminal.
     ledger.simulate_restart();
     let outcome = ledger.commit_terminal("turn-1", "done-1")?;
     assert!(matches!(outcome, StorageOutcome::AlreadyCommitted(rec) if rec.sequence == 1));
     assert_eq!(ledger.durable_records().len(), 1);
 
-    // Attempts 4..6: ENOSPC, SQLite busy, stalled -> honest failures, zero partial writes.
     assert!(matches!(
         ledger.commit_terminal("turn-2", "done-2"),
         Err(TerminalCommitError::Enospc { .. })
@@ -384,7 +538,6 @@ fn storage_lifecycle_faults_prevent_duplicate_terminals_across_restart(
     ));
     assert_eq!(ledger.durable_records().len(), 1);
 
-    // Attempt 7: faults cleared -> turn-2 commits cleanly once.
     let outcome2 = ledger.commit_terminal("turn-2", "done-2")?;
     assert!(matches!(outcome2, StorageOutcome::Committed(rec) if rec.sequence == 2));
     assert_eq!(ledger.durable_records().len(), 2);

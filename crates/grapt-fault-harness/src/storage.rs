@@ -1,8 +1,10 @@
 //! Deterministic storage and lifecycle fault hooks.
 //!
 //! Models crash-before-commit, crash-after-commit-before-ack, `ENOSPC`/disk-full,
-//! and SQLite busy/stalled responses while enforcing that no duplicate durable
-//! terminal record occurs across restart or reconnect.
+//! and SQLite busy/stalled responses. [`TerminalLedger`] records raw observed
+//! durable writes honestly without hiding duplicates, so a caller that forgets
+//! to reconcile durable state across restart/reconnect trips
+//! [`TerminalLedger::assert_no_duplicate_terminals`].
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -36,16 +38,16 @@ pub enum StorageFault {
     Stalled,
 }
 
-/// Outcome of a single [`TerminalLedger::commit_terminal`] attempt.
+/// Outcome of a single terminal commit attempt.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum StorageOutcome {
     /// Newly committed as a durable terminal record.
     Committed(TerminalRecord),
-    /// Already committed durably under this idempotency key; deduplicated on reconnect.
+    /// Already committed durably under this idempotency key; reconciled on reconnect.
     AlreadyCommitted(TerminalRecord),
 }
 
-/// One durable terminal record in [`TerminalLedger`].
+/// One durable terminal record observed in [`TerminalLedger`].
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TerminalRecord {
     pub sequence: u64,
@@ -137,12 +139,18 @@ impl StorageFaultScript {
     }
 }
 
-/// Deterministic durable terminal ledger with restart/reconnect simulation.
+/// Deterministic durable terminal ledger with restart simulation and raw write recording.
+///
+/// [`TerminalLedger::write_terminal_raw`] appends every durable write unconditionally so
+/// duplicate writes emitted by a buggy caller are captured honestly and caught by
+/// [`TerminalLedger::assert_no_duplicate_terminals`]. Callers are expected to reconcile
+/// against [`TerminalLedger::lookup_durable`] after a crash or restart.
 #[derive(Debug, Clone)]
 pub struct TerminalLedger {
     script: StorageFaultScript,
     schedule: Option<FaultSchedule>,
     commit_attempts: u64,
+    read_attempts: u64,
     restarts: u64,
     durable_log: Vec<TerminalRecord>,
     acked_keys: BTreeSet<String>,
@@ -156,6 +164,7 @@ impl TerminalLedger {
             script,
             schedule: None,
             commit_attempts: 0,
+            read_attempts: 0,
             restarts: 0,
             durable_log: Vec::new(),
             acked_keys: BTreeSet::new(),
@@ -179,18 +188,57 @@ impl TerminalLedger {
         );
     }
 
-    /// Attempt to durably commit a terminal record under `idempotency_key`.
+    /// Read durable state for `idempotency_key` (subject to `ReadState` fault hooks).
     ///
-    /// Deduplicates already-committed keys across restart/reconnect so no duplicate
-    /// durable terminal can be appended even after `CrashAfterCommitBeforeAck`.
+    /// # Errors
+    /// Returns [`TerminalCommitError`] if a `ReadState` fault is scripted for this read attempt.
+    pub fn lookup_durable(
+        &mut self,
+        idempotency_key: &str,
+    ) -> Result<Option<TerminalRecord>, TerminalCommitError> {
+        self.read_attempts = self.read_attempts.saturating_add(1);
+        let attempt = self.read_attempts;
+        if let Some(fault) = self.script.fault_for(StorageOperation::ReadState, attempt) {
+            self.log_event(
+                format!("read#{attempt} key={idempotency_key}"),
+                format!("{fault:?}"),
+            );
+            return Err(match fault {
+                StorageFault::CrashBeforeCommit => TerminalCommitError::CrashBeforeCommit {
+                    key: idempotency_key.to_owned(),
+                },
+                StorageFault::CrashAfterCommitBeforeAck => {
+                    TerminalCommitError::CrashAfterCommitBeforeAck {
+                        key: idempotency_key.to_owned(),
+                    }
+                }
+                StorageFault::Enospc => TerminalCommitError::Enospc {
+                    key: idempotency_key.to_owned(),
+                },
+                StorageFault::SqliteBusy => TerminalCommitError::SqliteBusy {
+                    key: idempotency_key.to_owned(),
+                },
+                StorageFault::Stalled => TerminalCommitError::Stalled {
+                    key: idempotency_key.to_owned(),
+                },
+            });
+        }
+        Ok(self.find_durable(idempotency_key))
+    }
+
+    /// Perform a raw durable terminal write under `idempotency_key`.
+    ///
+    /// Never silently deduplicates: if the caller writes the same key twice without
+    /// reconciling via [`TerminalLedger::lookup_durable`], both writes land in
+    /// `durable_log` and [`TerminalLedger::assert_no_duplicate_terminals`] fails honestly.
     ///
     /// # Errors
     /// Returns [`TerminalCommitError`] when the active [`StorageFaultScript`] injects a fault.
-    pub fn commit_terminal(
+    pub fn write_terminal_raw(
         &mut self,
         idempotency_key: &str,
         payload: &str,
-    ) -> Result<StorageOutcome, TerminalCommitError> {
+    ) -> Result<TerminalRecord, TerminalCommitError> {
         self.commit_attempts = self.commit_attempts.saturating_add(1);
         let attempt = self.commit_attempts;
         let fault = self
@@ -199,27 +247,39 @@ impl TerminalLedger {
 
         if let Some(fault) = fault {
             self.log_event(
-                format!("commit#{attempt} key={idempotency_key}"),
+                format!("write#{attempt} key={idempotency_key}"),
                 format!("{fault:?}"),
             );
             return self.apply_commit_fault(fault, idempotency_key, payload);
         }
 
-        if let Some(existing) = self.find_durable(idempotency_key) {
-            self.acked_keys.insert(idempotency_key.to_owned());
-            self.log_event(
-                format!("commit#{attempt} key={idempotency_key}"),
-                "AlreadyCommitted".to_owned(),
-            );
-            return Ok(StorageOutcome::AlreadyCommitted(existing));
-        }
-
         let record = self.append_durable(idempotency_key, payload);
         self.acked_keys.insert(idempotency_key.to_owned());
         self.log_event(
-            format!("commit#{attempt} key={idempotency_key}"),
+            format!("write#{attempt} key={idempotency_key}"),
             format!("Committed(seq={})", record.sequence),
         );
+        Ok(record)
+    }
+
+    /// Reconcile durable state and commit `idempotency_key` only if not already present.
+    ///
+    /// # Errors
+    /// Returns [`TerminalCommitError`] if reading durable state or writing fails.
+    pub fn commit_terminal(
+        &mut self,
+        idempotency_key: &str,
+        payload: &str,
+    ) -> Result<StorageOutcome, TerminalCommitError> {
+        if let Some(existing) = self.lookup_durable(idempotency_key)? {
+            self.acked_keys.insert(idempotency_key.to_owned());
+            self.log_event(
+                format!("reconcile key={idempotency_key}"),
+                format!("AlreadyCommitted(seq={})", existing.sequence),
+            );
+            return Ok(StorageOutcome::AlreadyCommitted(existing));
+        }
+        let record = self.write_terminal_raw(idempotency_key, payload)?;
         Ok(StorageOutcome::Committed(record))
     }
 
@@ -256,15 +316,13 @@ impl TerminalLedger {
         fault: StorageFault,
         idempotency_key: &str,
         payload: &str,
-    ) -> Result<StorageOutcome, TerminalCommitError> {
+    ) -> Result<TerminalRecord, TerminalCommitError> {
         match fault {
             StorageFault::CrashBeforeCommit => Err(TerminalCommitError::CrashBeforeCommit {
                 key: idempotency_key.to_owned(),
             }),
             StorageFault::CrashAfterCommitBeforeAck => {
-                if self.find_durable(idempotency_key).is_none() {
-                    let _ = self.append_durable(idempotency_key, payload);
-                }
+                let _ = self.append_durable(idempotency_key, payload);
                 Err(TerminalCommitError::CrashAfterCommitBeforeAck {
                     key: idempotency_key.to_owned(),
                 })
