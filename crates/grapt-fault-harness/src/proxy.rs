@@ -1,9 +1,10 @@
 //! In-process deterministic TCP/HTTP/SSE chaos proxy.
 //!
-//! Streams upstream responses live chunk-by-chunk, injects faults at exact
-//! deterministic request, frame, or byte boundaries via [`FaultSchedule`],
-//! uses a stateful semaphore gate with zero wall-clock sleeps, and aborts/joins
-//! all active connection handlers before [`ChaosProxyHandle::shutdown`] returns.
+//! Streams upstream responses live chunk-by-chunk, bounds header buffering,
+//! decodes HTTP `Transfer-Encoding: chunked` framing when evaluating byte and
+//! LF/CRLF SSE frame faults, sends real `SO_LINGER(0)` TCP resets, uses a
+//! stateful semaphore gate with zero wall-clock sleeps, and aborts/joins all
+//! active connection handlers before [`ChaosProxyHandle::shutdown`] returns.
 
 use std::fmt;
 use std::net::SocketAddr;
@@ -15,6 +16,11 @@ use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{oneshot, Semaphore};
 use tokio::task::{JoinHandle, JoinSet};
 
+use crate::framing::{
+    build_synthetic_http_response, encode_http_chunk, find_header_end,
+    is_chunked_transfer_encoding, parse_content_length, parse_request_line, ChunkedDecoder,
+    SseFrameScanner, MAX_RESPONSE_HEADER_BYTES,
+};
 use crate::schedule::{FailureTranscript, FaultAction, FaultSchedule};
 
 const MAX_REQUEST_BYTES: usize = 256 * 1024;
@@ -264,15 +270,11 @@ async fn stream_from_upstream(
     delay_gate: &DelayGate,
 ) {
     let Ok(mut upstream) = TcpStream::connect(upstream_addr).await else {
-        let response = build_synthetic_http_response(502, None, "upstream connection failed");
-        let _ = client.write_all(&response).await;
-        let _ = client.shutdown().await;
+        send_error_and_close(&mut client, 502, "upstream connection failed").await;
         return;
     };
     if upstream.write_all(raw_request).await.is_err() {
-        let response = build_synthetic_http_response(502, None, "upstream write failed");
-        let _ = client.write_all(&response).await;
-        let _ = client.shutdown().await;
+        send_error_and_close(&mut client, 502, "upstream write failed").await;
         return;
     }
     let _ = upstream.shutdown().await;
@@ -294,51 +296,68 @@ async fn stream_from_upstream(
             return;
         }
 
-        let body_slice = if state.headers_sent {
-            &chunk[..n]
-        } else {
+        if !state.headers_sent {
             header_buf.extend_from_slice(&chunk[..n]);
             let Some(end) = find_header_end(&header_buf) else {
+                if header_buf.len() > MAX_RESPONSE_HEADER_BYTES {
+                    send_error_and_close(
+                        &mut client,
+                        502,
+                        "upstream response headers exceeded limit",
+                    )
+                    .await;
+                    return;
+                }
                 continue;
             };
+            if end > MAX_RESPONSE_HEADER_BYTES {
+                send_error_and_close(&mut client, 502, "upstream response headers exceeded limit")
+                    .await;
+                return;
+            }
+            state.configure_body_mode(&header_buf[..end]);
             if client.write_all(&header_buf[..end]).await.is_err() || client.flush().await.is_err()
             {
                 return;
             }
             state.headers_sent = true;
             let trailing = header_buf.split_off(end);
-            if trailing.is_empty() {
-                continue;
-            }
-            match state
-                .forward_body_chunk(&mut client, &trailing, delay_gate)
-                .await
-            {
-                StreamDecision::Continue => continue,
-                StreamDecision::CloseEof => {
-                    let _ = client.shutdown().await;
-                    return;
-                }
-                StreamDecision::AbortRst => {
-                    let _ = client.set_zero_linger();
+            if !trailing.is_empty() {
+                let decision = state
+                    .forward_wire_body(&mut client, &trailing, delay_gate)
+                    .await;
+                if !apply_decision(&mut client, decision).await {
                     return;
                 }
             }
-        };
+            continue;
+        }
 
-        match state
-            .forward_body_chunk(&mut client, body_slice, delay_gate)
-            .await
-        {
-            StreamDecision::Continue => {}
-            StreamDecision::CloseEof => {
-                let _ = client.shutdown().await;
-                return;
-            }
-            StreamDecision::AbortRst => {
-                let _ = client.set_zero_linger();
-                return;
-            }
+        let decision = state
+            .forward_wire_body(&mut client, &chunk[..n], delay_gate)
+            .await;
+        if !apply_decision(&mut client, decision).await {
+            return;
+        }
+    }
+}
+
+async fn send_error_and_close(client: &mut TcpStream, status: u16, reason: &str) {
+    let response = build_synthetic_http_response(status, None, reason);
+    let _ = client.write_all(&response).await;
+    let _ = client.shutdown().await;
+}
+
+async fn apply_decision(client: &mut TcpStream, decision: StreamDecision) -> bool {
+    match decision {
+        StreamDecision::Continue => true,
+        StreamDecision::CloseEof => {
+            let _ = client.shutdown().await;
+            false
+        }
+        StreamDecision::AbortRst => {
+            let _ = client.set_zero_linger();
+            false
         }
     }
 }
@@ -352,9 +371,10 @@ enum StreamDecision {
 struct StreamState {
     action: FaultAction,
     headers_sent: bool,
+    chunked_decoder: Option<ChunkedDecoder>,
+    sse_scanner: SseFrameScanner,
     body_bytes_sent: usize,
     frames_seen: usize,
-    prev_was_newline: bool,
     delay_triggered: bool,
 }
 
@@ -363,33 +383,72 @@ impl StreamState {
         Self {
             action,
             headers_sent: false,
+            chunked_decoder: None,
+            sse_scanner: SseFrameScanner::default(),
             body_bytes_sent: 0,
             frames_seen: 0,
-            prev_was_newline: false,
             delay_triggered: false,
         }
     }
 
-    async fn forward_body_chunk(
+    fn configure_body_mode(&mut self, headers: &[u8]) {
+        if is_chunked_transfer_encoding(headers) {
+            self.chunked_decoder = Some(ChunkedDecoder::new());
+        }
+    }
+
+    async fn forward_wire_body(
+        &mut self,
+        client: &mut TcpStream,
+        wire: &[u8],
+        delay_gate: &DelayGate,
+    ) -> StreamDecision {
+        if let Some(decoder) = &mut self.chunked_decoder {
+            let decoded = decoder.decode(wire);
+            if decoded.malformed {
+                return StreamDecision::CloseEof;
+            }
+            if !decoded.payload.is_empty() {
+                let decision = self
+                    .forward_logical_body(client, &decoded.payload, delay_gate, true)
+                    .await;
+                if !matches!(decision, StreamDecision::Continue) {
+                    return decision;
+                }
+            }
+            if decoded.finished {
+                let _ = write_and_flush(client, b"0\r\n\r\n").await;
+                return StreamDecision::CloseEof;
+            }
+            StreamDecision::Continue
+        } else {
+            self.forward_logical_body(client, wire, delay_gate, false)
+                .await
+        }
+    }
+
+    async fn forward_logical_body(
         &mut self,
         client: &mut TcpStream,
         slice: &[u8],
         delay_gate: &DelayGate,
+        chunked: bool,
     ) -> StreamDecision {
         match &self.action {
-            FaultAction::PassThrough => write_and_flush(client, slice).await,
+            FaultAction::PassThrough => write_logical(client, slice, chunked).await,
             FaultAction::MidStreamEofBytes { after_bytes }
             | FaultAction::TruncateBody {
                 keep_bytes: after_bytes,
             } => {
-                self.forward_capped(client, slice, *after_bytes, false)
+                self.forward_capped(client, slice, *after_bytes, false, chunked)
                     .await
             }
             FaultAction::MidStreamRst { after_bytes } => {
-                self.forward_capped(client, slice, *after_bytes, true).await
+                self.forward_capped(client, slice, *after_bytes, true, chunked)
+                    .await
             }
             FaultAction::MidStreamEofFrames { after_frames } => {
-                self.forward_until_frames(client, slice, *after_frames)
+                self.forward_until_frames(client, slice, *after_frames, chunked)
                     .await
             }
             FaultAction::DelayChunk {
@@ -400,9 +459,12 @@ impl StreamState {
                 self.forward_delayed(
                     client,
                     slice,
-                    *after_bytes,
-                    *yield_steps,
-                    *wait_for_gate,
+                    DelaySpec {
+                        after_bytes: *after_bytes,
+                        yield_steps: *yield_steps,
+                        wait_for_gate: *wait_for_gate,
+                        chunked,
+                    },
                     delay_gate,
                 )
                 .await
@@ -419,11 +481,15 @@ impl StreamState {
         slice: &[u8],
         limit: usize,
         reset: bool,
+        chunked: bool,
     ) -> StreamDecision {
         let remaining = limit.saturating_sub(self.body_bytes_sent);
         let take = remaining.min(slice.len());
         if take > 0
-            && (client.write_all(&slice[..take]).await.is_err() || client.flush().await.is_err())
+            && !matches!(
+                write_logical(client, &slice[..take], chunked).await,
+                StreamDecision::Continue
+            )
         {
             return StreamDecision::CloseEof;
         }
@@ -444,65 +510,83 @@ impl StreamState {
         client: &mut TcpStream,
         slice: &[u8],
         target_frames: usize,
+        chunked: bool,
     ) -> StreamDecision {
         if target_frames == 0 {
             return StreamDecision::CloseEof;
         }
         for (idx, &byte) in slice.iter().enumerate() {
-            if byte == b'\n' && self.prev_was_newline {
+            if self.sse_scanner.push_byte(byte) {
                 self.frames_seen = self.frames_seen.saturating_add(1);
-                self.prev_was_newline = false;
                 if self.frames_seen >= target_frames {
-                    let _ = client.write_all(&slice[..=idx]).await;
-                    let _ = client.flush().await;
+                    let _ = write_logical(client, &slice[..=idx], chunked).await;
                     self.body_bytes_sent = self.body_bytes_sent.saturating_add(idx + 1);
                     return StreamDecision::CloseEof;
                 }
-            } else {
-                self.prev_was_newline = byte == b'\n';
             }
         }
         self.body_bytes_sent = self.body_bytes_sent.saturating_add(slice.len());
-        write_and_flush(client, slice).await
+        write_logical(client, slice, chunked).await
     }
 
     async fn forward_delayed(
         &mut self,
         client: &mut TcpStream,
         slice: &[u8],
-        after_bytes: usize,
-        yield_steps: u32,
-        wait_for_gate: bool,
+        spec: DelaySpec,
         delay_gate: &DelayGate,
     ) -> StreamDecision {
         if self.delay_triggered {
             self.body_bytes_sent = self.body_bytes_sent.saturating_add(slice.len());
-            return write_and_flush(client, slice).await;
+            return write_logical(client, slice, spec.chunked).await;
         }
-        let remaining = after_bytes.saturating_sub(self.body_bytes_sent);
+        let remaining = spec.after_bytes.saturating_sub(self.body_bytes_sent);
         if slice.len() < remaining {
             self.body_bytes_sent = self.body_bytes_sent.saturating_add(slice.len());
-            return write_and_flush(client, slice).await;
+            return write_logical(client, slice, spec.chunked).await;
         }
         let (head, tail) = slice.split_at(remaining);
         if !head.is_empty()
-            && (client.write_all(head).await.is_err() || client.flush().await.is_err())
+            && !matches!(
+                write_logical(client, head, spec.chunked).await,
+                StreamDecision::Continue
+            )
         {
             return StreamDecision::CloseEof;
         }
         self.body_bytes_sent = self.body_bytes_sent.saturating_add(head.len());
         self.delay_triggered = true;
-        for _ in 0..yield_steps {
+        for _ in 0..spec.yield_steps {
             tokio::task::yield_now().await;
         }
-        if wait_for_gate {
+        if spec.wait_for_gate {
             delay_gate.enter_and_wait().await;
         }
         if tail.is_empty() {
             return StreamDecision::Continue;
         }
         self.body_bytes_sent = self.body_bytes_sent.saturating_add(tail.len());
-        write_and_flush(client, tail).await
+        write_logical(client, tail, spec.chunked).await
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+struct DelaySpec {
+    after_bytes: usize,
+    yield_steps: u32,
+    wait_for_gate: bool,
+    chunked: bool,
+}
+
+async fn write_logical(client: &mut TcpStream, data: &[u8], chunked: bool) -> StreamDecision {
+    if data.is_empty() {
+        return StreamDecision::Continue;
+    }
+    if chunked {
+        let encoded = encode_http_chunk(data);
+        write_and_flush(client, &encoded).await
+    } else {
+        write_and_flush(client, data).await
     }
 }
 
@@ -544,57 +628,4 @@ async fn read_http_request(stream: &mut TcpStream) -> Option<Vec<u8>> {
         buf.extend_from_slice(&chunk[..n]);
     }
     Some(buf)
-}
-
-fn find_header_end(buf: &[u8]) -> Option<usize> {
-    buf.windows(4)
-        .position(|w| w == b"\r\n\r\n")
-        .map(|pos| pos + 4)
-}
-
-fn parse_request_line(buf: &[u8]) -> (String, String) {
-    let header_text = String::from_utf8_lossy(buf);
-    let first_line = header_text.lines().next().unwrap_or("");
-    let mut parts = first_line.split_whitespace();
-    let method = parts.next().unwrap_or("GET").to_owned();
-    let path = parts.next().unwrap_or("/").to_owned();
-    (method, path)
-}
-
-fn parse_content_length(headers: &[u8]) -> usize {
-    let text = String::from_utf8_lossy(headers);
-    for line in text.lines() {
-        if let Some((name, value)) = line.split_once(':') {
-            if name.eq_ignore_ascii_case("content-length") {
-                if let Ok(len) = value.trim().parse::<usize>() {
-                    return len;
-                }
-            }
-        }
-    }
-    0
-}
-
-fn build_synthetic_http_response(
-    status: u16,
-    retry_after_secs: Option<u64>,
-    body: &str,
-) -> Vec<u8> {
-    let reason = match status {
-        429 => "Too Many Requests",
-        502 => "Bad Gateway",
-        503 => "Service Unavailable",
-        529 => "Site Is Overloaded",
-        _ => "Chaos Injected Error",
-    };
-    let mut out = format!(
-        "HTTP/1.1 {status} {reason}\r\nContent-Type: text/plain; charset=utf-8\r\nContent-Length: {}\r\nConnection: close\r\n",
-        body.len()
-    );
-    if let Some(secs) = retry_after_secs {
-        out.push_str(&format!("Retry-After: {secs}\r\n"));
-    }
-    out.push_str("\r\n");
-    out.push_str(body);
-    out.into_bytes()
 }

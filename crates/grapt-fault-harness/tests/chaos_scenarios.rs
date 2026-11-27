@@ -5,10 +5,11 @@ use std::io::ErrorKind;
 use std::net::SocketAddr;
 use std::sync::Arc;
 
+use grapt_fault_harness::framing::{encode_http_chunk, ChunkedDecoder};
 use grapt_fault_harness::{
     ChaosProxy, FailureTranscript, FaultAction, FaultPlan, FaultSchedule, FaultSeed, FaultTrigger,
     StorageError, StorageFault, StorageFaultScript, StorageOperation, StorageOutcome,
-    TerminalCommitError, TerminalLedger,
+    TerminalCommitError, TerminalLedger, MAX_RESPONSE_HEADER_BYTES,
 };
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
@@ -59,7 +60,7 @@ fn extract_header(headers: &str, name: &str) -> Option<String> {
 }
 
 fn parse_sse_events(body: &[u8]) -> Vec<(u64, String)> {
-    let text = String::from_utf8_lossy(body);
+    let text = String::from_utf8_lossy(body).replace("\r\n", "\n");
     let mut events = Vec::new();
     for frame in text.split("\n\n") {
         let mut id = None;
@@ -79,9 +80,6 @@ fn parse_sse_events(body: &[u8]) -> Vec<(u64, String)> {
 }
 
 /// Live SSE upstream that holds the first stream open after frame 2 until `release` fires.
-///
-/// Proves the proxy streams frames live and triggers `MidStreamEofFrames` at the frame-2
-/// boundary without buffering the full response or waiting for upstream to close.
 async fn spawn_live_sse_upstream(release_tail: Arc<Notify>) -> Result<SocketAddr, Box<dyn Error>> {
     let listener = TcpListener::bind("127.0.0.1:0").await?;
     let addr = listener.local_addr()?;
@@ -111,7 +109,6 @@ async fn spawn_live_sse_upstream(release_tail: Arc<Notify>) -> Result<SocketAddr
                         return;
                     }
                     if after_id == 0 && id == 2 {
-                        // Hold open until test releases; live proxy must EOF at frame 2 anyway.
                         release.notified().await;
                     }
                 }
@@ -134,6 +131,20 @@ async fn spawn_static_upstream(payload: &'static str) -> Result<SocketAddr, Box<
                 payload.len()
             );
             let _ = stream.write_all(resp.as_bytes()).await;
+            let _ = stream.shutdown().await;
+        }
+    });
+    Ok(addr)
+}
+
+async fn spawn_raw_upstream(wire_response: Vec<u8>) -> Result<SocketAddr, Box<dyn Error>> {
+    let listener = TcpListener::bind("127.0.0.1:0").await?;
+    let addr = listener.local_addr()?;
+    tokio::spawn(async move {
+        while let Ok((mut stream, _)) = listener.accept().await {
+            let mut req_buf = [0_u8; 1024];
+            let _ = stream.read(&mut req_buf).await;
+            let _ = stream.write_all(&wire_response).await;
             let _ = stream.shutdown().await;
         }
     });
@@ -175,7 +186,6 @@ async fn sse_mid_stream_drop_and_cursor_reconnect() -> Result<(), Box<dyn Error>
     let schedule = FaultSchedule::new(plan);
     let proxy = ChaosProxy::new(upstream, schedule.clone()).start().await?;
 
-    // Request 1 returns EOF immediately after frame 2 even though upstream is still open!
     let first_raw = send_http_get(proxy.addr(), "/v1/events", None).await?;
     let (status1, _, body1) = split_http_response(&first_raw)?;
     assert_eq!(status1, 200);
@@ -209,6 +219,96 @@ async fn sse_mid_stream_drop_and_cursor_reconnect() -> Result<(), Box<dyn Error>
         combined.iter().map(|(id, _)| *id).collect::<Vec<_>>(),
         vec![1, 2, 3, 4]
     );
+
+    proxy.shutdown().await;
+    Ok(())
+}
+
+#[tokio::test]
+async fn crlf_and_chunked_sse_cut_at_exact_frame_boundary() -> Result<(), Box<dyn Error>> {
+    // Case A: CRLF-delimited SSE events (\r\n\r\n); cutoff=1 must forward ONLY event 1.
+    let crlf_body = "id: 1\r\ndata: crlf-1\r\n\r\nid: 2\r\ndata: crlf-2\r\n\r\n";
+    let crlf_wire = format!(
+        "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{crlf_body}",
+        crlf_body.len()
+    );
+    let crlf_upstream = spawn_raw_upstream(crlf_wire.into_bytes()).await?;
+    let crlf_proxy = ChaosProxy::new(
+        crlf_upstream,
+        FaultSchedule::new(
+            FaultPlan::new("crlf-sse-cut", FaultSeed::new(11)).with_rule(
+                FaultTrigger::OnRequest(1),
+                FaultAction::MidStreamEofFrames { after_frames: 1 },
+            ),
+        ),
+    )
+    .start()
+    .await?;
+
+    let (_, _, body_a) =
+        split_http_response(&send_http_get(crlf_proxy.addr(), "/v1/crlf", None).await?)?;
+    assert_eq!(parse_sse_events(&body_a), vec![(1, "crlf-1".to_owned())]);
+    crlf_proxy.shutdown().await;
+
+    // Case B: Transfer-Encoding: chunked SSE with chunks splitting mid-event and mid-CRLF.
+    let mut chunked_wire =
+        b"HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n"
+            .to_vec();
+    chunked_wire.extend_from_slice(&encode_http_chunk(b"id: 1\r\ndata: "));
+    chunked_wire.extend_from_slice(&encode_http_chunk(b"chunked-1\r\n\r"));
+    chunked_wire.extend_from_slice(&encode_http_chunk(b"\nid: 2\r\ndata: chunked-2\r\n\r\n"));
+    chunked_wire.extend_from_slice(b"0\r\n\r\n");
+
+    let chunked_upstream = spawn_raw_upstream(chunked_wire).await?;
+    let chunked_proxy = ChaosProxy::new(
+        chunked_upstream,
+        FaultSchedule::new(
+            FaultPlan::new("chunked-sse-cut", FaultSeed::new(12)).with_rule(
+                FaultTrigger::OnRequest(1),
+                FaultAction::MidStreamEofFrames { after_frames: 1 },
+            ),
+        ),
+    )
+    .start()
+    .await?;
+
+    let (status_b, headers_b, wire_body_b) =
+        split_http_response(&send_http_get(chunked_proxy.addr(), "/v1/chunked", None).await?)?;
+    assert_eq!(status_b, 200);
+    assert_eq!(
+        extract_header(&headers_b, "transfer-encoding").as_deref(),
+        Some("chunked")
+    );
+    let mut decoder = ChunkedDecoder::new();
+    let decoded = decoder.decode(&wire_body_b);
+    assert!(!decoded.malformed);
+    // Mid-stream EOF must close BEFORE sending the 0-length terminator chunk.
+    assert!(!decoded.finished);
+    assert_eq!(
+        parse_sse_events(&decoded.payload),
+        vec![(1, "chunked-1".to_owned())]
+    );
+    chunked_proxy.shutdown().await;
+    Ok(())
+}
+
+#[tokio::test]
+async fn oversized_upstream_response_headers_are_bounded_and_rejected() -> Result<(), Box<dyn Error>>
+{
+    let mut oversized = b"HTTP/1.1 200 OK\r\nX-Pad: ".to_vec();
+    oversized.resize(MAX_RESPONSE_HEADER_BYTES + 4096, b'a');
+    let upstream = spawn_raw_upstream(oversized).await?;
+    let proxy = ChaosProxy::new(
+        upstream,
+        FaultSchedule::new(FaultPlan::new("bounded-headers", FaultSeed::new(64))),
+    )
+    .start()
+    .await?;
+
+    let (status, _, body) =
+        split_http_response(&send_http_get(proxy.addr(), "/v1/big-headers", None).await?)?;
+    assert_eq!(status, 502);
+    assert!(String::from_utf8_lossy(&body).contains("headers exceeded limit"));
 
     proxy.shutdown().await;
     Ok(())
@@ -328,13 +428,11 @@ async fn partial_utf8_truncation_and_deterministic_delay_gate() -> Result<(), Bo
         .start()
         .await?;
 
-    // Request 1: truncated mid-UTF-8 codepoint must be detected honestly as invalid UTF-8.
     let (_, _, truncated_body) =
         split_http_response(&send_http_get(proxy.addr(), "/v1/stream", None).await?)?;
     assert_eq!(truncated_body.len(), 10);
     assert!(std::str::from_utf8(&truncated_body).is_err());
 
-    // Request 2: await exact gate entry (zero yield guessing), then release.
     let addr = proxy.addr();
     let client_task = tokio::spawn(async move { send_http_get(addr, "/v1/stream", None).await });
     proxy.wait_until_delayed().await;
@@ -343,7 +441,6 @@ async fn partial_utf8_truncation_and_deterministic_delay_gate() -> Result<(), Bo
     assert_eq!(status, 200);
     assert_eq!(std::str::from_utf8(&full_body)?, "data: caf\u{00e9}\n\n");
 
-    // Request 3: pre-arm release BEFORE request arrives — stateful semaphore never loses it.
     proxy.release_delayed();
     let (status3, _, full_body3) =
         split_http_response(&send_http_get(proxy.addr(), "/v1/stream", None).await?)?;
@@ -372,8 +469,6 @@ async fn shutdown_aborts_and_joins_in_flight_handlers() -> Result<(), Box<dyn Er
     let addr = proxy.addr();
     let client_task = tokio::spawn(async move { send_http_get(addr, "/v1/slow", None).await });
     proxy.wait_until_delayed().await;
-
-    // Shut down while handler is parked at the gate; it must be aborted before shutdown returns.
     proxy.shutdown().await;
 
     let raw = client_task.await??;
@@ -382,72 +477,47 @@ async fn shutdown_aborts_and_joins_in_flight_handlers() -> Result<(), Box<dyn Er
     Ok(())
 }
 
-async fn probe_and_run_solo_turn(
-    stateengine_addr: SocketAddr,
-    ledger: &mut TerminalLedger,
-    schedule: &FaultSchedule,
-    turn_key: &str,
-) -> Result<(Option<String>, StorageOutcome), Box<dyn Error>> {
-    let raw = send_http_get(stateengine_addr, "/v1/stateengine/status", None).await?;
-    let (status, _, body) = split_http_response(&raw)?;
-    let warning = if status == 200 {
-        None
-    } else {
-        let reason = String::from_utf8_lossy(&body).into_owned();
-        let msg = format!(
-            "warning: stateengine unavailable (HTTP {status}: {reason}); continuing in solo mode"
-        );
-        schedule.record_event("solo-mode", "stateengine-probe", msg.clone());
-        Some(msg)
-    };
-    let outcome = ledger.commit_terminal(turn_key, "solo-turn-completed")?;
-    Ok((warning, outcome))
-}
-
 #[tokio::test]
-async fn simulated_stateengine_down_solo_degradation() -> Result<(), Box<dyn Error>> {
-    // Case A: ChaosProxy explicitly simulates UpstreamDown (503).
-    let seed = FaultSeed::new(503);
-    let plan = FaultPlan::new("stateengine-down-solo", seed).with_rule(
+async fn upstream_down_and_connection_refused_wire_contract() -> Result<(), Box<dyn Error>> {
+    // Case A: Disconnected proxy with explicit UpstreamDown returns HTTP 503 with reason body.
+    let plan = FaultPlan::new("upstream-down-503", FaultSeed::new(503)).with_rule(
         FaultTrigger::Always,
         FaultAction::UpstreamDown {
             status: 503,
-            reason: "stateengine host unreachable".to_owned(),
+            reason: "upstream service unavailable".to_owned(),
         },
     );
-    let schedule = FaultSchedule::new(plan);
-    let proxy = ChaosProxy::disconnected(schedule.clone()).start().await?;
-    let mut ledger =
-        TerminalLedger::new(StorageFaultScript::new(seed)).with_schedule(schedule.clone());
-
-    let (warning, outcome) =
-        probe_and_run_solo_turn(proxy.addr(), &mut ledger, &schedule, "solo-turn-1").await?;
-    let warning_text = warning.ok_or("expected explicit degraded warning on 503")?;
-    assert!(warning_text.contains("HTTP 503"));
-    assert!(warning_text.contains("solo mode"));
-    assert!(
-        matches!(outcome, StorageOutcome::Committed(ref r) if r.payload == "solo-turn-completed")
+    let proxy = ChaosProxy::disconnected(FaultSchedule::new(plan))
+        .start()
+        .await?;
+    let (status_a, _, body_a) =
+        split_http_response(&send_http_get(proxy.addr(), "/v1/status", None).await?)?;
+    assert_eq!(status_a, 503);
+    assert_eq!(
+        String::from_utf8_lossy(&body_a),
+        "upstream service unavailable"
     );
-    ledger.assert_no_duplicate_terminals()?;
+    assert_eq!(proxy.transcript().events.len(), 1);
     proxy.shutdown().await;
 
-    // Case B: ChaosProxy points at a closed upstream port -> real HTTP 502 from connection refusal.
+    // Case B: Proxy forwarding to a closed upstream port returns HTTP 502 Bad Gateway.
     let closed_listener = TcpListener::bind("127.0.0.1:0").await?;
     let closed_addr = closed_listener.local_addr()?;
     drop(closed_listener);
 
     let proxy2 = ChaosProxy::new(
         closed_addr,
-        FaultSchedule::new(FaultPlan::new("stateengine-refused", FaultSeed::new(502))),
+        FaultSchedule::new(FaultPlan::new("upstream-refused-502", FaultSeed::new(502))),
     )
     .start()
     .await?;
-    let (warning2, outcome2) =
-        probe_and_run_solo_turn(proxy2.addr(), &mut ledger, &schedule, "solo-turn-2").await?;
-    let warning2_text = warning2.ok_or("expected explicit degraded warning on 502")?;
-    assert!(warning2_text.contains("HTTP 502"));
-    assert!(matches!(outcome2, StorageOutcome::Committed(ref r) if r.sequence == 2));
-    ledger.assert_no_duplicate_terminals()?;
+    let (status_b, _, body_b) =
+        split_http_response(&send_http_get(proxy2.addr(), "/v1/status", None).await?)?;
+    assert_eq!(status_b, 502);
+    assert_eq!(
+        String::from_utf8_lossy(&body_b),
+        "upstream connection failed"
+    );
     proxy2.shutdown().await;
     Ok(())
 }
@@ -455,8 +525,6 @@ async fn simulated_stateengine_down_solo_degradation() -> Result<(), Box<dyn Err
 #[test]
 fn storage_lifecycle_faults_catch_duplicates_and_verify_reconciled_recovery(
 ) -> Result<(), Box<dyn Error>> {
-    // Negative proof: a naive caller that blindly retries write_terminal_raw after
-    // CrashAfterCommitBeforeAck produces a duplicate durable terminal, and the assertion fails.
     let naive_script = StorageFaultScript::new(FaultSeed::new(100)).inject(
         StorageOperation::CommitTerminal,
         1,
@@ -479,7 +547,6 @@ fn storage_lifecycle_faults_catch_duplicates_and_verify_reconciled_recovery(
         })
     );
 
-    // Positive proof: reconciling durable state across restart prevents duplicates under all faults.
     let seed = FaultSeed::new(2026);
     let schedule = FaultSchedule::new(FaultPlan::new("storage-lifecycle", seed));
     let script = StorageFaultScript::new(seed)

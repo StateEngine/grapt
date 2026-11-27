@@ -5,11 +5,13 @@
 //! storage faults strictly by deterministic counts (request, frame, byte, or
 //! operation index) rather than wall-clock sleeps.
 
+pub mod framing;
 pub mod proxy;
 pub mod schedule;
 pub mod seed;
 pub mod storage;
 
+pub use framing::MAX_RESPONSE_HEADER_BYTES;
 pub use proxy::{ChaosProxy, ChaosProxyHandle, ProxyError};
 pub use schedule::{
     FailureTranscript, FaultAction, FaultEvent, FaultPlan, FaultSchedule, FaultTrigger,
