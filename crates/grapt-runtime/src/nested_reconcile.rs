@@ -2,8 +2,9 @@
 //!
 //! A nested call running when its process died has a durable start and
 //! nothing else, so whether its effect happened is unknown and the Session
-//! refuses to continue past it. This owner records exactly that, and only when
-//! asked (`/reconcile`) for an idle Session: one unknown-effect terminal per
+//! refuses to continue past it. This owner records exactly that, at startup
+//! for every Session the crash interrupted and otherwise only when asked
+//! (`/reconcile`) for an idle Session: one unknown-effect terminal per
 //! orphaned `(attempt, call)`, never success, never a retry, and never in place
 //! of a terminal that already exists. An unreadable terminal row is not one:
 //! it proves nothing, so its call is settled beside it and the row stays. The

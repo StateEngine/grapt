@@ -561,10 +561,10 @@ fn sc_rel_01c_a_late_reply_to_an_interrupted_call_never_poisons_the_next() {
 }
 
 /// SC-REL-01b: process loss mid nested run leaves a start with no terminal.
-/// After restart the Session refuses and names `/reconcile`; reconciling
-/// records the lost run as unknown, and the next prompt runs warned.
+/// The restart records the lost run as unknown before admitting work, so the
+/// next prompt runs, warned, with no `/reconcile`; reconciling finds nothing.
 #[test]
-fn sc_rel_01b_reconcile_settles_a_nested_run_lost_with_its_process() {
+fn sc_rel_01b_restart_settles_a_nested_run_lost_with_its_process() {
     let _journey = process_journey_custody();
     let mut journey = start_with("reconcile-lost-nested", true, |_| {
         vec![
@@ -573,7 +573,7 @@ fn sc_rel_01b_reconcile_settles_a_nested_run_lost_with_its_process() {
                 tool: "execute",
                 arguments: serde_json::json!({"code": "return await tools['nested_hold']({});"}),
             },
-            Script::SuccessText("continued after reconcile"),
+            Script::SuccessText("continued after restart"),
         ]
     });
     let (address, session) = (journey.address, journey.session.clone());
@@ -586,36 +586,21 @@ fn sc_rel_01b_reconcile_settles_a_nested_run_lost_with_its_process() {
     journey.child.stop_after_witness(&journey.service);
     let mut child = spawn(&journey.service, journey.provider.address);
     let address = await_ready(&journey.service, &mut child);
-    // The blocked prompt is refused, naming the way out; nothing is queued.
-    let (status, refusal) = request(
-        address,
-        "POST",
-        &format!("/api/session/{session}/prompt"),
-        &serde_json::json!({"id":"msg_blocked_prompt","text":"continue the work","delivery":"queue","resume":true})
-            .to_string(),
-    );
-    let refusal = String::from_utf8_lossy(&refusal);
-    assert_eq!(status, 409, "{refusal}");
-    assert!(
-        refusal.contains(
-            "an earlier tool run was lost before its result was recorded; run /reconcile"
-        ),
-        "{refusal}"
-    );
     assert_eq!(journey.provider.calls.load(Ordering::SeqCst), 1);
 
     let path = format!("/api/session/{session}/reconcile");
     let reconciled = json(address, "POST", &path, "{}");
-    assert_eq!(reconciled["data"]["reconciled"], 1, "{reconciled}");
-    let again = json(address, "POST", &path, "{}");
-    assert_eq!(again["data"]["reconciled"], 0, "{again}");
+    assert_eq!(
+        reconciled["data"]["reconciled"], 0,
+        "the restart left the lost run for /reconcile: {reconciled}"
+    );
 
-    let _approver = prompt(address, &session, "msg_after_reconcile");
+    let _approver = prompt(address, &session, "msg_after_restart");
     settle(address, &session, &journey.provider, 2);
     let body = last_body(&journey.provider);
     assert!(
         body.contains(NESTED_NOTICE),
-        "the reconciled run is silent: {body}"
+        "the settled run is silent: {body}"
     );
     assert!(body.contains("run inside call_lost_parent"), "{body}");
     write(&journey.workspace.join(".nested-release1"), "release");
