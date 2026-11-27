@@ -339,9 +339,9 @@ pub struct DogfoodApplication {
     prompt_mailbox: prompt_driver::PromptMailbox,
     agent_activity: tokio::sync::watch::Sender<()>,
     hub: Arc<DogfoodEventHub>,
-    pub(crate) inbox: Arc<Mutex<Inbox>>,
-    pub(crate) ids: Arc<OsRandomIds>,
-    pub(crate) clock: Arc<SystemClock>,
+    inbox: Arc<Mutex<Inbox>>,
+    ids: Arc<OsRandomIds>,
+    clock: Arc<SystemClock>,
     providers: provider_generation::Publication,
     skills_watch: Arc<skills_watch::Watch>,
     executor: Arc<ExecutionBackend>,
@@ -354,7 +354,7 @@ pub struct DogfoodApplication {
     /// the application rather than on a request so a status poll reports a
     /// live session instead of forking a process per call.
     mcp: Arc<mcp::McpRegistry>,
-    pub(crate) plugins: Arc<plugins::PluginRuntime>,
+    plugins: Arc<plugins::PluginRuntime>,
     /// This process's subagent runtime generation, taken once at composition.
     /// It separates the operations this runtime owns from those a dead one
     /// left behind; see [`subagent::adopt_runtime`].
@@ -657,11 +657,33 @@ impl DogfoodApplication {
             .map_err(|_| "event identity was invalid".to_owned())
     }
 
-    pub(crate) fn lock_inbox(&self) -> MutexGuard<'_, Inbox> {
+    fn lock_inbox(&self) -> MutexGuard<'_, Inbox> {
         match self.inbox.lock() {
             Ok(guard) => guard,
             Err(poisoned) => poisoned.into_inner(),
         }
+    }
+
+    pub(crate) fn plugins_runtime(&self) -> Arc<plugins::PluginRuntime> {
+        Arc::clone(&self.plugins)
+    }
+
+    pub(crate) fn create_session_record(
+        &self,
+        seed: &grapt_session::SessionSeed,
+    ) -> Result<SessionId, grapt_runtime::SessionPortError> {
+        let authorities = DeterministicAuthorities::new(&*self.clock, &*self.ids);
+        SessionPorts::new(Arc::clone(&self.inbox), &authorities)
+            .create(seed)
+            .map(|created| created.session)
+    }
+
+    pub(crate) fn pending_forms_for_session(
+        &self,
+        session: &SessionId,
+    ) -> Result<Vec<grapt_form::catalog::PendingForm>, grapt_form::catalog::FormCatalogError> {
+        let held = self.lock_inbox();
+        grapt_form::catalog::pending_forms_for(held.store(), Some(session))
     }
 
     fn ensure_session_writer(&self, session: &SessionId) -> Result<(), String> {

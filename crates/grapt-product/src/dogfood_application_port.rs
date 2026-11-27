@@ -17,10 +17,7 @@ use grapt_api::u3a::{
     SessionPromptApplicationError, SessionResponseDto, SessionsResponseDto, WireId,
 };
 use grapt_api::SealedPrincipal;
-use grapt_runtime::SessionPorts;
-use grapt_types::{
-    DeterministicAuthorities, FormId, MessageId, PermissionId, ProjectId, SessionId,
-};
+use grapt_types::{FormId, MessageId, PermissionId, ProjectId, SessionId};
 use serde_json::{json, Value};
 
 use crate::dogfood::support::{active_read_failure, decode, invalid, ready};
@@ -146,8 +143,8 @@ impl DogfoodApplicationPort for DogfoodApplication {
         ready((|| {
             let session = session_id.into_inner();
             context::require_session(self, &session)?;
-            let held = self.lock_inbox();
-            let forms = grapt_form::catalog::pending_forms_for(held.store(), Some(&session))
+            let forms = self
+                .pending_forms_for_session(&session)
                 .map_err(|error| SessionLookupApplicationError::InvalidRequest(invalid(error)))?;
             decode(json!({"data": forms.into_iter().map(|form| form.info).collect::<Vec<_>>()}))
                 .map_err(|error| SessionLookupApplicationError::InvalidRequest(invalid(error)))
@@ -526,7 +523,7 @@ impl DogfoodApplicationPort for DogfoodApplication {
     ) -> ApplicationFuture<grapt_api::u3a::SkillListResponseDto, InvalidRequestErrorDto> {
         catalogs::transformed_response(
             Arc::clone(&self.catalog_snapshot()),
-            Arc::clone(&self.plugins),
+            self.plugins_runtime(),
             query,
             catalogs::Kind::Skills,
         )
@@ -539,7 +536,7 @@ impl DogfoodApplicationPort for DogfoodApplication {
     ) -> ApplicationFuture<grapt_api::u3a::ReferenceListResponseDto, InvalidRequestErrorDto> {
         catalogs::transformed_response(
             Arc::clone(&self.catalog_snapshot()),
-            Arc::clone(&self.plugins),
+            self.plugins_runtime(),
             query,
             catalogs::Kind::References,
         )
@@ -589,7 +586,7 @@ impl DogfoodApplicationPort for DogfoodApplication {
         query: ProviderLocationQueryDto,
     ) -> ApplicationFuture<ProviderListResponseDto, CatalogApplicationError> {
         let application = self.clone();
-        let plugins = Arc::clone(&self.plugins);
+        let plugins = self.plugins_runtime();
         let draft = match plugins::catalog_draft(self) {
             Ok(draft) => draft,
             Err(error) => {
@@ -628,7 +625,7 @@ impl DogfoodApplicationPort for DogfoodApplication {
         _principal: SealedPrincipal,
         query: ModelLocationQueryDto,
     ) -> ApplicationFuture<ModelListResponseDto, CatalogApplicationError> {
-        let plugins = Arc::clone(&self.plugins);
+        let plugins = self.plugins_runtime();
         let draft = match plugins::catalog_draft(self) {
             Ok(draft) => draft,
             Err(error) => {
@@ -668,7 +665,7 @@ impl DogfoodApplicationPort for DogfoodApplication {
         _principal: SealedPrincipal,
         query: ModelDefaultLocationQueryDto,
     ) -> ApplicationFuture<ModelDefaultResponseDto, CatalogApplicationError> {
-        let plugins = Arc::clone(&self.plugins);
+        let plugins = self.plugins_runtime();
         let draft = match plugins::catalog_draft(self) {
             Ok(draft) => draft,
             Err(error) => {
@@ -710,7 +707,7 @@ impl DogfoodApplicationPort for DogfoodApplication {
         _principal: SealedPrincipal,
         query: AgentLocationQueryDto,
     ) -> ApplicationFuture<AgentListResponseDto, InvalidRequestErrorDto> {
-        let plugins = Arc::clone(&self.plugins);
+        let plugins = self.plugins_runtime();
         let application = self.clone();
         Box::pin(async move {
             let query = serde_json::to_value(query).map_err(invalid)?;
@@ -777,17 +774,13 @@ impl DogfoodApplicationPort for DogfoodApplication {
             let prepared = application
                 .prepare_create(&request, requested_id, launch)
                 .await?;
-            let created = {
-                let authorities =
-                    DeterministicAuthorities::new(&*application.clock, &*application.ids);
-                SessionPorts::new(Arc::clone(&application.inbox), &authorities)
-                    .create(&prepared.seed)
-                    .map_err(invalid)?
-            };
-            let record = application.get_record(&created.session).map_err(invalid)?;
+            let session = application
+                .create_session_record(&prepared.seed)
+                .map_err(invalid)?;
+            let record = application.get_record(&session).map_err(invalid)?;
             sandbox_worktree_config::observe(
                 &application,
-                &created.session,
+                &session,
                 Path::new(record.placement.directory()),
             )
             .await;

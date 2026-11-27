@@ -21,17 +21,18 @@ use super::support::{decode, invalid, not_found};
 use super::DogfoodApplication;
 
 #[derive(Debug, Default)]
-pub(crate) struct SessionCapabilities {
-    pub(crate) values: BTreeMap<SessionId, Arc<Secret<String>>>,
+pub(in crate::dogfood) struct SessionCapabilities {
+    pub(in crate::dogfood) values: BTreeMap<SessionId, Arc<Secret<String>>>,
     /// Resource ownership only, bounded by the same 128 capability Sessions.
     /// Replacing a binding invalidates even tokens held by an older refresh.
-    pub(crate) producer_bindings: BTreeMap<SessionId, Arc<std::sync::atomic::AtomicBool>>,
-    pub(crate) native_principals: BTreeMap<SessionId, grapt_api::SealedPrincipal>,
+    pub(in crate::dogfood) producer_bindings:
+        BTreeMap<SessionId, Arc<std::sync::atomic::AtomicBool>>,
+    pub(in crate::dogfood) native_principals: BTreeMap<SessionId, grapt_api::SealedPrincipal>,
     pub(in crate::dogfood) resumes: BTreeMap<SessionId, Arc<super::stateengine_resume::Checkpoint>>,
     pub(in crate::dogfood) packets: super::stateengine_resume::packet::Cache,
     /// The authenticated provision each held capability came from, bounded by
     /// the same Sessions; minted process-wide, so a generation never repeats.
-    pub(crate) generations: BTreeMap<SessionId, ProvisionGeneration>,
+    pub(in crate::dogfood) generations: BTreeMap<SessionId, ProvisionGeneration>,
     minted: Option<ProvisionGeneration>,
     /// Where each Session's continuity level is published.
     pub(in crate::dogfood) attention: Option<Arc<super::continuity_attention::ContinuityAttention>>,
@@ -53,7 +54,11 @@ impl SessionCapabilities {
         }
         Ok(bytes)
     }
-    pub(crate) fn put(&mut self, session: SessionId, capability: &str) -> Result<(), String> {
+    pub(in crate::dogfood) fn put(
+        &mut self,
+        session: SessionId,
+        capability: &str,
+    ) -> Result<(), String> {
         let bytes = self.check_put(&session, capability)?;
         // Checked before any custody changes: an exhausted counter refuses.
         let generation = match self.minted {
@@ -143,7 +148,7 @@ pub(crate) fn retire_producer(application: &DogfoodApplication, session: &Sessio
 
 /// Only this product boundary knows the StateEngine metadata keys. An absent
 /// process capability for a durable binding is a rebind refusal.
-pub(crate) fn call_metadata(
+pub(in crate::dogfood) fn call_metadata(
     inbox: &grapt_inbox::Inbox,
     custody: &SessionCapabilities,
     session: &SessionId,

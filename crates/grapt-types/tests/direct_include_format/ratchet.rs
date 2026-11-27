@@ -6,6 +6,7 @@
 //! `include-ratchet.json` must be genuinely gated by `#[cfg(test)]` (verified
 //! via `syn` AST, never by filename alone), and the list may only shrink.
 use super::*;
+use syn::visit::{self, Visit};
 
 const RATCHET: &str = "crates/grapt-types/tests/include-ratchet.json";
 
@@ -52,8 +53,86 @@ fn is_include_macro(mac: &syn::Macro) -> bool {
         .is_some_and(|seg| seg.ident == "include")
 }
 
-/// Return `true` if `carrier_path` is an external submodule file whose parent
-/// file declares it with `#[cfg(test)]` (e.g. `#[cfg(test)] mod tests;`).
+/// Extract a `#[path = "..."]` string literal value from `attrs`, if present.
+fn path_attr_value(attrs: &[syn::Attribute]) -> Option<String> {
+    for attr in attrs {
+        if !attr.path().is_ident("path") {
+            continue;
+        }
+        if let syn::Meta::NameValue(nv) = &attr.meta {
+            if let syn::Expr::Lit(syn::ExprLit {
+                lit: syn::Lit::Str(lit_str),
+                ..
+            }) = &nv.value
+            {
+                return Some(lit_str.value());
+            }
+        }
+    }
+    None
+}
+
+/// Resolve a relative `#[path = "..."]` value against the directory of `source_file`.
+fn resolve_relative_mod_path(source_file: &str, rel: &str) -> String {
+    let base_dir = source_file
+        .rsplit_once('/')
+        .map(|(dir, _)| dir)
+        .unwrap_or("");
+    let mut segments: Vec<&str> = if base_dir.is_empty() {
+        Vec::new()
+    } else {
+        base_dir.split('/').collect()
+    };
+    let normalized = rel.replace('\\', "/");
+    for part in normalized.split('/') {
+        match part {
+            "" | "." => {}
+            ".." => {
+                segments.pop();
+            }
+            other => segments.push(other),
+        }
+    }
+    segments.join("/")
+}
+
+struct ExternalModDeclVisitor<'a> {
+    source_file: &'a str,
+    carrier_path: &'a str,
+    carrier_mod_name: &'a str,
+    is_standard_parent: bool,
+    in_cfg_test: bool,
+    found_count: usize,
+    has_ungated: bool,
+}
+
+impl<'ast> Visit<'ast> for ExternalModDeclVisitor<'_> {
+    fn visit_item_mod(&mut self, node: &'ast syn::ItemMod) {
+        let prev = self.in_cfg_test;
+        if has_cfg_test_attr(&node.attrs) {
+            self.in_cfg_test = true;
+        }
+        if node.content.is_none() {
+            let loads_carrier = match path_attr_value(&node.attrs) {
+                Some(rel) => resolve_relative_mod_path(self.source_file, &rel) == self.carrier_path,
+                None => self.is_standard_parent && node.ident == self.carrier_mod_name,
+            };
+            if loads_carrier {
+                self.found_count += 1;
+                if !self.in_cfg_test {
+                    self.has_ungated = true;
+                }
+            }
+        } else {
+            visit::visit_item_mod(self, node);
+        }
+        self.in_cfg_test = prev;
+    }
+}
+
+/// Return `true` if `carrier_path` is an external submodule file whose every
+/// `mod` declaration across production `src/` is gated by `#[cfg(test)]`
+/// (and at least one such declaration exists).
 fn is_parent_cfg_test_module(carrier_path: &str, files: &BTreeMap<String, Vec<u8>>) -> bool {
     let Some(stem) = carrier_path.strip_suffix(".rs") else {
         return false;
@@ -61,76 +140,123 @@ fn is_parent_cfg_test_module(carrier_path: &str, files: &BTreeMap<String, Vec<u8
     let Some((dir, mod_name)) = stem.rsplit_once('/') else {
         return false;
     };
-    let candidates = [format!("{dir}.rs"), format!("{dir}/mod.rs")];
-    for parent in candidates {
-        let Some(bytes) = files.get(&parent) else {
+    let standard_parents = [format!("{dir}.rs"), format!("{dir}/mod.rs")];
+    let carrier_file_name = carrier_path.rsplit('/').next().unwrap_or(carrier_path);
+    let mut found_count = 0usize;
+    let mut has_ungated = false;
+
+    for (source_file, bytes) in files {
+        if !is_production_src(source_file) {
             continue;
-        };
+        }
+        let is_standard_parent = standard_parents.iter().any(|p| p == source_file);
         let Ok(src) = std::str::from_utf8(bytes) else {
             continue;
         };
+        // Fast skip for non-parent files that cannot possibly name this carrier in #[path = "..."].
+        if !is_standard_parent && !(src.contains("path") && src.contains(carrier_file_name)) {
+            continue;
+        }
         let Ok(ast) = syn::parse_file(src) else {
             continue;
         };
-        if declares_cfg_test_external_mod(&ast.items, mod_name) {
-            return true;
-        }
+        let mut visitor = ExternalModDeclVisitor {
+            source_file,
+            carrier_path,
+            carrier_mod_name: mod_name,
+            is_standard_parent,
+            in_cfg_test: false,
+            found_count: 0,
+            has_ungated: false,
+        };
+        visitor.visit_file(&ast);
+        found_count += visitor.found_count;
+        has_ungated |= visitor.has_ungated;
     }
-    false
+
+    found_count >= 1 && !has_ungated
 }
 
-fn declares_cfg_test_external_mod(items: &[syn::Item], mod_name: &str) -> bool {
-    for item in items {
-        if let syn::Item::Mod(item_mod) = item {
-            if item_mod.content.is_none()
-                && item_mod.ident == mod_name
-                && has_cfg_test_attr(&item_mod.attrs)
-            {
-                return true;
-            }
-            if let Some((_, inner)) = &item_mod.content {
-                if has_cfg_test_attr(&item_mod.attrs) && declares_external_mod_any(inner, mod_name)
-                {
-                    return true;
-                }
-            }
-        }
-    }
-    false
-}
-
-fn declares_external_mod_any(items: &[syn::Item], mod_name: &str) -> bool {
-    items.iter().any(|item| {
-        matches!(
-            item,
-            syn::Item::Mod(item_mod) if item_mod.content.is_none() && item_mod.ident == mod_name
-        )
-    })
-}
-
-fn verify_items_cfg_test_gated(
-    carrier: &str,
-    items: &[syn::Item],
+struct IncludeCfgTestVisitor<'a> {
+    carrier: &'a str,
     in_cfg_test: bool,
-    problems: &mut Vec<String>,
-) {
-    for item in items {
-        match item {
-            syn::Item::Macro(item_mac) if is_include_macro(&item_mac.mac) => {
-                if !in_cfg_test && !has_cfg_test_attr(&item_mac.attrs) {
-                    problems.push(format!(
-                        "{carrier}: non-test include!() in production src/ is forbidden; gate with #[cfg(test)] or convert to a submodule"
-                    ));
-                }
-            }
-            syn::Item::Mod(item_mod) => {
-                if let Some((_, inner)) = &item_mod.content {
-                    let gated = in_cfg_test || has_cfg_test_attr(&item_mod.attrs);
-                    verify_items_cfg_test_gated(carrier, inner, gated, problems);
-                }
-            }
-            _ => {}
+    problems: Vec<String>,
+}
+
+impl IncludeCfgTestVisitor<'_> {
+    fn visit_with_attrs<F>(&mut self, attrs: &[syn::Attribute], f: F)
+    where
+        F: FnOnce(&mut Self),
+    {
+        let prev = self.in_cfg_test;
+        if has_cfg_test_attr(attrs) {
+            self.in_cfg_test = true;
         }
+        f(self);
+        self.in_cfg_test = prev;
+    }
+}
+
+impl<'ast> Visit<'ast> for IncludeCfgTestVisitor<'_> {
+    fn visit_macro(&mut self, node: &'ast syn::Macro) {
+        if is_include_macro(node) && !self.in_cfg_test {
+            self.problems.push(format!(
+                "{}: non-test include!() in production src/ is forbidden; gate with #[cfg(test)] or convert to a submodule",
+                self.carrier
+            ));
+        }
+    }
+
+    fn visit_item_mod(&mut self, node: &'ast syn::ItemMod) {
+        self.visit_with_attrs(&node.attrs, |v| visit::visit_item_mod(v, node));
+    }
+
+    fn visit_item_fn(&mut self, node: &'ast syn::ItemFn) {
+        self.visit_with_attrs(&node.attrs, |v| visit::visit_item_fn(v, node));
+    }
+
+    fn visit_item_impl(&mut self, node: &'ast syn::ItemImpl) {
+        self.visit_with_attrs(&node.attrs, |v| visit::visit_item_impl(v, node));
+    }
+
+    fn visit_item_trait(&mut self, node: &'ast syn::ItemTrait) {
+        self.visit_with_attrs(&node.attrs, |v| visit::visit_item_trait(v, node));
+    }
+
+    fn visit_item_macro(&mut self, node: &'ast syn::ItemMacro) {
+        self.visit_with_attrs(&node.attrs, |v| visit::visit_item_macro(v, node));
+    }
+
+    fn visit_impl_item_fn(&mut self, node: &'ast syn::ImplItemFn) {
+        self.visit_with_attrs(&node.attrs, |v| visit::visit_impl_item_fn(v, node));
+    }
+
+    fn visit_impl_item_macro(&mut self, node: &'ast syn::ImplItemMacro) {
+        self.visit_with_attrs(&node.attrs, |v| visit::visit_impl_item_macro(v, node));
+    }
+
+    fn visit_trait_item_fn(&mut self, node: &'ast syn::TraitItemFn) {
+        self.visit_with_attrs(&node.attrs, |v| visit::visit_trait_item_fn(v, node));
+    }
+
+    fn visit_trait_item_macro(&mut self, node: &'ast syn::TraitItemMacro) {
+        self.visit_with_attrs(&node.attrs, |v| visit::visit_trait_item_macro(v, node));
+    }
+
+    fn visit_foreign_item_macro(&mut self, node: &'ast syn::ForeignItemMacro) {
+        self.visit_with_attrs(&node.attrs, |v| visit::visit_foreign_item_macro(v, node));
+    }
+
+    fn visit_stmt_macro(&mut self, node: &'ast syn::StmtMacro) {
+        self.visit_with_attrs(&node.attrs, |v| visit::visit_stmt_macro(v, node));
+    }
+
+    fn visit_expr_macro(&mut self, node: &'ast syn::ExprMacro) {
+        self.visit_with_attrs(&node.attrs, |v| visit::visit_expr_macro(v, node));
+    }
+
+    fn visit_expr_block(&mut self, node: &'ast syn::ExprBlock) {
+        self.visit_with_attrs(&node.attrs, |v| visit::visit_expr_block(v, node));
     }
 }
 
@@ -146,9 +272,13 @@ fn verify_carrier_cfg_test_only(
     };
     let src = std::str::from_utf8(bytes).map_err(|_| format!("{carrier}: invalid UTF-8"))?;
     let ast = syn::parse_file(src).map_err(|error| format!("{carrier}: syn parse: {error}"))?;
-    let mut problems = Vec::new();
-    verify_items_cfg_test_gated(carrier, &ast.items, false, &mut problems);
-    Ok(problems)
+    let mut visitor = IncludeCfgTestVisitor {
+        carrier,
+        in_cfg_test: false,
+        problems: Vec::new(),
+    };
+    visitor.visit_file(&ast);
+    Ok(visitor.problems)
 }
 
 type FragmentCounts = BTreeMap<String, usize>;
@@ -370,6 +500,56 @@ fn ast_gate_requires_cfg_test_on_every_src_include() -> Result<(), Box<dyn Error
     );
     assert_eq!(
         verify_carrier_cfg_test_only("crates/example/src/write/tests.rs", &external)?.len(),
+        1
+    );
+
+    // An ungated include!() inside an ordinary function body must be caught.
+    let mut fn_body = BTreeMap::new();
+    fn_body.insert(
+        "crates/example/src/fn_body.rs".to_owned(),
+        b"fn prod() {\n    let _ = include!(\"part.rs\");\n}\n".to_vec(),
+    );
+    assert_eq!(
+        verify_carrier_cfg_test_only("crates/example/src/fn_body.rs", &fn_body)?.len(),
+        1
+    );
+    fn_body.insert(
+        "crates/example/src/fn_body.rs".to_owned(),
+        b"#[cfg(test)]\nfn test_only() {\n    let _ = include!(\"part.rs\");\n}\n".to_vec(),
+    );
+    assert!(verify_carrier_cfg_test_only("crates/example/src/fn_body.rs", &fn_body)?.is_empty());
+
+    // A second non-test mod declaration loading the same external carrier fails.
+    let mut duplicate_mod = BTreeMap::new();
+    duplicate_mod.insert(
+        "crates/example/src/write.rs".to_owned(),
+        b"#[cfg(test)]\nmod tests;\nmod tests;\n".to_vec(),
+    );
+    duplicate_mod.insert(
+        "crates/example/src/write/tests.rs".to_owned(),
+        b"include!(\"tests/a.rs\");\n".to_vec(),
+    );
+    assert_eq!(
+        verify_carrier_cfg_test_only("crates/example/src/write/tests.rs", &duplicate_mod)?.len(),
+        1
+    );
+
+    // A non-test #[path = "..."] mod declaration from another file also fails.
+    let mut path_alias = BTreeMap::new();
+    path_alias.insert(
+        "crates/example/src/write.rs".to_owned(),
+        b"#[cfg(test)]\nmod tests;\n".to_vec(),
+    );
+    path_alias.insert(
+        "crates/example/src/other.rs".to_owned(),
+        b"#[path = \"write/tests.rs\"]\nmod leaked;\n".to_vec(),
+    );
+    path_alias.insert(
+        "crates/example/src/write/tests.rs".to_owned(),
+        b"include!(\"tests/a.rs\");\n".to_vec(),
+    );
+    assert_eq!(
+        verify_carrier_cfg_test_only("crates/example/src/write/tests.rs", &path_alias)?.len(),
         1
     );
     Ok(())
