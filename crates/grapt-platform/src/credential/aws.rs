@@ -46,7 +46,7 @@ impl RequestAuthenticator for Signer {
                 .selection
                 .sign(request, &grapt_store::SystemClock)
                 .await
-                .map_err(|_| CredentialError::UseAuthorityUnavailable)?;
+                .map_err(|_| CredentialError::AwsSigningFailed)?;
             self.validate()?;
             Ok(request)
         })

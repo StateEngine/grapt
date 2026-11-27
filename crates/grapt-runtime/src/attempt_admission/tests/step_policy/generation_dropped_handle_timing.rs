@@ -210,16 +210,17 @@ async fn dropping_the_handle_midway_through_backoff_does_not_extend_it() {
         }
     );
     assert_eq!(report.receipts.len(), 2);
-    // Tight on purpose. Restarting the sleep on closure produced 1s + 2s = 3s;
-    // a `< 2 * backoff` bound would have passed that. Only the preserved sleep
-    // lands at the original 2s.
+    // Tight on purpose. With [0%, +25%] deterministic jitter, the preserved
+    // sleep lands in [backoff, backoff + backoff/4] (2.0s..=2.5s), whereas
+    // restarting the sleep on closure at 1s would take >= 3.0s.
+    let max_jittered = backoff + backoff / 4;
     assert!(
         elapsed >= backoff,
         "the full backoff must still elapse; took {elapsed:?}"
     );
     assert!(
-        elapsed < backoff + Duration::from_millis(100),
-        "closing the channel mid-backoff must not restart it; took {elapsed:?},          expected about {backoff:?}"
+        elapsed <= max_jittered + Duration::from_millis(50),
+        "closing the channel mid-backoff must not restart it; took {elapsed:?}, expected within {backoff:?}..={max_jittered:?}"
     );
 }
 
