@@ -189,6 +189,16 @@ async fn a_second_actor_reports_a_transition_another_committed_as_a_duplicate() 
     assert!(!committed.duplicate && repeated.duplicate);
     assert_eq!(repeated.state_seq, committed.state_seq);
     assert!(matches!(changes.try_recv(), Err(TryRecvError::Empty)));
+    // The acknowledged transition is already in the snapshot, also when the
+    // repeat is answered from memory.
+    for _ in 0..2 {
+        let seen = two.snapshot();
+        assert_eq!(
+            (seen.state, seen.state_seq),
+            (S::Running, committed.state_seq)
+        );
+        assert!(two.submit(key("turn")?, Event::StartTurn).await?.duplicate);
+    }
     // Its snapshot reloads before the next transition.
     let failed = two.submit(key("other")?, Event::Fail).await?;
     assert_eq!((failed.state, failed.state_seq.get()), (S::Failed, 2));
@@ -231,6 +241,35 @@ async fn subscriptions_close_when_the_actor_stops() -> TestResult {
         timeout(bound, late.recv()).await?,
         Err(RecvError::Closed)
     ));
+    store.shutdown().await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn settling_a_transition_another_actor_published_does_not_publish_it_again() -> TestResult {
+    let dir = TempDir::new()?;
+    let (store, first) = start(&dir.path().join("run.db"), ActorConfig::default()).await?;
+    let second = spawn(&store, ActorConfig::default()).await?;
+    let two = second.handle();
+    let mut changes = two.subscribe();
+    first
+        .handle()
+        .submit(key("turn")?, Event::StartTurn)
+        .await?;
+    tokio::time::pause();
+    let unknown = two.submit(key("turn")?, Event::StartTurn).await;
+    tokio::time::resume();
+    assert!(
+        matches!(unknown, Err(SubmitError::OutcomeUnknown)),
+        "{unknown:?}"
+    );
+    let paused = two.submit(key("pause")?, Event::Pause).await?;
+    assert_eq!((paused.state, paused.state_seq.get()), (S::Paused, 2));
+    // Only the transition this actor committed is published by it.
+    assert_eq!(changes.recv().await?.state_seq.get(), 2);
+    assert!(matches!(changes.try_recv(), Err(TryRecvError::Empty)));
+    first.shutdown().await?;
+    second.shutdown().await?;
     store.shutdown().await?;
     Ok(())
 }

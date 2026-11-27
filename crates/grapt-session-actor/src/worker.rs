@@ -92,6 +92,10 @@ impl Worker {
         self.settle()
             .await
             .map_err(|_| SubmitError::PriorUnsettled)?;
+        // A retained reload failure is reported here, before any answer.
+        if self.stale {
+            self.reload().await?;
+        }
         if let Some((recorded, applied)) = self.recent.get(&key) {
             return if *recorded == event {
                 Ok(Applied {
@@ -101,9 +105,6 @@ impl Worker {
             } else {
                 Err(SubmitError::KeyConflict)
             };
-        }
-        if self.stale {
-            self.reload().await?;
         }
         let to = match event.apply(self.current.state) {
             Ok(to) => to,
@@ -126,19 +127,14 @@ impl Worker {
     }
 
     async fn write(&mut self, transition: Transition) -> Result<Applied, SubmitError> {
-        let command = store::transition(
-            &self.current,
-            &transition.key,
-            transition.event,
-            transition.to,
-            transition.next,
-        )?;
+        let command = self.command(&transition)?;
         let deadline = Instant::now() + self.config.write_timeout;
         match self.writer.write(command, deadline).await {
+            Ok(receipt) if !receipt.replayed => Ok(self.commit(transition)),
             // Another writer committed this exact transition first and
-            // published it; this worker's snapshot is behind.
-            Ok(receipt) if receipt.replayed => {
-                self.stale = true;
+            // published it; only the snapshot catches up.
+            Ok(_) => {
+                self.resync().await;
                 let applied = Applied {
                     state: transition.to,
                     state_seq: transition.next,
@@ -151,7 +147,6 @@ impl Worker {
                     ..applied
                 })
             }
-            Ok(_) => Ok(self.commit(transition)),
             Err(WriteError::KeyConflict) => {
                 self.replay(transition.key, transition.event, None).await
             }
@@ -161,55 +156,55 @@ impl Worker {
             }
             // The compare-and-set found a sequence another writer moved.
             Err(WriteError::RowCount { .. }) => {
-                self.stale = true;
+                self.resync().await;
                 Err(SubmitError::Contended)
             }
             Err(error) => Err(error.into()),
         }
     }
 
-    /// Resend the pending transition. The writer orders it after the earlier
-    /// attempt, so its answer is final: a receipt means exactly one commit.
-    /// A refusal before admission leaves the earlier attempt unresolved.
+    /// Resend the pending transition under its key. The writer never reorders
+    /// requests that share a key, so any answer it gives comes after the
+    /// earlier attempt finished. Only a fresh receipt says this worker made
+    /// the commit; every other answer is settled by reading the store.
     async fn settle(&mut self) -> Result<(), SubmitError> {
         let Some(transition) = self.pending.take() else {
             return Ok(());
         };
-        let command = match store::transition(
+        let outcome = match self.command(&transition) {
+            Ok(command) => {
+                let deadline = Instant::now() + self.config.write_timeout;
+                self.writer.write(command, deadline).await
+            }
+            Err(error) => Err(error),
+        };
+        match settlement(&outcome) {
+            Settlement::Committed => {
+                self.commit(transition);
+                Ok(())
+            }
+            Settlement::Unresolved => {
+                self.pending = Some(transition);
+                outcome.map(|_| ()).map_err(SubmitError::from)
+            }
+            Settlement::Read => match self.reload().await {
+                Ok(()) => Ok(()),
+                Err(error) => {
+                    self.pending = Some(transition);
+                    Err(error)
+                }
+            },
+        }
+    }
+
+    fn command(&self, transition: &Transition) -> Result<grapt_run_store::Command, WriteError> {
+        store::transition(
             &self.current,
             &transition.key,
             transition.event,
             transition.to,
             transition.next,
-        ) {
-            Ok(command) => command,
-            Err(error) => {
-                self.pending = Some(transition);
-                return Err(error.into());
-            }
-        };
-        let deadline = Instant::now() + self.config.write_timeout;
-        match self.writer.write(command, deadline).await {
-            Ok(_) => {
-                self.commit(transition);
-                Ok(())
-            }
-            Err(
-                error @ (WriteError::QueueFull
-                | WriteError::ByteBudget
-                | WriteError::WalPressure
-                | WriteError::NotAdmitted
-                | WriteError::Closed
-                | WriteError::OutcomeUnknown { .. }),
-            ) => {
-                self.pending = Some(transition);
-                Err(error.into())
-            }
-            Err(_) => {
-                self.stale = true;
-                Ok(())
-            }
-        }
+        )
     }
 
     fn commit(&mut self, transition: Transition) -> Applied {
@@ -248,6 +243,9 @@ impl Worker {
         let deadline = Instant::now() + self.config.read_timeout;
         match store::recorded(&self.readers, &self.current.session, &key, deadline).await? {
             Some(recorded) if recorded.event == event.as_str() => {
+                if recorded.state_seq > self.current.state_seq {
+                    self.resync().await;
+                }
                 let applied = Applied {
                     state: recorded.state,
                     state_seq: recorded.state_seq,
@@ -264,6 +262,13 @@ impl Worker {
         }
     }
 
+    /// Catch the snapshot up with the store now. A failed read stays
+    /// recorded as `stale`, and the next submit reports it before answering.
+    async fn resync(&mut self) {
+        self.stale = true;
+        let _ = self.reload().await;
+    }
+
     async fn reload(&mut self) -> Result<(), SubmitError> {
         let deadline = Instant::now() + self.config.read_timeout;
         let loaded = store::load(&self.readers, self.current.session.clone(), deadline).await?;
@@ -273,5 +278,56 @@ impl Worker {
             self.snapshots.send_replace(self.current.clone());
         }
         Ok(())
+    }
+}
+
+/// What a resend's answer says about the pending transition.
+#[derive(Debug, Eq, PartialEq)]
+enum Settlement {
+    /// This resend made the commit.
+    Committed,
+    /// The resend never reached the writer; the earlier attempt may still run.
+    Unresolved,
+    /// The earlier attempt is finished, but this answer does not say whether
+    /// it committed: a replayed receipt, or a refusal reached before the
+    /// receipt was checked.
+    Read,
+}
+
+fn settlement(outcome: &Result<grapt_run_store::Receipt, WriteError>) -> Settlement {
+    match outcome {
+        Ok(receipt) if !receipt.replayed => Settlement::Committed,
+        Err(
+            WriteError::QueueFull
+            | WriteError::ByteBudget
+            | WriteError::WalPressure
+            | WriteError::NotAdmitted
+            | WriteError::Closed
+            | WriteError::OutcomeUnknown { .. },
+        ) => Settlement::Unresolved,
+        _ => Settlement::Read,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{settlement, Settlement};
+    use grapt_run_store::{Receipt, WriteError};
+    use std::sync::Arc;
+
+    #[test]
+    fn only_a_fresh_receipt_settles_without_reading_the_store() {
+        let receipt = |replayed| Receipt {
+            affected_rows: vec![1, 1],
+            replayed,
+        };
+        assert_eq!(settlement(&Ok(receipt(false))), Settlement::Committed);
+        assert_eq!(settlement(&Ok(receipt(true))), Settlement::Read);
+        let aborted = WriteError::BatchAborted(Arc::new(rusqlite::Error::InvalidQuery));
+        assert_eq!(settlement(&Err(aborted)), Settlement::Read);
+        assert_eq!(
+            settlement(&Err(WriteError::QueueFull)),
+            Settlement::Unresolved
+        );
     }
 }
