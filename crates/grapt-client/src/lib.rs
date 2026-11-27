@@ -81,7 +81,7 @@ pub use contract::{
 };
 pub use cursor::{Admission, DurableCursor, GapReason, StreamState};
 pub use double::{ContractDouble, Fault, PendingPermission};
-pub use http::{BasicCredential, HttpConnection, HttpError, StreamCancellation};
+pub use http::{BasicCredential, HttpConnection, HttpError, StreamCancellation, WatchedSessions};
 pub use keymap::Key;
 pub use projection::{
     Applied, ExecutionState, Outcome, ProjectionError, SessionView, Slice, SliceKind, Usage,

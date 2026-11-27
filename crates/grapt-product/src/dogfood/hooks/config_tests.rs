@@ -104,6 +104,7 @@ fn all_json_event_names_resolve_with_user_selected_argv_and_cwd() -> Result<(), 
                 matcher: None,
                 permits_allow: false,
                 plugin: None,
+                required: false,
             }]
         );
     }

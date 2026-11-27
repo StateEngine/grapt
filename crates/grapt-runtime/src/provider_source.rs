@@ -443,6 +443,10 @@ impl<P: AttemptPlan> AttemptSource for ProviderAttemptSource<P> {
         self.planner.retrying(notice);
     }
 
+    fn jitter_coordinate(&self) -> Option<&str> {
+        Some(self.session.as_str())
+    }
+
     fn promote_input(&mut self, input: &grapt_types::MessageId) -> Result<(), String> {
         self.plan_state.clear();
         self.planner.promote_input(input)

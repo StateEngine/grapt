@@ -15,6 +15,24 @@ impl DurableContinuation {
         self.read_projection(Self::structural_admission_at)
     }
 
+    /// A trimmed retry of history past the read bounds reads from the newest
+    /// window those bounds serve, as a summary does. Returns that window's
+    /// floor, `None` when the history since the cut fits. Reader contention is
+    /// the plan's typed capacity wait, never a refusal.
+    pub(in crate::dogfood) fn floor_for_trim(
+        &mut self,
+    ) -> Result<Option<grapt_types::EventSeq>, grapt_runtime::PlanRefusal> {
+        let floor = self.read_for_plan(|reader| {
+            reader
+                .summary_window_floor_at()
+                .map_err(grapt_runtime::PlanRefusal::from)
+        })?;
+        if floor.is_some() {
+            self.set_summary_floor(floor);
+        }
+        Ok(floor)
+    }
+
     /// The window floor, kept as a non-zero value so the continuation stays
     /// within the plan context's size bound.
     pub(super) fn summary_floor(&self) -> Option<grapt_types::EventSeq> {

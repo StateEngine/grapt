@@ -39,7 +39,7 @@ impl RequestAuthenticator for Authenticator {
                 .session
                 .authorize(request)
                 .await
-                .map_err(|_| CredentialError::UseAuthorityUnavailable)?;
+                .map_err(|_| CredentialError::VertexAuthFailed)?;
             self.validate()?;
             Ok(request)
         })

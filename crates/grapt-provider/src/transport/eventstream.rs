@@ -138,7 +138,18 @@ fn decode(frame: &[u8]) -> Result<String, &'static str> {
     match kind {
         Some("event") => Ok(json!({event.ok_or("missing Bedrock event type")?:body}).to_string()),
         Some("exception" | "error") => {
-            Ok(json!({"exception":{"type":event.unwrap_or("unknown")}}).to_string())
+            let mut payload = serde_json::Map::new();
+            payload.insert("type".to_owned(), json!(event.unwrap_or("unknown")));
+            if let Some(message) = body
+                .get("message")
+                .or_else(|| body.get("Message"))
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .filter(|message| !message.is_empty())
+            {
+                payload.insert("message".to_owned(), json!(message));
+            }
+            Ok(json!({"exception": payload}).to_string())
         }
         _ => Err("unknown Bedrock event message type"),
     }

@@ -168,9 +168,10 @@ impl State {
                     Compaction::Authentication => Action::SignIn,
                     Compaction::Quota => Action::RestoreQuota,
                     Compaction::UsageLimit { .. } => Action::SignIn,
-                    Compaction::Transient | Compaction::NoProgress => Action::FollowUp,
+                    Compaction::Transient | Compaction::NoProgress | Compaction::DidNotFit => {
+                        Action::FollowUp
+                    }
                     Compaction::Context | Compaction::Other => Action::ChangeModel,
-                    Compaction::Capacity => Action::Compact,
                 };
                 Self::described(Kind::Paused, Reason::Compaction, &message, Some(action))
             }

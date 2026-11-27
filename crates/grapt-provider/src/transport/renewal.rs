@@ -2,7 +2,17 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use crate::{CredentialLease, CredentialOwner, CredentialRenewalRefusal, CredentialRevision};
+use crate::{
+    CredentialError, CredentialLease, CredentialOwner, CredentialRenewalRefusal, CredentialRevision,
+};
+
+#[derive(Debug, thiserror::Error)]
+pub(super) enum PrepareError {
+    #[error("{0}")]
+    Renewal(#[from] CredentialRenewalRefusal),
+    #[error("{0}")]
+    Credential(#[from] CredentialError),
+}
 
 pub(super) struct Prepared {
     pub request: reqwest::RequestBuilder,
@@ -21,13 +31,13 @@ pub(super) async fn prepare(
     request: reqwest::RequestBuilder,
     lease: Option<CredentialLease>,
     allowance: Duration,
-) -> Result<Prepared, CredentialRenewalRefusal> {
+) -> Result<Prepared, PrepareError> {
     let Some(owner) = owner else {
         let request = match &lease {
             Some(lease) => tokio::time::timeout(allowance, lease.authenticate(request))
                 .await
-                .map_err(|_| CredentialRenewalRefusal::Unavailable)?
-                .map_err(|_| CredentialRenewalRefusal::Unavailable)?,
+                .map_err(|_| PrepareError::Renewal(CredentialRenewalRefusal::Unavailable))?
+                .map_err(PrepareError::Credential)?,
             None => request,
         };
         return Ok(Prepared {
@@ -36,28 +46,30 @@ pub(super) async fn prepare(
             renewal: None,
         });
     };
-    let old = lease.ok_or(CredentialRenewalRefusal::CoordinatesChanged)?;
+    let old = lease.ok_or(PrepareError::Renewal(
+        CredentialRenewalRefusal::CoordinatesChanged,
+    ))?;
     let current = tokio::time::timeout(allowance, owner.current())
         .await
-        .map_err(|_| CredentialRenewalRefusal::Unavailable)??;
+        .map_err(|_| PrepareError::Renewal(CredentialRenewalRefusal::Unavailable))??;
     let credential = current.credential;
     if credential.account() != old.account()
         || credential.credential_version() != old.credential_version()
         || credential.placement() != old.placement()
         || !credential.keeps_destination(&old)
     {
-        return Err(CredentialRenewalRefusal::CoordinatesChanged);
+        return Err(PrepareError::Renewal(
+            CredentialRenewalRefusal::CoordinatesChanged,
+        ));
     }
-    let lease = credential
-        .lease()
-        .map_err(|_| CredentialRenewalRefusal::Unavailable)?;
+    let lease = credential.lease().map_err(PrepareError::Credential)?;
     let request = lease
         .place(request)
-        .map_err(|_| CredentialRenewalRefusal::CoordinatesChanged)?;
+        .map_err(|_| PrepareError::Renewal(CredentialRenewalRefusal::CoordinatesChanged))?;
     let request = tokio::time::timeout(allowance, lease.authenticate(request))
         .await
-        .map_err(|_| CredentialRenewalRefusal::Unavailable)?
-        .map_err(|_| CredentialRenewalRefusal::Unavailable)?;
+        .map_err(|_| PrepareError::Renewal(CredentialRenewalRefusal::Unavailable))?
+        .map_err(PrepareError::Credential)?;
     Ok(Prepared {
         request,
         lease: Some(lease),

@@ -22,9 +22,10 @@ async fn child_output(
     cwd: &Path,
     environment: &BTreeMap<String, String>,
 ) -> String {
-    let Ok((mut child, _resolved)) = spawn_local(command, cwd, environment) else {
+    let Ok((mut process, _resolved)) = spawn_local(command, cwd, environment) else {
         panic!("the child witness could not start its shell on this machine");
     };
+    let child = &mut process.child;
     let mut output = String::new();
     if let Some(mut stdout) = child.stdout.take() {
         let _ = stdout.read_to_string(&mut output).await;
@@ -136,11 +137,13 @@ async fn a_spawned_server_inherits_no_environment_beyond_the_allowlist() {
     } else {
         vec![program.to_owned(), "-c".into(), "env".into()]
     };
-    let Ok((mut child, _resolved)) = spawn_local(&command, Path::new("."), &BTreeMap::new()) else {
+    let Ok((mut process, _resolved)) = spawn_local(&command, Path::new("."), &BTreeMap::new())
+    else {
         // A machine without the shell cannot run this witness, and a
         // silent skip would be a false pass; say so loudly instead.
         panic!("the environment witness needs {program} on this machine");
     };
+    let child = &mut process.child;
     let mut output = String::new();
     if let Some(mut stdout) = child.stdout.take() {
         let _ = stdout.read_to_string(&mut output).await;
@@ -151,4 +154,45 @@ async fn a_spawned_server_inherits_no_environment_beyond_the_allowlist() {
         !output.contains("GRAPT_MCP_ENV_LEAK_PROBE"),
         "the spawned server inherited this process's environment"
     );
+}
+
+/// A launcher's grandchild is the real server; it must die with the server.
+#[cfg(target_os = "linux")]
+#[tokio::test]
+async fn dropping_a_local_server_ends_its_grandchild_too() {
+    use tokio::io::AsyncBufReadExt as _;
+    let command: Vec<String> = vec![
+        "/bin/sh".to_owned(),
+        "-c".into(),
+        "sleep 300 & echo $!; wait".into(),
+    ];
+    let Ok((mut process, _resolved)) = spawn_local(&command, Path::new("."), &BTreeMap::new())
+    else {
+        panic!("the grandchild witness needs /bin/sh on this machine");
+    };
+    let Some(stdout) = process.child.stdout.take() else {
+        panic!("the witness exposed no stdout");
+    };
+    let mut line = String::new();
+    let _ = tokio::io::BufReader::new(stdout).read_line(&mut line).await;
+    let Ok(pid) = line.trim().parse::<u32>() else {
+        panic!("the witness printed no grandchild pid: {line:?}");
+    };
+    let alive = || {
+        std::fs::read_to_string(format!("/proc/{pid}/stat")).is_ok_and(|stat| {
+            !stat
+                .rsplit(')')
+                .next()
+                .is_some_and(|rest| rest.trim_start().starts_with('Z'))
+        })
+    };
+    assert!(alive(), "the grandchild never started");
+    drop(process);
+    for _ in 0..200 {
+        if !alive() {
+            return;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+    }
+    panic!("the grandchild outlived its dropped server");
 }

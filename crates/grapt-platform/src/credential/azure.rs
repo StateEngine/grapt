@@ -35,7 +35,7 @@ impl RequestAuthenticator for Authenticator {
             self.validate()?;
             let request = grapt_login::azure::authorize(request)
                 .await
-                .map_err(|_| CredentialError::UseAuthorityUnavailable)?;
+                .map_err(|_| CredentialError::AzureAuthFailed)?;
             self.validate()?;
             Ok(request)
         })

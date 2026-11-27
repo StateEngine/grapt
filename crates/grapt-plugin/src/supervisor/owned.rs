@@ -415,6 +415,27 @@ impl PluginProcess {
         }
     }
 
+    /// Exchange one startup request. Before publication a plugin that times
+    /// out or breaks protocol costs only itself: its channel closes so the
+    /// caller's shutdown terminates it, and its siblings stay healthy.
+    pub(super) fn startup_exchange(
+        &self,
+        operation: &'static str,
+        payload: Value,
+        timeout: Duration,
+        stage: &'static str,
+    ) -> Result<Value, PluginError> {
+        let result = self.channel.exchange(operation, payload, timeout, stage);
+        match &result {
+            Err(PluginError::Timeout(stage)) => self
+                .channel
+                .close(&format!("plugin bridge timed out during {stage}")),
+            Err(PluginError::Protocol(reason)) => self.channel.close(reason),
+            _ => {}
+        }
+        result
+    }
+
     pub(super) fn invoke(
         &self,
         grants: &AtomicU64,

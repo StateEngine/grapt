@@ -111,6 +111,12 @@ pub enum CredentialError {
     Revoked,
     #[error("connection authority is unavailable")]
     UseAuthorityUnavailable,
+    #[error("AWS Bedrock request signing failed")]
+    AwsSigningFailed,
+    #[error("Vertex ADC authorization failed")]
+    VertexAuthFailed,
+    #[error("Azure Entra authorization failed")]
+    AzureAuthFailed,
 }
 
 enum Material {

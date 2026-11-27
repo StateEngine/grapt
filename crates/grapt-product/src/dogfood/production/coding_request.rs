@@ -204,6 +204,14 @@ impl ProductPlan {
             .unwrap_or_default();
         let instruction_prefix_len = input.len();
         let native_epoch_candidate = epochs && self.family.is_anthropic();
+        // A trimmed retry reads within the bounds rather than compacting
+        // again; its notice names where the omitted history ends.
+        self.window_floor = match &mut self.context {
+            PlanContext::Durable(continuation) if continuation.trim_requested() => {
+                continuation.floor_for_trim()?
+            }
+            _ => None,
+        };
         let structural = match &self.context {
             PlanContext::Durable(continuation) => continuation
                 .read_for_plan(|reader| reader.structural_admission().map_err(PlanRefusal::from))?,

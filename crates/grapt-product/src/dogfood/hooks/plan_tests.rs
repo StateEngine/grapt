@@ -21,9 +21,15 @@ impl Fixture {
     }
 
     fn argv(event: Event, refuse: bool) -> Result<Vec<String>, String> {
+        Self::argv_exiting(event, refuse.then_some(2))
+    }
+
+    fn argv_exiting(event: Event, exit: Option<u8>) -> Result<Vec<String>, String> {
         let event = event.as_str();
+        let refuse = exit.is_some();
+        let code = exit.unwrap_or(0);
         let output_unix = if refuse {
-            format!("printf '{event} fixture refused' >&2; exit 2")
+            format!("printf '{event} fixture refused' >&2; exit {code}")
         } else {
             format!(
                 "text='{event}:'$count'|'; printf '%s' \"$text\"; i=${{#text}}; \
@@ -31,7 +37,7 @@ impl Fixture {
             )
         };
         let output_windows = if refuse {
-            format!("[Console]::Error.Write('{event} fixture refused'); exit 2")
+            format!("[Console]::Error.Write('{event} fixture refused'); exit {code}")
         } else {
             format!("$text='{event}:'+$count+'|'; [Console]::Out.Write($text.PadRight(4096,'x'))")
         };
@@ -46,26 +52,7 @@ impl Fixture {
              [IO.File]::WriteAllText('{event}-count',[string]$count); \
              [IO.File]::AppendAllText('events',\"{event}`n\"); {output_windows}"
         );
-        #[cfg(windows)]
-        {
-            let _ = unix;
-            let system = std::env::var_os("SystemRoot").ok_or("SystemRoot is missing")?;
-            let executable =
-                PathBuf::from(system).join("System32/WindowsPowerShell/v1.0/powershell.exe");
-            Ok(vec![
-                executable.to_string_lossy().into_owned(),
-                "-NoLogo".into(),
-                "-NoProfile".into(),
-                "-NonInteractive".into(),
-                "-Command".into(),
-                windows,
-            ])
-        }
-        #[cfg(not(windows))]
-        {
-            let _ = windows;
-            Ok(vec!["/bin/sh".into(), "-c".into(), unix])
-        }
+        shell(unix, windows)
     }
 
     fn plan(&self, refusal: Option<Event>) -> Result<LifecyclePlan, String> {
@@ -239,5 +226,153 @@ async fn interrupted_configured_hook_cannot_be_skipped_by_preparation_retry() ->
     plan.prepare().await;
     assert_eq!(plan.check(), Err(reason.clone()));
     assert_eq!(plan.apply(&mut Vec::new()), Err(reason));
+    Ok(())
+}
+
+/// A non-required prompt hook that crashes is skipped with a durable warning
+/// and the turn prepares; the same hook marked required still stops it.
+#[tokio::test]
+async fn a_failed_hook_warns_and_continues_unless_the_user_required_it() -> Result<(), String> {
+    let _slot = CHILD_SLOT.lock().await;
+    for required in [false, true] {
+        let fixture = Fixture::new()?;
+        let argv = Fixture::argv_exiting(Event::UserPromptSubmit, Some(7))?;
+        let value = json!({
+            "hook_commands": {"prompt": {"command":argv, "timeout_ms":10000, "required":required}},
+            "hooks": {"UserPromptSubmit":["prompt"]}
+        });
+        let (runtime, inbox, session) = warning_runtime(&fixture, &value)?;
+        let mut plan = LifecyclePlan::new(Arc::new(runtime), session.clone());
+        plan.prepare().await;
+        if required {
+            let reason = plan
+                .check()
+                .err()
+                .ok_or("a required hook failure was skipped")?;
+            assert!(reason.contains("exit code 7"), "{reason}");
+            continue;
+        }
+        plan.check()?;
+        let held = inbox.lock().map_err(|_| "inbox poisoned")?;
+        let notices =
+            grapt_session::notice::lifecycle_hook_notices(held.store().connection(), &session)?;
+        assert!(
+            notices.iter().any(|notice| notice
+                .text
+                .starts_with("warning: UserPromptSubmit hook prompt failed")
+                && notice.text.contains("exit code 7")),
+            "{notices:?}"
+        );
+    }
+    Ok(())
+}
+
+/// One script as the platform shell's argv.
+fn shell(unix: String, windows: String) -> Result<Vec<String>, String> {
+    #[cfg(windows)]
+    {
+        let _ = unix;
+        let system = std::env::var_os("SystemRoot").ok_or("SystemRoot is missing")?;
+        let executable =
+            PathBuf::from(system).join("System32/WindowsPowerShell/v1.0/powershell.exe");
+        Ok(vec![
+            executable.to_string_lossy().into_owned(),
+            "-NoLogo".into(),
+            "-NoProfile".into(),
+            "-NonInteractive".into(),
+            "-Command".into(),
+            windows,
+        ])
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = windows;
+        Ok(vec!["/bin/sh".into(), "-c".into(), unix])
+    }
+}
+
+type Warned = (
+    HookRuntime,
+    Arc<std::sync::Mutex<grapt_inbox::Inbox>>,
+    grapt_types::SessionId,
+);
+
+/// A runtime over the user config `value` that records its notices durably
+/// in a fresh Session.
+fn warning_runtime(fixture: &Fixture, value: &serde_json::Value) -> Result<Warned, String> {
+    let bytes = serde_json::to_vec(value).map_err(|error| error.to_string())?;
+    let value = grapt_config::decode(&bytes, crate::dogfood::catalog_config::bounds()?)
+        .map_err(|error| error.to_string())?
+        .into_value();
+    let settings = HookSettings::from_sources(&[CatalogDocument {
+        source: fixture
+            .root
+            .join("grapt.jsonc")
+            .to_string_lossy()
+            .into_owned(),
+        directory: fixture.root.clone(),
+        origin: grapt_plugin::PluginOrigin::UserGlobal,
+        value,
+    }])?;
+    let store = grapt_store::EventStore::open_in_memory().map_err(|e| e.to_string())?;
+    let inbox = Arc::new(std::sync::Mutex::new(
+        grapt_inbox::Inbox::new(store).map_err(|e| e.to_string())?,
+    ));
+    let ids = Arc::new(grapt_store::OsRandomIds::seed().map_err(|_| "seed")?);
+    let clock = Arc::new(grapt_store::SystemClock);
+    let authorities = grapt_types::DeterministicAuthorities::new(&*clock, &*ids);
+    let seed = grapt_session::SessionSeed::new(
+        grapt_types::ProjectId::new("prj_hook_warning").ok_or("project")?,
+        fixture.root.to_string_lossy().into_owned(),
+        "hook warning",
+    )
+    .map_err(|e| e.to_string())?;
+    let session = grapt_runtime::SessionPorts::new(Arc::clone(&inbox), &authorities)
+        .create(&seed)
+        .map_err(|e| e.to_string())?
+        .session;
+    let runtime = HookRuntime {
+        settings,
+        environment: Some(Environment::parent()?),
+        workspace: fixture.root.clone(),
+        notices: Some(crate::dogfood::hooks::NoticeContext {
+            inbox: Arc::clone(&inbox),
+            ids,
+            clock,
+            scope: grapt_session::notice::LifecycleHookScope::Session,
+        }),
+        process_owner: None,
+    };
+    Ok((runtime, inbox, session))
+}
+
+/// An event timeout fails the turn only for a required hook that never
+/// completed: a required hook that already finished does not inherit an
+/// optional hook's timeout, and its result is kept.
+#[tokio::test]
+async fn an_optional_hook_timeout_does_not_fail_a_finished_required_hook() -> Result<(), String> {
+    let _slot = CHILD_SLOT.lock().await;
+    let fixture = Fixture::new()?;
+    let fast = shell("printf kept".into(), "[Console]::Out.Write('kept')".into())?;
+    let slow = shell("sleep 30".into(), "Start-Sleep -Seconds 30".into())?;
+    let value = json!({
+        "hook_commands": {
+            "fast": {"command":fast, "timeout_ms":10000, "required":true},
+            "slow": {"command":slow, "timeout_ms":60000}
+        },
+        "hooks": {"Stop":["fast", "slow"]}
+    });
+    let (runtime, inbox, session) = warning_runtime(&fixture, &value)?;
+    let notes = runtime.fire(Event::Stop, &session, None).await?;
+    assert_eq!(notes, ["kept"], "the finished hook's result was discarded");
+    let held = inbox.lock().map_err(|_| "inbox poisoned")?;
+    let notices =
+        grapt_session::notice::lifecycle_hook_notices(held.store().connection(), &session)?;
+    assert!(
+        notices
+            .iter()
+            .any(|notice| notice.text.contains("hooks were skipped")),
+        "{notices:?}"
+    );
     Ok(())
 }

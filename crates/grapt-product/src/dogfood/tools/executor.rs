@@ -498,11 +498,10 @@ impl GovernedToolExecutor<FilesystemArtifactStore> for ProjectToolExecutor {
                             });
                             match plugins
                                 .apply_callbacks(
-                                    generation,
-                                    "tool",
-                                    "hook.execute.after",
+                                    (generation, "tool", "hook.execute.after"),
                                     event,
                                     hook_authority(&principal, &parent, &agent, &message, &call),
+                                    crate::dogfood::plugins::OnCallbackFailure::Skip,
                                 )
                                 .await
                             {
@@ -545,11 +544,10 @@ impl GovernedToolExecutor<FilesystemArtifactStore> for ProjectToolExecutor {
                             });
                             match plugins
                                 .apply_callbacks(
-                                    generation,
-                                    "tool",
-                                    "hook.execute.after",
+                                    (generation, "tool", "hook.execute.after"),
                                     event,
                                     hook_authority(&principal, &parent, &agent, &message, &call),
+                                    crate::dogfood::plugins::OnCallbackFailure::Skip,
                                 )
                                 .await
                             {

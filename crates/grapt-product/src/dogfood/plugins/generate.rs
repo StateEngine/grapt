@@ -83,25 +83,31 @@ impl ProductPluginHost {
                 )
             })
             .collect::<serde_json::Map<_, _>>();
+        // The plan may drop only tools the hook was offered; a session tool
+        // it never saw, such as an MCP tool, is kept.
+        let offered = tools.keys().cloned().collect::<Vec<_>>();
         let value = json!({
             "sessionID": session.as_str(),
             "system": [],
             "messages": [{"role": "user", "content": [{"type": "text", "text": prompt}]}],
             "tools": tools,
         });
+        // A callback whose patch cannot be applied is skipped like one that
+        // failed: the chain keeps the context from before it.
+        let patch = |hooked: &Value| json!({"system": hooked["system"], "tools": hooked["tools"], "offered": offered});
         Ok(application
             .plugins
-            .apply_callbacks_blocking(
-                &generation,
-                "session",
-                "hook.context",
+            .apply_checked_callbacks_blocking(
+                (&generation, "session", "hook.context"),
                 value,
                 CallAuthority::Inherit {
                     parent: call.grant.clone(),
                     call: format!("session-generate:{}", call.grant.id()),
                 },
+                (super::OnCallbackFailure::Skip, &mut Vec::new()),
+                &|hooked| super::super::execution::check_generation_patch(&patch(hooked)),
             )?
-            .map(|hooked| json!({"system": hooked["system"], "tools": hooked["tools"]})))
+            .map(|hooked| patch(&hooked)))
     }
 }
 

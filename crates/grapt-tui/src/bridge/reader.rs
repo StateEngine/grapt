@@ -21,16 +21,16 @@ struct Built {
 fn build_replacement(
     config: &Config,
     bounds: Bounds,
-    session: &Arc<std::sync::Mutex<Option<grapt_types::SessionId>>>,
+    session: &Arc<std::sync::Mutex<WatchedSessions>>,
     expected: u64,
     shared: &AtomicU64,
     legacy: bool,
     offer: Option<grapt_client::client::ResumeToken>,
 ) -> Result<Option<Built>, String> {
     let (rpc, mut next) = config.connect(bounds)?;
-    // Every replacement names the Session this window watches, so a reconnect
-    // inside the grace keeps its attachment instead of starting a fresh one.
-    next.watch_session(current_session(session));
+    // Every replacement adopts the Sessions this window watches, so a
+    // reconnect inside the grace keeps every claim instead of starting fresh.
+    next.adopt_watched(current_watched(session));
     if legacy {
         next.refuse_positions();
     }
@@ -69,7 +69,7 @@ enum Replacement {
 pub(super) struct Reader {
     pub(super) config: Config,
     pub(super) bounds: Bounds,
-    pub(super) session: Arc<std::sync::Mutex<Option<grapt_types::SessionId>>>,
+    pub(super) session: Arc<std::sync::Mutex<WatchedSessions>>,
     pub(super) generation: Arc<AtomicU64>,
     pub(super) legacy: Arc<AtomicBool>,
     pub(super) stream: HttpConnection,

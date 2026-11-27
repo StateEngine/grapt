@@ -225,7 +225,7 @@ impl ActiveAttempts {
             let current = pressure.as_ref().map_or(self.capacity, |state| state.limit);
             let delay = after.unwrap_or(std::time::Duration::from_secs(1)).clamp(
                 std::time::Duration::from_secs(1),
-                std::time::Duration::from_secs(30),
+                std::time::Duration::from_secs(60),
             );
             let retry_at = tokio::time::Instant::now() + delay;
             let retry_at = pressure

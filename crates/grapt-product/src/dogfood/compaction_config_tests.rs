@@ -20,7 +20,7 @@ fn absent_config_keeps_se_defaults() -> Result<(), String> {
     let settings = fold(&[r#"{"model":"x"}"#])?;
     assert_eq!(settings, CompactionSettings::default());
     assert!(settings.auto);
-    assert_eq!(settings.headroom(), HEADROOM);
+    assert_eq!(settings.buffer, None);
     assert_eq!(
         settings.server_side, None,
         "server_side is unset by default"
@@ -86,7 +86,9 @@ fn a_later_document_wins_per_key_as_the_oracle_folds() -> Result<(), String> {
         r#"{"compaction":{"buffer":209248}}"#,
     ])?;
     assert!(!settings.auto, "a later document without auto reset it");
-    assert_eq!(settings.headroom(), 209_248);
+    // The buffer moves no threshold: it is accepted and named as ignored.
+    assert_eq!(settings.buffer, Some(209_248));
+    assert_eq!(settings.ignored().collect::<Vec<_>>(), [BUFFER]);
     Ok(())
 }
 
@@ -94,8 +96,8 @@ fn a_later_document_wins_per_key_as_the_oracle_folds() -> Result<(), String> {
 /// and has no effect; a Session that sets `keep.tokens` is told so.
 #[test]
 fn keep_tokens_are_accepted_and_ignored() -> Result<(), String> {
-    let with_keep = fold(&[r#"{"compaction":{"keep":{"tokens":2000},"buffer":5000}}"#])?;
-    let without = fold(&[r#"{"compaction":{"buffer":5000}}"#])?;
+    let with_keep = fold(&[r#"{"compaction":{"keep":{"tokens":2000},"auto":true}}"#])?;
+    let without = fold(&[r#"{"compaction":{"auto":true}}"#])?;
     assert_eq!(
         CompactionSettings {
             keep_tokens: false,

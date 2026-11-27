@@ -11,11 +11,16 @@ impl DogfoodEventHub {
     /// frames it missed follow, with no hydration, exactly as an
     /// uninterrupted subscriber received them. Nothing is queued before that
     /// is decided, so a refused resume is subscribed afresh, unchanged.
+    ///
+    /// `retained` are Sessions this window showed before; a positions window
+    /// keeps a claim on each for as long as this stream lives. Any other
+    /// window holds none: the query refuses `retain=` without `positions=1`.
     pub(super) fn subscribe_window(
         &self,
         interest: query::EventLocationQuery,
         approver: Option<Approver>,
         session: Option<grapt_types::SessionId>,
+        retained: Vec<grapt_types::SessionId>,
         positions: bool,
         resume: Option<&str>,
     ) -> Result<SseBody, SseError> {
@@ -64,7 +69,22 @@ impl DogfoodEventHub {
             });
         }
         let overflowed = Arc::new(AtomicBool::new(false));
-        let window = session.map(|session| self.windows.attach(&session));
+        // A window on a Session the registry cannot track is refused, not
+        // left unclaimed: unclaimed, its turn would outlive the window.
+        let mut windows = match &session {
+            Some(shown) => vec![self
+                .windows
+                .attach(shown)
+                .ok_or(SseError::SubscriberBound)?],
+            None => Vec::new(),
+        };
+        windows.extend(
+            retained
+                .iter()
+                .filter(|_| positions)
+                .filter(|kept| Some(*kept) != session.as_ref())
+                .filter_map(|kept| self.windows.retain(kept)),
+        );
         let approval_changes = approver.as_ref().map(|_| ApprovalDrop {
             subscribers: Arc::clone(&self.subscribers),
             changes: Arc::clone(&self.approval_changes),
@@ -85,7 +105,7 @@ impl DogfoodEventHub {
             receiver,
             overflowed,
             terminated: false,
-            _window: window,
+            _windows: windows,
         })
     }
 

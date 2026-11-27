@@ -87,6 +87,8 @@ const MAX_READS: usize = 4_096;
 mod cancellation;
 mod connection;
 pub use cancellation::StreamCancellation;
+mod watched;
+pub use watched::WatchedSessions;
 #[cfg(test)]
 mod first_run_tests;
 #[cfg(test)]
@@ -272,7 +274,7 @@ pub struct HttpConnection {
     /// saw, never from a window's self-report, so a crashed window is still
     /// detected. Sent on the first subscribe and on every resubscribe, so a
     /// reconnect inside the grace keeps its attachment.
-    session: Option<grapt_types::SessionId>,
+    watched: WatchedSessions,
     reader: SseReader,
     expected_product: Option<grapt_api::ProductHealth>,
     subscription_attempt: Option<recovery::SubscriptionAttempt>,
@@ -451,19 +453,37 @@ impl HttpConnection {
 
     /// The Session this window currently names on its event subscription.
     pub(super) fn watched_session(&self) -> Option<&grapt_types::SessionId> {
-        self.session.as_ref()
+        self.watched.current()
+    }
+
+    /// The Sessions a subscription names besides the one shown.
+    pub(super) fn retained_sessions(&self) -> &[grapt_types::SessionId] {
+        self.watched.retained()
     }
 
     /// Name the Session this window is watching.
     ///
     /// The next subscription carries it, and so does every resubscribe after
-    /// it. A change takes effect when the stream is next (re)opened, so a
-    /// window that switches Sessions does not keep the old attachment.
+    /// it. The Session being left stays claimed as retained, so switching
+    /// Sessions or opening a subagent's view never leaves the previous
+    /// Session's turn to the close grace.
     pub fn watch_session(&mut self, session: Option<grapt_types::SessionId>) {
-        if self.session == session {
-            return;
+        if self.watched.show(session) {
+            self.forget_attachment();
         }
-        self.session = session;
+    }
+
+    /// Adopt a window's whole watched state, as a replacement connection does,
+    /// so the Sessions it left stay claimed across a reconnect.
+    pub fn adopt_watched(&mut self, watched: WatchedSessions) {
+        if self.watched != watched {
+            self.watched = watched;
+            self.forget_attachment();
+        }
+    }
+
+    /// Drop the attachment built for the Sessions watched before.
+    fn forget_attachment(&mut self) {
         // The old attachment describes the previous Session. Drop the socket so
         // the next subscribe registers the new one rather than leaving a stale
         // window on the service.
@@ -514,6 +534,16 @@ impl HttpConnection {
             }
         }
         out
+    }
+
+    /// The bytes `query` takes on the request line, after the `?`, exactly as
+    /// [`Self::write_request`] writes it.
+    fn encoded_query_bytes(query: &[(String, String)]) -> usize {
+        let pairs: usize = query
+            .iter()
+            .map(|(key, value)| key.len() + 1 + Self::encode_query_value(value).len())
+            .sum();
+        pairs + query.len().saturating_sub(1)
     }
 
     fn write_request(

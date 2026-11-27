@@ -32,7 +32,11 @@
         let long = ProviderFailureClass::RateLimit {
             retry_after: Some(Duration::from_secs(30)),
         };
-        assert_eq!(policy.delay_for(1, &long), Duration::from_secs(16));
+        assert_eq!(policy.delay_for(1, &long), Duration::from_secs(30));
+        let hostile = ProviderFailureClass::RateLimit {
+            retry_after: Some(Duration::from_secs(120)),
+        };
+        assert_eq!(policy.delay_for(1, &hostile), RATE_LIMIT_MAX_RETRY_DELAY);
         let short = ProviderFailureClass::RateLimit {
             retry_after: Some(Duration::from_millis(1)),
         };
@@ -112,4 +116,27 @@
             "an unbounded attempt count is the defect the cap exists to prevent"
         );
         assert!(StepPolicy::new(test_version(), MAX_TOTAL_ATTEMPTS, ok, 1, ok).is_ok());
+    }
+
+    #[test]
+    fn jittered_backoff_is_deterministic_bounded_and_varies_by_salt() {
+        let step = StepNumber::new(3).unwrap_or_else(|| panic!("valid step"));
+        let base = Duration::from_secs(10);
+        let ceiling = Duration::from_secs(60);
+        let salt_a = backoff::salt_from_str("pat_session_a_1");
+        let salt_b = backoff::salt_from_str("pat_session_b_1");
+        let first = backoff::jittered(base, step, 1, salt_a, ceiling);
+        let second = backoff::jittered(base, step, 1, salt_a, ceiling);
+        let other = backoff::jittered(base, step, 1, salt_b, ceiling);
+        assert_eq!(first, second);
+        assert_ne!(first, other);
+        assert!(first >= base && first <= Duration::from_millis(12_500));
+        assert_eq!(
+            backoff::jittered(Duration::ZERO, step, 1, salt_a, ceiling),
+            Duration::ZERO
+        );
+        assert_eq!(
+            backoff::jittered(Duration::from_secs(60), step, 2, salt_a, ceiling),
+            ceiling
+        );
     }

@@ -423,3 +423,19 @@ fn read_capacity_expired_application_projection_releases_the_blocking_worker() -
             Ok(())
         })
 }
+
+/// The trimmed retry's window read waits for a reader like every planning
+/// read, instead of refusing the plan.
+#[test]
+fn read_capacity_trim_floor_waits_for_a_reader() -> Result<(), String> {
+    let fixture = Fixture::new("trim-floor-reader-capacity")?;
+    let mut continuation = fixture.continuation(fixture.input.clone())?;
+    let held = HeldReaders::new(readers(&fixture)?)?;
+    assert_eq!(
+        continuation.floor_for_trim(),
+        Err(PlanRefusal::capacity_busy())
+    );
+    held.release_one()?;
+    assert_eq!(continuation.floor_for_trim(), Ok(None));
+    Ok(())
+}

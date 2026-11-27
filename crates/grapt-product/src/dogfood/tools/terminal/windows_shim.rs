@@ -135,9 +135,17 @@ fn supervise(
     let capture = windows_spawn::diagnostics::Capture::new();
     let streams = match console_streams() {
         Ok(streams) => streams,
-        Err(reason) => return (1, Cleanup::Unconfirmed(reason), Some(context.failure(
-            capture.failure(), None, serde_json::json!({"phase":"console_streams","policy":"kill_on_close|breakaway_ok"}),
-        ))),
+        Err(reason) => {
+            return (
+                1,
+                Cleanup::Unconfirmed(reason),
+                Some(context.failure(
+                    capture.failure(),
+                    None,
+                    serde_json::json!({"phase":"console_streams","policy":"kill_on_close"}),
+                )),
+            )
+        }
     };
     drop(capture);
     command.stdin(streams.0).stdout(streams.1).stderr(streams.2);

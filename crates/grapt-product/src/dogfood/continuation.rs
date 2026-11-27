@@ -238,15 +238,11 @@ impl DurableContinuation {
     pub(super) fn with_compaction_recovery(
         mut self,
         registry: compaction_recovery::Registry,
-        target: &grapt_types::ResolvedModelTarget,
-        budget: Option<u64>,
     ) -> Self {
         self.recovery = Some(compaction_recovery::Session::new(
             registry,
             self.session.clone(),
             self.input.clone(),
-            target,
-            budget,
         ));
         self
     }
@@ -269,15 +265,6 @@ impl DurableContinuation {
         self.recovery
             .as_ref()
             .is_some_and(|recovery| recovery.trim_requested())
-    }
-
-    pub(super) fn compaction_suppressed(
-        &self,
-    ) -> Result<Option<compaction_recovery::Cause>, String> {
-        self.read_projection(|reader| match &reader.recovery {
-            Some(recovery) => recovery.blocked(&lock(&reader.inbox)),
-            None => Ok(None),
-        })
     }
 
     /// The same continuation, sharing its selected target, for the compactor.
