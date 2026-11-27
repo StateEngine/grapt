@@ -15,6 +15,9 @@ mod read_isolation;
 #[path = "session_list_cursor.rs"]
 mod session_list_cursor;
 
+#[path = "history_internal_notice.rs"]
+mod internal_notice;
+
 /// Assistant Steps after the prompt.
 const STEPS: u32 = 30;
 

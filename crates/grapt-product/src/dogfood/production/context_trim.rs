@@ -27,7 +27,7 @@ impl ProductPlan {
         let reserve = u64::from(admission::output_reserve(request));
         let limit = budget
             .saturating_sub(reserve)
-            .saturating_sub(self.compaction.headroom())
+            .saturating_sub(admission::HEADROOM)
             .saturating_sub(1)
             .min(
                 budget
@@ -43,18 +43,23 @@ impl ProductPlan {
             );
         let encoding = self.targets.request_encoding();
         let before = encoding.estimate(request).map_err(refusal)?;
-        if before <= limit {
+        let window_floor = self.window_floor.take();
+        if before <= limit && window_floor.is_none() {
             return Ok(false);
         }
-        let after = crate::dogfood::context_projection::trim(
-            request,
-            boundary.history_start,
-            boundary.protected_from,
-            super::super::execution::context_trim::LABEL,
-            &encoding,
-            limit,
-        )
-        .map_err(refusal)?;
+        let after = if before > limit {
+            crate::dogfood::context_projection::trim(
+                request,
+                boundary.history_start,
+                boundary.protected_from,
+                super::super::execution::context_trim::LABEL,
+                &encoding,
+                limit,
+            )
+            .map_err(refusal)?
+        } else {
+            before
+        };
         let estimate = grapt_session::notice::ContextEstimate {
             before,
             after,
@@ -62,7 +67,7 @@ impl ProductPlan {
             budget,
         };
         if let Some(feedback) = &self.trim_feedback {
-            feedback.record(estimate).map_err(refusal)?;
+            feedback.record(estimate, window_floor).map_err(refusal)?;
             self.trim_feedback = None;
         }
         self.trimmed_request = true;

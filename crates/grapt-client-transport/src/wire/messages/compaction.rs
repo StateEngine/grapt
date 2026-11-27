@@ -43,6 +43,24 @@ pub(super) fn decode(
     let value = serde_json::to_value(row).map_err(|error| WireError::Codec {
         reason: error.to_string(),
     })?;
+    // A completed compaction that reports both estimates says what it did in
+    // its first line: the size before and after, never one without the other.
+    if phase == CompactionPhase::Completed {
+        let total = |name: &str| {
+            let value = value.pointer(&format!("/metadata/tokenEstimates/{name}"))?;
+            value
+                .as_str()
+                .map(str::to_owned)
+                .or_else(|| value.as_u64().map(|count| count.to_string()))
+        };
+        if let (Some(before), Some(after)) = (total("before"), total("after")) {
+            text = text.replacen(
+                "Compaction completed.",
+                &format!("Context compacted: {before} → {after} tokens."),
+                1,
+            );
+        }
+    }
     if phase != CompactionPhase::Running {
         if let Some(reason) = value.get("reason").and_then(serde_json::Value::as_str) {
             text.push_str(&format!("\n\n**Reason:** {reason}"));

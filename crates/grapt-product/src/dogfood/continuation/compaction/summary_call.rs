@@ -27,8 +27,9 @@ pub(super) fn usable(rejection: Option<Rejection>, text: &str) -> Result<(), Com
 /// and its class travels in the reason alone. A response that simply did not
 /// finish (truncated, stopped for tool calls, or no stated completion) is a
 /// response-shape failure, not a permanent one: the next input can try again,
-/// so it must not pause automatic compaction as `Other`. An owner rejection is a different fact — the call was
-/// refused before an effect — and keeps `Other`.
+/// so it must not pause automatic compaction as `Other`. An owner rejection is
+/// a different fact — the call was refused before an effect — and keeps
+/// `Other`.
 pub(super) fn unfinished_cause(report: &grapt_runtime::supervisor::AttemptReport) -> Cause {
     match report.provider_failure.as_ref() {
         Some(detail) => Cause::of(Some(detail)),

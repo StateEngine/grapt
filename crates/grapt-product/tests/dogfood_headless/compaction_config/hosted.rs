@@ -62,7 +62,7 @@ fn hosted_search_journey(
     all.extend(scripts);
     let (bodies, triggers, calls, _, summary_calls, stderr) = journey_sized(
         &format!("config-hosted-{label}"),
-        Some(serde_json::json!({"buffer": BUFFER, "server_side": server_side})),
+        super::limited(serde_json::json!({"server_side": server_side})),
         all,
         false,
         READ_BYTES,

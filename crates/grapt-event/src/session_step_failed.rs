@@ -405,12 +405,13 @@ fn context_tag(failure: ContextFailure) -> &'static str {
         ContextFailure::ContinuityUnavailable => "continuity-unavailable",
         ContextFailure::Overflow => "overflow",
         ContextFailure::CompactionFailed => "compaction-failed",
-        // A repeat is recorded as the no-progress it is: an older build on
-        // the same store must still read the Session (J07 revert). The step's
-        // detail names the repetition; the typed difference lives in memory.
-        ContextFailure::CompactionNoProgress | ContextFailure::CompactionRepeated => {
-            "compaction-no-progress"
-        }
+        // A repeat or a summary that did not fit is recorded as the
+        // no-progress it is: an older build on the same store must still read
+        // the Session (J07 revert). The step's detail names the difference;
+        // the typed difference lives in memory.
+        ContextFailure::CompactionNoProgress
+        | ContextFailure::CompactionRepeated
+        | ContextFailure::CompactionDidNotFit => "compaction-no-progress",
         ContextFailure::CompactionIncompatibleSummary => "compaction-incompatible-summary",
     }
 }

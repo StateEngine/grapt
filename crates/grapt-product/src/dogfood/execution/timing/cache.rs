@@ -14,6 +14,8 @@ pub(super) fn record(session: Option<&SessionId>, metadata: Option<&Value>) -> V
             "cacheRequestBodyBytes",
             "cacheRequestToolsBytes",
             "cacheRequestInstructionsBytes",
+            "cacheReadShare",
+            "localPrefixUnchanged",
         ] {
             if let Some(value) = source.get(key) {
                 result.insert(key.to_owned(), value.clone());
@@ -37,6 +39,7 @@ mod tests {
             "cacheRequestChangedItem":"7", "cacheRequestPreviousAttempt":"attempt_before",
             "cacheRequestBodyBytes":1234,"cacheRequestToolsBytes":234,
             "cacheRequestInstructionsBytes":345,
+            "cacheReadShare":0.9, "localPrefixUnchanged":true,
             "futurePrivateField":"PRIVATE_SENTINEL",
             "cacheObservedCalls":{"future":"PRIVATE_SENTINEL"}});
         let exported = record(Some(&session), Some(&metadata));
@@ -47,6 +50,8 @@ mod tests {
             exported["metadata"]["cacheRequestPreviousAttempt"],
             "attempt_before"
         );
+        assert_eq!(exported["metadata"]["cacheReadShare"], 0.9);
+        assert_eq!(exported["metadata"]["localPrefixUnchanged"], true);
         assert!(!exported.to_string().contains("PRIVATE_SENTINEL"));
         assert!(exported.to_string().len() < 1024);
         assert!(record(None, None)["metadata"].is_null());

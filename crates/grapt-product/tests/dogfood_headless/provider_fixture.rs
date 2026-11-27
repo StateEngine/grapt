@@ -19,7 +19,10 @@ pub(super) use responses::{
 };
 #[cfg(not(windows))]
 use responses::{respond_partial_then_held_disconnect, respond_tool_history_input};
-use responses::{respond_text_then_reads, respond_tool_input, respond_tool_reads_measured};
+use responses::{
+    respond_text_then_reads, respond_tool_input, respond_tool_reads_measured,
+    respond_tool_reads_unmetered,
+};
 
 #[path = "chunked_provider.rs"]
 mod chunked_provider;
@@ -87,6 +90,11 @@ pub(super) enum Script {
     ToolReads {
         calls: Vec<(&'static str, &'static str)>,
     },
+    /// Grouped reads whose response reports no usage, so the next Step's
+    /// context is judged on the local estimate.
+    ToolReadsUnmetered {
+        calls: Vec<(&'static str, &'static str)>,
+    },
     /// Hold a tool-producing response while selection commits, so the next
     /// Step witnesses the running execution's captured permission policy.
     #[cfg(target_os = "linux")]
@@ -96,7 +104,8 @@ pub(super) enum Script {
         release: Arc<Barrier>,
     },
     /// An assistant text of `text_bytes`, then these reads, in one response:
-    /// a Step whose text a summary must carry, unlike its tool output.
+    /// a Step whose text a summary must carry, unlike its tool output. The
+    /// response reports no usage.
     TextThenReads {
         text_bytes: usize,
         calls: Vec<(&'static str, &'static str)>,
@@ -208,6 +217,24 @@ pub(super) enum Script {
         /// held text on screen asks for line breaks explicitly.
         breaks: bool,
     },
+}
+
+impl Script {
+    /// Grouped reads whose response reports no usage: the next Step compacts
+    /// when the local estimate of its context reaches the configured limit.
+    pub(super) fn reads_unmetered(calls: Vec<(&'static str, &'static str)>) -> Self {
+        Self::ToolReadsUnmetered { calls }
+    }
+
+    /// A text answer whose response reports no usage.
+    pub(super) fn text_unmetered(text: &str) -> Self {
+        Self::Raw(format!(
+            "data: {{\"type\":\"response.output_text.delta\",\"delta\":{}}}\n\n\
+             data: {{\"type\":\"response.output_text.done\"}}\n\n\
+             data: {{\"type\":\"response.completed\",\"response\":{{}}}}\n\n",
+            serde_json::Value::String(text.to_owned()),
+        ))
+    }
 }
 
 pub(super) struct ProviderFixture {
@@ -383,6 +410,9 @@ impl ProviderFixture {
                             }
                             Some(Script::ToolReads { calls }) => {
                                 respond_tool_reads(&mut stream, &calls)
+                            }
+                            Some(Script::ToolReadsUnmetered { calls }) => {
+                                respond_tool_reads_unmetered(&mut stream, &calls)
                             }
                             Some(Script::TextThenReads { text_bytes, calls }) => {
                                 respond_text_then_reads(&mut stream, text_bytes, &calls)

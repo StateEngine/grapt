@@ -50,7 +50,16 @@ const PIN_BATCH: usize = 256;
 type StartedProcesses = (
     BTreeMap<String, Arc<PluginProcess>>,
     Vec<PluginRegistration>,
+    Vec<(usize, PluginError)>,
 );
+
+/// A declared plugin left out of a generation because it failed to start or
+/// register. Its siblings still run; the caller shows the reason.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SkippedPlugin {
+    pub target: String,
+    pub reason: String,
+}
 
 #[derive(Debug, Clone)]
 pub struct BridgeRuntime {
@@ -202,6 +211,7 @@ impl core::fmt::Debug for PluginSupervisor {
 pub struct CandidateGeneration {
     owned: Arc<OwnedGeneration>,
     grants: Arc<AtomicU64>,
+    skipped: Vec<SkippedPlugin>,
 }
 
 impl core::fmt::Debug for CandidateGeneration {
@@ -216,6 +226,11 @@ impl core::fmt::Debug for CandidateGeneration {
 impl CandidateGeneration {
     pub fn generation(&self) -> &Arc<PluginGeneration> {
         &self.owned.generation
+    }
+
+    /// The declared plugins this generation runs without.
+    pub fn skipped(&self) -> &[SkippedPlugin] {
+        &self.skipped
     }
 
     /// Run a registration-time callback such as a transform before publication.
@@ -380,7 +395,7 @@ impl PluginSupervisor {
             .and_then(|id| PluginGenerationId::new(id).ok_or(PluginError::StaleGeneration))?;
         let health = GenerationHealth::new(generation, Arc::clone(&self.host));
         let started = self.start_processes(&health, &declarations, &snapshots, slots, &app);
-        let (processes, registrations) = match started {
+        let (processes, registrations, failed) = match started {
             Ok(started) => started,
             Err(error) => {
                 health.invalidate(format!(
@@ -389,9 +404,21 @@ impl PluginSupervisor {
                 return Err(error);
             }
         };
+        let mut skipped = Vec::with_capacity(failed.len());
+        let mut kept = Vec::with_capacity(registrations.len());
+        let mut failed = failed.into_iter().peekable();
+        for (index, declaration) in declarations.into_iter().enumerate() {
+            match failed.next_if(|(at, _)| *at == index) {
+                Some((_, error)) => skipped.push(SkippedPlugin {
+                    target: declaration.target,
+                    reason: error.to_string(),
+                }),
+                None => kept.push(declaration),
+            }
+        }
         let validated = PluginGeneration::validate(
             generation,
-            declarations,
+            kept,
             registrations,
             self.limits.registrations,
             self.limits.schema_bytes,
@@ -414,6 +441,7 @@ impl PluginSupervisor {
         Ok(CandidateGeneration {
             owned,
             grants: Arc::clone(&self.grants),
+            skipped,
         })
     }
 
@@ -470,7 +498,8 @@ impl PluginSupervisor {
         let mut processes = BTreeMap::new();
         let mut registrations = Vec::with_capacity(results.len());
         let mut failure = None;
-        for result in results {
+        let mut failed = Vec::new();
+        for (index, result) in results.into_iter().enumerate() {
             match result {
                 Ok((process, registration)) => {
                     started.push(Arc::clone(&process));
@@ -485,18 +514,24 @@ impl PluginSupervisor {
                     }
                     registrations.push(registration);
                 }
-                Err(error) => {
-                    failure.get_or_insert(error);
-                }
+                // One plugin that cannot start costs only itself.
+                Err(error) => failed.push((index, error)),
             }
         }
+        // With no plugin left there is no generation to run without them.
+        let failure = failure.or_else(|| {
+            registrations
+                .is_empty()
+                .then(|| failed.drain(..).next().map(|(_, error)| error))
+                .flatten()
+        });
         if let Some(error) = failure {
             for process in started {
                 let _ = process.shutdown();
             }
             return Err(error);
         }
-        Ok((processes, registrations))
+        Ok((processes, registrations, failed))
     }
 
     /// Make a started candidate the current generation and retire its predecessor.
@@ -681,14 +716,14 @@ fn load_plugin(
             .iter()
             .map(|file| json!([file.path, file.sha256, file.bytes]))
             .collect::<Vec<_>>();
-        process.exchange(
+        process.startup_exchange(
             "pin-files",
             json!({"files": rows}),
             startup,
             "plugin source pinning",
         )?;
     }
-    let loaded = process.exchange(
+    let loaded = process.startup_exchange(
         "load",
         json!({
             "root": child_path(snapshot.root()),
@@ -707,7 +742,7 @@ fn load_plugin(
             PluginError::Registration("plugin load returned no bounded identity".to_owned())
         })?;
     process.bind_plugin(plugin, &declaration.executable.admitted_identity())?;
-    let registration = process.exchange(
+    let registration = process.startup_exchange(
         "activate",
         json!({
             "app": app,

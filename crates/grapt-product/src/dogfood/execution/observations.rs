@@ -507,12 +507,24 @@ pub(super) fn public_failure_with_compaction(
         error,
         grapt_runtime::CoordinatorError::Context {
             failure: grapt_types::ContextFailure::CompactionFailed
-                | grapt_types::ContextFailure::CompactionNoProgress,
+                | grapt_types::ContextFailure::CompactionNoProgress
+                | grapt_types::ContextFailure::CompactionDidNotFit,
             ..
         }
     ) {
         if let Some(cause) = location.compaction_recovery.take_failure(session) {
             return Failure::CompactionRecovery(cause.public());
+        }
+        if matches!(
+            error,
+            grapt_runtime::CoordinatorError::Context {
+                failure: grapt_types::ContextFailure::CompactionDidNotFit,
+                ..
+            }
+        ) {
+            return Failure::CompactionRecovery(
+                location.compaction_recovery.did_not_fit(session).public(),
+            );
         }
     }
     public_failure(error)

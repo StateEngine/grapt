@@ -115,9 +115,10 @@ impl DiagnosisSlot {
             .map_or(tokens, |calibration| calibration.within(tokens))
     }
 
-    /// The rebuilt coding request's admission count and its output reserve.
-    /// A rebuilt request is new content SE sizes against the window, so it is
-    /// counted as [`Self::summary_bytes`] inverts: the bound it must fit under.
+    /// The rebuilt coding request's admission count and its output reserve,
+    /// counted as ordinary admission counts the request it becomes
+    /// ([`Calibration::tokens`]), so a summary that admission would admit is
+    /// never judged too large to keep.
     pub(in crate::dogfood) fn rebuilt_estimate(
         &self,
         history: &[CodexInputItem],
@@ -141,7 +142,7 @@ impl DiagnosisSlot {
         input.extend_from_slice(history);
         let full = estimate(&request.request)?;
         let count = match calibration {
-            Some(calibration) => calibration.charge(full)?,
+            Some(calibration) => calibration.tokens(full)?,
             None => encoding.as_ref().map_or(Ok(full), |encoding| {
                 encoding
                     .estimate(&request.request)

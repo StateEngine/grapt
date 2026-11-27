@@ -550,3 +550,33 @@ async fn a_degraded_step_takes_no_mail_and_still_closes_like_a_cancelled_one() -
     assert_eq!(context.attention, MailAttentionInfo::Unavailable);
     Ok(())
 }
+
+/// A degraded step whose transport refuses to close is released: the failure
+/// stays recorded for the next step and never refuses this attempt.
+#[tokio::test]
+async fn a_degraded_steps_refused_close_releases_without_refusing() -> TestResult {
+    let context = context(Some(r#"{"project_id":"secode","agent_id":"coder"}"#), true)?;
+    let owners = owners(&context)?;
+    let listener = TcpListener::bind("127.0.0.1:0").await?;
+    let mut plan = plan_at(&owners, &context, &listener).await?;
+    let (poll_tx, poll) = oneshot::channel();
+    let (server, client) = tokio::join!(
+        crate::dogfood::native_mail::tests::http::serve_refused_close(listener, poll_tx),
+        async {
+            drive_until_polled(&owners, poll).await?;
+            plan.refresh(StepNumber::new(1).ok_or("step")?)
+                .await
+                .map_err(|e| e.to_string())?;
+            plan.degrade(E::Transport);
+            plan.finish(false).await?;
+            let held = plan.owner.context.lock().await;
+            assert!(held.close_failed, "the refused close was forgotten");
+            drop(held);
+            owners.retire(&context.session);
+            let _ = owners.close().await;
+            Ok::<(), Box<dyn std::error::Error>>(())
+        }
+    );
+    server?;
+    client
+}

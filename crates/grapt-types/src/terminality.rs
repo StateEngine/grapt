@@ -115,6 +115,10 @@ pub enum ContextFailure {
     CompactionRepeated,
     /// A provider-bound summary cannot be redeemed against this target.
     CompactionIncompatibleSummary,
+    /// The compaction committed, and the context it left still reaches the
+    /// proactive ceiling or still does not fit. The Step stops with that
+    /// error rather than compacting again.
+    CompactionDidNotFit,
 }
 
 /// Why one physical provider attempt ended.

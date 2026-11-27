@@ -107,7 +107,7 @@ fn exhausted_compaction_is_non_transient_and_keeps_its_reset_guidance() {
         status: 429,
         body: EXHAUSTED,
     };
-    let journey = Journey::failed("usage-compaction", failure.clone(), vec![failure; 4], false);
+    let journey = Journey::failed("usage-compaction", failure.clone(), vec![failure; 4]);
     let history = json(
         journey.address,
         "GET",

@@ -195,7 +195,8 @@ async fn child_blocks_crashes_invalid_utf8_and_malformed_json_fail_closed() -> R
         (b"{\"continue\":\"false\"}", b"", 0, "invalid structured output"),
         (b"\xff", b"", 0, "stdout is not UTF-8"),
         (b"", b"\xff", 0, "stderr is not UTF-8"),
-        (b"", b"\xff", 2, "stderr is not UTF-8"),
+        // An unreadable reason never weakens an exit-2 refusal.
+        (b"", b"\xff", 2, "hook denied (exit 2)"),
     ] {
         let command = fixture.emitting(stdout, stderr, exit)?;
         let reason = run(&command, &environment, b"{}").await.err().ok_or("hook unexpectedly allowed")?;
@@ -412,6 +413,43 @@ fn structured_denials_dominate_allow_and_duplicate_decisions_fail_closed() {
         assert!(
             notes(output).is_err(),
             "structured refusal allowed: {output}"
+        );
+    }
+}
+
+/// An explicit refusal stays a refusal, never a skippable hook failure: not as
+/// a legacy deny, nor beside an extra field.
+#[test]
+fn explicit_refusals_are_never_skippable_failures() {
+    use super::super::decision::{parse, HookError};
+    for (output, controls) in [
+        (r#"{"decision":"deny","reason":"no"}"#, false),
+        // A malformed reason never weakens the refusal it explains.
+        (r#"{"decision":"block","reason":123}"#, false),
+        (r#"{"decision":"block","reason":123}"#, true),
+        (r#"{"continue":false,"stopReason":{"why":1}}"#, false),
+        (r#"{"continue":false,"stopReason":{"why":1}}"#, true),
+        (
+            r#"{"hookSpecificOutput":{"permissionDecision":"deny","permissionDecisionReason":7}}"#,
+            false,
+        ),
+        (
+            r#"{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"behavior":"deny","message":5}}}"#,
+            true,
+        ),
+        (r#"{"decision":"block","extra":1}"#, true),
+        (
+            r#"{"hookSpecificOutput":{"permissionDecision":"deny","extra":1}}"#,
+            true,
+        ),
+        (
+            r#"{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"behavior":"deny","extra":1}}}"#,
+            true,
+        ),
+    ] {
+        assert!(
+            matches!(parse(output, controls), Err(HookError::Refused(_))),
+            "{output}"
         );
     }
 }

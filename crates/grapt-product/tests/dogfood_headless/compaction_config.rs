@@ -1,14 +1,24 @@
-//! Oracle-parity `compaction` config, through the real drain: `buffer` moves
-//! the threshold, `auto: false` turns the threshold off, and `keep` is
-//! accepted with no effect (docs/coding-quality/COMPACTION-CONFIG.md).
+//! Oracle-parity `compaction` config, through the real drain: a context at the
+//! configured limit compacts before the next Step, `auto: false` turns that
+//! ceiling off, and `buffer` and `keep` are accepted with no effect
+//! (docs/coding-quality/COMPACTION-CONFIG.md).
 use super::*;
 
 const SUMMARY_REQUEST: &str = "Output exactly the Markdown structure shown inside <template>";
 const READ_BYTES: usize = 36_000;
 const READS: [(&str, &str); 2] = [("call_config_a", "a.txt"), ("call_config_b", "b.txt")];
-/// Admits the first request (instructions and tool schemas) but not the
-/// 72 000 bytes the grouped reads return; SE's default admits both.
-const BUFFER: u64 = 128_000 - 16_384 - 30_000;
+/// The context, in tokens, the 72 000 bytes the grouped reads return pass and
+/// the first request (instructions and tool schemas) does not.
+const LIMIT: u64 = 30_000;
+
+/// The compaction config that sets [`LIMIT`], beside the keys named.
+fn limited(extra: serde_json::Value) -> Option<serde_json::Value> {
+    let mut keys = serde_json::json!({"model_auto_compact_token_limit": LIMIT});
+    if let (Some(keys), Some(extra)) = (keys.as_object_mut(), extra.as_object()) {
+        keys.extend(extra.clone());
+    }
+    Some(keys)
+}
 
 /// Adds `compaction`'s keys to the fixture's own grapt.jsonc, beside the
 /// legacy server_side key. The scripted provider explicitly refuses compaction.
@@ -298,32 +308,51 @@ fn summary_calls(root: &Path) -> usize {
 }
 
 fn seed_read() -> Script {
+    Script::reads_unmetered(READS.to_vec())
+}
+
+/// The same grouped reads, after which the provider reports a small context
+/// (so a configured limit is not judged on the estimate).
+fn small_read() -> Script {
     Script::ToolReads {
         calls: READS.to_vec(),
     }
 }
 
-/// The same grouped reads stay under SE's default threshold...
+/// Reads after which the provider reports a small context do not compact...
 #[test]
 fn without_config_the_reads_do_not_compact() {
     let (bodies, triggers, calls) = journey(
         "config-default",
         None,
-        vec![seed_read(), Script::SuccessText("answered")],
+        vec![small_read(), Script::SuccessText("answered")],
     );
     assert_eq!(calls, 2);
     assert!(triggers.is_empty(), "{triggers:?}");
     assert!(!bodies.iter().any(|body| body.contains(SUMMARY_REQUEST)));
 }
 
-/// ...but a buffer that leaves 30 000 tokens of input moves the threshold
-/// below it: the Step after the reads compacts first.
+/// A `buffer` is accepted and moves nothing: reads that report a small context
+/// still do not compact.
 #[test]
-fn a_configured_buffer_moves_the_threshold() {
-    let buffer = BUFFER;
+fn a_buffer_is_accepted_and_changes_nothing() {
     let (bodies, triggers, calls) = journey(
-        "config-buffer",
-        Some(serde_json::json!({"buffer": buffer})),
+        "config-buffer-ignored",
+        Some(serde_json::json!({"buffer": 4_096})),
+        vec![small_read(), Script::SuccessText("answered")],
+    );
+    assert_eq!(calls, 2);
+    assert!(triggers.is_empty(), "{triggers:?}");
+    assert!(!bodies.iter().any(|body| body.contains(SUMMARY_REQUEST)));
+}
+
+/// ...but a context at the configured limit compacts: the Step after the
+/// reads compacts first.
+#[test]
+fn a_context_at_the_configured_limit_compacts_before_the_next_step() {
+    let (bodies, triggers, calls) = journey(
+        "config-ceiling",
+        limited(serde_json::json!({})),
         vec![
             seed_read(),
             Script::SuccessText("## Objective\n- the seed was read"),
@@ -333,42 +362,33 @@ fn a_configured_buffer_moves_the_threshold() {
     assert_eq!(calls, 3);
     assert!(
         bodies[1].contains(SUMMARY_REQUEST),
-        "the threshold did not move"
+        "the limit did not compact"
     );
     assert_eq!(triggers, vec!["policyThreshold".to_owned()]);
 }
 
-/// The benchmark's shape: the buffer is set only in the service root's
-/// config and the Session works in a project outside that root. The root
-/// config is the base every Session's sources fold over, so it still moves
-/// the threshold.
+/// The benchmark's shape: `auto` is set only in the service root's config and
+/// the Session works in a project outside that root. The root config is the
+/// base every Session's sources fold over, so it still turns the ceiling off.
 #[test]
-fn a_buffer_in_the_service_root_config_applies_to_a_session_outside_it() {
+fn auto_false_in_the_service_root_config_applies_to_a_session_outside_it() {
     let (bodies, triggers, calls) = journey_in(
-        "config-root-buffer",
-        Some(serde_json::json!({"buffer": BUFFER})),
-        vec![
-            seed_read(),
-            Script::SuccessText("## Objective\n- the seed was read"),
-            Script::SuccessText("answered after compaction"),
-        ],
+        "config-root-auto-off",
+        limited(serde_json::json!({"auto": false})),
+        vec![seed_read(), Script::SuccessText("answered")],
         true,
     );
-    assert_eq!(calls, 3);
-    assert!(
-        bodies[1].contains(SUMMARY_REQUEST),
-        "the root config's buffer did not reach a Session outside the root"
-    );
-    assert_eq!(triggers, vec!["policyThreshold".to_owned()]);
+    assert_eq!(calls, 2);
+    assert!(triggers.is_empty(), "{triggers:?}");
+    assert!(!bodies.iter().any(|body| body.contains(SUMMARY_REQUEST)));
 }
 
-/// `auto: false` turns that threshold off: the same buffer, no compaction.
+/// `auto: false` turns the ceiling off: the same limit, no compaction.
 #[test]
-fn auto_false_turns_the_threshold_off() {
-    let buffer = BUFFER;
+fn auto_false_turns_the_ceiling_off() {
     let (bodies, triggers, calls) = journey(
         "config-auto-off",
-        Some(serde_json::json!({"auto": false, "buffer": buffer})),
+        limited(serde_json::json!({"auto": false})),
         vec![seed_read(), Script::SuccessText("answered")],
     );
     assert_eq!(calls, 2);
@@ -383,43 +403,43 @@ fn keep_tokens_load_and_change_nothing() {
     let (bodies, triggers, calls) = journey(
         "config-keep",
         Some(serde_json::json!({"keep": {"tokens": 2_000}})),
-        vec![seed_read(), Script::SuccessText("answered")],
+        vec![small_read(), Script::SuccessText("answered")],
     );
     assert_eq!(calls, 2);
     assert!(triggers.is_empty(), "{triggers:?}");
     assert!(!bodies.iter().any(|body| body.contains(SUMMARY_REQUEST)));
 }
 
-/// The buffer decides when to compact, not whether the turn may run (Sonnet
-/// C04): a 60 000-byte summary leaves the rebuilt request far
-/// above the buffer's 30 000 tokens but inside the model's window, so it
-/// commits, nothing new is compacted again, and the turn is answered.
+/// A compaction that leaves the context still at the configured limit
+/// commits once, and the Step then ends by name rather than compacting its own
+/// summary again: a 60 000-byte summary keeps the rebuilt request above 30 000
+/// tokens, and no further provider call follows.
 #[test]
-fn a_summary_over_the_buffer_still_commits_and_the_turn_continues() {
-    let buffer = BUFFER;
+fn a_summary_that_leaves_the_context_over_the_limit_ends_did_not_fit() {
     let summary = format!("## Objective\n- {}", "y".repeat(60_000 - 15));
-    let (bodies, triggers, calls) = journey(
-        "config-buffer-rebuilt",
-        Some(serde_json::json!({"buffer": buffer})),
+    let (bodies, triggers, calls, history, summary_calls) = journey_with_history(
+        "config-summary-over-limit",
+        limited(serde_json::json!({})),
         vec![
             seed_read(),
             Script::SuccessText(Box::leak(summary.into_boxed_str())),
             Script::SuccessText("answered after compaction"),
         ],
+        false,
     );
     assert!(
         bodies[1].contains(SUMMARY_REQUEST),
         "compaction was not tried"
     );
     assert_eq!(
-        triggers,
-        vec!["policyThreshold".to_owned()],
-        "the summary did not commit, or a second compaction followed it"
+        (calls, summary_calls),
+        (2, 1),
+        "a second call followed the one compaction"
     );
-    assert_eq!(calls, 3, "the turn did not continue after the summary");
+    assert_eq!(triggers, vec!["policyThreshold".to_owned()]);
     assert!(
-        bodies[2].contains("yyyy") && !bodies[2].contains(SUMMARY_REQUEST),
-        "the continued request does not carry the summary"
+        history.to_string().contains("did not fit") || history.to_string().contains("did-not-fit"),
+        "the Step did not end as did-not-fit: {history}"
     );
 }
 
@@ -431,7 +451,7 @@ fn an_unreadable_config_source_refuses_the_chain_instead_of_defaulting() {
     let _journey = process_journey_custody();
     let root = root("config-unreadable");
     prepare(&root, 120_000);
-    configure(&root, serde_json::json!({"auto": false, "buffer": BUFFER}));
+    configure(&root, serde_json::json!({"auto": false}));
     let provider = ProviderFixture::start(vec![Script::SuccessText("answered with defaults")]);
     let mut child = spawn(&root, provider.address);
     let address = await_ready(&root, &mut child);
@@ -522,7 +542,7 @@ fn an_ignored_keep_tokens_is_named_once_per_session() {
 fn an_empty_summary_is_refused_and_named() {
     let (bodies, triggers, calls, history, summary_calls) = journey_with_history(
         "config-summary-refused",
-        Some(serde_json::json!({"buffer": BUFFER})),
+        limited(serde_json::json!({})),
         vec![
             seed_read(),
             Script::SuccessText(""),
@@ -570,7 +590,7 @@ fn an_empty_summary_is_refused_and_named() {
 fn an_oversize_summary_is_refused_and_nothing_is_committed() {
     let (bodies, triggers, calls, history, summary_calls) = journey_with_history(
         "config-summary-oversize",
-        Some(serde_json::json!({"buffer": BUFFER})),
+        limited(serde_json::json!({})),
         vec![
             seed_read(),
             Script::Output(80_000),
@@ -601,7 +621,7 @@ fn an_oversize_summary_is_refused_and_nothing_is_committed() {
 fn the_summary_request_extends_the_coding_request_it_follows() {
     let (bodies, triggers, calls) = journey(
         "config-warm-summary",
-        Some(serde_json::json!({"buffer": BUFFER})),
+        limited(serde_json::json!({})),
         vec![
             seed_read(),
             Script::SuccessText("## Objective\n- read the seed files"),
@@ -673,7 +693,7 @@ fn warm(body: &str) -> bool {
 fn a_summary_that_calls_a_tool_never_runs_it() {
     let (_, triggers, calls, history, summary_calls) = journey_with_history(
         "config-warm-tool",
-        Some(serde_json::json!({"buffer": BUFFER})),
+        limited(serde_json::json!({})),
         vec![
             seed_read(),
             Script::ToolRead {
@@ -740,14 +760,15 @@ fn a_latest_instruction_to_reply_only_ack_stays_verbatim_after_the_summary() {
         "Archive review stage. Keep the initial requirements. Do not change files.\n{}Reply only ACK.",
         "Archived review: no new requirements. ".repeat(1_550)
     );
-    // A threshold of about 55 000 units: the small reads stay under it,
-    // and the archive prompt crosses it.
+    // A limit of 90 000 estimated tokens: the small reads stay under it, and
+    // the archive prompt that follows crosses it; once the reads are
+    // summarized the rebuilt request (about 80 000) is back under it.
     let (bodies, triggers, calls, _, summary_calls, _) = journey_sized(
         "config-warm-reply-ack",
-        Some(serde_json::json!({"buffer": 128_000 - 16_384 - 55_000})),
+        Some(serde_json::json!({"model_auto_compact_token_limit": 90_000})),
         vec![
-            seed_read(),
-            Script::SuccessText("the seed was read"),
+            small_read(),
+            Script::text_unmetered("the seed was read"),
             Script::SuccessText("## Objective\n- read the seed files"),
             Script::SuccessText("ACK"),
         ],
@@ -807,60 +828,15 @@ fn the_fixture_compaction_merge_changes_only_the_named_keys() {
     };
     let before = read(&root);
     assert_eq!(before["compaction"], serde_json::json!({}));
-    configure(&root, serde_json::json!({"buffer": BUFFER, "auto": false}));
+    configure(&root, serde_json::json!({"buffer": 4_096, "auto": false}));
     let after = read(&root);
     let mut expected = before.clone();
-    expected["compaction"] = serde_json::json!({"buffer": BUFFER, "auto": false});
+    expected["compaction"] = serde_json::json!({"buffer": 4_096, "auto": false});
     assert_eq!(after, expected);
     // A journey that names server_side gets exactly what it names.
     configure(&root, serde_json::json!({"server_side": true}));
     assert_eq!(read(&root)["compaction"]["server_side"], true);
     process_fixture::cleanup(&root);
-}
-
-/// The live C04 finding: the warm request was judged in
-/// raw local units against a token budget. C04 on Luna runs about 5.8 bytes
-/// a token, so a coding request well inside the window measured over it and
-/// every summary went out cold. The 30k trigger admits the tool catalog before
-/// usage calibrates it. Here the provider reports usage at 6 bytes a token:
-/// four paged reads put the warm request over the 128k window in local units
-/// but far inside it in calibrated tokens, and it goes warm. Extra files grow
-/// the request because an individual read page stops at 50 KiB.
-#[test]
-fn a_warm_summary_is_judged_in_calibrated_tokens_not_local_units() {
-    let (bodies, triggers, calls, _, summary_calls, stderr) = journey_sized(
-        "config-warm-calibrated",
-        Some(serde_json::json!({"buffer": 128_000 - 16_384 - 30_000})),
-        vec![
-            Script::ToolReadsMeasured {
-                calls: vec![
-                    ("call_config_a", "a.txt"),
-                    ("call_config_b", "b.txt"),
-                    ("call_config_c", "c.txt"),
-                    ("call_config_d", "d.txt"),
-                ],
-                bytes_per_token: 6,
-            },
-            Script::SuccessText("## Objective\n- read the seed files"),
-            Script::SuccessText("answered after compaction"),
-        ],
-        false,
-        60_000,
-        None,
-        None,
-    );
-    assert_eq!((calls, summary_calls), (3, 1), "{triggers:?}\n{stderr}");
-    assert_eq!(triggers, vec!["policyThreshold".to_owned()]);
-    assert!(
-        warm(&bodies[1]) && !bodies[1].contains(COLD_SUMMARY),
-        "the summary went cold: {}",
-        stderr
-            .lines()
-            .filter(|line| line.contains("summary plan"))
-            .collect::<Vec<_>>()
-            .join("\n")
-    );
-    assert!(stderr.contains("summary plan: warm"), "{stderr}");
 }
 
 /// With no calibration yet (no provider usage observed
@@ -874,7 +850,7 @@ fn an_uncalibrated_warm_summary_falls_back_cold_and_says_why() {
     prepare(&root, 120_000);
     prepare_model_inventory(&root, WARM_UNCALIBRATED_WINDOW);
     // Disable the optional threshold: missing usage must still reach the ceiling.
-    configure(&root, serde_json::json!({"buffer": 4_096, "auto": false}));
+    configure(&root, serde_json::json!({"auto": false}));
     // An answer whose stream reports no usage, so nothing calibrates.
     let unmetered = "data: {\"type\":\"response.output_text.delta\",\"delta\":\"noted\"}\n\n\
          data: {\"type\":\"response.output_text.done\"}\n\n\

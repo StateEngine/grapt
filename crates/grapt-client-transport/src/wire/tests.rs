@@ -456,6 +456,20 @@ fn compaction_status_is_presented_without_claiming_an_unobserved_completion() {
             serde_json::json!({"summary":"Quantity fix and four passing tests.","recent":"msg_recent"}),
             "Compaction completed.\n### Summary\n\nQuantity fix and four passing tests.",
         ),
+        // Both estimates: the first line says what the compaction did.
+        (
+            "completed",
+            serde_json::json!({"summary":"Quantity fix.","recent":"msg_recent",
+                "metadata":{"tokenEstimates":{"before":"1200","after":"350","basis":"estimated"}}}),
+            "Context compacted: 1200 → 350 tokens.\n### Summary\n\nQuantity fix.",
+        ),
+        // Only one of them: nothing is claimed about the other.
+        (
+            "completed",
+            serde_json::json!({"summary":"Quantity fix.","recent":"msg_recent",
+                "metadata":{"tokenEstimates":{"before":"1200","basis":"estimated"}}}),
+            "Compaction completed.\n### Summary\n\nQuantity fix.",
+        ),
         (
             "running",
             serde_json::json!({"summary":"provisional summary", "recent":"msg_recent"}),
