@@ -18,6 +18,10 @@ pub enum SubmitError {
     KeyConflict,
     #[error("the transition's outcome is unknown; retry with the same submit key")]
     OutcomeUnknown,
+    #[error("an earlier transition's outcome is still unresolved; retry with the same submit key")]
+    PriorUnsettled,
+    #[error("another writer changed this session; its state is reloaded before the next submit")]
+    Contended,
     #[error("the session's state sequence is exhausted")]
     SequenceExhausted,
     #[error("the session actor has stopped")]
@@ -49,6 +53,8 @@ pub enum SpawnError {
     Load(#[from] LoadError),
     #[error("the session actor stopped abnormally")]
     Worker,
+    #[error("the session actor stopped before a transition's outcome was known; resubmit it with the same submit key")]
+    Unsettled,
 }
 
 #[cfg(test)]

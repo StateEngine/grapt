@@ -6,13 +6,16 @@
 //! a single session's turn lifecycle; it has no mail or multi-agent concepts.
 
 mod actor;
+mod config;
 mod dedup;
 mod error;
 mod key;
 mod state;
 mod store;
+mod worker;
 
-pub use actor::{ActorConfig, ActorHandle, SessionActor};
+pub use actor::{ActorHandle, SessionActor};
+pub use config::ActorConfig;
 pub use error::{SpawnError, SubmitError};
 pub use key::{InvalidSubmitKey, SubmitKey};
 pub use state::{

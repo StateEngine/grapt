@@ -137,7 +137,8 @@ pub(crate) fn transition(
     let state = Value::Text(to.as_str().to_owned());
     let runtime = if from.state_seq == StateSeq::INITIAL {
         Statement::new(
-            "INSERT INTO session_runtime (session, state, state_seq) VALUES (?1, ?2, ?3)",
+            "INSERT INTO session_runtime (session, state, state_seq) VALUES (?1, ?2, ?3) \
+             ON CONFLICT (session) DO NOTHING",
             vec![session(), state.clone(), seq(next)],
         )
     } else {
