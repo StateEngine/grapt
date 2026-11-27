@@ -122,18 +122,38 @@ impl SessionStatusEmitter {
         )
     }
 
+    /// Record every Session still active at restart as disconnected, each
+    /// after `first` succeeds for it. Skipped Sessions are logged and left as
+    /// found.
     pub(super) fn recover(
         store: &mut grapt_store::EventStore,
         clock: &SystemClock,
         ids: &OsRandomIds,
+        first: &mut dyn FnMut(&mut grapt_store::EventStore, &SessionId) -> Result<(), String>,
     ) {
-        if let Err(error) = grapt_service_state::recover(
+        let recovery = match grapt_service_state::recover(
             store,
             &grapt_types::DeterministicAuthorities::new(clock, ids),
             crate::dogfood::MAX_ACTIVE_EXECUTIONS,
+            first,
         ) {
+            Ok(recovery) => recovery,
+            Err(error) => {
+                crate::server_log::warn(format_args!(
+                    "Session status restart reconciliation could not list active sessions: {error}; unresolved owners remain unconfirmed."
+                ));
+                return;
+            }
+        };
+        for warning in &recovery.warnings {
             crate::server_log::warn(format_args!(
-                "Session status restart reconciliation could not finish: {error}; unresolved owners remain unconfirmed."
+                "Session status restart reconciliation skipped {warning}; it remains unconfirmed."
+            ));
+        }
+        if recovery.warnings_omitted > 0 {
+            crate::server_log::warn(format_args!(
+                "Session status restart reconciliation skipped {} more sessions not listed.",
+                recovery.warnings_omitted
             ));
         }
     }

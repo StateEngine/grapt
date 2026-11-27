@@ -12,7 +12,7 @@ mod reader;
 mod recovery;
 pub use journal::{record, Change};
 pub use reader::read;
-pub use recovery::recover;
+pub use recovery::{recover, Recovery, MAX_RECOVERY_WARNINGS};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
