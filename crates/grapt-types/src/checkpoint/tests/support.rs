@@ -1,4 +1,4 @@
-use super::super::*;
+use super::*;
 pub(super) use crate::authority::test_support::{FixedClock, FixedIds};
 pub(super) use crate::path::PathIdentity;
 pub(super) use crate::vcs::{BranchName, BranchState, GitCommitId, VcsBaseline};

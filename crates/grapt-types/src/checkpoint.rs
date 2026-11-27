@@ -288,6 +288,8 @@ impl CheckpointCaptureOutcome {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+
     mod admission_and_preconditions;
     mod capture_and_reference;
     mod restore_plan_rescue_and_lease;

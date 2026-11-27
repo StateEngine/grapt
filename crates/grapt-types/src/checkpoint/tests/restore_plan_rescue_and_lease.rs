@@ -1,5 +1,5 @@
-use super::super::*;
 use super::support::*;
+use super::*;
 
 #[test]
 fn unusual_conditions_dedupe_even_when_not_adjacent() -> Result<(), Box<dyn std::error::Error>> {

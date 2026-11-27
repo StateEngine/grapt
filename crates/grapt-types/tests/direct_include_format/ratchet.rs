@@ -52,7 +52,7 @@ impl syn::parse::Parse for IncludeTokenScan {
                 count = count.saturating_add(inner.parse::<Self>()?.count);
                 prev_was_include = false;
             } else if let Ok(ident) = input.parse::<syn::Ident>() {
-                prev_was_include = ident == "include";
+                prev_was_include = ident.to_string().trim_start_matches("r#") == "include";
             } else {
                 input.step(|cursor| match cursor.token_tree() {
                     Some((_, next)) => Ok(((), next)),
@@ -167,6 +167,17 @@ fn token_scanner_catches_src_includes_across_lifetimes_unicode_escapes_and_group
     );
     assert_eq!(
         scan_src_includes(&inside_macro)?.get("crates/example/src/lib.rs"),
+        Some(&1)
+    );
+
+    // Raw identifier `r#include!` is also caught.
+    let mut raw_ident = BTreeMap::new();
+    raw_ident.insert(
+        "crates/example/src/lib.rs".to_owned(),
+        b"r#include!(\"part.rs\");\n".to_vec(),
+    );
+    assert_eq!(
+        scan_src_includes(&raw_ident)?.get("crates/example/src/lib.rs"),
         Some(&1)
     );
     Ok(())

@@ -1,5 +1,5 @@
-use super::super::*;
 use super::support::*;
+use super::*;
 
 #[test]
 fn skipped_capture_is_evidence_not_absence() {
