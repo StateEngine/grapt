@@ -270,7 +270,7 @@ async fn production_discovery_blocks_private_loopback_link_local_and_metadata_ho
         format!("https://{rfc1918_10}/mcp"),
         format!("https://{rfc1918_172}/mcp"),
         format!("https://{rfc1918_192}/mcp"),
-        "https://metadata.google.internal/computeMetadata/v1/".to_owned(),
+        "https://metadata.example.internal/computeMetadata/v1/".to_owned(),
         "https://service.localhost/mcp".to_owned(),
     ] {
         let error = prod

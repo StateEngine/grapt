@@ -25,7 +25,6 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 #[cfg(windows)]
 use sysinfo::{Pid, ProcessesToUpdate, System};
-use thiserror::Error;
 
 use crate::generation::{PluginGeneration, PluginGenerationId, PluginRegistration};
 use crate::protocol::{
@@ -98,27 +97,7 @@ pub struct RuntimeIdentity {
     pub sha256: String,
 }
 
-#[derive(Debug, Error)]
-pub enum PluginError {
-    #[error("plugin runtime could not be inspected: {0}")]
-    Runtime(String),
-    #[error("plugin bridge could not start: {0}")]
-    Spawn(String),
-    #[error("plugin bridge protocol refused: {0}")]
-    Protocol(String),
-    #[error("plugin bridge timed out during {0}")]
-    Timeout(&'static str),
-    #[error("plugin bridge survived kill: {0}")]
-    SurvivesKill(String),
-    #[error("plugin bridge registration refused: {0}")]
-    Registration(String),
-    #[error("plugin generation is stale")]
-    StaleGeneration,
-    #[error("plugin invocation failed: {0}")]
-    Invocation(String),
-    #[error("plugin bridge state is poisoned")]
-    Poisoned,
-}
+pub use crate::error::PluginError;
 
 /// Authority the supervisor proved for one host request: the generation and
 /// process that sent it, the plugin identity that process loaded, and the

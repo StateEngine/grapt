@@ -46,10 +46,15 @@ impl std::fmt::Debug for Discovered {
         f.write_str("Discovered([REDACTED])")
     }
 }
+#[cfg(test)]
+type DnsLookupFn = Arc<dyn Fn(&str, u16) -> Result<Vec<std::net::SocketAddr>, ()> + Send + Sync>;
+
 #[derive(Clone)]
 pub struct MetadataHttp {
     tls: Arc<rustls::ClientConfig>,
     allow_loopback: bool,
+    #[cfg(test)]
+    dns_lookup: Option<DnsLookupFn>,
 }
 impl std::fmt::Debug for MetadataHttp {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -87,7 +92,15 @@ impl MetadataHttp {
         Ok(Self {
             tls,
             allow_loopback,
+            #[cfg(test)]
+            dns_lookup: None,
         })
+    }
+
+    #[cfg(test)]
+    pub(crate) fn with_dns_lookup(mut self, lookup: DnsLookupFn) -> Self {
+        self.dns_lookup = Some(lookup);
+        self
     }
 
     #[cfg(any(test, feature = "loopback-testkit"))]
@@ -96,9 +109,19 @@ impl MetadataHttp {
     }
 
     async fn pinned_client(&self, url: &Url) -> Result<reqwest::Client, OAuthHttpError> {
-        let (host, addresses) = ssrf::resolve_pinned(url, self.allow_loopback)
+        #[cfg(test)]
+        let resolved = if let Some(lookup) = &self.dns_lookup {
+            let lookup = Arc::clone(lookup);
+            ssrf::resolve_pinned_with(url, self.allow_loopback, move |host, port| {
+                lookup(host, port)
+            })
             .await
-            .map_err(|()| OAuthHttpError::Endpoint)?;
+        } else {
+            ssrf::resolve_pinned(url, self.allow_loopback).await
+        };
+        #[cfg(not(test))]
+        let resolved = ssrf::resolve_pinned(url, self.allow_loopback).await;
+        let (host, addresses) = resolved.map_err(|()| OAuthHttpError::Endpoint)?;
         reqwest::Client::builder()
             .use_preconfigured_tls((*self.tls).clone())
             .dns_resolver(Arc::new(ssrf::PinnedDns::new(host, addresses)))

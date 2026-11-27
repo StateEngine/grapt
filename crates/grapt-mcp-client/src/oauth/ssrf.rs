@@ -45,6 +45,23 @@ pub(crate) async fn resolve_pinned(
     url: &Url,
     allow_loopback: bool,
 ) -> Result<(String, Vec<SocketAddr>), ()> {
+    resolve_pinned_with(url, allow_loopback, |host, port| {
+        (host, port)
+            .to_socket_addrs()
+            .map(|iter| iter.collect())
+            .map_err(|_| ())
+    })
+    .await
+}
+
+pub(crate) async fn resolve_pinned_with<F>(
+    url: &Url,
+    allow_loopback: bool,
+    lookup: F,
+) -> Result<(String, Vec<SocketAddr>), ()>
+where
+    F: FnOnce(&str, u16) -> Result<Vec<SocketAddr>, ()> + Send + 'static,
+{
     validate_host(url, allow_loopback)?;
     let port = url.port_or_known_default().unwrap_or(443);
     match url.host() {
@@ -65,9 +82,7 @@ pub(crate) async fn resolve_pinned(
     let permit = DNS_SLOTS.acquire().await.map_err(|_| ())?;
     let addresses = tokio::task::spawn_blocking(move || {
         let _permit = permit;
-        let resolved = (resolve_host.as_str(), port)
-            .to_socket_addrs()
-            .map_err(|_| ())?;
+        let resolved = lookup(resolve_host.as_str(), port)?;
         grapt_web::validate_public_addresses(resolved, allow_loopback).map_err(|_| ())
     })
     .await
@@ -78,43 +93,53 @@ pub(crate) async fn resolve_pinned(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use reqwest::dns::Resolve;
-    use std::net::{Ipv4Addr, Ipv6Addr};
-    use std::str::FromStr;
-
-    #[test]
-    fn non_public_dns_answers_are_rejected_even_when_mixed_with_public_ips() {
-        let public = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(93, 184, 216, 34)), 443);
-        for non_public in [
-            SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 443),
-            SocketAddr::new(IpAddr::V4(Ipv4Addr::new(169, 254, 169, 254)), 443),
-            SocketAddr::new(IpAddr::V4(Ipv4Addr::new(10, 0, 0, 1)), 443),
-            SocketAddr::new(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1)), 443),
-            SocketAddr::new(IpAddr::V6(Ipv6Addr::LOCALHOST), 443),
-            SocketAddr::new(IpAddr::V6(Ipv6Addr::new(0xfe80, 0, 0, 0, 0, 0, 0, 1)), 443),
-        ] {
-            assert!(grapt_web::validate_public_addresses([non_public], false).is_err());
-            assert!(grapt_web::validate_public_addresses([public, non_public], false).is_err());
-        }
-        assert!(grapt_web::validate_public_addresses([public], false).is_ok());
-    }
+    use crate::oauth::http::{MetadataHttp, OAuthHttpError};
+    use std::net::{Ipv4Addr, Ipv6Addr, TcpListener};
+    use std::sync::Arc;
+    use std::time::Duration;
 
     #[tokio::test]
-    async fn pinned_dns_returns_only_validated_addresses_for_exact_host(
+    async fn discover_refuses_non_public_dns_answers_before_transport(
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        let pinned_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(93, 184, 216, 34)), 443);
-        let resolver = PinnedDns::new("auth.example".to_owned(), vec![pinned_addr]);
+        let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0))?;
+        listener.set_nonblocking(true)?;
+        let loopback = listener.local_addr()?;
 
-        let resolved: Vec<SocketAddr> = resolver
-            .resolve(dns::Name::from_str("auth.example")?)
-            .await?
-            .collect();
-        assert_eq!(resolved, vec![pinned_addr]);
+        let public = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(93, 184, 216, 34)), 443);
+        let cases = [
+            vec![loopback],
+            vec![public, loopback],
+            vec![SocketAddr::new(
+                IpAddr::V4(Ipv4Addr::new(169, 254, 169, 254)),
+                443,
+            )],
+            vec![
+                public,
+                SocketAddr::new(IpAddr::V4(Ipv4Addr::new(10, 0, 0, 1)), 443),
+            ],
+            vec![SocketAddr::new(IpAddr::V6(Ipv6Addr::LOCALHOST), 443)],
+            vec![SocketAddr::new(
+                IpAddr::V6(Ipv6Addr::new(0xfe80, 0, 0, 0, 0, 0, 0, 1)),
+                443,
+            )],
+        ];
 
-        let refused = resolver
-            .resolve(dns::Name::from_str("other.example")?)
-            .await;
-        assert!(refused.is_err());
+        for answers in cases {
+            let client =
+                MetadataHttp::new()?.with_dns_lookup(Arc::new(move |_, _| Ok(answers.clone())));
+            let error = client
+                .discover("https://rebind.example/mcp", Duration::from_secs(2))
+                .await
+                .err()
+                .ok_or("expected SSRF refusal before transport")?;
+            assert_eq!(error, OAuthHttpError::Endpoint);
+        }
+
+        // Prove no TCP connection reached the loopback listener.
+        assert!(matches!(
+            listener.accept(),
+            Err(err) if err.kind() == std::io::ErrorKind::WouldBlock
+        ));
         Ok(())
     }
 }

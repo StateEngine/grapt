@@ -83,7 +83,18 @@ impl PluginAccess {
     #[cfg(any(test, feature = "loopback-testkit"))]
     #[doc(hidden)]
     pub fn allow_loopback_origin_for_tests(&mut self, raw: &str) -> Result<(), String> {
-        let url = parse_url(raw, true)?;
+        let url = parse_url_shape(raw)?;
+        let is_loopback_host = match url.host() {
+            Some(url::Host::Ipv4(ip)) => ip.is_loopback(),
+            Some(url::Host::Ipv6(ip)) => ip.is_loopback(),
+            Some(url::Host::Domain(host)) => host.eq_ignore_ascii_case("localhost"),
+            None => false,
+        };
+        if !is_loopback_host {
+            return Err(
+                "plugin loopback test grant accepts only loopback IP literals or localhost".into(),
+            );
+        }
         if url.path() != "/" || url.query().is_some() || url.fragment().is_some() {
             return Err("plugin network permissions require exact HTTP(S) origins without paths, queries or fragments".into());
         }
@@ -156,4 +167,36 @@ fn parse_url(raw: &str, allow_loopback: bool) -> Result<url::Url, String> {
     let url = parse_url_shape(raw)?;
     grapt_web::validate_public_host(&url, allow_loopback).map_err(|_| BLOCKED_MSG.to_owned())?;
     Ok(url)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::net::{Ipv4Addr, Ipv6Addr};
+
+    #[test]
+    fn loopback_test_grant_rejects_non_loopback_origins() {
+        let mut access = PluginAccess::default();
+        for rejected in [
+            "https://api.example".to_owned(),
+            format!("https://{}", Ipv4Addr::new(93, 184, 216, 34)),
+            format!("http://{}", Ipv4Addr::new(10, 0, 0, 1)),
+            format!("http://{}", Ipv4Addr::new(169, 254, 169, 254)),
+            "http://service.localhost:8080".to_owned(),
+        ] {
+            assert!(
+                access.allow_loopback_origin_for_tests(&rejected).is_err(),
+                "{rejected} must not acquire a loopback test grant"
+            );
+        }
+        assert!(access
+            .allow_loopback_origin_for_tests(&format!("http://{}:8080", Ipv4Addr::LOCALHOST))
+            .is_ok());
+        assert!(access
+            .allow_loopback_origin_for_tests(&format!("http://[{}]:8080", Ipv6Addr::LOCALHOST))
+            .is_ok());
+        assert!(access
+            .allow_loopback_origin_for_tests("http://localhost:8080")
+            .is_ok());
+    }
 }

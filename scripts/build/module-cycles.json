@@ -98,18 +98,6 @@
     "grapt_platform::credential"
    ]
   ],
-  "grapt-plugin": [
-   [
-    "grapt_plugin::generation",
-    "grapt_plugin::supervisor"
-   ]
-  ],
-  "grapt-plugin[all-features]": [
-   [
-    "grapt_plugin::generation",
-    "grapt_plugin::supervisor"
-   ]
-  ],
   "grapt-product": [
    [
     "grapt_product::compose",
@@ -1041,26 +1029,6 @@
    [
     "grapt_platform::credential",
     "grapt_platform::config"
-   ]
-  ],
-  "grapt-plugin": [
-   [
-    "grapt_plugin::generation",
-    "grapt_plugin::supervisor"
-   ],
-   [
-    "grapt_plugin::supervisor",
-    "grapt_plugin::generation"
-   ]
-  ],
-  "grapt-plugin[all-features]": [
-   [
-    "grapt_plugin::generation",
-    "grapt_plugin::supervisor"
-   ],
-   [
-    "grapt_plugin::supervisor",
-    "grapt_plugin::generation"
    ]
   ],
   "grapt-product": [

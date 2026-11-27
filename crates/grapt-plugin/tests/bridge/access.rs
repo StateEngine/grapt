@@ -359,7 +359,7 @@ fn plugin_network_declarations_block_private_loopback_and_metadata_origins(
         format!("http://{}", Ipv4Addr::new(10, 0, 0, 1)),
         format!("http://{}", Ipv4Addr::new(172, 16, 0, 1)),
         format!("http://{}", Ipv4Addr::new(192, 168, 1, 1)),
-        "https://metadata.google.internal".to_owned(),
+        "https://metadata.example.internal".to_owned(),
         "https://service.localhost".to_owned(),
     ] {
         let resolved = resolve_declarations(&[ConfigDocument {

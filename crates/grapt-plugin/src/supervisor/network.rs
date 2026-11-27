@@ -152,11 +152,15 @@ pub(super) fn fetch(
     })
 }
 
-async fn resolve_pinned_addresses(
+async fn resolve_pinned_addresses<F>(
     host: &str,
     port: u16,
     allow_loopback: bool,
-) -> Result<Vec<SocketAddr>, String> {
+    lookup: F,
+) -> Result<Vec<SocketAddr>, String>
+where
+    F: FnOnce(&str, u16) -> Result<Vec<SocketAddr>, String> + Send + 'static,
+{
     // The permit moves into the resolver worker: a timed-out OS lookup keeps
     // its slot until it actually exits, so cancellation cannot queue unbounded
     // background lookups. Every connected address belongs to this admitted host.
@@ -167,9 +171,7 @@ async fn resolve_pinned_addresses(
     let resolve_host = host.to_owned();
     tokio::task::spawn_blocking(move || {
         let _permit = permit;
-        let addresses = (resolve_host.as_str(), port)
-            .to_socket_addrs()
-            .map_err(|_| "plugin_network_dns: lookup failed".to_owned())?;
+        let addresses = lookup(resolve_host.as_str(), port)?;
         grapt_web::validate_public_addresses(addresses, allow_loopback).map_err(|error| {
             match error {
                 grapt_web::FetchError::Address => {
@@ -183,6 +185,13 @@ async fn resolve_pinned_addresses(
     .map_err(|_| "plugin_network_dns: resolver worker failed".to_owned())?
 }
 
+fn os_lookup(host: &str, port: u16) -> Result<Vec<SocketAddr>, String> {
+    (host, port)
+        .to_socket_addrs()
+        .map(|iter| iter.collect())
+        .map_err(|_| "plugin_network_dns: lookup failed".to_owned())
+}
+
 async fn exchange(
     url: url::Url,
     method: Method,
@@ -191,6 +200,21 @@ async fn exchange(
     limit: usize,
     allow_loopback: bool,
 ) -> Result<Value, String> {
+    exchange_with_lookup(url, method, headers, body, limit, allow_loopback, os_lookup).await
+}
+
+async fn exchange_with_lookup<F>(
+    url: url::Url,
+    method: Method,
+    headers: header::HeaderMap,
+    body: Vec<u8>,
+    limit: usize,
+    allow_loopback: bool,
+    lookup: F,
+) -> Result<Value, String>
+where
+    F: FnOnce(&str, u16) -> Result<Vec<SocketAddr>, String> + Send + 'static,
+{
     let host = url
         .host_str()
         .ok_or("plugin_network_invalid: missing host")?
@@ -200,7 +224,7 @@ async fn exchange(
     let port = url
         .port_or_known_default()
         .ok_or("plugin_network_invalid: missing port")?;
-    let addresses = resolve_pinned_addresses(&host, port, allow_loopback).await?;
+    let addresses = resolve_pinned_addresses(&host, port, allow_loopback, lookup).await?;
     let tls = TLS
         .get_or_init(|| {
             let provider = Arc::new(rustls::crypto::ring::default_provider());
@@ -278,49 +302,73 @@ async fn exchange(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use reqwest::dns::Resolve;
-    use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
-    use std::str::FromStr;
+    use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, TcpListener};
 
-    #[test]
-    fn non_public_dns_answers_are_rejected_and_loopback_override_is_origin_scoped() {
+    #[tokio::test]
+    async fn exchange_refuses_non_public_dns_answers_before_transport(
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0))?;
+        listener.set_nonblocking(true)?;
+        let loopback = listener.local_addr()?;
+
         let public = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(93, 184, 216, 34)), 443);
-        let loopback = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 443);
         let metadata = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(169, 254, 169, 254)), 80);
         let private = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(10, 0, 0, 1)), 443);
         let link_local_v6 =
             SocketAddr::new(IpAddr::V6(Ipv6Addr::new(0xfe80, 0, 0, 0, 0, 0, 0, 1)), 443);
 
-        for blocked in [loopback, metadata, private, link_local_v6] {
-            assert!(grapt_web::validate_public_addresses([blocked], false).is_err());
-            assert!(grapt_web::validate_public_addresses([public, blocked], false).is_err());
+        let url = url::Url::parse("https://rebind.example/data")?;
+        for answers in [
+            vec![loopback],
+            vec![public, loopback],
+            vec![metadata],
+            vec![public, metadata],
+            vec![private],
+            vec![link_local_v6],
+        ] {
+            let error = exchange_with_lookup(
+                url.clone(),
+                Method::GET,
+                header::HeaderMap::new(),
+                Vec::new(),
+                1024,
+                false,
+                move |_, _| Ok(answers),
+            )
+            .await
+            .err()
+            .ok_or("expected SSRF refusal before transport")?;
+            assert!(
+                error.starts_with("plugin_network_blocked:"),
+                "expected plugin_network_blocked, got {error}"
+            );
         }
-        assert!(grapt_web::validate_public_addresses([public], false).is_ok());
 
-        // Loopback override still blocks non-loopback private/metadata addresses.
-        assert!(grapt_web::validate_public_addresses([loopback], true).is_ok());
-        assert!(grapt_web::validate_public_addresses([metadata], true).is_err());
-        assert!(grapt_web::validate_public_addresses([private], true).is_err());
-    }
+        // Loopback grant still refuses metadata and private DNS answers before transport.
+        for still_blocked in [vec![metadata], vec![private], vec![loopback, metadata]] {
+            let error = exchange_with_lookup(
+                url.clone(),
+                Method::GET,
+                header::HeaderMap::new(),
+                Vec::new(),
+                1024,
+                true,
+                move |_, _| Ok(still_blocked),
+            )
+            .await
+            .err()
+            .ok_or("expected SSRF refusal under loopback grant")?;
+            assert!(
+                error.starts_with("plugin_network_blocked:"),
+                "expected plugin_network_blocked, got {error}"
+            );
+        }
 
-    #[tokio::test]
-    async fn pinned_dns_serves_only_admitted_host_addresses(
-    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        let pinned = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(93, 184, 216, 34)), 443);
-        let resolver = PinnedDns {
-            host: "api.example".to_owned(),
-            addresses: vec![pinned],
-        };
-        let resolved: Vec<SocketAddr> = resolver
-            .resolve(dns::Name::from_str("api.example")?)
-            .await?
-            .collect();
-        assert_eq!(resolved, vec![pinned]);
-
-        let refused = resolver
-            .resolve(dns::Name::from_str("rebound.example")?)
-            .await;
-        assert!(refused.is_err());
+        // Prove no TCP connection reached the loopback listener.
+        assert!(matches!(
+            listener.accept(),
+            Err(err) if err.kind() == std::io::ErrorKind::WouldBlock
+        ));
         Ok(())
     }
 }
