@@ -81,8 +81,8 @@ pub enum LedgerError {
     Inconsistent { version: i64 },
     #[error("migration {version} differs from the one this database applied")]
     Changed { version: u32 },
-    #[error("migration {version} ended the open transaction; remove BEGIN or COMMIT from it")]
-    Transaction { version: u32 },
+    #[error("run store changed while it was being opened; open it again")]
+    Moved,
 }
 
 #[derive(Debug, thiserror::Error)]

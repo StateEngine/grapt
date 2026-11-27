@@ -60,7 +60,23 @@ pub(crate) fn sidecar(path: &Path, suffix: &str) -> PathBuf {
     name.into()
 }
 
-/// The writer's connection before its schema is checked or changed.
+/// A read-only connection to an existing database for the schema check, or
+/// `None` when no file exists yet. Being read-only, it cannot recover a hot
+/// journal or otherwise change the file it checks.
+pub(crate) fn preflight(path: &Path) -> Result<Option<Connection>, OpenError> {
+    match fs::metadata(path) {
+        Ok(_) => {}
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => return Err(error.into()),
+    }
+    let connection = Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_ONLY)?;
+    connection.busy_timeout(WRITE_BUSY)?;
+    connection.set_limit(Limit::SQLITE_LIMIT_LENGTH, MAX_COMMAND_BYTES as i32)?;
+    connection.execute_batch("PRAGMA query_only=ON; PRAGMA trusted_schema=OFF;")?;
+    Ok(Some(connection))
+}
+
+/// The writer's connection, opened once the read-only check has passed.
 pub(crate) fn writer(path: &Path) -> Result<Connection, OpenError> {
     let connection = Connection::open(path)?;
     connection.busy_timeout(WRITE_BUSY)?;
@@ -72,8 +88,8 @@ pub(crate) fn writer(path: &Path) -> Result<Connection, OpenError> {
     Ok(connection)
 }
 
-/// Switch a recognized run store to WAL. Runs only after the schema check so a
-/// foreign or newer file is refused unchanged.
+/// Switch the run store to WAL. Runs only after migrations commit, so a file
+/// that is refused, or whose backup fails, keeps its journal mode.
 pub(crate) fn enable_wal(connection: &Connection) -> Result<(), OpenError> {
     verify_pager(connection)?;
     let mode: String = connection.query_row("PRAGMA journal_mode=WAL", [], |row| row.get(0))?;

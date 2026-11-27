@@ -120,44 +120,52 @@ async fn a_newer_or_changed_ledger_is_refused_without_touching_the_file() -> Tes
 }
 
 #[tokio::test]
-async fn a_failing_migration_rolls_back_and_a_full_disk_is_named() -> TestResult {
+async fn failing_or_escaping_migration_sql_rolls_back_with_nothing_applied() -> TestResult {
     const BROKEN: &[MigrationSpec] = &[NOTES, MigrationSpec::new(2, "broken", "CREATE TABLE (")];
-    // SQLite reports a page limit exactly as it reports a full disk.
-    const FULL: &[MigrationSpec] = &[
+    const ESCAPES: &[MigrationSpec] = &[
         NOTES,
-        MigrationSpec::new(
-            2,
-            "full",
-            "PRAGMA max_page_count = 1; CREATE TABLE big(data BLOB);",
-        ),
+        MigrationSpec::new(2, "escapes", "CREATE TABLE early(id INTEGER); COMMIT;"),
+    ];
+    const TAMPERS: &[MigrationSpec] = &[
+        NOTES,
+        MigrationSpec::new(2, "tampers", "DELETE FROM rust_migration;"),
     ];
     let dir = TempDir::new()?;
     let path = dir.path().join("run.db");
     open(&path, V1).await?;
     let before = contents(&path)?;
-    assert!(matches!(
-        open(&path, BROKEN).await,
-        Err(OpenError::Migration { version: 2, .. })
-    ));
-    assert!(matches!(
-        open(&path, FULL).await,
-        Err(OpenError::DiskFull(_))
-    ));
-    assert_eq!(contents(&path)?, before);
+    for ledger in [BROKEN, ESCAPES, TAMPERS] {
+        assert!(matches!(
+            open(&path, ledger).await,
+            Err(OpenError::Migration { version: 2, .. })
+        ));
+        assert_eq!(contents(&path)?, before, "no part of migration 2 stays");
+    }
     assert_eq!(
-        backups(dir.path())?,
-        ["run.db.v1-1.backup", "run.db.v1.backup"],
-        "each attempt keeps its own backup; none is replaced"
+        backups(dir.path())?.len(),
+        3,
+        "each attempt keeps its own backup"
     );
     Ok(())
 }
 
+#[test]
+fn a_full_disk_is_named() {
+    let full = rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_FULL);
+    let error = OpenError::from(rusqlite::Error::SqliteFailure(full, None));
+    assert!(matches!(error, OpenError::DiskFull(_)));
+}
+
 #[tokio::test]
-async fn a_backup_that_cannot_be_written_stops_the_migration() -> TestResult {
+async fn a_backup_that_cannot_be_written_leaves_the_file_as_found() -> TestResult {
     let dir = TempDir::new()?;
     let path = dir.path().join("run.db");
     open(&path, V1).await?;
-    let before = contents(&path)?;
+    // A restored backup is in rollback-journal mode; that must survive too.
+    let mode: String =
+        Connection::open(&path)?.query_row("PRAGMA journal_mode=DELETE", [], |row| row.get(0))?;
+    assert_eq!(mode, "delete");
+    let before = std::fs::read(&path)?;
     // Something that is not a file holds the partial name; it is not removed.
     let blocker = dir.path().join("run.db.backup-partial");
     std::fs::create_dir(&blocker)?;
@@ -165,8 +173,56 @@ async fn a_backup_that_cannot_be_written_stops_the_migration() -> TestResult {
         open(&path, V2).await,
         Err(OpenError::BackupFailed(_))
     ));
-    assert_eq!(contents(&path)?, before);
+    assert_eq!(std::fs::read(&path)?, before);
     assert!(blocker.is_dir() && backups(dir.path())?.is_empty());
+    Ok(())
+}
+
+#[tokio::test]
+async fn another_writer_holding_the_lock_stalls_the_open_without_a_change() -> TestResult {
+    let dir = TempDir::new()?;
+    let path = dir.path().join("run.db");
+    open(&path, V1).await?;
+    let holder = Connection::open(&path)?;
+    holder.execute_batch("BEGIN IMMEDIATE")?;
+    assert!(matches!(
+        open(&path, V2).await,
+        Err(OpenError::StorageStalled(_))
+    ));
+    holder.execute_batch("ROLLBACK")?;
+    drop(holder);
+    assert_eq!(contents(&path)?.0, 1);
+    assert!(backups(dir.path())?.is_empty());
+    Ok(())
+}
+
+#[tokio::test]
+async fn readers_cannot_see_the_ledger() -> TestResult {
+    let dir = TempDir::new()?;
+    let store = RunStore::open(dir.path().join("run.db"), V1).await?;
+    let deadline = || tokio::time::Instant::now() + std::time::Duration::from_secs(10);
+    let readers = store.readers();
+    let read =
+        |sql: &'static str| readers.snapshot(deadline(), move |view| view.prepare(sql).map(drop));
+    read("SELECT body FROM note").await?;
+    assert!(read("SELECT * FROM rust_migration").await.is_err());
+    store.shutdown().await?;
+    Ok(())
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn a_backup_is_no_more_readable_than_its_database() -> TestResult {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = TempDir::new()?;
+    let path = dir.path().join("run.db");
+    open(&path, V1).await?;
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600))?;
+    let backup = open(&path, V2).await?.backup.ok_or("no backup")?;
+    assert_eq!(
+        std::fs::metadata(backup)?.permissions().mode() & 0o777,
+        0o600
+    );
     Ok(())
 }
 

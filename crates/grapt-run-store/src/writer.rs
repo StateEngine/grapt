@@ -83,17 +83,21 @@ pub(crate) fn run(
     cache.map_err(|_| OpenError::Worker)
 }
 
-/// Lock, check the schema read-only, then migrate and restrict. Refusals
-/// before `enable_wal` leave the file exactly as found.
+/// Lock, check the schema on a read-only connection, migrate, then switch to
+/// WAL and restrict. A refusal or failed backup leaves the file as found.
 fn initialize(
     path: &std::path::Path,
     ledger: &[MigrationSpec],
 ) -> Result<(PathBuf, std::fs::File, Connection, Migrated), OpenError> {
     let (path, lease) = sqlite::lock_writer(path)?;
+    let source = sqlite::preflight(&path)?;
+    let plan = match &source {
+        Some(source) => migration::plan(source, ledger)?,
+        None => migration::Plan::NEW,
+    };
     let mut connection = sqlite::writer(&path)?;
-    let plan = migration::plan(&connection, ledger)?;
+    let migrated = migration::apply(&mut connection, source, &path, ledger, plan)?;
     sqlite::enable_wal(&connection)?;
-    let migrated = migration::apply(&mut connection, &path, ledger, plan)?;
     sqlite::restrict(&connection)?;
     Ok((path, lease, connection, migrated))
 }

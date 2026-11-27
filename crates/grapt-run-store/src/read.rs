@@ -188,6 +188,11 @@ impl Pool {
 
 fn read_only(context: AuthContext<'_>) -> Authorization {
     match context.action {
+        // The schema ledger belongs to the store; receipts stay readable for
+        // the pool's own receipt lookups.
+        AuthAction::Read { table_name, .. } if table_name.eq_ignore_ascii_case(sqlite::LEDGER) => {
+            Authorization::Deny
+        }
         AuthAction::Select | AuthAction::Read { .. } | AuthAction::Recursive => {
             Authorization::Allow
         }
