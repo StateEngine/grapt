@@ -1,11 +1,11 @@
-use super::*;
-use serde_json::json;
+pub(super) use super::super::*;
+pub(super) use serde_json::json;
 
-type TestResult = Result<(), Box<dyn std::error::Error>>;
+pub(super) type TestResult = Result<(), Box<dyn std::error::Error>>;
 
-struct CountingProjector {
-    rows: u64,
-    fail: bool,
+pub(super) struct CountingProjector {
+    pub(super) rows: u64,
+    pub(super) fail: bool,
 }
 impl Projector for CountingProjector {
     fn projection(&self) -> ProjectionId {
@@ -34,12 +34,12 @@ impl Projector for CountingProjector {
     }
 }
 
-fn session(id: &str) -> Result<AggregateId, Box<dyn std::error::Error>> {
+pub(super) fn session(id: &str) -> Result<AggregateId, Box<dyn std::error::Error>> {
     Ok(AggregateId::Session(id.parse()?))
 }
 
 /// The aggregate every test below writes to.
-fn agg() -> Result<AggregateId, Box<dyn std::error::Error>> {
+pub(super) fn agg() -> Result<AggregateId, Box<dyn std::error::Error>> {
     session("ses_w0")
 }
 
@@ -48,7 +48,7 @@ fn agg() -> Result<AggregateId, Box<dyn std::error::Error>> {
 /// The election is explicit here for the same reason it is explicit in
 /// production: nothing in the append path performs it. A test that forgot
 /// this call gets `NotElected`, not a silently self-elected writer.
-fn elected_store() -> Result<(EventStore, AggregateId), Box<dyn std::error::Error>> {
+pub(super) fn elected_store() -> Result<(EventStore, AggregateId), Box<dyn std::error::Error>> {
     let mut store = EventStore::open_in_memory()?;
     let aggregate = agg()?;
     store.elect_writer(&aggregate)?;
@@ -58,7 +58,7 @@ fn elected_store() -> Result<(EventStore, AggregateId), Box<dyn std::error::Erro
 /// A file-backed scratch database carrying the oracle-era `session` table.
 /// File-backed because two `EventStore` instances must see one database,
 /// which two independent in-memory connections never do.
-fn scratch_db(
+pub(super) fn scratch_db(
     name: &str,
 ) -> Result<(std::path::PathBuf, std::path::PathBuf), Box<dyn std::error::Error>> {
     let dir = std::env::temp_dir().join(format!("grapt-write-{name}-{}", std::process::id()));
@@ -77,7 +77,7 @@ fn scratch_db(
 /// published fact by accident, and a test helper that quietly threw them
 /// away would be the first place that habit formed. The witnesses that care
 /// about notices call `append` directly.
-fn append_only(
+pub(super) fn append_only(
     store: &mut EventStore,
     input: AppendInput<'_>,
     projectors: &mut [&mut dyn Projector],
@@ -87,7 +87,7 @@ fn append_only(
     Ok(appended)
 }
 
-fn input<'a>(
+pub(super) fn input<'a>(
     writer: FencedWriter,
     aggregate: &AggregateId,
     id: &'a EventId,
@@ -339,7 +339,7 @@ fn corrupt_cursor_refuses_with_a_typed_error() -> TestResult {
 /// can be resolved with `?`; the trait's `mint` is infallible and the crate
 /// denies `unwrap`/`expect`.
 #[derive(Debug)]
-struct FixedToken(grapt_types::IdToken);
+pub(super) struct FixedToken(pub(super) grapt_types::IdToken);
 
 impl IdAuthority for FixedToken {
     fn mint(&self) -> grapt_types::IdToken {

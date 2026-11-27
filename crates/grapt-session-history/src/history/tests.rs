@@ -16,8 +16,9 @@ use grapt_types::{
     TokenCount, UsageField, UsageObservationPhase, UsageProvenance,
 };
 
-include!("tests/fold_witnesses.rs");
-include!("tests/lifetime_bound_witnesses.rs");
+mod fold_witnesses;
+use fold_witnesses::*;
+mod lifetime_bound_witnesses;
 
 #[path = "future_failure_witnesses.rs"]
 mod future_failure_witnesses;

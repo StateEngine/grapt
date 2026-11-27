@@ -288,7 +288,7 @@ impl CheckpointCaptureOutcome {
 
 #[cfg(test)]
 mod tests {
-    include!("checkpoint/tests/capture_and_reference.rs");
-    include!("checkpoint/tests/restore_plan_rescue_and_lease.rs");
-    include!("checkpoint/tests/admission_and_preconditions.rs");
+    mod admission_and_preconditions;
+    mod capture_and_reference;
+    mod restore_plan_rescue_and_lease;
 }

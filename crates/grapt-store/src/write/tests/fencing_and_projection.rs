@@ -1,3 +1,4 @@
+use super::append_and_replay::*;
 #[test]
 fn an_unelected_store_cannot_obtain_a_fencing_token() -> TestResult {
     // The store is open and the database is Rust-owned; what is missing is

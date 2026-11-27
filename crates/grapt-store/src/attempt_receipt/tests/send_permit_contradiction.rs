@@ -1,3 +1,4 @@
+use super::lifecycle::*;
 // ---------------------------------------------------------------------------
 // The NoneInitiated / send-permit contradiction, in every supported version
 // ---------------------------------------------------------------------------

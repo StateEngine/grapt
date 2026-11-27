@@ -1,3 +1,4 @@
+use super::lifecycle::*;
 // ---------------------------------------------------------------------------
 // Tolerant readers: the receipt's terminal proof against a future writer's
 // failure vocabulary.

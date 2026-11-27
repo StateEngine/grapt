@@ -552,9 +552,4 @@ fn check_tool_name(call: &ToolCallId, expected: &str, actual: &str) -> Result<()
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::fragment::{AdapterState, FinishReason, ProviderFailureClass, TokenUsage};
-
-    include!("normalize/tests.rs");
-}
+mod tests;

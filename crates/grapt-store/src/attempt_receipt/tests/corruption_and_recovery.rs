@@ -1,8 +1,9 @@
+use super::lifecycle::*;
 // -----------------------------------------------------------------------
 // Corruption
 // -----------------------------------------------------------------------
 
-fn stage(
+pub(super) fn stage(
     store: &EventStore,
     row: ForeignAttemptReceipt<'_>,
 ) -> Result<(), Box<dyn std::error::Error>> {
@@ -18,7 +19,7 @@ fn honest_bytes(step: u32) -> Vec<u8> {
     ))
 }
 
-fn base_row(bytes: &[u8]) -> ForeignAttemptReceipt<'_> {
+pub(super) fn base_row(bytes: &[u8]) -> ForeignAttemptReceipt<'_> {
     ForeignAttemptReceipt {
         attempt_id: ATTEMPT,
         session_id: SESSION,
