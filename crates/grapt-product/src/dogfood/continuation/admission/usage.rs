@@ -49,43 +49,52 @@ impl super::super::DurableContinuation {
         &self,
         attempt: &grapt_types::PhysicalAttemptId,
     ) -> Result<ConfirmedUsage, String> {
-        let inbox = super::super::lock(&self.inbox);
-        // The gaps are logged once at their own durable coordinates: one
-        // unreadable usage row costs that observation, so the caller that
-        // reports evidence says exactly which rows it could not read instead of
-        // silently returning a shorter list. The attempt's other measurements
-        // still answer.
-        let observations = grapt_session::SessionHistoryStore::over(inbox.store())
-            .usage_for_attempt(&self.session, attempt)
-            .map_err(|error| error.to_string())
-            .map(|(observations, omissions)| {
-                crate::dogfood::history_notices::log_omissions(&self.session, &omissions);
-                observations
-            })?;
-        let usage = grapt_types::usage::reconcile_recorded_usage(&observations)
-            .map_err(|error| error.to_string())?;
-        let observed = |field: Option<&grapt_types::usage::ReconciledUsageField>| {
-            field
-                .filter(|field| {
-                    field.phase() == grapt_types::UsageObservationPhase::Terminal
-                        && !matches!(
-                            field.provenance(),
-                            grapt_types::UsageProvenance::HarnessEstimated { .. }
-                        )
-                })
-                .map(|field| field.count().value())
-        };
-        let input = observed(usage.input_total());
-        // Output includes reasoning on the provider's reported coordinate;
-        // never add the reasoning leaf again. Input alone is a lower bound
-        // when a provider omits its output count, not an invented zero.
-        let context = observed(usage.total())
-            .or_else(|| {
-                input
-                    .zip(observed(usage.output()))
-                    .and_then(|(a, b)| a.checked_add(b))
-            })
-            .or(input);
-        Ok(ConfirmedUsage { input, context })
+        confirmed_usage_in(&super::super::lock(&self.inbox), &self.session, attempt)
     }
+}
+
+/// One attempt's provider-confirmed input and context, read from the Session's
+/// durable usage rows; harness estimates never count as confirmed.
+pub(in crate::dogfood) fn confirmed_usage_in(
+    inbox: &grapt_inbox::Inbox,
+    session: &grapt_types::SessionId,
+    attempt: &grapt_types::PhysicalAttemptId,
+) -> Result<ConfirmedUsage, String> {
+    // The gaps are logged once at their own durable coordinates: one
+    // unreadable usage row costs that observation, so the caller that
+    // reports evidence says exactly which rows it could not read instead of
+    // silently returning a shorter list. The attempt's other measurements
+    // still answer.
+    let observations = grapt_session::SessionHistoryStore::over(inbox.store())
+        .usage_for_attempt(session, attempt)
+        .map_err(|error| error.to_string())
+        .map(|(observations, omissions)| {
+            crate::dogfood::history_notices::log_omissions(session, &omissions);
+            observations
+        })?;
+    let usage = grapt_types::usage::reconcile_recorded_usage(&observations)
+        .map_err(|error| error.to_string())?;
+    let observed = |field: Option<&grapt_types::usage::ReconciledUsageField>| {
+        field
+            .filter(|field| {
+                field.phase() == grapt_types::UsageObservationPhase::Terminal
+                    && !matches!(
+                        field.provenance(),
+                        grapt_types::UsageProvenance::HarnessEstimated { .. }
+                    )
+            })
+            .map(|field| field.count().value())
+    };
+    let input = observed(usage.input_total());
+    // Output includes reasoning on the provider's reported coordinate;
+    // never add the reasoning leaf again. Input alone is a lower bound
+    // when a provider omits its output count, not an invented zero.
+    let context = observed(usage.total())
+        .or_else(|| {
+            input
+                .zip(observed(usage.output()))
+                .and_then(|(a, b)| a.checked_add(b))
+        })
+        .or(input);
+    Ok(ConfirmedUsage { input, context })
 }

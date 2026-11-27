@@ -211,6 +211,7 @@ fn first_attempt_consumes_preissued_target_and_retry_issues_fresh() -> Result<()
         admission_diagnosis: super::super::continuation::admission::DiagnosisSlot::default(),
         trim_feedback: None,
         trimmed_request: false,
+        window_floor: None,
         context_hook: None,
         lifecycle: None,
         compaction: Default::default(),
@@ -445,6 +446,7 @@ fn pc_anthropic_selection_builds_a_bounded_tool_request() -> Result<(), String> 
         admission_diagnosis: super::super::continuation::admission::DiagnosisSlot::default(),
         trim_feedback: None,
         trimmed_request: false,
+        window_floor: None,
         context_hook: None,
         lifecycle: None,
         compaction: Default::default(),
@@ -552,7 +554,6 @@ fn calibrated_threshold_plan(
     published: &Arc<super::super::mcp::PublishedTools>,
     step: StepNumber,
     label: &str,
-    buffer: Option<u64>,
 ) -> Result<
     (
         ProductPlan,
@@ -591,10 +592,7 @@ fn calibrated_threshold_plan(
         step,
     )
     .with_session_calibration(sessions, owner)
-    .with_compaction(CompactionSettings {
-        buffer,
-        ..CompactionSettings::default()
-    });
+    .with_compaction(CompactionSettings::default());
     Ok((plan, calibration, scratch))
 }
 
@@ -619,59 +617,16 @@ fn judged_threshold_request(
     Ok((planned, tokens, packed, reserve))
 }
 
-/// One honest size guards the threshold, judged at this target's observed
-/// ratio: a request under it does not compact, and one over it does, however
-/// far the configured buffer moves the packing margin. A margin above the
-/// ratio would compact a session at about half its real usage and refuse the
-/// summary that would have fit.
-#[test]
-fn cq_the_threshold_is_judged_at_the_observed_ratio() -> Result<(), String> {
-    use super::super::continuation::admission::HEADROOM;
-    let (concrete, published, step) = threshold_target()?;
-    // The margin still bounds packing, but never the judged size.
-    let (mut plan, calibration, _scratch) =
-        calibrated_threshold_plan(&concrete, &published, step, "cq-threshold-ratio", None)?;
-    let (_, tokens, packed, _) = judged_threshold_request(&mut plan, &calibration, step)?;
-    assert!(packed > tokens + HEADROOM, "{tokens} {packed}");
-    // A buffer above SE's own headroom, as C04's is. A request under the
-    // threshold does not compact, even though it would exceed that threshold
-    // at the packing margin.
-    let buffer = packed - tokens + 2 * HEADROOM;
-    let (mut plan, calibration, _scratch) = calibrated_threshold_plan(
-        &concrete,
-        &published,
-        step,
-        "cq-threshold-buffer",
-        Some(buffer),
-    )?;
-    let (planned, tokens, packed, reserve) =
-        judged_threshold_request(&mut plan, &calibration, step)?;
-    concrete
-        .context_tokens
-        .store(tokens + reserve + buffer + 1, Ordering::SeqCst);
-    assert!(packed + reserve + HEADROOM < tokens + reserve + buffer + 1);
-    assert_eq!(plan.context_admission(&planned), Ok(None));
-    // Over the threshold at the judged size: compaction.
-    concrete
-        .context_tokens
-        .store(tokens + reserve + buffer, Ordering::SeqCst);
-    assert_eq!(
-        plan.context_admission(&planned),
-        Ok(Some(grapt_types::CompactionTrigger::PolicyThreshold))
-    );
-    Ok(())
-}
-
-/// Without a configured buffer the window fit is the threshold, so the same
-/// judged size decides both. A request the judged count places inside the
-/// window does not compact just because the packing margin would put it
-/// outside; that difference is exactly the defect this seam closes.
+/// One honest size guards the window, judged at this target's observed ratio.
+/// A request the judged count places inside the window does not compact just
+/// because the packing margin would put it outside; that difference is exactly
+/// the defect this seam closes.
 #[test]
 fn cq_the_window_is_judged_at_the_observed_ratio() -> Result<(), String> {
     use super::super::continuation::admission::HEADROOM;
     let (concrete, published, step) = threshold_target()?;
     let (mut plan, calibration, _scratch) =
-        calibrated_threshold_plan(&concrete, &published, step, "cq-threshold-window", None)?;
+        calibrated_threshold_plan(&concrete, &published, step, "cq-threshold-window")?;
     let (planned, tokens, packed, reserve) =
         judged_threshold_request(&mut plan, &calibration, step)?;
     concrete

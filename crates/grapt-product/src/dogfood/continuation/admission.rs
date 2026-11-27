@@ -1,10 +1,11 @@
 //! Conservative request projection; never provider-confirmed tokenizer truth.
+mod persisted;
 mod request_diagnostics;
 mod summary;
 mod usage;
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
-pub(in crate::dogfood) use usage::{auto_compact_reached, ceiling_size};
+pub(in crate::dogfood) use usage::{auto_compact_reached, ceiling_size, confirmed_usage_in};
 
 use grapt_provider::{CodexInputItem, ProviderRequest};
 use grapt_types::{ContextFailure, SessionId};
@@ -392,9 +393,9 @@ impl Calibration {
 
 /// The latest calibration and admitted request per Session, shared by its
 /// successive executions so a new prompt does not fall back to the byte bound
-/// or count its whole history from scratch. Process memory only:
-/// a restart begins conservative again. Bounded; an evicted Session only loses
-/// its accounting, never correctness.
+/// or count its whole history from scratch. The calibration itself also
+/// survives a restart (see [`persisted`]). Bounded; an evicted Session only
+/// loses its accounting, never correctness.
 #[derive(Clone, Default)]
 pub(in crate::dogfood) struct SessionCalibrations(
     Arc<Mutex<BTreeMap<SessionId, SessionAccounting>>>,
@@ -405,6 +406,10 @@ struct SessionAccounting {
     wire: request_diagnostics::WireHistory,
     calibration: Option<Calibration>,
     previous: Option<Prior>,
+    /// Whether this process already read the durable calibration.
+    restored: bool,
+    /// The calibration last read from or written to the Session's log.
+    written: Option<grapt_session::notice::TokenCalibration>,
 }
 
 const MAX_CALIBRATED_SESSIONS: usize = 256;
@@ -825,15 +830,9 @@ pub(in crate::dogfood) fn output_reserve(request: &ProviderRequest) -> u32 {
 /// (`budget`) minus the output reserve and headroom: the operating threshold.
 /// The maximum itself is never lowered.
 pub(in crate::dogfood) fn fits(input: u64, reserve: u32, budget: u64) -> bool {
-    fits_with(input, reserve, budget, HEADROOM)
-}
-
-/// [`fits`] with the configured `compaction.buffer` in place of SE's own
-/// headroom (crate::dogfood::compaction_config).
-pub(in crate::dogfood) fn fits_with(input: u64, reserve: u32, budget: u64, headroom: u64) -> bool {
     input
         .checked_add(u64::from(reserve))
-        .and_then(|sum| sum.checked_add(headroom))
+        .and_then(|sum| sum.checked_add(HEADROOM))
         .is_some_and(|sum| sum < budget)
 }
 

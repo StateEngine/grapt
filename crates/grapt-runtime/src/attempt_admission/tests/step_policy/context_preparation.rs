@@ -55,7 +55,7 @@ async fn cr_proactive_rebuild_precedes_mint_and_repeated_threshold_stops() {
             assert_eq!(
                 failure.reason(),
                 &StepTerminalReason::ContextFailure {
-                    failure: ContextFailure::CompactionNoProgress,
+                    failure: ContextFailure::CompactionDidNotFit,
                 }
             );
         } else {

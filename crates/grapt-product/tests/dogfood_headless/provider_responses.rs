@@ -164,9 +164,14 @@ pub(super) fn respond_text_then_reads(
             .unwrap_or_else(|error| panic!("provider text encoding failed: {error}"))
     );
     tool_read_items(&mut body, calls);
-    body.push_str(
-        "data: {\"type\":\"response.completed\",\"response\":{\"usage\":{\"input_tokens\":1,\"output_tokens\":1,\"total_tokens\":2}}}\n\n",
-    );
+    body.push_str("data: {\"type\":\"response.completed\",\"response\":{}}\n\n");
+    respond(stream, 200, &body);
+}
+
+pub(super) fn respond_tool_reads_unmetered(stream: &mut TcpStream, calls: &[(&str, &str)]) {
+    let mut body = String::new();
+    tool_read_items(&mut body, calls);
+    body.push_str("data: {\"type\":\"response.completed\",\"response\":{}}\n\n");
     respond(stream, 200, &body);
 }
 

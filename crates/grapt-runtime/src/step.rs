@@ -289,6 +289,11 @@ pub enum CompactionFailure {
     Repeated {
         reason: String,
     },
+    /// The compaction committed, but the context it left is still at or above
+    /// the proactive ceiling.
+    DidNotFit {
+        reason: String,
+    },
 }
 
 impl CompactionFailure {
@@ -297,6 +302,7 @@ impl CompactionFailure {
             Self::Failed(error) => (ContextFailure::CompactionFailed, error.reason),
             Self::NoProgress { reason } => (ContextFailure::CompactionNoProgress, reason),
             Self::Repeated { reason } => (ContextFailure::CompactionRepeated, reason),
+            Self::DidNotFit { reason } => (ContextFailure::CompactionDidNotFit, reason),
         }
     }
 }

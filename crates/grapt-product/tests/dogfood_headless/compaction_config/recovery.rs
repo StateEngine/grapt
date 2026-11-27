@@ -35,7 +35,7 @@ fn a_text_only_warm_summary_keeps_its_retained_context_after_restart(
     }
     set_compaction(
         &root,
-        serde_json::json!({"buffer": 1_000_000 - 32_000 - 150_000}),
+        serde_json::json!({"model_auto_compact_token_limit": 150_000}),
     );
     fs::write(root.join("seed.txt"), text_lines(b'x', 36_000))?;
     let usage = |input: u64| {
@@ -112,7 +112,7 @@ fn a_text_only_warm_summary_keeps_its_retained_context_after_restart(
 fn a_shape_refused_summary_recovers_on_the_next_input() {
     let (_, triggers, calls, history, summary_calls, stderr) = journey_sized(
         "config-summary-shape-recovery",
-        Some(serde_json::json!({"buffer": BUFFER})),
+        limited(serde_json::json!({})),
         vec![
             seed_read(),
             Script::Refused {

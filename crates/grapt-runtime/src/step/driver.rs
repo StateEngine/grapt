@@ -137,7 +137,7 @@ impl StepDriver {
                     break StepResult::Failed {
                         failure: StepFailure::new(
                             StepTerminalReason::ContextFailure {
-                                failure: ContextFailure::CompactionNoProgress,
+                                failure: ContextFailure::CompactionDidNotFit,
                             },
                             "context still exceeds admission budget after bounded compaction",
                         ),

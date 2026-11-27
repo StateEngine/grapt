@@ -375,7 +375,7 @@ fn swr_c02_restart_recovers_exact_omission_and_compacts_another_grouped_step() {
 }
 
 #[test]
-fn swr_c02_no_progress_summary_is_refused_before_publication() {
+fn swr_c02_a_summary_that_cannot_fit_commits_once_and_ends_the_step() {
     const OUTPUT_BYTES: usize = 28_000;
     let _journey = process_journey_custody();
     let root = root("swr-c02-no-progress");
@@ -416,7 +416,7 @@ fn swr_c02_no_progress_summary_is_refused_before_publication() {
     assert_eq!(
         provider.calls.load(Ordering::SeqCst),
         3,
-        "a coding request opened after an inadmissible summary"
+        "a coding request opened after a summary that does not fit"
     );
     let messages = json(
         address,
@@ -428,11 +428,12 @@ fn swr_c02_no_progress_summary_is_refused_before_publication() {
         messages.to_string().contains("executionFailure"),
         "the typed execution failure was not projected"
     );
-    // A summary that does not reduce is no progress, but not an unusable
+    // A summary that does not fit is named so, but it is not an unusable
     // one: it leaves no compaction-failed notice.
     assert!(
-        !messages.to_string().contains("compactionFailed"),
-        "a non-summary no-progress stop was named an unusable summary: {messages}"
+        messages.to_string().contains("did not fit")
+            && !messages.to_string().contains("compactionFailed"),
+        "the stop was not named did-not-fit: {messages}"
     );
     child.stop_after_witness(&root);
     drop(child);
@@ -448,7 +449,8 @@ fn swr_c02_no_progress_summary_is_refused_before_publication() {
             |row| row.get(0),
         )
         .unwrap_or_else(|error| panic!("C02 descriptor count is unreadable: {error}"));
-    assert_eq!(committed, 0, "an inadmissible descriptor was published");
+    // The summary is kept: the next input starts from it, trimmed.
+    assert_eq!(committed, 1, "the summary was not committed exactly once");
     let failed: String = store
         .connection()
         .query_row(
@@ -461,7 +463,7 @@ fn swr_c02_no_progress_summary_is_refused_before_publication() {
         .unwrap_or_else(|error| panic!("C02 terminal failure is unreadable: {error}"));
     assert!(
         failed.contains("compaction-no-progress"),
-        "the durable failure was not CompactionNoProgress: {failed}"
+        "the durable failure is not readable as no-progress by an older build: {failed}"
     );
     drop(store);
     process_fixture::cleanup(&root);

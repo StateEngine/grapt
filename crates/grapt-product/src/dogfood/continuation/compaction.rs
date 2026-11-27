@@ -72,6 +72,9 @@ pub(in crate::dogfood) struct ProductCompactor {
     /// `compaction.server_side`: an OpenAI Responses route compacts on the
     /// provider first.
     server_side: bool,
+    /// The proactive ceiling admission compacts at: `None` when `auto` is
+    /// off, else the configured token limit, if any, beside the 90% one.
+    ceiling: Option<Option<u64>>,
     failure_cause: Option<Cause>,
     manual_instructions: Option<String>,
     /// The turn's own cache key, so a cold summary routes as the turns it
@@ -108,6 +111,7 @@ impl ProductCompactor {
             admission_diagnosis,
             hub: authorities.hub,
             server_side: false,
+            ceiling: Some(None),
             failure_cause: None,
             manual_instructions: None,
             routing_session: None,
@@ -138,6 +142,12 @@ impl ProductCompactor {
         self
     }
 
+    /// Judge a committed summary against the ceiling admission uses.
+    pub(in crate::dogfood) fn with_ceiling(mut self, auto: bool, limit: Option<u64>) -> Self {
+        self.ceiling = auto.then_some(limit);
+        self
+    }
+
     pub(in crate::dogfood) fn with_hooks(
         mut self,
         hooks: Arc<super::super::hooks::HookRuntime>,
@@ -146,20 +156,24 @@ impl ProductCompactor {
         self
     }
 
-    async fn run_with_hooks(
+    /// PreCompact, then the compaction itself.
+    async fn run_with_pre_hook(
         &mut self,
         context: CompactionContext,
     ) -> Result<(), CompactionFailure> {
         use super::super::hooks::Event;
-        let compacting = self.feedback.compacting();
+        let _compacting = self.feedback.compacting();
         if let Some(hooks) = &self.hooks {
             hooks
                 .fire(Event::PreCompact, &self.continuation.session, None)
                 .await
                 .map_err(failed)?;
         }
-        self.run(context).await?;
-        drop(compacting);
+        self.run(context).await
+    }
+
+    async fn post_compact(&self) {
+        use super::super::hooks::Event;
         if let Some(hooks) = &self.hooks {
             if let Err(reason) = hooks
                 .fire(Event::PostCompact, &self.continuation.session, None)
@@ -172,7 +186,6 @@ impl ProductCompactor {
                 ));
             }
         }
-        Ok(())
     }
 
     pub(in crate::dogfood) async fn compact(
@@ -185,35 +198,17 @@ impl ProductCompactor {
         let settled = match interrupted {
             Some(by) => Err(by),
             None => {
-                if trigger != CompactionTrigger::UserRequested {
-                    match self.continuation.compaction_suppressed() {
-                        Ok(Some(cause)) => {
-                            if let Some(recovery) = &self.continuation.recovery {
-                                recovery.report_failure();
-                            }
-                            return Ok(Err(failed(cause.message())));
-                        }
-                        Err(reason) => return Ok(Err(failed(reason))),
-                        Ok(None) => {}
-                    }
-                }
                 self.failure_cause = None;
-                let mut result = self.run_with_hooks(context).await;
+                let result = self.run_with_pre_hook(context).await;
+                // Sampled and recorded before PostCompact is awaited: an
+                // interrupt during that hook cannot unrecord a committed
+                // outcome or turn it into an interruption.
                 let interrupted = *signal.borrow();
-                if interrupted.is_none() {
-                    if let Some(recovery) = &self.continuation.recovery {
-                        if result.is_ok() {
-                            recovery.succeeded();
-                        } else if let Err(reason) = recovery.failed(
-                            Cause::of_compaction(&result, self.failure_cause),
-                            &lock(&self.continuation.inbox),
-                        ) {
-                            result = Err(failed(reason));
-                        }
-                        if result.is_err() && trigger != CompactionTrigger::UserRequested {
-                            recovery.report_failure();
-                        }
-                    }
+                if let Some(recovery) = &self.continuation.recovery {
+                    record_outcome(recovery, &result, interrupted, trigger, self.failure_cause);
+                }
+                if committed(&result) {
+                    self.post_compact().await;
                 }
                 settle(result, interrupted)
             }
@@ -237,7 +232,9 @@ impl ProductCompactor {
             Ok(Ok(())) => return settled,
             Ok(Err(CompactionFailure::Failed(error))) => error.reason.clone(),
             Ok(Err(
-                CompactionFailure::NoProgress { reason } | CompactionFailure::Repeated { reason },
+                CompactionFailure::NoProgress { reason }
+                | CompactionFailure::Repeated { reason }
+                | CompactionFailure::DidNotFit { reason },
             )) => reason.clone(),
             Err(_) => String::new(),
         };
@@ -440,7 +437,9 @@ impl ProductCompactor {
         if cancel.borrow().is_some() {
             return Err(failed("summary cancelled before publication"));
         }
-        let rebuilt_estimate = if trigger != CompactionTrigger::StructuralBound {
+        let rebuilt = if trigger == CompactionTrigger::StructuralBound {
+            None
+        } else {
             let rebuilt = prepared.rebuilt_input(&owner.text);
             let estimate = self
                 .admission_diagnosis
@@ -451,29 +450,13 @@ impl ProductCompactor {
                     ))
                 })?;
             match estimate {
-                // The rebuilt request must fit the model's window, not the
-                // configured threshold: `compaction.buffer` decides when to
-                // compact, and admission does not compact again until new
-                // history arrives.
-                Some((estimate, reserve)) => {
-                    if !super::admission::fits(estimate, reserve, budget) {
-                        self.failure_cause = Some(Cause::Context);
-                        return Err(CompactionFailure::NoProgress {
-                            reason:
-                                "rebuilt coding request plus output reserve exceeds context budget"
-                                    .to_owned(),
-                        });
-                    }
-                    Some(estimate)
-                }
+                Some(estimate) => Some(estimate),
                 // A requested compaction runs before its input's first
                 // request was planned, so there is no snapshot to rebuild;
-                // the next ordinary admission still checks the fit.
+                // the next ordinary admission still judges the fit.
                 None if trigger == CompactionTrigger::UserRequested => None,
                 None => return Err(failed("rebuilt coding request has no admission snapshot")),
             }
-        } else {
-            None
         };
         let mut prepared = prepared;
         prepared.selection.summary_plan = Some(plan);
@@ -483,10 +466,27 @@ impl ProductCompactor {
             prepared,
             CommittedSummary::Text(&owner.text),
             trigger,
-            rebuilt_estimate,
+            rebuilt.map(|(estimate, _)| estimate),
             server,
         )
-        .map_err(failed)
+        .map_err(failed)?;
+        // The one guard: the descriptor is committed. If the context it left
+        // is still at or above the proactive ceiling, or does not fit, the Step
+        // stops with that error instead of compacting again at the next Step.
+        if let Some((estimate, reserve)) = rebuilt {
+            if !super::admission::fits(estimate, reserve, budget)
+                || self.ceiling.is_some_and(|limit| {
+                    super::admission::auto_compact_reached(Some(estimate), budget, limit)
+                })
+            {
+                return Err(CompactionFailure::DidNotFit {
+                    reason: format!(
+                        "the compacted context is {estimate} tokens, still at or above the ceiling of a {budget}-token window"
+                    ),
+                });
+            }
+        }
+        Ok(())
     }
 
     /// Ask the route to compact the request admission last planned, with a
@@ -887,6 +887,35 @@ pub(in crate::dogfood) fn provider_notice(
     )
 }
 
+/// Whether `result` published a descriptor: a summary that did not fit was
+/// still committed.
+fn committed(result: &Result<(), CompactionFailure>) -> bool {
+    matches!(result, Ok(()) | Err(CompactionFailure::DidNotFit { .. }))
+}
+
+/// Record what a compaction left for the Session's next input. A committed
+/// outcome is recorded whatever interrupted it; an unpublished one that was
+/// interrupted says nothing against the compaction.
+fn record_outcome(
+    recovery: &super::compaction_recovery::Session,
+    result: &Result<(), CompactionFailure>,
+    interrupted: Option<InterruptionSource>,
+    trigger: CompactionTrigger,
+    transport: Option<Cause>,
+) {
+    if interrupted.is_some() && !committed(result) {
+        return;
+    }
+    if result.is_ok() {
+        recovery.succeeded();
+    } else {
+        recovery.failed(Cause::of_compaction(result, transport));
+        if trigger != CompactionTrigger::UserRequested {
+            recovery.report_failure();
+        }
+    }
+}
+
 /// A published descriptor is durable history, so an interrupt that arrives
 /// during or after its commit cannot report the compaction as interrupted; the
 /// next Step boundary observes the interrupt instead. Only an unpublished
@@ -895,10 +924,9 @@ fn settle(
     result: Result<(), CompactionFailure>,
     interrupted: Option<InterruptionSource>,
 ) -> Result<Result<(), CompactionFailure>, InterruptionSource> {
-    match (result, interrupted) {
-        (Ok(()), _) => Ok(Ok(())),
-        (Err(_), Some(by)) => Err(by),
-        (failure, None) => Ok(failure),
+    match interrupted {
+        Some(by) if !committed(&result) => Err(by),
+        _ => Ok(result),
     }
 }
 
@@ -911,6 +939,38 @@ fn failed(reason: impl Into<String>) -> CompactionFailure {
 #[cfg(test)]
 mod settle_tests {
     use super::*;
+
+    /// An interrupt that lands once a summary that did not fit is committed,
+    /// as one during PostCompact does, keeps the committed outcome and the
+    /// trim it owes the next input.
+    #[test]
+    fn an_interrupt_after_a_committed_did_not_fit_keeps_its_outcome_and_trim() -> Result<(), String>
+    {
+        let did_not_fit = || CompactionFailure::DidNotFit {
+            reason: "still over the ceiling".to_owned(),
+        };
+        let mut recovery = super::super::compaction_recovery::Session::new(
+            super::super::compaction_recovery::Registry::default(),
+            "ses_post_compact_interrupt"
+                .parse()
+                .map_err(|_| "session")?,
+            "msg_post_compact_first".parse().map_err(|_| "input")?,
+        );
+        record_outcome(
+            &recovery,
+            &Err(did_not_fit()),
+            Some(InterruptionSource::User),
+            CompactionTrigger::PolicyThreshold,
+            None,
+        );
+        assert!(matches!(
+            settle(Err(did_not_fit()), Some(InterruptionSource::User)),
+            Ok(Err(CompactionFailure::DidNotFit { .. }))
+        ));
+        recovery.promote_input(&"msg_post_compact_next".parse().map_err(|_| "next")?);
+        assert!(recovery.trim_requested(), "the next input lost its trim");
+        Ok(())
+    }
 
     #[test]
     fn an_interrupt_after_publication_does_not_disown_the_published_descriptor() {
