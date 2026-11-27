@@ -125,31 +125,25 @@ mod tests {
 
     #[tokio::test]
     async fn discover_refuses_non_public_dns_answers_before_transport(
-    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    ) -> Result<(), Box<dyn std::error::Error>> {
         let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0))?;
         listener.set_nonblocking(true)?;
         let loopback = listener.local_addr()?;
 
         let doc_public = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(198, 51, 100, 1)), 443);
-        let cases = [
-            vec![loopback],
-            vec![doc_public, loopback],
-            vec![SocketAddr::new(
-                IpAddr::V4(Ipv4Addr::new(169, 254, 169, 254)),
-                443,
-            )],
-            vec![
-                doc_public,
-                SocketAddr::new(IpAddr::V4(Ipv4Addr::new(10, 0, 0, 1)), 443),
-            ],
-            vec![SocketAddr::new(IpAddr::V6(Ipv6Addr::LOCALHOST), 443)],
-            vec![SocketAddr::new(
-                IpAddr::V6(Ipv6Addr::new(0xfe80, 0, 0, 0, 0, 0, 0, 1)),
-                443,
-            )],
-        ];
+        let metadata = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(169, 254, 169, 254)), 443);
+        let private = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(10, 0, 0, 1)), 443);
+        let link_local_v6 =
+            SocketAddr::new(IpAddr::V6(Ipv6Addr::new(0xfe80, 0, 0, 0, 0, 0, 0, 1)), 443);
 
-        for answers in cases {
+        for answers in [
+            vec![loopback],
+            vec![metadata],
+            vec![private],
+            vec![SocketAddr::new(IpAddr::V6(Ipv6Addr::LOCALHOST), 443)],
+            vec![link_local_v6],
+            vec![doc_public],
+        ] {
             let client =
                 MetadataHttp::new()?.with_dns_lookup(Arc::new(move |_, _| Ok(answers.clone())));
             let error = client
@@ -157,6 +151,24 @@ mod tests {
                 .await
                 .err()
                 .ok_or("expected SSRF refusal before transport")?;
+            assert_eq!(error, OAuthHttpError::Endpoint);
+        }
+
+        // Mixed-answer check: answer #1 (`loopback`) is explicitly admitted on the
+        // loopback client, so refusal proves validation inspects answer #2 before transport.
+        for mixed in [
+            vec![loopback, metadata],
+            vec![loopback, private],
+            vec![loopback, link_local_v6],
+            vec![loopback, doc_public],
+        ] {
+            let client =
+                loopback_client()?.with_dns_lookup(Arc::new(move |_, _| Ok(mixed.clone())));
+            let error = client
+                .discover("https://rebind.example/mcp", Duration::from_secs(2))
+                .await
+                .err()
+                .ok_or("expected SSRF refusal for mixed DNS answers before transport")?;
             assert_eq!(error, OAuthHttpError::Endpoint);
         }
 

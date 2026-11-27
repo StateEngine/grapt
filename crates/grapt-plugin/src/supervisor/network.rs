@@ -346,11 +346,10 @@ mod tests {
         let url = url::Url::parse("https://rebind.example/data")?;
         for answers in [
             vec![loopback],
-            vec![doc_public, loopback],
             vec![metadata],
-            vec![doc_public, metadata],
             vec![private],
             vec![link_local_v6],
+            vec![doc_public],
         ] {
             let error = exchange_with_lookup(
                 url.clone(),
@@ -370,8 +369,16 @@ mod tests {
             );
         }
 
-        // Loopback grant still refuses metadata and private DNS answers before transport.
-        for still_blocked in [vec![metadata], vec![private], vec![loopback, metadata]] {
+        // Mixed-answer check under a loopback grant: answer #1 (`loopback`) is
+        // explicitly admitted, so refusal proves validation inspects answer #2 before transport.
+        for still_blocked in [
+            vec![metadata],
+            vec![private],
+            vec![loopback, metadata],
+            vec![loopback, private],
+            vec![loopback, link_local_v6],
+            vec![loopback, doc_public],
+        ] {
             let error = exchange_with_lookup(
                 url.clone(),
                 Method::GET,
