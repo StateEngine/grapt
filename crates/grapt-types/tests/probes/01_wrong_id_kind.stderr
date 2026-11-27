@@ -1,0 +1,55 @@
+error[E0308]: mismatched types
+  --> tests/probes/01_wrong_id_kind.rs:15:25
+   |
+15 |     requires_permission(session.clone());
+   |     ------------------- ^^^^^^^^^^^^^^^ expected `PermissionId`, found `SessionId`
+   |     |
+   |     arguments to this function are incorrect
+   |
+note: function defined here
+  --> tests/probes/01_wrong_id_kind.rs:5:4
+   |
+ 5 | fn requires_permission(_: PermissionId) {}
+   |    ^^^^^^^^^^^^^^^^^^^ ---------------
+
+error[E0308]: mismatched types
+  --> tests/probes/01_wrong_id_kind.rs:16:19
+   |
+16 |     requires_form(session.clone());
+   |     ------------- ^^^^^^^^^^^^^^^ expected `FormId`, found `SessionId`
+   |     |
+   |     arguments to this function are incorrect
+   |
+note: function defined here
+  --> tests/probes/01_wrong_id_kind.rs:6:4
+   |
+ 6 | fn requires_form(_: FormId) {}
+   |    ^^^^^^^^^^^^^ ---------
+
+error[E0308]: mismatched types
+  --> tests/probes/01_wrong_id_kind.rs:17:24
+   |
+17 |     requires_operation(session.clone());
+   |     ------------------ ^^^^^^^^^^^^^^^ expected `OperationId`, found `SessionId`
+   |     |
+   |     arguments to this function are incorrect
+   |
+note: function defined here
+  --> tests/probes/01_wrong_id_kind.rs:7:4
+   |
+ 7 | fn requires_operation(_: OperationId) {}
+   |    ^^^^^^^^^^^^^^^^^^ --------------
+
+error[E0308]: mismatched types
+  --> tests/probes/01_wrong_id_kind.rs:18:31
+   |
+18 |     requires_service_instance(session);
+   |     ------------------------- ^^^^^^^ expected `ServiceInstanceId`, found `SessionId`
+   |     |
+   |     arguments to this function are incorrect
+   |
+note: function defined here
+  --> tests/probes/01_wrong_id_kind.rs:8:4
+   |
+ 8 | fn requires_service_instance(_: ServiceInstanceId) {}
+   |    ^^^^^^^^^^^^^^^^^^^^^^^^^ --------------------

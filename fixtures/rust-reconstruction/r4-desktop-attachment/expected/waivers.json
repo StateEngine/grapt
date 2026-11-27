@@ -1,0 +1,11 @@
+{
+  "waivers": [
+    {
+      "id": "no-typescript-oracle-for-engine-selection-receipt",
+      "surface": "oracle",
+      "reason": "The frozen TypeScript engine at 42e4888cc0 has no engine-selection receipt to capture. Its entire record of engine choice is the string persisted under the desktop store key defaultServerUrl (packages/desktop/src/main/server.ts, getDefaultServerUrl/setDefaultServerUrl, key defined in main/store-keys.ts). There is no EngineSelection vocabulary, no owner identity, no ServiceSlotId/ServiceInstanceId/EnvironmentReceipt binding, no generation, no environment receipt and no selection receipt. Its health probe accepts any 2xx from GET /api/health, so the frozen engine cannot attribute an answer to an engine even in principle. There is nothing to capture and no cross-engine comparison to run, so this scenario carries no oracle block rather than naming a commit it was not captured from.",
+      "consequence": "expected/durable.jsonl and expected/state.json are produced by executing this lane's own Rust model and are compared exhaustively by its suite. They are not a TypeScript capture and must not be read as one.",
+      "owner": "R4D-2 owns the live cross-engine attachment receipt, which does have a retained counterpart. It is blocked until an accepted HTTP host exists, and it must write its evidence externally rather than adding to or rewriting the rows in this corpus."
+    }
+  ]
+}

@@ -1,0 +1,157 @@
+{
+  "name": "J02 - an approved MCP tool call, proven by a value only the server could produce",
+  "about": [
+    "J02 - the retained TUI approves a REAL MCP tool call against a REAL MCP",
+    "server, and the evidence is a string the model could not have written.",
+    "",
+    "WHY THIS SCENARIO EXISTS. The prior journey established that the provider",
+    "selects the MCP tool under its qualified name and that a permission is",
+    "asked. It could NOT establish that the call ever dispatched: the headless",
+    "run had no approver, the ask stayed pending, and the execution reached no",
+    "terminal. This supplies the approver through the real UI.",
+    "",
+    "THE VACUITY THIS AVOIDS, and I nearly shipped it. My first MCP server",
+    "answered `journey_echo saw: <text>` - a pure echo of the caller's own",
+    "argument. A scenario asserting that text would PASS WITH NO TOOL EVER",
+    "RUNNING, because the model supplied the text and can render it having",
+    "called nothing. Asserting the tool name is no better: the name is in the",
+    "prompt too.",
+    "",
+    "So the server answers with SERVER_TOKEN - the literal ZULUQUEBEC7731,",
+    "which appears in the server source and in NO prompt, on NO screen the",
+    "model has seen, and nowhere in this scenario's pastes - plus `reversed=`",
+    "and `length=` computed from the argument. The token binds THIS SERVER; the",
+    "reversal binds THIS CALL's arguments. Neither alone is enough: a token",
+    "could in principle be repeated from an earlier answer in the transcript,",
+    "and a reversal is something a model could compute unaided.",
+    "",
+    "THE PROMPT NEVER NAMES THE TOKEN. If it did, the assertion would be",
+    "satisfiable from the prompt alone and this whole design would be theatre.",
+    "",
+    "SCREEN TEXT IS NOT THE WHOLE WITNESS and is not treated as one. What the",
+    "client DREW does not establish what crossed the server's stdio. The server",
+    "writes a request/response transcript, and the run is correlated afterwards",
+    "against the durable permission, tool call and result. This scenario is one",
+    "of three legs, not the proof by itself.",
+    "",
+    "THE ASK MUST BE VISIBLE FIRST. `absent` before the prompt establishes that",
+    "no permission pane is already open, so the one that appears belongs to",
+    "this call rather than to a leftover. The retained client must NOT be",
+    "launched with --auto or --dangerously-skip-permissions: in auto mode it",
+    "answers without drawing a prompt and this run fails at the visible-ask",
+    "step, which is the correct outcome rather than a convenience to disable.",
+    "",
+    "RETAINED ONLY. There is no native side here: the native client belongs to a",
+    "separate lane and this campaign's MCP surface is the product's own. A step skipped",
+    "for a client proves nothing about that client, so this scenario declares",
+    "no native expectations rather than pretending to cover both.",
+    "",
+    "LIMITATION, stated rather than discovered later. Whether the model reaches",
+    "for the MCP tool at all is model behaviour. A model that does not is a",
+    "bounded timeout at the ask - a reported run failure, never an acceptance.",
+    "",
+    "THE CONFIGURED ENVIRONMENT IS WITNESSED THROUGH THE WHOLE PRODUCT PATH.",
+    "The server reports `sentinel=reached` only when the `environment` entry",
+    "this project's config declares actually arrived in its process. Unit",
+    "witnesses prove that plumbing in isolation; this proves it end to end --",
+    "config file, declaration, registry, spawn -- and it is the only way to see",
+    "it from outside. The VERDICT is reported, never the value: `environment` is",
+    "where an API token lives.",
+    "",
+    "THE CONFIG IS IN THE DOCUMENTED `mcp: { servers, timeout }` SHAPE, which",
+    "this product could not read until now: it was parsed as servers named",
+    "`servers` and `timeout` and refused. So the scenario also exercises the",
+    "shape fix, and a regression there fails this journey at the ask."
+  ],
+  "steps": [
+    {
+      "expect": {
+        "retained": "Select a project"
+      },
+      "polls": 240
+    },
+    {
+      "capture": "the opening screen"
+    },
+    {
+      "key": {
+        "retained": "i"
+      }
+    },
+    {
+      "expect": {
+        "retained": "ctrl+x tab agents"
+      },
+      "polls": 240
+    },
+    {
+      "capture": "after choosing where to work"
+    },
+    {
+      "key": {
+        "retained": "Enter"
+      }
+    },
+    {
+      "absent": {
+        "retained": "Allow once"
+      },
+      "polls": 240
+    },
+    {
+      "capture": "the transcript before any ask"
+    },
+    {
+      "paste": "Call the journey_echo tool with the text daily-use and then report, character for character, the exact text the tool returned."
+    },
+    {
+      "key": "Enter"
+    },
+    {
+      "expect": {
+        "retained": "Allow once"
+      },
+      "polls": 960
+    },
+    {
+      "capture": "the MCP permission ask, before it is answered"
+    },
+    {
+      "key": {
+        "retained": "Enter"
+      }
+    },
+    {
+      "absent": {
+        "retained": "Allow once"
+      },
+      "polls": 480
+    },
+    {
+      "expect": {
+        "retained": "ZULUQUEBEC7731"
+      },
+      "polls": 960
+    },
+    {
+      "expect": {
+        "retained": "reversed=esu-yliad"
+      },
+      "polls": 480
+    },
+    {
+      "expect": {
+        "retained": "sentinel=reached"
+      },
+      "polls": 480
+    },
+    {
+      "capture": "the server's own answer on screen"
+    },
+    {
+      "key": {
+        "retained": "Control+c"
+      }
+    }
+  ]
+}

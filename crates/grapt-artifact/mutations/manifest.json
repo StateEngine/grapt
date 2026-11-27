@@ -1,0 +1,215 @@
+{
+  "purpose": "Each entry names one load-bearing behaviour, the exact source edit that removes it, and the witness that must turn red once it is gone. A witness that stays green under its own mutation attributes nothing.",
+  "run": "python crates/grapt-artifact/mutations/run.py",
+  "isolation": "Every mutation is applied inside its own disposable git worktree checked out at the exact candidate commit. No mutant is ever written into the calling worktree, so a restore step cannot silently leave a stale build behind.",
+  "mutations": [
+    {
+      "id": "A01",
+      "law": "The capture bound is enforced before allocation, so a source larger than the bound cannot store extra bytes",
+      "file": "crates/grapt-artifact/src/capture.rs",
+      "test": "capture::tests::a_source_one_byte_over_the_bound_is_truncated_at_it",
+      "old": "let remaining = bound.max_bytes().saturating_sub(stored);",
+      "new": "let remaining = u64::MAX;"
+    },
+    {
+      "id": "A02",
+      "law": "A source that exactly fills the bound is Complete, not truncated",
+      "file": "crates/grapt-artifact/src/capture.rs",
+      "test": "capture::tests::a_source_exactly_at_the_bound_is_complete_not_truncated",
+      "old": "    let over = source.read(&mut probe)?;\n    if over == 0 {",
+      "new": "    let over = source.read(&mut probe)?;\n    if false && over == 0 {"
+    },
+    {
+      "id": "A03",
+      "law": "Identity binds the capture disposition, so identical bytes captured completely and truncated do not collide",
+      "file": "crates/grapt-artifact/src/fs.rs",
+      "test": "artifact_store::identical_bytes_with_different_dispositions_do_not_collide",
+      "test_target": "integration",
+      "old": "    hasher.update(match disposition {\n        CaptureDisposition::Complete => b\"complete\".as_slice(),\n        CaptureDisposition::TruncatedAtBoundary { .. } => b\"truncated\".as_slice(),\n    });",
+      "new": "    let _ = disposition;"
+    },
+    {
+      "id": "A04",
+      "law": "A reference's claimed length is checked against the record before any payload byte",
+      "file": "crates/grapt-artifact/src/fs.rs",
+      "test": "artifact_store::a_reference_claiming_a_wrong_length_is_refused",
+      "test_target": "integration",
+      "old": "        if reference.length() != meta.length {\n            return Err(FetchError::Unavailable);\n        }",
+      "new": ""
+    },
+    {
+      "id": "A05",
+      "law": "A reference's claimed digest is checked against the record before any payload byte",
+      "file": "crates/grapt-artifact/src/fs.rs",
+      "test": "artifact_store::a_reference_claiming_a_wrong_digest_is_refused",
+      "test_target": "integration",
+      "old": "        if reference.digest() != &meta.digest {\n            return Err(FetchError::Unavailable);\n        }",
+      "new": ""
+    },
+    {
+      "id": "A06",
+      "law": "Returned content is verified against the recorded digest, so corrupt bytes are never handed back",
+      "file": "crates/grapt-artifact/src/fs.rs",
+      "test": "artifact_store::a_corrupt_object_is_refused_rather_than_returned",
+      "test_target": "integration",
+      "old": "            if actual != meta.digest.as_str() {\n                return Err(FetchError::Unavailable);\n            }\n            Verified::Whole",
+      "new": "            Verified::Whole"
+    },
+    {
+      "id": "A08",
+      "law": "Every page is verified against its own chunk digest, not only the whole artifact on the last page",
+      "file": "crates/grapt-artifact/src/fs.rs",
+      "test": "artifact_store::a_corrupted_later_page_is_refused_even_though_earlier_pages_verified",
+      "test_target": "integration",
+      "old": "            if &actual != expected {\n                return Err(FetchError::Unavailable);\n            }\n            Verified::Chunk { index }",
+      "new": "            let _ = expected;\n            Verified::Chunk { index }"
+    },
+    {
+      "id": "A09",
+      "law": "The reference decision reads metadata only and never opens the payload",
+      "file": "crates/grapt-artifact/src/fs.rs",
+      "test": "artifact_store::the_reference_decision_reads_zero_payload_bytes",
+      "test_target": "integration",
+      "old": "        let text = read_text_bounded(&self.meta_path(id.as_str()), MAX_METADATA_BYTES)\n            .map_err(|_| StatError::Unavailable)?;",
+      "new": "        std::fs::read(self.object_path(id.as_str())).map_err(|_| StatError::Unavailable)?;\n        let text = read_text_bounded(&self.meta_path(id.as_str()), MAX_METADATA_BYTES)\n            .map_err(|_| StatError::Unavailable)?;"
+    },
+    {
+      "id": "A10",
+      "law": "A paged read refuses a budget that cannot carry one chunk, because a partial chunk cannot be verified",
+      "file": "crates/grapt-artifact/src/fs.rs",
+      "test": "artifact_store::a_budget_too_small_for_one_page_is_a_typed_refusal",
+      "test_target": "integration",
+      "old": "            if payload_budget < meta.chunk_size {\n                return Err(FetchError::BudgetTooSmall {\n                    minimum: meta.chunk_size,\n                });\n            }",
+      "new": ""
+    },
+    {
+      "id": "A16",
+      "law": "A page never returns more payload than the budget allows",
+      "file": "crates/grapt-artifact/src/fs.rs",
+      "test": "artifact_store::a_page_never_returns_more_payload_than_the_budget_allows",
+      "test_target": "integration",
+      "old": "        let whole_fits = remaining <= payload_budget && offset == 0;",
+      "new": "        let whole_fits = offset == 0;"
+    },
+    {
+      "id": "A17",
+      "law": "The declared ArtifactKind is part of the identity, so the same bytes under different kinds do not collide",
+      "file": "crates/grapt-artifact/src/fs.rs",
+      "test": "artifact_store::the_declared_kind_is_part_of_the_identity",
+      "test_target": "integration",
+      "old": "    hasher.update(match kind {\n        ArtifactKind::CapturedOutput => b\"captured-output\".as_slice(),\n        ArtifactKind::CampaignPlan => b\"campaign-plan\".as_slice(),\n        ArtifactKind::Diagnostic => b\"diagnostic\".as_slice(),\n    });",
+      "new": "    let _ = kind;"
+    },
+    {
+      "id": "A18",
+      "law": "Chunks after the first are keyed too, so a secret-bearing artifact never persists a bare per-chunk digest",
+      "file": "crates/grapt-artifact/src/digest.rs",
+      "test": "artifact_store::a_secret_bearing_artifact_pages_with_every_chunk_keyed",
+      "test_target": "integration",
+      "old": "        if let Some(key) = self.key.as_deref() {\n            fresh.update(b\"secode-artifact/keyed/1\");\n            fresh.update(key);\n        }",
+      "new": "        let _ = &self.key;"
+    },
+    {
+      "id": "A19",
+      "law": "A metadata record is bounded in bytes BEFORE it is read",
+      "file": "crates/grapt-artifact/src/fs.rs",
+      "test": "artifact_store::an_oversized_metadata_record_is_refused_before_it_is_read",
+      "test_target": "integration",
+      "old": "        let text = read_text_bounded(&self.meta_path(id.as_str()), MAX_METADATA_BYTES)\n            .map_err(|_| StatError::Unavailable)?;",
+      "new": "        let text = std::fs::read_to_string(self.meta_path(id.as_str()))\n            .map_err(|_| StatError::Unavailable)?;"
+    },
+    {
+      "id": "A20",
+      "law": "The parsed chunk count is capped on the READ side, not only on the write side",
+      "file": "crates/grapt-artifact/src/fs.rs",
+      "test": "artifact_store::a_metadata_record_over_the_chunk_cap_is_refused",
+      "test_target": "integration",
+      "old": "                if chunk_digests.len() as u64 >= crate::digest::MAX_CHUNKS {\n                    return None;\n                }",
+      "new": ""
+    },
+    {
+      "id": "A21",
+      "law": "stat refuses a record that does not reproduce its own identity, so a false typed fact cannot reach the zero-payload path",
+      "file": "crates/grapt-artifact/src/fs.rs",
+      "test": "artifact_store::a_record_that_does_not_vouch_for_its_own_identity_is_refused_by_stat",
+      "test_target": "integration",
+      "old": "        let expected = identity_of(\n            meta.kind,\n            meta.disposition,\n            meta.length,\n            meta.digest.as_str(),\n        );\n        if meta.id.as_str() != expected {\n            return Err(StatError::Unavailable);\n        }",
+      "new": "",
+      "also_reddens": [
+        "a_record_whose_disposition_was_altered_no_longer_reproduces_its_identity"
+      ],
+      "subsumption_note": "This descriptor SUBSUMES the altered-disposition witness at tests/artifact_store.rs. That test asserts through fetch into stat, so deleting the stat identity check reddens it too. It is accounted coverage under A21 rather than an orphan witness with no descriptor; it is not counted as a second independent proof of the same law."
+    },
+    {
+      "id": "A22",
+      "law": "The dependency gate parses the manifest structurally, so no legal TOML shape can hide an upward dependency",
+      "file": "crates/grapt-artifact/tests/dependency_direction.rs",
+      "test": "the_gate_catches_every_bypass_form",
+      "test_target": "dependency_direction",
+      "old": "    for table in DEP_TABLES {\n        if let Some(deps) = manifest.get(table).and_then(Value::as_table) {\n            collect(deps, &mut found);\n        }\n    }",
+      "new": "    if let Some(deps) = manifest.get(\"dependencies\").and_then(Value::as_table) {\n        collect(deps, &mut found);\n    }"
+    },
+    {
+      "id": "A11",
+      "law": "The chunk map is capped, so metadata cannot grow without bound as the artifact grows",
+      "file": "crates/grapt-artifact/src/digest.rs",
+      "test": "digest::tests::the_chunk_map_is_bounded_however_large_the_artifact",
+      "old": "    let even = length.div_ceil(MAX_CHUNKS);\n    if even > MIN_CHUNK_BYTES {\n        even\n    } else {\n        MIN_CHUNK_BYTES\n    }",
+      "new": "    let _ = length;\n    MIN_CHUNK_BYTES"
+    },
+    {
+      "id": "A12",
+      "law": "The streaming CAPTURE digest is keyed for secret-bearing content, so a stored identity is not a public offline equality oracle",
+      "file": "crates/grapt-artifact/src/digest.rs",
+      "test": "artifact_store::a_secret_bearing_capture_is_not_a_public_offline_equality_oracle",
+      "test_target": "integration",
+      "old": "        if let Some(key) = key.as_deref() {\n            whole.update(b\"secode-artifact/keyed/1\");\n            whole.update(key);\n            chunk.update(b\"secode-artifact/keyed/1\");\n            chunk.update(key);\n        }",
+      "new": "        let _ = &key;"
+    },
+    {
+      "id": "A15",
+      "law": "The whole-value digest the FETCH verifies with is keyed the same way, or secret-bearing content can never be read back",
+      "file": "crates/grapt-artifact/src/digest.rs",
+      "test": "artifact_store::a_secret_bearing_artifact_round_trips_through_fetch",
+      "test_target": "integration",
+      "old": "    if sensitivity.is_secret_bearing() {\n        hasher.update(b\"secode-artifact/keyed/1\");\n        hasher.update(key);\n    }",
+      "new": "    let _ = (sensitivity, key);"
+    },
+    {
+      "id": "A13",
+      "law": "A secret-bearing record redacts its length and digest in Debug",
+      "file": "crates/grapt-artifact/src/store.rs",
+      "test": "artifact_store::a_secret_bearing_record_reveals_neither_payload_nor_length_in_debug",
+      "test_target": "integration",
+      "old": "        if self.sensitivity.is_secret_bearing() {",
+      "new": "        if false {"
+    },
+    {
+      "id": "A14",
+      "law": "The capture receipt time comes from the injected clock, never ambient time",
+      "file": "crates/grapt-artifact/src/fs.rs",
+      "test": "artifact_store::the_capture_receipt_time_comes_from_the_injected_clock",
+      "test_target": "integration",
+      "old": "            captured_at: self.clock.now(),",
+      "new": "            captured_at: grapt_types::Timestamp::from_millis(0),"
+    },
+    {
+      "id": "A23",
+      "law": "The dependency gate resolves a package alias to the real crate name",
+      "file": "crates/grapt-artifact/tests/dependency_direction.rs",
+      "test": "the_gate_catches_every_bypass_form",
+      "test_target": "dependency_direction",
+      "old": "        let effective = spec\n            .as_table()\n            .and_then(|table| table.get(\"package\"))\n            .and_then(Value::as_str)\n            .unwrap_or(name.as_str());",
+      "new": "        let effective = name.as_str();"
+    }
+  ],
+  "tombstones": [
+    {
+      "id": "A07",
+      "law": "The fetch path re-verified that the record reproduces the reference identity",
+      "removed_at": "2d36c422ea0ca3bcb82154d56795cae44b78a565",
+      "reason": "UNREACHABLE, not descoped. L3 moved identity reproduction into stat, and stat looks the record up BY the reference id and refuses unless the record id equals both that key and the identity recomputed from (kind, disposition, length, digest). By the time fetch runs, reference.id == meta.id == expected holds unconditionally, so the fetch-side copy could never fire. It went GREEN under its own mutation, which is how it was found; the branch was deleted rather than left as unwitnessed code. See crates/grapt-artifact/src/fs.rs where the branch used to be."
+    }
+  ],
+  "note_on_the_comment_route": "Review asked for the trailing-comment bypass to be self-witnessed with a right-reason mutation. It IS a self-witnessed route in the_gate_catches_every_bypass_form, but there is deliberately NO mutation descriptor for it, and faking one would misrepresent why it is closed. The hand-rolled scanner failed that route because it reasoned about LINES; structural TOML parsing removes the line-shaped code entirely, so there is no line-recognition step left to delete. The class is unrepresentable rather than policed, which is stronger than a witness. A22 and A23 instead mutate the two decisions the parser really does make — which tables it reads, and whether it resolves a package alias."
+}

@@ -1,0 +1,7 @@
+error[E0432]: unresolved import `grapt_session`
+ --> tests/probes/03_session_domain_is_unreachable.rs:6:5
+  |
+6 | use grapt_session::SessionStore;
+  |     ^^^^^^^^^^^^^ use of unresolved module or unlinked crate `grapt_session`
+  |
+  = help: if you wanted to use a crate named `grapt_session`, use `cargo add grapt_session` to add it to your `Cargo.toml`

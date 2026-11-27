@@ -1,0 +1,1 @@
+| `crates/secode-mcp-client/src/reconnect.rs` | `xai-org/grok-build` / `crates/codegen/xai-grok-mcp/src/mcp_http_client.rs` (`ThrottleState` backoff) | `2bdd1d6a6369de0e8c68132ea4539e9abd9e14a8` | modified: explicit lifetimes, finite outage budget, no ambient clock or SDK dependency |

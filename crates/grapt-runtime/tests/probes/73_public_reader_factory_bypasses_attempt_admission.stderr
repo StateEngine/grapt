@@ -1,0 +1,5 @@
+error[E0432]: unresolved import `grapt_runtime::ReaderFactory`
+ --> tests/probes/73_public_reader_factory_bypasses_attempt_admission.rs:3:5
+  |
+3 | use grapt_runtime::ReaderFactory;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^ no `ReaderFactory` in the root

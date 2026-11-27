@@ -1,0 +1,127 @@
+{
+  "$schema": "../oracle-receipt-manifest.schema.json",
+  "schema_version": 1,
+  "id": "r4-service-controller",
+  "title": "R4D-2C elected service controller: registration, file lock, CAS and replacement",
+  "law_pack": {
+    "revision": 9,
+    "sources": [
+      {
+        "path": "specs/secode-rust-reconstruction-r1-2026-08-07.md",
+        "sha256": "626333034f4760faf2fd2769e1a797d2ebbad5187e0bd787d33b99bf32a47865"
+      },
+      {
+        "path": "docs/reports/SECODE_RUST_RECONSTRUCTION_DISPOSITION_2026-08-07.md",
+        "sha256": "cca761d01667451dbac9bda6a8c6424ce6c25313fdc4457882f41fc10b2a70fc"
+      },
+      {
+        "path": "docs/reports/SECODE_RUST_FOUNDATIONAL_TYPES_AND_LIFECYCLES_2026-08-07.md",
+        "sha256": "31d4ae9af4229939225374efb9c721e752bc0fc163615e3f188acebed051b032"
+      },
+      {
+        "path": "docs/reports/SECODE_RUST_PROVIDER_STREAM_RUNTIME_CONTRACT_2026-08-08.md",
+        "sha256": "6c202f89e1e8bdc1de7304f22539ba043a4032f90376434841718f9b5624cdf6"
+      },
+      {
+        "path": "fixtures/rust-reconstruction/README.md",
+        "sha256": "26ebe50177d2d7ba0436c646f477e3dd220cd8f1acffdfe1f4c5f1205e760c3a"
+      },
+      {
+        "path": "specs/secode-rust-agency-continuity-amendment-r1-2026-08-08.md",
+        "sha256": "36fbf3b96258565ff14924d597a1c3a83e6307672b23a754d9f1287e92aa272a"
+      },
+      {
+        "path": "docs/reports/SECODE_CODEX_HARNESS_SURVEY_DISPOSITION_2026-08-08.md",
+        "sha256": "548b5e4a6383d963a4d96231cf14f3786ac43cdfbad8902bd21c47b5f8d9390c"
+      },
+      {
+        "path": "docs/reports/SECODE_SURVEY_DELTA_DISPOSITION_2026-08-08.md",
+        "sha256": "c25d65352aac7f8275adfc9284c83274f98b134d9e3b0ce1dffc22d9886faac3"
+      },
+      {
+        "path": "specs/secode-rust-campaign-mode-amendment-r1-2026-08-08.md",
+        "sha256": "775a3485b707232c991a557856cdb6778a5ce2a9220111dad18fcdeacda1ae2d"
+      }
+    ],
+    "matrix": {
+      "path": "docs/reports/SECODE_RUST_RATIFIED_ARCHITECTURE_SUPERSESSION_MATRIX_2026-08-08.md",
+      "sha256": "9301ccee905750352cbd904a63c6909bc5a2b87982bacec3ca29e7ec1c89af9b"
+    }
+  },
+  "law_conformance": {
+    "basis": "ratified-law-pack",
+    "oracle_status": "not-implemented-in-frozen-typescript-engine",
+    "note": "This corpus carries no oracle block rather than naming a commit it was not captured from. The frozen TypeScript engine at 42e4888cc0 does have a replacement algorithm — client/src/effect/service.ts `replace`, with the registration file as its discovery contract — and master §\"Service replacement lifecycle\" cites it as the evidence this lane PRESERVES. What it does not have is anything capturable as a receipt: its registration contract is (url, pid, version, password), it names no ServiceSlotId, ServiceInstanceId, ServiceGeneration or EnvironmentReceipt anywhere, and it returns no typed ReplacementOutcome. So there is no frozen surface whose bytes could be compared against these, and inventing a mapping in order to have one would be this lane deciding the retained-mapping question that the D2C addendum reserves to a later explicit receipt. Nothing is captured from a running Rust engine either: at this canonical the workspace declares no binary target, so no service exists to register. This corpus therefore records the CONTROLLER's transitions over a registration slot and records no measurement of any live service."
+  },
+  "scope": {
+    "preserves": [
+      "Master §\"Service replacement lifecycle\" laws 1-7 in order: the five pre-switch conditions, compare-and-swap against registration-file CONTENTS, pre-commit rollback leaving the incumbent owning the slot, post-commit retire failure as a success with warning, owner identity as {ServiceSlotId, ServiceInstanceId, EnvironmentReceipt}, five distinct typed outcomes, and registration mutation reserved to the elected controller.",
+      "The landed ReplacementOutcome vocabulary as the sole outcome authority. This lane declares no outcome enum of its own; every receipt classifies through grapt_types::service::ReplacementOutcome and all six variants are reachable — Reused, Replaced, ReplacedRetirePending, RolledBack and FailedAfterCommit through this corpus, LostRace through the contract and durability suites where two starters can be interleaved deterministically.",
+      "R4D-1's landed attachment vocabulary, consumed rather than restated. A candidate's health check is a ProbeOutcome, and an unattributed probe refuses in R4D-1's own spelling: ControlRefusal::Attachment delegates its label rather than minting a second word, and no_control_label_collides_with_a_landed_attachment_label holds that mechanically.",
+      "The registration identity contract: PID, URL and version are never identity. Ordinal 6 refuses a different instance that inherited the incumbent's PID and endpoint; ordinal 7 is its control and confirms the SAME owner across a changed PID and ephemeral port; ordinal 8 reports a version mismatch as incompatible-version rather than stale-registration, which is what proves the owner was recognised before the version was judged.",
+      "The closed upgrade row: ordinals 29-30 preserve exact registration strings while admitting only a strictly greater SemanticVersion precedence. Ordinal 31 proves build-metadata-only change is equal precedence, ordinal 32 is the named downgrade refusal, ordinals 33 and 36 keep candidate/incumbent projection failures side-specific and typed, and ordinal 38 proves absence is not invented into an incumbent."
+    ],
+    "intentionally_excludes": [
+      "Any running service. No process is started, no socket opened, no port bound and no request issued. Health, liveness and retirement are observations supplied by each action row, never measurements this crate takes.",
+      "The filesystem. This corpus replays against an in-memory slot so the transition ledger is deterministic. The REAL OS file lock, the atomic rename and the crash cuts are witnessed separately in crates/grapt-service/tests/registration_durability.rs, including two real threads racing through the real lock; a corpus that faked the lock would prove only that the fake is consistent with itself.",
+      "A dependency on grapt-api, a binary target, a router, a route, an auth posture and any credential handling. The crate's landed dependency-direction gate is unchanged and still allows exactly grapt-types; no external crate was added for the lock or the write, because std::fs::File::lock and std::fs::rename are stable on the pinned toolchain.",
+      "Any TypeScript execution and any desktop driver. The frozen tree is read as evidence and never run."
+    ]
+  },
+  "determinism": {
+    "clock": "Every instant is supplied by its action row's `now` field through an injected ClockAuthority built per row; no ambient time is read anywhere in the crate or the suite, and clippy.toml's disallowed-methods gate would fail the build if it were.",
+    "identifiers": "Every slot, instance, environment, generation, PID, port and version is supplied verbatim by actions.jsonl. The one identity the controller MINTS rather than accepts is the committed OwnerReceipt's generation, which is computed from the discovered incumbent; a candidate declaring anything other than the successor is refused rather than corrected.",
+    "network": "No network. No socket is opened, no port is bound and no request is issued; every owner receipt is a value constructed from its action row.",
+    "filesystem": "None in this corpus: the slot is in-memory and the suite reads these files by exact path and writes nothing. The separate durability suite uses a per-test scratch directory under the system temp dir and removes it on drop; it never writes inside the repository."
+  },
+  "paths": {
+    "actions": "actions.jsonl",
+    "expected": {
+      "durable": "expected/durable.jsonl",
+      "state": "expected/state.json",
+      "waivers": "expected/waivers.json"
+    }
+  },
+  "record_contracts": {
+    "actions": "Every row declares its kind in its own `action` field, and this contract is stated by KIND rather than by ordinal range, because an enumeration of ordinals rots the moment a row is appended. Ordinals are unique and ascending from one, and the owner refuses a gap rather than replaying past it. Row counts are not restated here either; expected/state.json carries them and is derived by the owner from the model's own answers. THE KINDS: `seed` arranges the slot's raw contents — `slot_state: \"empty\"` or a literal `raw` string — and is the only row that bypasses the controller, because arranging a corrupted slot is not a transition. `ensure` carries a `required_version` and a `probe` that is null, the string `unattributed`, the string `self`, or a coordinate object naming whichever owner actually answered. `switch`, `reclaim`, and `upgrade` carry a `candidate` coordinate object, a `probe`, a `retirement` of no-incumbent/retired/timed-out/failed, and an optional exact stored `version`; `upgrade` alone projects incumbent and candidate through the landed semantic-precedence contract before any CAS. `abandon` prepares a candidate and rolls it back. `stop` carries the `owner` attempting the release. A coordinate object may override `slot` and `environment`, which is the only way to reach the not-this-slot and not-the-expected-environment laws. `note` is free prose the owner never reads. An action kind the owner does not know is refused, never skipped.",
+    "durable": "The ordered transitions that were ADMITTED, by action ordinal. A refused action contributes no durable row and appears only in the projection's refusals. Each row carries its transition kind and the slot as it stood AFTER the row, so the ledger records state rather than asserting it: a `seed` row records the arranged slot; an `ensure` row records its decision and, for a reuse, the owner and the ReplacementOutcome::Reused classification; a `switch` or `reclaim` row records its outcome label, the committed owner with all six coordinates, and the injected instant; an `abandon` row records the abandoned candidate, the incumbent that kept the slot, and `slot_unchanged`, which is the pre-commit rollback law stated as an observation rather than as prose; a `stop` row records which of the four stop outcomes fired. This is the CONTRACT and its projection: it is not a filesystem record and it asserts that no service was running.",
+    "state": "The projection folded from those durable rows plus every refusal: how many actions ran, how many durable rows they produced, how many were refused, the per-outcome admitted counts keyed by the ReplacementOutcome label, the ordered refusals with their exact label and message, and the sorted unique refusal vocabulary. Every value is derived from the model's own answers; nothing is observed from a process and nothing is restated in this prose, so no number here can go stale."
+  },
+  "evidence": [
+    {
+      "path": "crates/grapt-service/tests/controller_corpus.rs",
+      "test": "the_corpus_replays_through_the_model_and_matches_every_expected_surface",
+      "claim": "Replays actions.jsonl through the real public API — ServiceController, RegistrationRecord and the store — and PRODUCES expected/durable.jsonl and expected/state.json, then compares both exhaustively. Nothing in expected/* is hand-written or projected, and nothing is written back during a run, so the committed bytes are the fixed point and a model that changed any outcome, label, generation or registration fails here rather than re-blessing itself. A missing expected file fails loudly and is never a skip."
+    },
+    {
+      "path": "crates/grapt-service/tests/controller_corpus.rs",
+      "test": "every_refusal_the_corpus_records_is_a_label_this_lane_declares and the_corpus_reaches_every_slot_state_the_controller_can_observe",
+      "claim": "The first refuses any recorded label that is neither declared by ControlRefusal::OWN_LABELS nor landed by R4D-1, so a projection can never carry a word this lane does not own. The second proves the corpus visits all three SlotState variants — empty, registered and unreadable — and separately drives `discover` into each, so a discovery that collapsed two states would fail even if the ledger happened not to notice."
+    },
+    {
+      "path": "crates/grapt-service/tests/controller_contract.rs",
+      "test": "49 witnesses, one law per test",
+      "claim": "Each of master's seven replacement laws, the five pre-switch conditions, the four stop outcomes, the reclaim path and both label-vocabulary bindings is asserted by its own named test with its own failure site, because two rows of one table test share a source line and would arrive as one indistinguishable piece of mutation evidence. Each refusal case has a control differing only in the single defect: the PID-reuse refusal is paired with the rebind case that must still reuse, and the corruption cases are paired with an intact record that must still read as an owner. every_own_refusal_label_maps_from_exactly_one_distinct_variant compares the declared array against the real exhaustive `label()` mapping rather than against a hand-written list, so a new refusal is a compile error before it can be an unrecorded label."
+    },
+    {
+      "path": "crates/grapt-service/tests/registration_durability.rs",
+      "test": "six witnesses against a real filesystem",
+      "claim": "two_threads_racing_through_the_real_lock_produce_exactly_one_winner runs two real threads through the real std::fs::File lock against one real registration file and requires exactly one Replaced and one LostRace, then requires the surviving record to carry the successor generation exactly once. The rest prove the derived lock path, an on-disk round trip whose bytes are exactly what the encoder produces and contain no carriage return, a lost compare that writes nothing, a claim/release cycle that returns to true absence rather than an empty file, and every truncation of a registration plus a CRLF rewrite plus arbitrary bytes decoding as unreadable and never as a different owner — with the intact record as the same-file control."
+    },
+    {
+      "path": "crates/grapt-service/tests/compile_fail.rs",
+      "test": "a_rollback_after_a_commit_is_rejected_by_the_compiler",
+      "claim": "Master forbids printing a rollback message after the candidate became current. That is an ABSENCE, which no runtime test can establish, so it is held by the compiler: commit consumes the PreparedCandidate and PreparedCandidate is not Clone, and the probe fails with E0382 use-after-move — a borrow-check failure, not a name-resolution one, which is what proves the seal rather than a typo."
+    },
+    {
+      "path": "crates/grapt-service/tests/schema_conformance.rs",
+      "test": "the_service_controller_manifest_validates_against_the_actual_ratified_schema",
+      "claim": "Validates THIS manifest against the ratified oracle-receipt-manifest.schema.json resolved through the frozen-fixture seam, using the same bounded evaluator that panics on any keyword it does not implement rather than skipping it. The evaluator's same-file control and its three synthetic refusal tests already prove it can fail."
+    },
+    {
+      "path": "crates/grapt-service/mutations/sv/manifest.json",
+      "test": "the SV battery via crates/grapt-service/mutations/sv/run.py",
+      "claim": "One mutation per load-bearing behaviour of this controller, each applied in its own disposable git worktree at the candidate commit and each required to turn its named witness red for its own distinct reason. The runner selects rows by whole-token re.fullmatch, never a prefix stem, because bare S-family tokens are live elsewhere in this workspace and a stem match would sweep other lanes' evidence into this battery."
+    }
+  ]
+}

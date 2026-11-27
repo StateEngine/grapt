@@ -1,0 +1,1627 @@
+{
+  "comment": "Shrink-only scoped item+lint counts of #[expect(..., reason = \"legacy\")] attributes per file. Lower or remove an entry as legacy markers are retired; never add, raise, or swap one.",
+  "files": {
+    "crates/grapt-api/src/u3a/integration_routes.rs": {
+      "fn handle :: clippy::cognitive_complexity": 1,
+      "fn handle :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-api/src/u3a/routes_dispatch.rs": {
+      "fn execute_application :: clippy::cognitive_complexity": 1,
+      "fn execute_application :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-api/src/u3a/routes_request.rs": {
+      "fn request_for :: clippy::cognitive_complexity": 1,
+      "fn request_for :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-api/src/u3a/vocabulary/catalog.rs": {
+      "impl serde :: Deserialize < ' de > for ReferenceSourceDto::fn deserialize :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-api/src/u3a/vocabulary/permission_preview.rs": {
+      "impl serde :: Deserialize < ' de > for PermissionPreviewDto::fn deserialize :: clippy::too_many_lines": 1,
+      "impl serde :: Deserialize < ' de > for PermissionPreviewDto::fn deserialize::impl serde :: de :: Visitor < ' de > for PreviewVisitor::fn visit_map :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-api/tests/loss_window.rs": {
+      "fn a_lost_subscriber_never_receives_the_missed_events_through_the_stream :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-checkpoint/src/engine.rs": {
+      "impl CheckpointEngine::fn apply_restore :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-cli/src/acp/content.rs": {
+      "fn prompt_content :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-cli/src/acp/events.rs": {
+      "impl AcpService::fn stream_prompt :: clippy::cognitive_complexity": 1,
+      "impl AcpService::fn stream_prompt :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-cli/src/acp/replay.rs": {
+      "impl AcpService::fn replay_message :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-cli/src/acp/transport.rs": {
+      "fn run_connection :: clippy::cognitive_complexity": 1,
+      "fn run_connection :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-cli/src/client/terminal.rs": {
+      "fn run_with_binaries_inner :: clippy::cognitive_complexity": 1,
+      "fn run_with_binaries_inner :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-cli/src/command.rs": {
+      "fn parse_options :: clippy::too_many_lines": 1,
+      "struct Parsed :: clippy::struct_excessive_bools": 1
+    },
+    "crates/grapt-cli/src/command/login.rs": {
+      "fn operator :: clippy::cognitive_complexity": 1,
+      "fn operator :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-cli/src/command/terminal.rs": {
+      "impl TerminalCommand::fn parse :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-cli/src/events.rs": {
+      "impl AdvisoryEvent::fn decode_sse :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-cli/src/executor.rs": {
+      "fn execute :: clippy::cognitive_complexity": 1,
+      "fn execute :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-cli/src/executor/connections.rs": {
+      "fn operate :: clippy::too_many_lines": 1,
+      "fn run :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-cli/src/executor/import.rs": {
+      "fn report :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-cli/src/executor/mcp.rs": {
+      "fn run :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-cli/src/installation/commands.rs": {
+      "fn run :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-cli/src/installation/fixed_launcher.rs": {
+      "fn prepare_named :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-cli/src/installation/package.rs": {
+      "fn prune_paths :: clippy::too_many_lines": 1,
+      "impl Package::fn verify_with :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-cli/src/installation/prune.rs": {
+      "fn remove :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-cli/src/installation/stateengine_package.rs": {
+      "fn verify :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-cli/src/installation/windows_stage_tests.rs": {
+      "fn launcher_difference_prints_the_exact_optional_refresh_command :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-cli/src/main.rs": {
+      "fn main :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-cli/src/migration/instructions.rs": {
+      "fn discover :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-cli/src/run.rs": {
+      "impl Runner::fn run_selected :: clippy::cognitive_complexity": 1,
+      "impl Runner::fn run_selected :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-cli/tests/contracts/connection_diagnostics.rs": {
+      "fn login_request :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-cli/tests/public_seams.rs": {
+      "fn prove_runner_advisory :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-cli/tests/public_seams/acp.rs": {
+      "fn acp_lifecycle_uses_durable_load_replay_resume_fork_close_delete_and_list :: clippy::too_many_lines": 1,
+      "fn acp_prompt_projects_duplex_events_permissions_files_usage_and_terminal_reason :: clippy::too_many_lines": 1,
+      "fn acp_session_registration_is_live_and_deduplicated_per_session_config :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-cli/tests/public_seams/acp_gap.rs": {
+      "fn recover :: clippy::cognitive_complexity": 1,
+      "fn recover :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-cli/tests/public_seams/acp_gap/live_tool.rs": {
+      "fn binary_acp_live_tool_final_fits_and_cannot_regress :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-cli/tests/public_seams/acp_replay.rs": {
+      "fn journey :: clippy::cognitive_complexity": 1,
+      "fn journey :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-cli/tests/public_seams/compatibility/launch_window_real.rs": {
+      "fn a_service_owner_that_reaches_readiness_detaches_untouched :: clippy::too_many_lines": 1,
+      "fn a_windowed_service_owner_is_refused_named_and_reaped :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-client-transport/src/cache.rs": {
+      "struct CacheSummary :: clippy::struct_excessive_bools": 1
+    },
+    "crates/grapt-client-transport/src/contract.rs": {
+      "impl EventEnvelope::fn decode :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-client-transport/src/contract/tests.rs": {
+      "fn every_named_operation_matches_frozen_or_approved_extensions :: clippy::cognitive_complexity": 1,
+      "fn every_named_operation_matches_frozen_or_approved_extensions :: clippy::too_many_lines": 1,
+      "fn the_all_slice_contains_every_operation_the_client_can_name :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-client-transport/src/wire/messages.rs": {
+      "fn assistant_message :: clippy::too_many_lines": 1,
+      "fn assistant_tool_message_in :: clippy::too_many_lines": 1,
+      "fn decode_messages :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-client/src/client.rs": {
+      "struct Client :: clippy::struct_excessive_bools": 1
+    },
+    "crates/grapt-client/src/client/catalog_refresh.rs": {
+      "impl Client < C >::fn advance_catalog :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-client/src/client/command_catalog.rs": {
+      "struct State :: clippy::struct_excessive_bools": 1
+    },
+    "crates/grapt-client/src/client/mcp_auth.rs": {
+      "impl Client < C >::fn mcp_auth_result :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-client/src/client/paged_history/tests.rs": {
+      "fn newest_page_is_input_ready_after_one_read_and_every_message_is_reachable :: clippy::cognitive_complexity": 1
+    },
+    "crates/grapt-client/src/client/streaming.rs": {
+      "impl Client < C >::fn absorb :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-client/src/client/tests/newest_first.rs": {
+      "struct HeldPeer :: clippy::struct_excessive_bools": 1
+    },
+    "crates/grapt-client/src/client/tests/presets.rs": {
+      "struct PresetPeer :: clippy::struct_excessive_bools": 1
+    },
+    "crates/grapt-client/src/client/tests/session_management.rs": {
+      "fn kss_session_management_targets_rows_and_preserves_state_until_deletion_is_acknowledged :: clippy::cognitive_complexity": 1,
+      "fn kss_session_management_targets_rows_and_preserves_state_until_deletion_is_acknowledged :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-client/src/client/tests/submission/uncertainty.rs": {
+      "struct QueuedPeer :: clippy::struct_excessive_bools": 1
+    },
+    "crates/grapt-client/src/client/tests/tools.rs": {
+      "fn codemode_progress_coalesces_preserves_live_text_and_reconnects_to_history :: clippy::too_many_lines": 1,
+      "fn mcp_progress_is_displayed_without_history_writes_and_clears_on_recovery_or_completion :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-client/src/client/tool_refresh.rs": {
+      "impl Client < C >::fn refresh_tool_rows :: clippy::cognitive_complexity": 1,
+      "impl Client < C >::fn refresh_tool_rows :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-client/src/double/rewind.rs": {
+      "impl ContractDouble::fn rewind_route :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-client/src/double/routes.rs": {
+      "impl ContractDouble::fn route :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-client/src/projection/tool_row.rs": {
+      "impl SessionView::fn push_tool :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-client/src/view/tests/queued_input.rs": {
+      "fn a_saved_question_stays_visible_until_it_enters_the_transcript :: clippy::too_many_lines": 1,
+      "struct Peer :: clippy::struct_excessive_bools": 1
+    },
+    "crates/grapt-client/tests/dogfood_journey.rs": {
+      "fn the_real_process_serves_the_whole_essential_journey_over_a_real_socket :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-connections/src/catalog.rs": {
+      "impl KeyProvider::fn from_row :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-connections/src/store/model.rs": {
+      "fn validate :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-connections/src/store/tests.rs": {
+      "fn removal_recovers_both_sides_of_commit_without_restoring_slots_or_staging :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-event/src/mail_progress.rs": {
+      "impl MailPageRecorded::fn decode :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-event/src/session_step_failed/tests.rs": {
+      "fn every_failure_reason :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-form/src/date.rs": {
+      "mod differential::fn validity_reproduces_the_oracle_across_the_measured_corpus :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-form/src/elicitation.rs": {
+      "fn fields :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-form/src/global_catalog.rs": {
+      "fn global_form :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-inbox/src/admission.rs": {
+      "impl Projector for InboxProjector::fn project :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-inbox/src/admission/acceptance.rs": {
+      "fn read_admission :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-inbox/src/admission/existing.rs": {
+      "impl Inbox::fn find_existing :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-inbox/src/admission/external_notice.rs": {
+      "impl Inbox::fn native_notice_superseded :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-inbox/src/admission/operation_delivery.rs": {
+      "fn load_stored_operation_delivery :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-inbox/src/admission/pending.rs": {
+      "impl Inbox::fn pending_inputs_bounded_within :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-inbox/src/event.rs": {
+      "impl InboxEvent::fn decode :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-inbox/src/promoted_read.rs": {
+      "fn window_rows :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-inbox/tests/step_cap.rs": {
+      "fn step_cap_commits_with_the_prompt_survives_restart_and_cannot_be_erased_by_retry :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-instruction/src/service/request_history.rs": {
+      "impl InstructionService::fn request_history :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-instruction/tests/clone_instructions.rs": {
+      "fn blob_addressing_and_delta_fold_hold_on_real_data :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-instruction/tests/instruction_service.rs": {
+      "fn fork_history_is_capped_at_parent_sequence_then_owned_by_the_child :: clippy::too_many_lines": 1,
+      "fn initial_unavailable_blocks_then_updates_retain_unavailable_sources :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-location/tests/acceptance_corpus/fixtures_and_controls.rs": {
+      "fn placeholder_control :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-location/tests/acceptance_corpus/manifest_owner_actions.rs": {
+      "fn parse_manifest :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-location/tests/acceptance_corpus/placeholder_identity_and_hostile_negatives.rs": {
+      "fn a_hostile_bind_plan_or_nested_value_is_refused :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-location/tests/acceptance_corpus/typed_nested_semantics.rs": {
+      "fn check_nested_semantics :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-login/src/key.rs": {
+      "impl VerifiedKey::fn check_model :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-login/src/key/bedrock.rs": {
+      "fn verify :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-login/src/key/cloudflare.rs": {
+      "fn verify :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-login/src/vault/tests.rs": {
+      "fn stored_credentials_keep_connection_destination_and_payload_purpose :: clippy::cognitive_complexity": 1
+    },
+    "crates/grapt-mail-transport/src/http/decode.rs": {
+      "fn binding :: clippy::too_many_lines": 1,
+      "fn message :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-mail-transport/src/http/failure.rs": {
+      "fn decode :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-mail-transport/src/http/mod.rs": {
+      "impl Connection::fn call :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-mail-transport/src/http/page.rs": {
+      "fn decode :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-mail-transport/src/http/wire_tests.rs": {
+      "fn handle :: clippy::cognitive_complexity": 1,
+      "fn handle :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-mail-transport/src/limits.rs": {
+      "struct ClampedFields :: clippy::struct_excessive_bools": 1
+    },
+    "crates/grapt-mcp-client/src/oauth/http/testkit.rs": {
+      "impl Server::fn new :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-mcp-host/src/channel.rs": {
+      "impl McpChannel < R , W >::fn exchange_inner :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-mcp-host/src/startup.rs": {
+      "fn start_with :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-mcp/src/lib.rs": {
+      "struct ServerIdentity :: clippy::struct_excessive_bools": 1
+    },
+    "crates/grapt-mcp/src/tests.rs": {
+      "fn a_hostile_or_confused_server_is_refused_at_every_declared_bound :: clippy::cognitive_complexity": 1,
+      "fn a_hostile_or_confused_server_is_refused_at_every_declared_bound :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-permission/src/command_safety.rs": {
+      "impl Analyzer::fn powershell :: clippy::too_many_lines": 1,
+      "impl Analyzer::fn words :: clippy::cognitive_complexity": 1,
+      "impl Analyzer::fn words :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-permission/src/command_safety/git.rs": {
+      "fn arguments :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-permission/src/command_safety/lexer.rs": {
+      "impl Lexer::fn sequence :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-permission/src/command_safety/targets.rs": {
+      "fn write_targets :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-permission/src/service/http/consequences.rs": {
+      "impl PermissionHttpState::fn evaluate_tool_consequences :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-permission/tests/permission_http.rs": {
+      "fn ask_list_and_reply_commit_typed_v2_attribution :: clippy::too_many_lines": 1,
+      "fn failed_ask_commit_rolls_back_its_reserved_capacity :: clippy::too_many_lines": 1,
+      "fn sixty_fifth_tool_ask_creates_zero_orphan_and_reconciles_truthfully :: clippy::too_many_lines": 1,
+      "fn wrong_principal_wrong_client_and_second_answer_are_refused :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-permission/tests/permission_http/call_literals.rs": {
+      "fn concrete_approvals_do_not_expand_call_metacharacters :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-permission/tests/permission_http/replay_and_saved_rules.rs": {
+      "fn session_and_always_grants_reuse_only_matching_saved_resources :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-permission/tests/permission_http/rule_revocation.rs": {
+      "fn existing_saved_consent_migrates_to_revocable_origins_and_refuses_corrupt_storage :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-permission/tests/permission_http/tool_cancellation.rs": {
+      "fn seat01_disconnect_cancellation_is_durable_and_preserves_prior_decisions :: clippy::too_many_lines": 1,
+      "fn seat01_no_approver_refuses_only_ask_before_durable_admission :: clippy::too_many_lines": 1,
+      "fn tool_cancellation_requires_owner_and_commit_then_releases_capacity_without_effect :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-platform/src/config/connections.rs": {
+      "fn catalog :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-platform/src/config/derive.rs": {
+      "fn legacy_catalog :: clippy::too_many_lines": 1,
+      "fn secondary_accounts :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-platform/src/credential/renewal/tests.rs": {
+      "fn vaulted_credentials_keep_their_binding_on_initial_and_renewed_capabilities :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-platform/src/model_inventory.rs": {
+      "impl ModelInventory::fn admit_account :: clippy::too_many_lines": 1,
+      "struct ConnectedModel :: clippy::struct_excessive_bools": 1
+    },
+    "crates/grapt-platform/src/model_inventory/provider_listing.rs": {
+      "impl ModelInventory::fn admit_listing :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-platform/tests/platform_vertical/publication.rs": {
+      "fn every_grant_coordinate_and_issuance_mismatch_refuses_without_secret_text :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-plugin/src/claude/manifest.rs": {
+      "impl Manifest::fn parse :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-plugin/src/supervisor/process/journal_tests.rs": {
+      "struct Steps :: clippy::struct_excessive_bools": 1
+    },
+    "crates/grapt-plugin/src/supervisor/process/linux.rs": {
+      "fn start_cgroup_watchdog_sampling :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-plugin/tests/bridge.rs": {
+      "fn declared_transform_domains_receive_compatible_mutable_drafts :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-plugin/tests/bridge/access.rs": {
+      "fn native_plugin_policy_denies_io_without_node_permission_flags :: clippy::too_many_lines": 1,
+      "fn plugin_io_requires_its_declared_roots_and_network_origin :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-plugin/tests/bridge/lifecycle.rs": {
+      "fn cancellation_reaps_the_owned_generation_and_a_new_generation_recovers :: clippy::too_many_lines": 1,
+      "fn malformed_oversized_crashed_late_and_duplicate_bridge_frames_fail_closed :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-plugin/tests/bridge/transport.rs": {
+      "fn concurrent_calls_are_serialized_and_a_finished_call_grant_cannot_be_replayed :: clippy::too_many_lines": 1,
+      "fn explicit_cancellation_ends_only_its_call_and_an_ignored_cancel_is_bounded :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-policy/src/prefix_identity.rs": {
+      "impl PrefixIdentityAuthority::fn compare_committed_prefix :: clippy::too_many_lines": 1,
+      "mod tests::fn order_content_and_each_version_invalidate_with_the_exact_reason :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/src/cache_accounting.rs": {
+      "impl CacheScorecard::fn observe :: clippy::too_many_lines": 1,
+      "mod tests::fn language_neutral_acceptance_corpus_executes_every_truth_class :: clippy::too_many_lines": 1,
+      "mod tests::fn verified :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/src/cache_accounting/tests/atomic.rs": {
+      "fn every_checked_overflow_refuses_with_a_byte_identical_scorecard :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/src/checkpoint_fixture.rs": {
+      "fn run_fixture_corpus :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/src/command.rs": {
+      "fn parse :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/src/compose.rs": {
+      "fn run_ready_on_listener_inner :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/src/compose/ephemeral.rs": {
+      "fn run :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/src/compose/terminal/feedback.rs": {
+      "mod tests::fn owned_open_payloads_never_cross_the_terminal_boundary :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/src/compose/tests.rs": {
+      "fn schema_matches :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/src/dogfood/capture.rs": {
+      "fn map_event :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/src/dogfood/catalog_config.rs": {
+      "impl CatalogSources::fn read :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/src/dogfood/catalog_mcp.rs": {
+      "fn append :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/src/dogfood/catalog_tests.rs": {
+      "fn retained_catalogs_fold_real_sources_and_never_hide_corruption_as_empty :: clippy::cognitive_complexity": 1,
+      "fn retained_catalogs_fold_real_sources_and_never_hide_corruption_as_empty :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/src/dogfood/catalogs.rs": {
+      "fn skills_from_sources :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/src/dogfood/claude_plugins/operation.rs": {
+      "fn publish_with :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/src/dogfood/claude_plugins/snapshot.rs": {
+      "impl Snapshot::fn capture :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/src/dogfood/claude_plugins/tests.rs": {
+      "fn remote_catalog_pins_relative_installs_and_refuses_changed_provenance :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/src/dogfood/committed_projection_tests.rs": {
+      "fn selection_projection_uses_committed_identity_and_noop_has_no_cursor :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/src/dogfood/connection_setup/install.rs": {
+      "impl ConnectionSetup::fn install :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/src/dogfood/connection_setup/key.rs": {
+      "impl ConnectionSetup::fn connect_key_owned :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/src/dogfood/connection_setup/oauth/install.rs": {
+      "impl ConnectionSetup::fn install_oauth :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/src/dogfood/connections.rs": {
+      "impl McpSnapshot::fn read :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/src/dogfood/continuation/compaction.rs": {
+      "impl ProductCompactor::fn commit :: clippy::too_many_lines": 1,
+      "impl ProductCompactor::fn provider_compaction :: clippy::too_many_lines": 1,
+      "impl ProductCompactor::fn run :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/src/dogfood/continuation/compaction/plans.rs": {
+      "impl ProductCompactor::fn plan :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/src/dogfood/continuation/history_tool.rs": {
+      "fn assemble_outputs :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/src/dogfood/continuation/history_tool/page.rs": {
+      "impl ToolProjection::fn read_group :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/src/dogfood/continuation/recent.rs": {
+      "fn conversation_entries :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/src/dogfood/continuation/recent/window.rs": {
+      "fn user_inputs_after :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/src/dogfood/continuation/request_context.rs": {
+      "impl DurableContinuation::fn request_context_at :: clippy::cognitive_complexity": 1,
+      "impl DurableContinuation::fn request_context_at :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/src/dogfood/continuation/retained/tests.rs": {
+      "fn scc_request_uses_only_committed_summary_and_preserves_input_authority :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/src/dogfood/continuation/signed_tests.rs": {
+      "fn fork_omits_inherited_thinking_but_keeps_its_own_across_restart :: clippy::too_many_lines": 1,
+      "fn native_text_replaces_only_its_exact_adjacent_rendering_after_restart :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/src/dogfood/continuation/summarization.rs": {
+      "impl DurableContinuation::fn prepare_at :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/src/dogfood/continuation/summary_owner.rs": {
+      "impl AttemptOwner for SummaryOwner::fn commit :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/src/dogfood/continuation/summary_owner_tests.rs": {
+      "fn rejected_summary_retains_bounded_content_and_reported_terminal_usage :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/src/dogfood/continuation/summary_tests.rs": {
+      "fn scc_post_compaction_tool_history_survives_new_input_and_restart :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/src/dogfood/continuation/tests/accumulation.rs": {
+      "fn a_fork_of_a_nested_tool_session_continues_with_only_top_level_calls :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/src/dogfood/continuation/tests/background.rs": {
+      "fn background_nested_terminal_results_survive_a_silent_execute_parent_and_remain_owner_only :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/src/dogfood/continuation/tests/history_page_long.rs": {
+      "fn more_than_128_inputs_failures_and_notices_page_end_to_end_with_compactions :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/src/dogfood/continuation/tests/mail.rs": {
+      "fn capture :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/src/dogfood/continuation/tests/msys_rejection.rs": {
+      "fn rejected_msys_receipt_survives_public_and_recent_history_without_foreign_details :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/src/dogfood/continuation/tests/nested.rs": {
+      "fn final_files_follow_call_order_and_require_sensitive_complete_artifacts :: clippy::too_many_lines": 1,
+      "fn missing_nested_results_quarantine_continuation_but_unknown_ones_admit_it :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/src/dogfood/continuation/tests/original_users.rs": {
+      "fn fork_and_history_inheriting_child_keep_originals_after_compaction :: clippy::too_many_lines": 1,
+      "fn original_seed_summary_precedence_and_tool_pairs_survive_commit_and_restart :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/src/dogfood/continuation/tests/recent_window.rs": {
+      "fn compaction_window_reads_past_the_page_under_the_data_wall :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/src/dogfood/continuation/tests/sustained_defects.rs": {
+      "fn swr_d1_history_lists_with_a_cursor_and_refuses_foreign_calls :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/src/dogfood/continuation/tests/sustained_defects/usage_threshold.rs": {
+      "fn provider_reported_context_compacts_at_ninety_percent_before_the_next_call :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/src/dogfood/continuation/tests/user_images.rs": {
+      "fn user_pixels_survive_admission_promotion_and_restart_and_missing_pixels_refuse :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/src/dogfood/elicitation.rs": {
+      "impl super :: mcp :: channel :: ServerRequestHandler for LiveForms::fn answer :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/src/dogfood/elicitation_registry_tests.rs": {
+      "fn registry_call_consumes_the_form_reply_once_and_retirement_cannot_resume_it :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/src/dogfood/execution.rs": {
+      "impl LocationRuntime for LiveLocation::fn open_chain :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/src/dogfood/execution/active.rs": {
+      "mod tests::fn a_settle_between_snapshot_capture_and_hydration_omits_the_stale_busy :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/src/dogfood/execution/compose.rs": {
+      "impl LiveExecutor::fn open_mode :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/src/dogfood/execution/credentials/tests.rs": {
+      "fn cancelled_grant_is_persisted :: clippy::cognitive_complexity": 1
+    },
+    "crates/grapt-product/src/dogfood/execution/credentials/tests/generation.rs": {
+      "fn three_oauth_installs_retire_the_old_opener_and_refuse_an_interleaved_refresh_overwrite :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/src/dogfood/execution/credentials/tests/generation/removal_race.rs": {
+      "fn paused_current_and_recovery_refuse_disconnect_without_recreating_locks :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/src/dogfood/execution/providers.rs": {
+      "fn opener :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/src/dogfood/execution/providers_tests.rs": {
+      "fn retained_openers_keep_their_key_and_version_after_three_connection_installs :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/src/dogfood/execution/publication.rs": {
+      "impl LiveExecutor::fn published_tools_for :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/src/dogfood/execution/run.rs": {
+      "impl LiveExecutor::fn run :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/src/dogfood/execution/transient.rs": {
+      "impl LiveExecutor::fn transient_generate :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/src/dogfood/first_use/import.rs": {
+      "fn initialize :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/src/dogfood/followup.rs": {
+      "fn submit :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/src/dogfood/history_json.rs": {
+      "fn tool_state_json :: clippy::too_many_lines": 1,
+      "impl DogfoodApplication::fn assistant_json_with_tools :: clippy::too_many_lines": 1,
+      "mod recovery_tests::fn sr_h02_public_failure_detail_is_actionable_bounded_and_selective :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/src/dogfood/history_notices.rs": {
+      "fn append :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/src/dogfood/hooks/decision.rs": {
+      "fn parse :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/src/dogfood/hooks/mod.rs": {
+      "impl HookRuntime::fn dispatch :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/src/dogfood/host_control.rs": {
+      "impl DogfoodApplication::fn offer_host_notice :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/src/dogfood/input_events.rs": {
+      "fn project :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/src/dogfood/instructions.rs": {
+      "impl EffectiveInstructions::fn refresh_with_catalog :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/src/dogfood/instructions/epoch.rs": {
+      "fn prepare :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/src/dogfood/locations.rs": {
+      "mod tests::fn batched_discovery_preserves_unborn_history_rewrites_and_linked_worktrees :: clippy::too_many_lines": 1,
+      "mod tests::fn selected_git_project_is_read_only_and_corrupt_identity_never_becomes_global :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/src/dogfood/mcp/admission.rs": {
+      "fn connect_attempt :: clippy::too_many_lines": 1,
+      "fn with_status_with_wait :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/src/dogfood/mcp/auth/login.rs": {
+      "impl AuthManager::fn login :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/src/dogfood/mcp/auth/tests/flow.rs": {
+      "fn setup_race :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/src/dogfood/mcp/call.rs": {
+      "impl McpRegistry::fn call_with :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/src/dogfood/mcp/local.rs": {
+      "impl McpRegistry::fn connect_raw :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/src/dogfood/mcp/remote/tests.rs": {
+      "fn fixture :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/src/dogfood/mcp/startup_elicitation_tests.rs": {
+      "fn recovery_startup_accepts_a_minute_later_without_spending_active_time :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/src/dogfood/mcp/tests/producer_version.rs": {
+      "fn a_keyed_send_replays_once_only_with_advertised_support_and_retains_its_receipt :: clippy::too_many_lines": 1,
+      "fn location_churn_keeps_a_bound_producer_and_unsent_routes_recover_safely :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/src/dogfood/mod.rs": {
+      "impl DogfoodApplication::fn open_production_mode :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/src/dogfood/native_mail.rs": {
+      "struct NativeMailContext :: clippy::struct_excessive_bools": 1
+    },
+    "crates/grapt-product/src/dogfood/native_mail/custody.rs": {
+      "impl NativeMailOwners::fn drive_one :: clippy::cognitive_complexity": 1,
+      "impl NativeMailOwners::fn drive_one :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/src/dogfood/native_mail/custody/plan.rs": {
+      "impl NativeMailPlan::fn refresh :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/src/dogfood/native_mail/custody/tests/convergence.rs": {
+      "fn delayed_pair :: clippy::too_many_lines": 1,
+      "fn peer :: clippy::cognitive_complexity": 1,
+      "fn peer :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/src/dogfood/native_mail/custody/wake.rs": {
+      "impl NativeMailOwners::fn enqueue_one :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/src/dogfood/native_mail/custody/wake/tests/cancellation.rs": {
+      "fn seat03_cancelled_wake_survives_duplicate_advisory_and_explicit_resume_works :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/src/dogfood/native_mail/custody/wake/tests/deletion.rs": {
+      "fn seat03_deletion_between_planning_and_claim_commit_preserves_source_work :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/src/dogfood/native_mail/custody/wake/tests/interleaving.rs": {
+      "fn production_case :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/src/dogfood/native_mail/custody/wake/tests/peer_progress.rs": {
+      "fn later_owner_executes_while_earlier_settled_quiet_sweep_remains :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/src/dogfood/native_mail/custody/wake/tests/recovery.rs": {
+      "fn a_queued_wake_waits_for_exact_recovery_of_an_already_open_subscription :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/src/dogfood/native_mail/endpoint/session_tests.rs": {
+      "fn bound_endpoint_wins_and_retained_context_uses_the_rebound_file :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/src/dogfood/native_mail/tests/http.rs": {
+      "fn plan_tail :: clippy::too_many_lines": 1,
+      "fn serve_cycles :: clippy::cognitive_complexity": 1,
+      "fn serve_cycles :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/src/dogfood/permission.rs": {
+      "fn create :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/src/dogfood/permission/grants.rs": {
+      "fn revoke :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/src/dogfood/permission_poll_tests.rs": {
+      "fn permission_poll_finishes_before_a_staged_commit_releases_inbox :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/src/dogfood/plugins.rs": {
+      "impl PluginRuntime::fn refresh_blocking :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/src/dogfood/plugins/host.rs": {
+      "impl PluginHost for ProductPluginHost::fn call :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/src/dogfood/plugins/integration.rs": {
+      "impl ProductPluginHost::fn command_connect :: clippy::too_many_lines": 1,
+      "impl ProductPluginHost::fn oauth_connect :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/src/dogfood/production/coding_request.rs": {
+      "impl ProductPlan::fn prepare_coding_request :: clippy::cognitive_complexity": 1,
+      "impl ProductPlan::fn prepare_coding_request :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/src/dogfood/prompt_driver.rs": {
+      "impl PromptDriver::fn run_until_shutdown :: clippy::cognitive_complexity": 1,
+      "impl PromptDriver::fn run_until_shutdown :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/src/dogfood/prompt_submission.rs": {
+      "impl DogfoodApplication::fn schedule_admitted :: clippy::too_many_lines": 1,
+      "impl DogfoodApplication::fn submit_prompt_run :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/src/dogfood/session_config/tests.rs": {
+      "fn authenticated_config_binding_survives_restart_without_cross_seat_inheritance :: clippy::too_many_lines": 1,
+      "fn scoped_content_keeps_startup_directory_and_refresh_namespace_distinct :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/src/dogfood/skills_watch/tests.rs": {
+      "fn directories_created_during_registration_remain_watched_after_setup :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/src/dogfood/stateengine_resume.rs": {
+      "impl ResumeContext::fn refresh_inner :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/src/dogfood/stateengine_resume/packet_transport_tests.rs": {
+      "fn packet_resume_requires_ack_and_reuses_verified_bytes_after_compaction :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/src/dogfood/stateengine_resume/reconnect_tests.rs": {
+      "fn peer :: clippy::cognitive_complexity": 1,
+      "fn peer :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/src/dogfood/stateengine_resume/transport_tests.rs": {
+      "fn exercise :: clippy::cognitive_complexity": 1,
+      "fn exercise :: clippy::too_many_lines": 1,
+      "fn server :: clippy::cognitive_complexity": 1,
+      "fn server :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/src/dogfood/subagent/admission.rs": {
+      "fn admit_with_options :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/src/dogfood/tools/codemode/worker.rs": {
+      "impl WorkerRegistry::fn stop_session :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/src/dogfood/tools/coding/checkpoints/owner_tests.rs": {
+      "fn pu_native_restore_authority_matches_the_exact_operation_and_capability_once :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/src/dogfood/tools/coding/checkpoints/uncertain_tests.rs": {
+      "fn pu_incomplete_creates_make_prompt_undo_unavailable :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/src/dogfood/tools/coding/patch/apply_patch/filesystem.rs": {
+      "impl Planner < ' a >::fn location :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/src/dogfood/tools/coding/patch/receipt.rs": {
+      "fn run_observed :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/src/dogfood/tools/coding/tests/scoped_rules.rs": {
+      "fn instruction_acquisition_substitutions_cannot_redirect_or_block_file_reads :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/src/dogfood/tools/diagnostics/config.rs": {
+      "impl Settings::fn apply :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/src/dogfood/tools/effects.rs": {
+      "fn run_shell_cancellable :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/src/dogfood/tools/effects/unix_shell.rs": {
+      "fn supervise_prepared :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/src/dogfood/tools/executor.rs": {
+      "impl GovernedToolExecutor < FilesystemArtifactStore > for ProjectToolExecutor::fn execute :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/src/dogfood/tools/mcp_call.rs": {
+      "fn run_mcp :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/src/dogfood/tools/native_failure.rs": {
+      "mod tests::fn census_native_failures_keep_cause_exit_and_stderr_without_credentials :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/src/dogfood/tools/runner.rs": {
+      "impl PermissionToolRunner::fn authorize_prepared :: clippy::too_many_lines": 1,
+      "impl PermissionToolRunner::fn prepare_and_authorize :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/src/dogfood/tools/sandbox/config.rs": {
+      "fn read :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/src/dogfood/tools/sandbox/tests.rs": {
+      "fn isolation_defaults_off_and_repository_settings_cannot_widen_a_user_policy :: clippy::cognitive_complexity": 1,
+      "fn isolation_defaults_off_and_repository_settings_cannot_widen_a_user_policy :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/src/dogfood/tools/terminal.rs": {
+      "struct Observation :: clippy::struct_excessive_bools": 1
+    },
+    "crates/grapt-product/src/dogfood/tools/terminal/process.rs": {
+      "fn spawn :: clippy::too_many_lines": 1,
+      "impl Control::fn poll :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/src/dogfood/tools/terminal/supervise.rs": {
+      "fn start :: clippy::too_many_lines": 1,
+      "fn supervise :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/src/dogfood/tools/terminal/tests/observed.rs": {
+      "fn completion_survives_eviction_and_owner_loss_without_replaying_commands :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/src/dogfood/tools/terminal/windows_process.rs": {
+      "fn spawn :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/src/dogfood/tools/terminal/windows_shim.rs": {
+      "fn supervise :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/src/dogfood/tools/tests/catalog_contract.rs": {
+      "fn provider_projection_and_strict_rust_decode_agree :: clippy::cognitive_complexity": 1,
+      "fn provider_projection_and_strict_rust_decode_agree :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/src/dogfood/tools/tests/windows_authority.rs": {
+      "fn configured_denials_govern_native_windows_prepared_file_effects :: clippy::too_many_lines": 1,
+      "fn shell_denials :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/src/dogfood/workspace_worktree_tests.rs": {
+      "fn worktree_lifecycle_uses_saved_source_and_excludes_admitted_work_in_both_checkouts :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/src/input.rs": {
+      "fn read_config :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/src/retire_service.rs": {
+      "fn run :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/src/server.rs": {
+      "fn run :: clippy::cognitive_complexity": 1,
+      "fn run :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/src/session_cleanup/evidence/work.rs": {
+      "impl WorkEvidence::fn observe :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/src/session_cleanup/worked_tests.rs": {
+      "fn public_cleanup_tombstones_completed_work_without_discarding_history_or_pending_work :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/tests/capture.rs": {
+      "fn capture_replay_crosses_live_and_resumes_exactly_once :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/tests/dogfood_headless.rs": {
+      "fn run_live_headless_journey :: clippy::cognitive_complexity": 1,
+      "fn run_live_headless_journey :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/tests/dogfood_headless/acp_publication.rs": {
+      "fn a_real_publication_gap_backfills_without_an_extra_terminal_close :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/tests/dogfood_headless/agent_control.rs": {
+      "fn wait_receives_child_result_without_user_speech_and_keeps_it_across_restart_and_compaction :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/tests/dogfood_headless/agent_control/agent_messages.rs": {
+      "fn real_agent_mail_is_quoted_replayed_and_does_not_wake_an_idle_child :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/tests/dogfood_headless/agent_control/fork_history.rs": {
+      "fn case :: clippy::cognitive_complexity": 1,
+      "fn case :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/tests/dogfood_headless/agent_definitions.rs": {
+      "fn an_ordinary_session_runs_a_claude_markdown_agent_as_loaded :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/tests/dogfood_headless/agent_worktree.rs": {
+      "fn spawned_worktree_uses_committed_nested_cwd_and_parent_keeps_dirty_files :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/tests/dogfood_headless/anthropic_epochs.rs": {
+      "fn native_instruction_edits_use_supported_system_updates_without_relabeling_user_data :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/tests/dogfood_headless/anthropic_tool_schemas.rs": {
+      "fn default_anthropic_tools_with_stateengine_have_flat_wire_schemas :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/tests/dogfood_headless/apply_patch.rs": {
+      "fn offered_text_patch_and_undo :: clippy::cognitive_complexity": 1,
+      "fn offered_text_patch_and_undo :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/tests/dogfood_headless/ask_user.rs": {
+      "fn questions_answer_decline_disconnect_and_restart_without_replaying_a_wait :: clippy::cognitive_complexity": 1,
+      "fn questions_answer_decline_disconnect_and_restart_without_replaying_a_wait :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/tests/dogfood_headless/attempt_capacity/children.rs": {
+      "fn exercise :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/tests/dogfood_headless/background_session.rs": {
+      "fn background_cli_exits_while_service_finishes_in_its_worktree :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/tests/dogfood_headless/bound_session_tools.rs": {
+      "fn bound_session_discovers_and_loads_an_installed_skill :: clippy::too_many_lines": 1,
+      "fn native_bound_session_shell_authenticates_real_se_msg_list :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/tests/dogfood_headless/bypass_preset.rs": {
+      "fn authority_edit :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/tests/dogfood_headless/cache_history.rs": {
+      "fn journey :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/tests/dogfood_headless/cache_scope.rs": {
+      "fn observed_call_totals_include_the_provider_summary_as_a_separate_attempt :: clippy::too_many_lines": 1,
+      "fn serialized_request_diagnostics_follow_the_exact_attempt_and_keep_live_fields_volatile :: clippy::cognitive_complexity": 1,
+      "fn serialized_request_diagnostics_follow_the_exact_attempt_and_keep_live_fields_volatile :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/tests/dogfood_headless/cli_compatibility.rs": {
+      "fn the_typescript_run_service_and_resume_forms_work_against_the_real_product :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/tests/dogfood_headless/cli_continuity.rs": {
+      "fn a_crashed_session_resumes_through_the_shipped_cli_and_refuses_named_mismatches :: clippy::cognitive_complexity": 1,
+      "fn a_crashed_session_resumes_through_the_shipped_cli_and_refuses_named_mismatches :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/tests/dogfood_headless/cli_server_loss.rs": {
+      "fn observe_cli_server_loss :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/tests/dogfood_headless/compaction_config.rs": {
+      "fn journey_sized :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/tests/dogfood_headless/compaction_continuity.rs": {
+      "fn successive_compactions_refresh_instructions_and_replay_exactly :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/tests/dogfood_headless/compatible_cache.rs": {
+      "fn an_openrouter_usage_reports_cache_writes_and_absence_stays_absent :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/tests/dogfood_headless/context_quality.rs": {
+      "fn cq_anthropic_coding_chain_marks_a_stable_growing_prefix_and_reports_cache_usage :: clippy::cognitive_complexity": 1,
+      "fn cq_anthropic_coding_chain_marks_a_stable_growing_prefix_and_reports_cache_usage :: clippy::too_many_lines": 1,
+      "fn cq_repository_task_keeps_user_words_and_effects_across_compactions_and_restart :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/tests/dogfood_headless/continuity_journey.rs": {
+      "fn create_work_compact_crash_resume_and_delegate_through_one_product_root :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/tests/dogfood_headless/diagnostics.rs": {
+      "fn diagnostics_distinguish_current_unversioned_clean_silent_and_invalid :: clippy::cognitive_complexity": 1
+    },
+    "crates/grapt-product/tests/dogfood_headless/effort_updates.rs": {
+      "fn selected_effort_changes_append_controls_and_recover_from_durable_history :: clippy::cognitive_complexity": 1,
+      "fn selected_effort_changes_append_controls_and_recover_from_durable_history :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/tests/dogfood_headless/external_host.rs": {
+      "fn clean_restart :: clippy::too_many_lines": 1,
+      "fn external_host_reads_keyed_admission_and_fences_native_notices :: clippy::cognitive_complexity": 1,
+      "fn external_host_reads_keyed_admission_and_fences_native_notices :: clippy::too_many_lines": 1,
+      "fn external_host_releases_only_the_observed_stop_without_replacement_input :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/tests/dogfood_headless/file_undo.rs": {
+      "fn pu_native_file_undo_preserves_human_edits_and_reconciles_after_restart :: clippy::cognitive_complexity": 1,
+      "fn pu_native_file_undo_preserves_human_edits_and_reconciles_after_restart :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/tests/dogfood_headless/fork_execution.rs": {
+      "fn a_prompt_in_a_fork_carries_the_parent_conversation_and_settles :: clippy::too_many_lines": 1,
+      "fn a_tool_using_parent_forks_and_the_child_executes_its_own_plan :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/tests/dogfood_headless/formatting.rs": {
+      "fn formatter_runs_after_edit_write_patch_and_preserves_failed_edits_and_undo :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/tests/dogfood_headless/git_metadata.rs": {
+      "fn exercise :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/tests/dogfood_headless/git_metadata_msys.rs": {
+      "fn session_msys_consent_cannot_bypass_git_protection_in_real_tools :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/tests/dogfood_headless/image_refusals.rs": {
+      "fn journey :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/tests/dogfood_headless/image_view.rs": {
+      "fn image_roundtrip :: clippy::too_many_lines": 1,
+      "fn messages_image_roundtrip :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/tests/dogfood_headless/lifecycle_hooks.rs": {
+      "fn journey :: clippy::too_many_lines": 1,
+      "fn session_wait_and_subagent_events_use_their_real_lifetimes :: clippy::too_many_lines": 1,
+      "fn v2_tool_call :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/tests/dogfood_headless/manual_compaction/cache_prefix.rs": {
+      "fn requested_anthropic_summary_reuses_the_coding_prefix_and_its_replacement_stays_stable :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/tests/dogfood_headless/mcp_configuration.rs": {
+      "fn mcp_user_configuration_edits_preserve_comments_and_refuse_invalid_or_busy_inputs :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/tests/dogfood_headless/mcp_notice.rs": {
+      "fn project_mcp_approval_binds_the_reviewed_declaration_and_can_be_withdrawn :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/tests/dogfood_headless/mcp_roots.rs": {
+      "fn roots_follow_approved_scope_changes_without_probing_quiet_servers :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/tests/dogfood_headless/mcp_subscriptions.rs": {
+      "fn resource_updates_need_explicit_reads_and_interests_end_with_their_session :: clippy::cognitive_complexity": 1,
+      "fn resource_updates_need_explicit_reads_and_interests_end_with_their_session :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/tests/dogfood_headless/native_boundary/mail.rs": {
+      "fn serve :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/tests/dogfood_headless/native_failures.rs": {
+      "fn native_failure_causes_reach_model_and_transcript_without_stderr_credentials :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/tests/dogfood_headless/output_advisory.rs": {
+      "fn committed_output_bounds_and_two_session_publication_are_advisory :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/tests/dogfood_headless/permission_boundaries.rs": {
+      "fn a_child_override_cannot_widen_descendants_and_child_config_can_narrow :: clippy::too_many_lines": 1,
+      "fn file_and_parent_symlink_aliases_cannot_rewrite_authority_sources :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/tests/dogfood_headless/permission_residuals.rs": {
+      "fn permission_http_closes_location_session_status_and_agent_policy_residuals :: clippy::too_many_lines": 1,
+      "fn provider_tool_call_waits_for_once_reply_then_runs_the_project_read :: clippy::cognitive_complexity": 1,
+      "fn provider_tool_call_waits_for_once_reply_then_runs_the_project_read :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/tests/dogfood_headless/plan_compaction.rs": {
+      "fn journey :: clippy::cognitive_complexity": 1,
+      "fn journey :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/tests/dogfood_headless/plugin_tool.rs": {
+      "fn external_plugin_tool_uses_provider_permission_execution_and_durable_settlement :: clippy::cognitive_complexity": 1,
+      "fn external_plugin_tool_uses_provider_permission_execution_and_durable_settlement :: clippy::too_many_lines": 1,
+      "fn interrupting_a_running_plugin_tool_aborts_it_in_the_bridge_and_settles_durably :: clippy::too_many_lines": 1,
+      "fn write_plugin :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/tests/dogfood_headless/plugin_transient.rs": {
+      "fn plugin_generation_withholds_denied_tools_and_keeps_attended_write :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/tests/dogfood_headless/preset_launch.rs": {
+      "fn preset_read_distinguishes_selection_from_config_and_writes_nothing :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/tests/dogfood_headless/provider_accounts.rs": {
+      "fn selected_secondary_account_crosses_production_composition_and_restart :: clippy::cognitive_complexity": 1,
+      "fn selected_secondary_account_crosses_production_composition_and_restart :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/tests/dogfood_headless/provider_error_text.rs": {
+      "fn opt_in_saves_only_last_masked_error_and_survives_product_teardown :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/tests/dogfood_headless/provider_fixture.rs": {
+      "impl ProviderFixture::fn start_with :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/tests/dogfood_headless/provider_request_rejection.rs": {
+      "fn rejected_provider_framing_settles_the_session_with_a_visible_failure :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/tests/dogfood_headless/queued_input.rs": {
+      "fn journey :: clippy::cognitive_complexity": 1,
+      "fn journey :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/tests/dogfood_headless/reasoning_effort.rs": {
+      "fn run :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/tests/dogfood_headless/recent_parity.rs": {
+      "fn boundary_window_compaction_publishes_the_frozen_recent_wire_form :: clippy::too_many_lines": 1,
+      "fn successive_compactions_publish_and_replay_the_oracle_recent_value :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/tests/dogfood_headless/resident_console.rs": {
+      "fn resident_in_private_console :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/tests/dogfood_headless/rewind.rs": {
+      "fn rw_restart_and_compaction_cannot_resurrect_discarded_context :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/tests/dogfood_headless/seat_launch.rs": {
+      "fn shipped_seat_provision_packet_and_restart_keep_failures_before_provider :: clippy::cognitive_complexity": 1,
+      "fn shipped_seat_provision_packet_and_restart_keep_failures_before_provider :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/tests/dogfood_headless/server_compaction.rs": {
+      "fn journey_with_guidance :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/tests/dogfood_headless/shell_environment.rs": {
+      "fn native_shell_environment_resolves_cargo_and_remote_git :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/tests/dogfood_headless/shell_exit.rs": {
+      "fn model_receives_diff_and_failing_test_output_after_nonzero_shell_exits :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/tests/dogfood_headless/side_question.rs": {
+      "fn side_question_copies_context_and_never_saves_a_turn_or_runs_tools :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/tests/dogfood_headless/skill_activation.rs": {
+      "fn skd_installed_skill_files_reach_the_next_request_through_the_skill :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/tests/dogfood_headless/stateengine_native.rs": {
+      "fn native_memory_and_atlas_tools_preserve_source_and_stale_absent_evidence :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/tests/dogfood_headless/stateengine_native/approval_unavailable.rs": {
+      "fn seat01_headless_native_and_codemode_fail_promptly_and_profile_grants_execute :: clippy::too_many_lines": 1,
+      "fn seat01_last_approver_disconnect_cancels_without_execution_and_reconnect_cannot_revive :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/tests/dogfood_headless/stateengine_native/codemode_default.rs": {
+      "fn uncaught_mcp_census_failures_name_the_server_tool_and_actual_cause :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/tests/dogfood_headless/steer_boundary.rs": {
+      "fn steer_during_approval :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/tests/dogfood_headless/step_failure_notice.rs": {
+      "fn settled_then_restart :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/tests/dogfood_headless/step_input.rs": {
+      "fn ordinary_inputs_during_a_tool_reach_the_second_request_in_order_once :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/tests/dogfood_headless/subagent_child.rs": {
+      "fn a_running_subagent_accepts_a_direct_human_prompt :: clippy::too_many_lines": 1,
+      "fn a_subagent_tool_call_runs_a_real_child_and_returns_its_answer :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/tests/dogfood_headless/subagent_continuity.rs": {
+      "fn a_lost_child_settles_once_and_a_successor_child_delivers_to_the_same_parent :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/tests/dogfood_headless/subagent_settlement.rs": {
+      "fn a_child_that_cannot_be_admitted_fails_the_call_instead_of_waiting :: clippy::too_many_lines": 1,
+      "fn interrupting_a_parent_cancels_the_child_it_is_waiting_on :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/tests/dogfood_headless/sustained_allowance.rs": {
+      "fn run_c01_budget_rebuild :: clippy::too_many_lines": 1,
+      "fn swr_c02_restart_recovers_exact_omission_and_compacts_another_grouped_step :: clippy::too_many_lines": 1,
+      "fn swr_h2_dual_stream_shell_artifact_reaches_provider_and_survives_restart :: clippy::cognitive_complexity": 1,
+      "fn swr_h2_dual_stream_shell_artifact_reaches_provider_and_survives_restart :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/tests/dogfood_headless/sustained_allowance/structural.rs": {
+      "fn swr_j03_promoted_and_event_bounds_each_run_the_actual_compactor :: clippy::too_many_lines": 1,
+      "fn swr_j03_structural_call_bound_compacts_and_rebuilds_the_ordinary_request :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/tests/dogfood_headless/sustained_recovery.rs": {
+      "fn sr_h03_ordinary_product_owns_relay_retry_terminal_and_permission :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/tests/dogfood_headless/terminal_compaction.rs": {
+      "fn pty_handle_survives_compaction_and_client_reopen_without_relaunch_or_input_replay :: clippy::cognitive_complexity": 1,
+      "fn pty_handle_survives_compaction_and_client_reopen_without_relaunch_or_input_replay :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/tests/dogfood_headless/terminal_compaction/provider_watchdog.rs": {
+      "fn rel14_long_write_stdin_poll_completes_without_killing_the_execution :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/tests/dogfood_headless/terminal_io.rs": {
+      "fn contained_ctrl_c_preserves_the_command_handler_and_exit_status :: clippy::too_many_lines": 1,
+      "fn exact_write_consent_retries_inside_containment_and_revokes_each_scope :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/tests/dogfood_headless/terminal_lifetime.rs": {
+      "fn acp_terminal_case :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/tests/dogfood_headless/workflow_journey.rs": {
+      "fn skd_repository_task_uses_scope_skill_and_delegation_across_compaction_and_restart :: clippy::cognitive_complexity": 1,
+      "fn skd_repository_task_uses_scope_skill_and_delegation_across_compaction_and_restart :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/tests/handover_journey.rs": {
+      "fn live_product_handover_preserves_a_product_created_database :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/tests/handover_journey/crashes.rs": {
+      "fn post_commit_crash_restarts_without_discarding_postactivation_work :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/tests/live_usage_accounting.rs": {
+      "fn fixture :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/tests/live_usage_accounting_dispatch.rs": {
+      "fn sc_acct01_failed_compactions_and_unpublished_failures_remain_reconciled :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/tests/plugin_compatibility.rs": {
+      "fn explicit_plugin_registers_and_project_code_is_blocked_then_cleanup_runs :: clippy::cognitive_complexity": 1,
+      "fn explicit_plugin_registers_and_project_code_is_blocked_then_cleanup_runs :: clippy::too_many_lines": 1,
+      "fn write_service :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/tests/product_root.rs": {
+      "fn killed_service_restarts_same_store_and_cannot_resurrect_prior_custody :: clippy::cognitive_complexity": 1,
+      "fn killed_service_restarts_same_store_and_cannot_resurrect_prior_custody :: clippy::too_many_lines": 1,
+      "fn ready_store_serves_registers_probes_drains_and_releases :: clippy::cognitive_complexity": 1,
+      "fn ready_store_serves_registers_probes_drains_and_releases :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/tests/product_root/connections.rs": {
+      "fn fresh_profile_connects_and_replaces_keys_without_restarting_or_losing_a_session :: clippy::cognitive_complexity": 1,
+      "fn fresh_profile_connects_and_replaces_keys_without_restarting_or_losing_a_session :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/tests/product_root/connections/cli.rs": {
+      "fn copied_cli_connects_an_absent_profile_then_changes_and_removes_the_live_connection :: clippy::cognitive_complexity": 1,
+      "fn copied_cli_connects_an_absent_profile_then_changes_and_removes_the_live_connection :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/tests/product_root/connections/cli/oauth/browser.rs": {
+      "fn copied_cli_interrupt_during_browser_launch_cancels_the_borrowed_services_attempt :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/tests/product_root/connections/endpoint.rs": {
+      "fn cortex_claude_setup_verifies_bearer_messages_and_keeps_its_canonical_destination :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/tests/product_root/connections/local_endpoint.rs": {
+      "fn explicit_endpoints_verify_before_install_and_only_local_http_accepts_empty_keys :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/tests/product_root/connections/oauth.rs": {
+      "fn fresh_profile_chatgpt_oauth_cancels_without_installing_then_activates_in_place :: clippy::cognitive_complexity": 1,
+      "fn fresh_profile_chatgpt_oauth_cancels_without_installing_then_activates_in_place :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/tests/product_root/connections/oauth/browser.rs": {
+      "fn browser_callback_checks_state_and_host_before_exchanging_and_activating :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/tests/product_root/ephemeral.rs": {
+      "fn public_ephemeral_server_patches_without_creating_session_or_harness_files :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/tests/product_root/profile_import.rs": {
+      "fn managed_import_retains_bound_oauth_keys_environment_and_selected_model :: clippy::cognitive_complexity": 1,
+      "fn managed_import_retains_bound_oauth_keys_environment_and_selected_model :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/tests/startup_inspection.rs": {
+      "fn native_startup_advice_proves_dead_owner_without_retiring_custody :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-product/tests/support/native_mail_peer.rs": {
+      "fn serve_controlled :: clippy::cognitive_complexity": 1,
+      "fn serve_controlled :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-provider/src/cohere/decoder.rs": {
+      "impl Decoder::fn event :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-provider/src/gemini/decoder.rs": {
+      "impl Decoder::fn decode :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-provider/src/gemini/input.rs": {
+      "fn project :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-provider/src/normalize.rs": {
+      "impl StreamValidator::fn accept :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-provider/src/replay_tests.rs": {
+      "fn changed_compaction_effort_requires_a_supported_fresh_control_before_user_input :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-provider/src/request/prefix.rs": {
+      "fn prefix_digest :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-provider/src/routes/anthropic.rs": {
+      "impl AnthropicDecoder::fn block_delta :: clippy::too_many_lines": 1,
+      "impl AnthropicDecoder::fn block_start :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-provider/src/routes/anthropic_input.rs": {
+      "fn project_with_effort :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-provider/src/routes/bedrock.rs": {
+      "fn body :: clippy::too_many_lines": 1,
+      "impl BedrockDecoder::fn event :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-provider/src/routes/body/tests.rs": {
+      "fn each_family_emits_its_own_tool_shape :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-provider/src/routes/body/tests/native_mail.rs": {
+      "fn request :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-provider/src/routes/request_validation.rs": {
+      "fn validate :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-provider/src/routes/responses.rs": {
+      "impl ResponsesDecoder::fn decode :: clippy::cognitive_complexity": 1,
+      "impl ResponsesDecoder::fn decode :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-provider/src/transport/adapter.rs": {
+      "fn decoder_for :: clippy::too_many_lines": 1,
+      "impl ProviderAdapter::fn stage_reserved :: clippy::too_many_lines": 1,
+      "impl StagedAttempt::fn send :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-provider/src/transport/fixtures/anthropic_search.rs": {
+      "fn anthropic_search_round_trips_server_blocks_and_citations_without_local_results :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-provider/src/transport/fixtures/bedrock.rs": {
+      "fn native_bedrock_preserves_tools_late_usage_and_frame_integrity :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-provider/src/transport/fixtures/cloudflare.rs": {
+      "fn cloudflare_three_wire_modes_preserve_scoped_authentication_and_destination :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-provider/src/transport/fixtures/terminal_usage.rs": {
+      "fn terminal_usage_defects_preserve_backend_failures_and_successful_answers :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-provider/src/transport/fixtures/timing.rs": {
+      "fn witness :: clippy::cognitive_complexity": 1
+    },
+    "crates/grapt-provider/tests/d2_transcripts.rs": {
+      "fn to_fragments :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-release/src/rehearsal.rs": {
+      "fn rehearse_with_write_hook :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-runtime/src/application.rs": {
+      "impl RuntimeDrain < L >::fn run_step :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-runtime/src/attempt_admission/tests/session_application/runtime_and_harness/attempts_and_continuation.rs": {
+      "fn a_failed_step_uses_one_pre_attempt_context_across_physical_retries :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-runtime/src/coordinator.rs": {
+      "impl SessionCoordinator < A >::fn wake_with :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-runtime/src/durable_owner/persistence.rs": {
+      "impl DurableAttemptOwner < ' _ , A , S >::fn append_contents :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-runtime/src/durable_owner/tests/composition.rs": {
+      "fn composed :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-runtime/src/durable_owner/tests/tool_input.rs": {
+      "fn native_tool_replay_and_input_commit_atomically_with_identity :: clippy::too_many_lines": 1,
+      "fn reasoning_and_opaque_replay_close_in_one_atomic_segment :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-runtime/src/mailbox/remote.rs": {
+      "struct RemoteMailboxRuntime :: clippy::struct_excessive_bools": 1
+    },
+    "crates/grapt-runtime/src/mailbox/remote/delivery.rs": {
+      "struct DeliveryProgress :: clippy::struct_excessive_bools": 1
+    },
+    "crates/grapt-runtime/src/mailbox/remote/presentation.rs": {
+      "impl RemoteMailboxRuntime < P >::fn prepare_notifications :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-runtime/src/mailbox/remote/snapshot.rs": {
+      "impl RemoteMailboxRuntime < P >::fn snapshot_page :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-runtime/src/mailbox/remote/tests/v2.rs": {
+      "fn nmv2_auxiliary_budget_preserves_partial_prefix_and_fresh_refusal :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-runtime/src/mailbox/remote/tests/v2/wake.rs": {
+      "fn seat03_fake_v2_burst_and_warm_reconnect_preserve_one_canonical_wake :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-runtime/src/physical_attempt_owner/tests.rs": {
+      "fn supervisor_handoff_reserves_permits_opens_once_and_ends_once :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-runtime/src/provider_source.rs": {
+      "impl ProviderAttemptSource < P >::fn reserve_and_permit :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-runtime/src/provider_source/compaction_tests.rs": {
+      "fn scc_summary_shares_receipt_custody_without_reusing_attempt_ordinals :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-runtime/src/provider_source/context_identity_tests.rs": {
+      "fn scc_request_context_joins_receipt_atomically_and_rejects_stale_windows :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-runtime/src/session_ports/tests.rs": {
+      "fn the_vertical_creates_admits_settles_and_reads_back :: clippy::cognitive_complexity": 1
+    },
+    "crates/grapt-runtime/src/step/driver.rs": {
+      "impl StepDriver::fn run :: clippy::cognitive_complexity": 1,
+      "impl StepDriver::fn run :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-runtime/src/supervisor/attempt_loop.rs": {
+      "fn run_attempt :: clippy::cognitive_complexity": 1,
+      "fn run_attempt :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-sandbox/src/linux.rs": {
+      "impl ContainedShellSpawner for Bwrap::fn spawn_with_write_targets :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-sandbox/src/linux/mounts.rs": {
+      "impl Mounts::fn prepare_with_aliases :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-sandbox/src/seatbelt/profile.rs": {
+      "fn prepare :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-service/src/operator.rs": {
+      "mod tests::fn one_of_every_own_refusal :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-service/tests/attachment_corpus.rs": {
+      "fn replay :: clippy::too_many_lines": 1,
+      "fn validate_manifest :: clippy::cognitive_complexity": 1,
+      "fn validate_manifest :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-service/tests/controller_corpus.rs": {
+      "fn replay :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-service/tests/operator_corpus.rs": {
+      "fn replay :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-service/tests/schema_conformance.rs": {
+      "fn validate :: clippy::cognitive_complexity": 1,
+      "fn validate :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-session-history/src/history/accounting.rs": {
+      "impl SessionHistoryStore < ' _ >::fn accounting_snapshot :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-session/src/deletion.rs": {
+      "fn decode_v1 :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-session/src/execution/read_tests.rs": {
+      "fn br_execution_rows_and_refusals_match_before_selection :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-session/src/lifecycle.rs": {
+      "fn fork_at :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-session/src/lifecycle/tests.rs": {
+      "fn a_fork_carries_the_tool_history_its_conversation_claims :: clippy::too_many_lines": 1,
+      "fn selected_fork_refuses_unfinished_hidden_and_foreign_prefixes_without_writing :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-session/src/list/query.rs": {
+      "impl Query < ' _ >::fn bounded_list :: clippy::too_many_lines": 1,
+      "impl Query < ' _ >::fn read_page :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-session/src/notice/step_failure.rs": {
+      "fn record_step_failure :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-session/src/rewind.rs": {
+      "fn select_connection :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-session/tests/clone_session.rs": {
+      "fn projects_all_305_sessions_and_matches_the_table :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-session/tests/execution_failure_classes.rs": {
+      "fn swr_typed_failure_classes_are_recorded_verbatim_and_validated_on_read :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-session/tests/execution_observations.rs": {
+      "fn failure_before_any_step_is_durable_and_cannot_resurrect_as_success :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-session/tests/session_list_acceptance_corpus.rs": {
+      "fn validate :: clippy::cognitive_complexity": 1,
+      "fn validate :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-session/tests/session_list_acceptance_corpus/execution.rs": {
+      "fn apply :: clippy::too_many_lines": 1,
+      "fn execute :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-store/src/attempt_receipt.rs": {
+      "fn quarantine_within :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-store/src/event_feed.rs": {
+      "fn read_capture_page :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-store/src/mailbox/remote.rs": {
+      "impl EventStore::fn admit_remote_mailbox_within :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-store/src/mailbox/remote/codec.rs": {
+      "fn decode_checked :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-store/src/migrations.rs": {
+      "struct SourceColumns :: clippy::struct_excessive_bools": 1
+    },
+    "crates/grapt-store/src/owned_open.rs": {
+      "mod tests::fn migration_authority_refusals_name_the_setting_and_the_fix :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-store/src/plugin_compatibility.rs": {
+      "impl EventStore::fn put_integration_credential :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-store/src/session_event_queries/batch_tests.rs": {
+      "fn br_h_bounded_batch_preserves_exact_target_rows_and_query_refusals :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-store/src/session_list/migration.rs": {
+      "fn import_legacy :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-store/src/write/event_log.rs": {
+      "impl EventStore::fn append_event_within :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-store/src/write/schema.rs": {
+      "impl EventStore::fn ensure_schema :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-store/tests/clone_compaction_order.rs": {
+      "fn the_clone_commits_every_compaction_parent_before_its_child :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-store/tests/clone_export.rs": {
+      "fn exports_both_state_classes_and_reproduces_d1_row_counts :: clippy::cognitive_complexity": 1
+    },
+    "crates/grapt-store/tests/clone_migrate.rs": {
+      "fn copies_the_frozen_clone_migrates_the_copy_and_opens_it :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-store/tests/production_migration/operational_composition.rs": {
+      "fn a_migrated_database_still_serves_operational_rows_and_compaction_cache :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-store/tests/session_list_closure.rs": {
+      "fn a_bounded_import_preserves_every_row_when_source_collation_is_nocase :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-subagent/src/service/codec.rs": {
+      "impl SubagentService::fn decode_row :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-subagent/src/service/followup/chain.rs": {
+      "fn read :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-subagent/src/service/followup/claim.rs": {
+      "impl SubagentService::fn claim_followup_on :: clippy::cognitive_complexity": 1,
+      "impl SubagentService::fn claim_followup_on :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-subagent/tests/subagent_operation/durable_delivery_r3.rs": {
+      "fn failed_process_loss_and_quarantine_are_durable_parent_debts :: clippy::too_many_lines": 1,
+      "fn predecessor_active_schema_is_transactionally_rebuilt_and_restart_safe :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-toolchain/src/activate.rs": {
+      "fn activate :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-toolchain/src/archive.rs": {
+      "fn decode_tar :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-tools-local/src/patch/streaming.rs": {
+      "impl StreamingPatchParser::fn process_line :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-tools-local/src/search.rs": {
+      "fn files :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-tools-local/src/terminal/stop.rs": {
+      "mod tests::struct FakeRoot :: clippy::struct_excessive_bools": 1
+    },
+    "crates/grapt-tui-forms/src/ask.rs": {
+      "impl Board::fn draw_ask :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-tui-forms/src/draft.rs": {
+      "impl Draft::fn key :: clippy::cognitive_complexity": 1,
+      "impl Draft::fn key :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-tui-forms/src/draw.rs": {
+      "impl Board::fn draw :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-tui-forms/src/lib.rs": {
+      "impl Board::fn update :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-tui-transcript/src/markdown.rs": {
+      "impl Markdown::fn parse_blocks :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-tui-transcript/src/markdown/incremental.rs": {
+      "impl Incremental::fn append_inner :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-tui-transcript/src/transcript.rs": {
+      "impl Transcript::fn height :: clippy::too_many_lines": 1,
+      "impl Transcript::fn layout :: clippy::too_many_lines": 1,
+      "impl Transcript::fn paint_rows :: clippy::too_many_lines": 1,
+      "impl Transcript::fn update :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-tui-transcript/src/transcript/anchor.rs": {
+      "impl Transcript::fn reconcile :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-tui-transcript/src/transcript/inline_diff.rs": {
+      "impl Diff::fn rows :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-tui/src/agents.rs": {
+      "impl Picker::fn draw :: clippy::too_many_lines": 1,
+      "mod tests::fn empty_roster_hint_reopens_with_escape_then_f7_without_changing_the_draft_or_selection :: clippy::cognitive_complexity": 1
+    },
+    "crates/grapt-tui/src/backend.rs": {
+      "fn serve :: clippy::cognitive_complexity": 1,
+      "fn serve :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-tui/src/backend/commands.rs": {
+      "fn dispatch_normalized :: clippy::cognitive_complexity": 1,
+      "fn dispatch_normalized :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-tui/src/backend/commands/tests.rs": {
+      "impl Transport for Peer::fn call :: clippy::too_many_lines": 1,
+      "struct Peer :: clippy::struct_excessive_bools": 1
+    },
+    "crates/grapt-tui/src/backend/commands/tests/mcp_auth.rs": {
+      "fn a_pending_browser_setup_allows_interrupts_and_finishes_on_a_later_pump :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-tui/src/backend/commands/tests/side.rs": {
+      "fn side_question_keeps_controls_live_and_discards_foreign_or_failed_answers :: clippy::cognitive_complexity": 1
+    },
+    "crates/grapt-tui/src/backend/commands/tests/worktree.rs": {
+      "fn worktree_commands_encode_paths_and_complete_on_the_operator_lane :: clippy::cognitive_complexity": 1,
+      "fn worktree_commands_encode_paths_and_complete_on_the_operator_lane :: clippy::too_many_lines": 1,
+      "fn worktree_failures_and_navigation_never_replay_mutations :: clippy::cognitive_complexity": 1,
+      "fn worktree_failures_and_navigation_never_replay_mutations :: clippy::too_many_lines": 1,
+      "fn worktree_open_creates_a_new_session_and_keeps_its_completion :: clippy::cognitive_complexity": 1,
+      "fn worktree_open_creates_a_new_session_and_keeps_its_completion :: clippy::too_many_lines": 1,
+      "struct WorktreePeer :: clippy::struct_excessive_bools": 1
+    },
+    "crates/grapt-tui/src/backend/first_prompt.rs": {
+      "impl Submissions::fn advance_operator :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-tui/src/backend/first_prompt/tests.rs": {
+      "fn first_enter_waits_for_confirmed_policy_then_submits_exactly_once :: clippy::cognitive_complexity": 1,
+      "fn uncertain_image_retry_settles_only_the_original_images_after_an_edited_enter :: clippy::cognitive_complexity": 1,
+      "fn uncertain_image_retry_settles_only_the_original_images_after_an_edited_enter :: clippy::too_many_lines": 1,
+      "struct Peer :: clippy::struct_excessive_bools": 1
+    },
+    "crates/grapt-tui/src/backend/forms.rs": {
+      "fn transact :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-tui/src/backend/forms/tests.rs": {
+      "impl Transport for Peer::fn call :: clippy::too_many_lines": 1,
+      "struct Peer :: clippy::struct_excessive_bools": 1
+    },
+    "crates/grapt-tui/src/backend/tests.rs": {
+      "fn selected_activity_derivation_routes_escape_without_touching_a_hidden_session_draft :: clippy::cognitive_complexity": 1,
+      "fn selected_activity_derivation_routes_escape_without_touching_a_hidden_session_draft :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-tui/src/backend/view.rs": {
+      "struct Update :: clippy::struct_excessive_bools": 1
+    },
+    "crates/grapt-tui/src/connect.rs": {
+      "struct Connect :: clippy::struct_excessive_bools": 1
+    },
+    "crates/grapt-tui/src/connect/draw.rs": {
+      "fn draw :: clippy::cognitive_complexity": 1,
+      "fn draw :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-tui/src/connect/input.rs": {
+      "impl Connect::fn key :: clippy::too_many_lines": 1,
+      "impl Connect::fn submit :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-tui/src/keybindings/config.rs": {
+      "fn parse :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-tui/src/keys.rs": {
+      "fn handle_at :: clippy::cognitive_complexity": 1,
+      "fn handle_at :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-tui/src/main.rs": {
+      "fn run :: clippy::cognitive_complexity": 1,
+      "fn run :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-tui/src/notify.rs": {
+      "struct Notifier :: clippy::struct_excessive_bools": 1
+    },
+    "crates/grapt-tui/src/present.rs": {
+      "impl Presenter::fn render :: clippy::too_many_lines": 1,
+      "struct Chrome :: clippy::struct_excessive_bools": 1
+    },
+    "crates/grapt-tui/src/present/tests.rs": {
+      "fn cached_stream_frames_match_full_frames_through_metadata_and_overlay_changes :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-tui/src/sessions/manage.rs": {
+      "fn handle :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-tui/src/sessions/render.rs": {
+      "impl Picker::fn draw :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-tui/src/sessions/tests/management.rs": {
+      "fn saved_pins_quick_slots_and_delayed_server_search_preserve_the_composer :: clippy::cognitive_complexity": 1,
+      "fn saved_pins_quick_slots_and_delayed_server_search_preserve_the_composer :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-tui/src/transcript_tests/inline_diff.rs": {
+      "fn live_and_relisted_diff_folds_keep_file_state_and_the_unsent_draft :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-tui/src/transcript_tests/scrollbar.rs": {
+      "fn cold_paged_thumb_drag_keeps_the_grab_under_the_pointer :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-tui/src/ui.rs": {
+      "impl Ui::fn draw :: clippy::too_many_lines": 1,
+      "struct Ui :: clippy::struct_excessive_bools": 1
+    },
+    "crates/grapt-tui/src/windows_input.rs": {
+      "fn start :: clippy::cognitive_complexity": 1,
+      "fn start :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-types/tests/no_generator_quirk_reimplementation/lexical.rs": {
+      "fn normalize :: clippy::cognitive_complexity": 1,
+      "fn normalize :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-types/tests/usage_compat_acceptance_corpus.rs": {
+      "fn validate :: clippy::cognitive_complexity": 1,
+      "fn validate :: clippy::too_many_lines": 1
+    },
+    "crates/grapt-worktree/src/tests/core.rs": {
+      "fn merge_and_remove_preserve_local_and_unmerged_work_before_fast_forward :: clippy::too_many_lines": 1,
+      "fn remove_prunes_empty_scaffold_but_preserves_retained_files :: clippy::too_many_lines": 1
+    }
+  }
+}

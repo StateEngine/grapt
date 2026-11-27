@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "waivers": [
+    {
+      "id": "W-UT-1",
+      "subject": "cache.write is unwitnessable from the observed corpus",
+      "statement": "tokens_cache_write is zero on all 305 rows of the reconstruction evidence clone, so against real data alone a correctly-read cache.write and an invented zero are indistinguishable by value.",
+      "disposition": "CLOSED BY SYNTHETIC INPUT, not waived. Action 29 carries a non-zero cache.write and is labelled SYNTHETIC in its own provenance field. The leaf is witnessed; what is disclosed is that no observed row could have witnessed it.",
+      "evidence": "R4D-2G preflight blocker B-G4."
+    },
+    {
+      "id": "W-UT-2",
+      "subject": "The token leaves narrow the frozen contract's sign",
+      "statement": "The frozen leaf type is Schema.Finite, which admits a negative number. TokenCount refuses one, so this vocabulary is strictly narrower than the contract it is compatible with.",
+      "disposition": "DISCLOSED AND DELIBERATE. Derived from the ratified unsigned owners already in this crate (UsageField(Option<u64>), AttemptSpend(u64)) and from EventSeq's 'non-negative sequence' and ContentOrdinal's 'non-negative ordinal'. No admitted producer emits a negative count, so the narrowing cannot diverge on a value the engine actually produces. Money.USD deliberately does NOT take this narrowing, and the asymmetry is stated in both module docs.",
+      "evidence": "packages/schema/src/token-usage.ts at 430859db; master law rows for grapt-types::usage, ::attempt, ::event, ::content."
+    },
+    {
+      "id": "W-UT-3",
+      "subject": "Counts above 2^53 are refused",
+      "statement": "TokenCount refuses any value above 9007199254740992.",
+      "disposition": "DISCLOSED LANE NARROWING. 2^53 is the largest N for which every integer in [0, N] is exactly representable as binary64. Some larger isolated integers, including 2^55, are exactly representable and Schema.Finite admits them; this lane refuses the sparse region so admitted token counts remain one contiguous domain with truthful unit increments. This is distinct from JavaScript Number.MAX_SAFE_INTEGER = 2^53 - 1: the lane admits 2^53 itself, while JS calls it unsafe because 2^53 + 1 compares equal to it. Actions 14 and 15 pin the adjacent boundary; action 36 pins refusal of representable 2^55 with its exact supplied bits.",
+      "evidence": "packages/schema/src/token-usage.ts at 430859db uses Schema.Finite; compat/openapi/openapi.json types every leaf as number."
+    },
+    {
+      "id": "W-UT-4",
+      "subject": "No durable, wire or codec surface is exercised",
+      "statement": "This corpus executes in-process constructors only.",
+      "disposition": "BY LAW, not by omission. grapt-types declares no library dependencies at all — the gate in tests/dependency_direction.rs names serde specifically — so there is no codec to exercise. expected/durable.jsonl is empty and the corpus test asserts its emptiness rather than skipping it.",
+      "evidence": "crates/grapt-types/tests/dependency_direction.rs."
+    }
+  ]
+}

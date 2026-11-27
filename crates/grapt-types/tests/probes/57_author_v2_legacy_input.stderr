@@ -1,0 +1,7 @@
+error[E0560]: struct `AttemptUsage` has no field named `legacy_input_tokens`
+  --> tests/probes/57_author_v2_legacy_input.rs:13:9
+   |
+13 |         legacy_input_tokens: UsageField::ABSENT,
+   |         ^^^^^^^^^^^^^^^^^^^ `AttemptUsage` does not have this field
+   |
+   = note: available fields are: `protocol`

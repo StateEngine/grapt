@@ -1,0 +1,23 @@
+error[E0599]: no method named `is_same_issuance` found for struct `SummaryCompatibility` in the current scope
+  --> tests/probes/49_reconstituted_issuance_authority.rs:32:31
+   |
+32 |     let _same = reconstituted.is_same_issuance(todo!());
+   |                               ^^^^^^^^^^^^^^^^ method not found in `SummaryCompatibility`
+
+error[E0599]: no method named `model_ref` found for struct `SummaryCompatibility` in the current scope
+  --> tests/probes/49_reconstituted_issuance_authority.rs:35:33
+   |
+35 |     let _target = reconstituted.model_ref();
+   |                                 ^^^^^^^^^
+   |
+help: there is a method `model` with a similar name
+   |
+35 -     let _target = reconstituted.model_ref();
+35 +     let _target = reconstituted.model();
+   |
+
+error[E0599]: no method named `into_model_ref` found for struct `SummaryCompatibility` in the current scope
+  --> tests/probes/49_reconstituted_issuance_authority.rs:38:36
+   |
+38 |     let _converted = reconstituted.into_model_ref();
+   |                                    ^^^^^^^^^^^^^^ method not found in `SummaryCompatibility`

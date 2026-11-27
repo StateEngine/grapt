@@ -1,0 +1,843 @@
+{
+  "schema": "grapt.cli-compatibility.oracle-surface.v1",
+  "oracle": "42e4888cc0f8c79a6c7fdd9ac74766a583a602e6",
+  "spec": "packages/cli/src/commands/commands.ts",
+  "spec_blob": "5063265ed7765d6b525cc6a1f39f4aa88e146958",
+  "spec_sha256": "2f97f748d861592b34e9dc6e199dddb27fa17292bd87383f56fd8a13c9ab33e2",
+  "surface": [
+    {
+      "kind": "command",
+      "name": "opencode",
+      "line": 45,
+      "id": "command:opencode"
+    },
+    {
+      "kind": "flag",
+      "name": "--standalone",
+      "alias": null,
+      "type": "boolean",
+      "hidden": false,
+      "line": 7,
+      "command": "opencode",
+      "via": "ServerParams",
+      "spread_line": 48,
+      "id": "flag:opencode:--standalone"
+    },
+    {
+      "kind": "flag",
+      "name": "--server",
+      "alias": null,
+      "type": "string",
+      "hidden": false,
+      "line": 11,
+      "command": "opencode",
+      "via": "ServerParams",
+      "spread_line": 48,
+      "id": "flag:opencode:--server"
+    },
+    {
+      "kind": "flag",
+      "name": "--inspect",
+      "alias": null,
+      "type": "boolean",
+      "hidden": false,
+      "line": 22,
+      "command": "opencode",
+      "via": "PermissionParams",
+      "spread_line": 49,
+      "id": "flag:opencode:--inspect"
+    },
+    {
+      "kind": "flag",
+      "name": "--author",
+      "alias": null,
+      "type": "boolean",
+      "hidden": false,
+      "line": 26,
+      "command": "opencode",
+      "via": "PermissionParams",
+      "spread_line": 49,
+      "id": "flag:opencode:--author"
+    },
+    {
+      "kind": "flag",
+      "name": "--maintainer",
+      "alias": null,
+      "type": "boolean",
+      "hidden": false,
+      "line": 30,
+      "command": "opencode",
+      "via": "PermissionParams",
+      "spread_line": 49,
+      "id": "flag:opencode:--maintainer"
+    },
+    {
+      "kind": "flag",
+      "name": "--auto",
+      "alias": null,
+      "type": "boolean",
+      "hidden": false,
+      "line": 34,
+      "command": "opencode",
+      "via": "PermissionParams",
+      "spread_line": 49,
+      "id": "flag:opencode:--auto"
+    },
+    {
+      "kind": "flag",
+      "name": "--yolo",
+      "alias": null,
+      "type": "boolean",
+      "hidden": true,
+      "line": 38,
+      "command": "opencode",
+      "via": "PermissionParams",
+      "spread_line": 49,
+      "id": "flag:opencode:--yolo"
+    },
+    {
+      "kind": "flag",
+      "name": "--dangerously-skip-permissions",
+      "alias": null,
+      "type": "boolean",
+      "hidden": false,
+      "line": 39,
+      "command": "opencode",
+      "via": "PermissionParams",
+      "spread_line": 49,
+      "id": "flag:opencode:--dangerously-skip-permissions"
+    },
+    {
+      "kind": "argument",
+      "name": "directory",
+      "line": 50,
+      "command": "opencode",
+      "id": "argument:opencode:directory"
+    },
+    {
+      "kind": "flag",
+      "name": "--continue",
+      "alias": "-c",
+      "type": "boolean",
+      "hidden": false,
+      "line": 54,
+      "command": "opencode",
+      "id": "flag:opencode:--continue"
+    },
+    {
+      "kind": "flag",
+      "name": "--session",
+      "alias": "-s",
+      "type": "string",
+      "hidden": false,
+      "line": 59,
+      "command": "opencode",
+      "id": "flag:opencode:--session"
+    },
+    {
+      "kind": "flag",
+      "name": "--prompt",
+      "alias": null,
+      "type": "string",
+      "hidden": false,
+      "line": 64,
+      "command": "opencode",
+      "id": "flag:opencode:--prompt"
+    },
+    {
+      "kind": "command",
+      "name": "acp",
+      "line": 67,
+      "id": "command:acp"
+    },
+    {
+      "kind": "command",
+      "name": "api",
+      "line": 68,
+      "id": "command:api"
+    },
+    {
+      "kind": "flag",
+      "name": "--standalone",
+      "alias": null,
+      "type": "boolean",
+      "hidden": false,
+      "line": 7,
+      "command": "api",
+      "via": "ServerParams",
+      "spread_line": 71,
+      "id": "flag:api:--standalone"
+    },
+    {
+      "kind": "flag",
+      "name": "--server",
+      "alias": null,
+      "type": "string",
+      "hidden": false,
+      "line": 11,
+      "command": "api",
+      "via": "ServerParams",
+      "spread_line": 71,
+      "id": "flag:api:--server"
+    },
+    {
+      "kind": "argument",
+      "name": "operation | method path",
+      "line": 72,
+      "command": "api",
+      "id": "argument:api:operation | method path"
+    },
+    {
+      "kind": "flag",
+      "name": "--data",
+      "alias": "-d",
+      "type": "string",
+      "hidden": false,
+      "line": 76,
+      "command": "api",
+      "id": "flag:api:--data"
+    },
+    {
+      "kind": "flag",
+      "name": "--header",
+      "alias": "-H",
+      "type": "string",
+      "hidden": false,
+      "line": 77,
+      "command": "api",
+      "id": "flag:api:--header"
+    },
+    {
+      "kind": "flag",
+      "name": "--param",
+      "alias": null,
+      "type": "keyValuePair",
+      "hidden": false,
+      "line": 82,
+      "command": "api",
+      "id": "flag:api:--param"
+    },
+    {
+      "kind": "command",
+      "name": "debug",
+      "line": 85,
+      "id": "command:debug"
+    },
+    {
+      "kind": "command",
+      "name": "debug agents",
+      "line": 87,
+      "id": "command:debug agents"
+    },
+    {
+      "kind": "command",
+      "name": "console",
+      "line": 89,
+      "id": "command:console"
+    },
+    {
+      "kind": "command",
+      "name": "console login",
+      "line": 92,
+      "id": "command:console login"
+    },
+    {
+      "kind": "argument",
+      "name": "url",
+      "line": 95,
+      "command": "console login",
+      "id": "argument:console login:url"
+    },
+    {
+      "kind": "command",
+      "name": "auth",
+      "line": 100,
+      "id": "command:auth"
+    },
+    {
+      "kind": "command",
+      "name": "auth connect",
+      "line": 103,
+      "id": "command:auth connect"
+    },
+    {
+      "kind": "argument",
+      "name": "url",
+      "line": 106,
+      "command": "auth connect",
+      "id": "argument:auth connect:url"
+    },
+    {
+      "kind": "command",
+      "name": "mcp",
+      "line": 111,
+      "id": "command:mcp"
+    },
+    {
+      "kind": "command",
+      "name": "mcp list",
+      "line": 114,
+      "id": "command:mcp list"
+    },
+    {
+      "kind": "command",
+      "name": "mcp add",
+      "line": 115,
+      "id": "command:mcp add"
+    },
+    {
+      "kind": "argument",
+      "name": "name",
+      "line": 118,
+      "command": "mcp add",
+      "id": "argument:mcp add:name"
+    },
+    {
+      "kind": "argument",
+      "name": "command",
+      "line": 119,
+      "command": "mcp add",
+      "id": "argument:mcp add:command"
+    },
+    {
+      "kind": "flag",
+      "name": "--url",
+      "alias": null,
+      "type": "string",
+      "hidden": false,
+      "line": 123,
+      "command": "mcp add",
+      "id": "flag:mcp add:--url"
+    },
+    {
+      "kind": "flag",
+      "name": "--header",
+      "alias": null,
+      "type": "keyValuePair",
+      "hidden": false,
+      "line": 124,
+      "command": "mcp add",
+      "id": "flag:mcp add:--header"
+    },
+    {
+      "kind": "flag",
+      "name": "--env",
+      "alias": null,
+      "type": "keyValuePair",
+      "hidden": false,
+      "line": 128,
+      "command": "mcp add",
+      "id": "flag:mcp add:--env"
+    },
+    {
+      "kind": "flag",
+      "name": "--global",
+      "alias": null,
+      "type": "boolean",
+      "hidden": false,
+      "line": 132,
+      "command": "mcp add",
+      "id": "flag:mcp add:--global"
+    },
+    {
+      "kind": "command",
+      "name": "mcp auth",
+      "line": 138,
+      "id": "command:mcp auth"
+    },
+    {
+      "kind": "argument",
+      "name": "name",
+      "line": 140,
+      "command": "mcp auth",
+      "id": "argument:mcp auth:name"
+    },
+    {
+      "kind": "command",
+      "name": "mcp logout",
+      "line": 142,
+      "id": "command:mcp logout"
+    },
+    {
+      "kind": "argument",
+      "name": "name",
+      "line": 144,
+      "command": "mcp logout",
+      "id": "argument:mcp logout:name"
+    },
+    {
+      "kind": "command",
+      "name": "plugin",
+      "line": 148,
+      "id": "command:plugin"
+    },
+    {
+      "kind": "command",
+      "name": "plugin list",
+      "line": 150,
+      "id": "command:plugin list"
+    },
+    {
+      "kind": "command",
+      "name": "migrate",
+      "line": 152,
+      "id": "command:migrate"
+    },
+    {
+      "kind": "command",
+      "name": "mini",
+      "line": 153,
+      "id": "command:mini"
+    },
+    {
+      "kind": "flag",
+      "name": "--standalone",
+      "alias": null,
+      "type": "boolean",
+      "hidden": false,
+      "line": 7,
+      "command": "mini",
+      "via": "ServerParams",
+      "spread_line": 156,
+      "id": "flag:mini:--standalone"
+    },
+    {
+      "kind": "flag",
+      "name": "--server",
+      "alias": null,
+      "type": "string",
+      "hidden": false,
+      "line": 11,
+      "command": "mini",
+      "via": "ServerParams",
+      "spread_line": 156,
+      "id": "flag:mini:--server"
+    },
+    {
+      "kind": "flag",
+      "name": "--continue",
+      "alias": "-c",
+      "type": "boolean",
+      "hidden": false,
+      "line": 157,
+      "command": "mini",
+      "id": "flag:mini:--continue"
+    },
+    {
+      "kind": "flag",
+      "name": "--session",
+      "alias": "-s",
+      "type": "string",
+      "hidden": false,
+      "line": 162,
+      "command": "mini",
+      "id": "flag:mini:--session"
+    },
+    {
+      "kind": "flag",
+      "name": "--fork",
+      "alias": null,
+      "type": "boolean",
+      "hidden": false,
+      "line": 167,
+      "command": "mini",
+      "id": "flag:mini:--fork"
+    },
+    {
+      "kind": "flag",
+      "name": "--replay",
+      "alias": null,
+      "type": "boolean",
+      "hidden": false,
+      "line": 171,
+      "command": "mini",
+      "id": "flag:mini:--replay"
+    },
+    {
+      "kind": "flag",
+      "name": "--replay-limit",
+      "alias": null,
+      "type": "integer",
+      "hidden": false,
+      "line": 175,
+      "command": "mini",
+      "id": "flag:mini:--replay-limit"
+    },
+    {
+      "kind": "flag",
+      "name": "--model",
+      "alias": "-m",
+      "type": "string",
+      "hidden": false,
+      "line": 179,
+      "command": "mini",
+      "id": "flag:mini:--model"
+    },
+    {
+      "kind": "flag",
+      "name": "--agent",
+      "alias": null,
+      "type": "string",
+      "hidden": false,
+      "line": 184,
+      "command": "mini",
+      "id": "flag:mini:--agent"
+    },
+    {
+      "kind": "flag",
+      "name": "--prompt",
+      "alias": null,
+      "type": "string",
+      "hidden": false,
+      "line": 185,
+      "command": "mini",
+      "id": "flag:mini:--prompt"
+    },
+    {
+      "kind": "flag",
+      "name": "--demo",
+      "alias": null,
+      "type": "boolean",
+      "hidden": true,
+      "line": 186,
+      "command": "mini",
+      "id": "flag:mini:--demo"
+    },
+    {
+      "kind": "command",
+      "name": "run",
+      "line": 189,
+      "id": "command:run"
+    },
+    {
+      "kind": "flag",
+      "name": "--standalone",
+      "alias": null,
+      "type": "boolean",
+      "hidden": false,
+      "line": 7,
+      "command": "run",
+      "via": "ServerParams",
+      "spread_line": 192,
+      "id": "flag:run:--standalone"
+    },
+    {
+      "kind": "flag",
+      "name": "--server",
+      "alias": null,
+      "type": "string",
+      "hidden": false,
+      "line": 11,
+      "command": "run",
+      "via": "ServerParams",
+      "spread_line": 192,
+      "id": "flag:run:--server"
+    },
+    {
+      "kind": "argument",
+      "name": "message",
+      "line": 193,
+      "command": "run",
+      "id": "argument:run:message"
+    },
+    {
+      "kind": "flag",
+      "name": "--continue",
+      "alias": "-c",
+      "type": "boolean",
+      "hidden": false,
+      "line": 197,
+      "command": "run",
+      "id": "flag:run:--continue"
+    },
+    {
+      "kind": "flag",
+      "name": "--session",
+      "alias": "-s",
+      "type": "string",
+      "hidden": false,
+      "line": 202,
+      "command": "run",
+      "id": "flag:run:--session"
+    },
+    {
+      "kind": "flag",
+      "name": "--fork",
+      "alias": null,
+      "type": "boolean",
+      "hidden": false,
+      "line": 207,
+      "command": "run",
+      "id": "flag:run:--fork"
+    },
+    {
+      "kind": "flag",
+      "name": "--model",
+      "alias": "-m",
+      "type": "string",
+      "hidden": false,
+      "line": 211,
+      "command": "run",
+      "id": "flag:run:--model"
+    },
+    {
+      "kind": "flag",
+      "name": "--agent",
+      "alias": null,
+      "type": "string",
+      "hidden": false,
+      "line": 216,
+      "command": "run",
+      "id": "flag:run:--agent"
+    },
+    {
+      "kind": "flag",
+      "name": "--format",
+      "alias": null,
+      "type": "choice",
+      "hidden": false,
+      "line": 217,
+      "command": "run",
+      "id": "flag:run:--format"
+    },
+    {
+      "kind": "flag",
+      "name": "--file",
+      "alias": "-f",
+      "type": "string",
+      "hidden": false,
+      "line": 221,
+      "command": "run",
+      "id": "flag:run:--file"
+    },
+    {
+      "kind": "flag",
+      "name": "--title",
+      "alias": null,
+      "type": "string",
+      "hidden": false,
+      "line": 226,
+      "command": "run",
+      "id": "flag:run:--title"
+    },
+    {
+      "kind": "flag",
+      "name": "--thinking",
+      "alias": null,
+      "type": "boolean",
+      "hidden": false,
+      "line": 227,
+      "command": "run",
+      "id": "flag:run:--thinking"
+    },
+    {
+      "kind": "flag",
+      "name": "--inspect",
+      "alias": null,
+      "type": "boolean",
+      "hidden": false,
+      "line": 22,
+      "command": "run",
+      "via": "PermissionParams",
+      "spread_line": 228,
+      "id": "flag:run:--inspect"
+    },
+    {
+      "kind": "flag",
+      "name": "--author",
+      "alias": null,
+      "type": "boolean",
+      "hidden": false,
+      "line": 26,
+      "command": "run",
+      "via": "PermissionParams",
+      "spread_line": 228,
+      "id": "flag:run:--author"
+    },
+    {
+      "kind": "flag",
+      "name": "--maintainer",
+      "alias": null,
+      "type": "boolean",
+      "hidden": false,
+      "line": 30,
+      "command": "run",
+      "via": "PermissionParams",
+      "spread_line": 228,
+      "id": "flag:run:--maintainer"
+    },
+    {
+      "kind": "flag",
+      "name": "--auto",
+      "alias": null,
+      "type": "boolean",
+      "hidden": false,
+      "line": 34,
+      "command": "run",
+      "via": "PermissionParams",
+      "spread_line": 228,
+      "id": "flag:run:--auto"
+    },
+    {
+      "kind": "flag",
+      "name": "--yolo",
+      "alias": null,
+      "type": "boolean",
+      "hidden": true,
+      "line": 38,
+      "command": "run",
+      "via": "PermissionParams",
+      "spread_line": 228,
+      "id": "flag:run:--yolo"
+    },
+    {
+      "kind": "flag",
+      "name": "--dangerously-skip-permissions",
+      "alias": null,
+      "type": "boolean",
+      "hidden": false,
+      "line": 39,
+      "command": "run",
+      "via": "PermissionParams",
+      "spread_line": 228,
+      "id": "flag:run:--dangerously-skip-permissions"
+    },
+    {
+      "kind": "command",
+      "name": "service",
+      "line": 231,
+      "id": "command:service"
+    },
+    {
+      "kind": "command",
+      "name": "service start",
+      "line": 234,
+      "id": "command:service start"
+    },
+    {
+      "kind": "command",
+      "name": "service restart",
+      "line": 235,
+      "id": "command:service restart"
+    },
+    {
+      "kind": "command",
+      "name": "service status",
+      "line": 236,
+      "id": "command:service status"
+    },
+    {
+      "kind": "command",
+      "name": "service stop",
+      "line": 237,
+      "id": "command:service stop"
+    },
+    {
+      "kind": "command",
+      "name": "service get",
+      "line": 238,
+      "id": "command:service get"
+    },
+    {
+      "kind": "argument",
+      "name": "key",
+      "line": 240,
+      "command": "service get",
+      "id": "argument:service get:key"
+    },
+    {
+      "kind": "command",
+      "name": "service set",
+      "line": 242,
+      "id": "command:service set"
+    },
+    {
+      "kind": "argument",
+      "name": "key",
+      "line": 244,
+      "command": "service set",
+      "id": "argument:service set:key"
+    },
+    {
+      "kind": "command",
+      "name": "service unset",
+      "line": 246,
+      "id": "command:service unset"
+    },
+    {
+      "kind": "argument",
+      "name": "key",
+      "line": 248,
+      "command": "service unset",
+      "id": "argument:service unset:key"
+    },
+    {
+      "kind": "command",
+      "name": "pair",
+      "line": 252,
+      "id": "command:pair"
+    },
+    {
+      "kind": "command",
+      "name": "upgrade",
+      "line": 253,
+      "id": "command:upgrade"
+    },
+    {
+      "kind": "command",
+      "name": "serve",
+      "line": 254,
+      "id": "command:serve"
+    },
+    {
+      "kind": "flag",
+      "name": "--hostname",
+      "alias": null,
+      "type": "string",
+      "hidden": false,
+      "line": 257,
+      "command": "serve",
+      "id": "flag:serve:--hostname"
+    },
+    {
+      "kind": "flag",
+      "name": "--port",
+      "alias": null,
+      "type": "integer",
+      "hidden": false,
+      "line": 258,
+      "command": "serve",
+      "id": "flag:serve:--port"
+    },
+    {
+      "kind": "flag",
+      "name": "--registration-file",
+      "alias": null,
+      "type": "string",
+      "hidden": false,
+      "line": 259,
+      "command": "serve",
+      "id": "flag:serve:--registration-file"
+    },
+    {
+      "kind": "flag",
+      "name": "--service",
+      "alias": null,
+      "type": "boolean",
+      "hidden": false,
+      "line": 263,
+      "command": "serve",
+      "id": "flag:serve:--service"
+    },
+    {
+      "kind": "flag",
+      "name": "--stdio",
+      "alias": null,
+      "type": "boolean",
+      "hidden": false,
+      "line": 264,
+      "command": "serve",
+      "id": "flag:serve:--stdio"
+    }
+  ]
+}

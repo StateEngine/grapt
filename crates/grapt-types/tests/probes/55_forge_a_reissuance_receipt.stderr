@@ -1,0 +1,19 @@
+warning: unreachable expression
+  --> tests/probes/55_forge_a_reissuance_receipt.rs:15:13
+   |
+14 |         from: todo!(),
+   |               ------- any code following this expression is unreachable
+15 |         to: todo!(),
+   |             ^^^^^^^ unreachable expression
+   |
+   = note: `#[warn(unreachable_code)]` (part of `#[warn(unused)]`) on by default
+
+error[E0451]: fields `from` and `to` of struct `CatalogReissuanceReceipt` are private
+  --> tests/probes/55_forge_a_reissuance_receipt.rs:14:9
+   |
+13 |     let _forged = CatalogReissuanceReceipt {
+   |                   ------------------------ in this type
+14 |         from: todo!(),
+   |         ^^^^ private field
+15 |         to: todo!(),
+   |         ^^ private field

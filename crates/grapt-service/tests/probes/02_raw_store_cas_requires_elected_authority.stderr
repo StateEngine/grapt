@@ -1,0 +1,10 @@
+error[E0624]: method `mutation_permit` is private
+  --> tests/probes/02_raw_store_cas_requires_elected_authority.rs:12:28
+   |
+12 |     let permit = authority.mutation_permit();
+   |                            ^^^^^^^^^^^^^^^ private method
+   |
+  ::: src/store.rs
+   |
+   |     pub(crate) fn mutation_permit(&self) -> &RegistrationMutationPermit {
+   |     ------------------------------------------------------------------- private method defined here

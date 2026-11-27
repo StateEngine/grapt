@@ -1,0 +1,1 @@
+| MCP operator refresh | `openai/codex`, `codex-rs/core/src/session/mcp.rs`, commit `c465563aa9626d99420062135b187d299f904f81` | Apache-2.0 | Adapts the explicit refresh mechanism to Grapt's existing location-scoped connection registry and startup admission. |

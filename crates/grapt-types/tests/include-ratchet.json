@@ -1,0 +1,64 @@
+{
+ "comment": "Shrink-only list of production src/ Rust source stitched with include!. Convert a carrier to submodules and delete its entry; never add one.",
+ "carriers": {
+  "crates/grapt-event/src/envelope.rs": [
+   "crates/grapt-event/src/envelope/tests.rs"
+  ],
+  "crates/grapt-permission/src/service.rs": [
+   "crates/grapt-permission/src/service/operations.rs"
+  ],
+  "crates/grapt-permission/src/service/http.rs": [
+   "crates/grapt-permission/src/service/http/helpers.rs"
+  ],
+  "crates/grapt-product/src/dogfood/execution.rs": [
+   "crates/grapt-product/src/dogfood/execution/helpers.rs"
+  ],
+  "crates/grapt-product/src/dogfood/mod.rs": [
+   "crates/grapt-product/src/dogfood/application_port.rs"
+  ],
+  "crates/grapt-provider/src/codex.rs": [
+   "crates/grapt-provider/src/codex/tests/ordinals_capacity_and_eof.rs",
+   "crates/grapt-provider/src/codex/tests/support_and_units.rs",
+   "crates/grapt-provider/src/codex/tests/transport_stream.rs",
+   "crates/grapt-provider/src/codex/tests/utf8_and_framing.rs"
+  ],
+  "crates/grapt-provider/src/normalize.rs": [
+   "crates/grapt-provider/src/normalize/tests.rs"
+  ],
+  "crates/grapt-runtime/src/step.rs": [
+   "crates/grapt-runtime/src/step/tests.rs"
+  ],
+  "crates/grapt-session-history/src/history/tests.rs": [
+   "crates/grapt-session-history/src/history/tests/fold_witnesses.rs",
+   "crates/grapt-session-history/src/history/tests/lifetime_bound_witnesses.rs"
+  ],
+  "crates/grapt-store/src/attempt_receipt/tests.rs": [
+   "crates/grapt-store/src/attempt_receipt/tests/corruption_and_recovery.rs",
+   "crates/grapt-store/src/attempt_receipt/tests/future_failure_fact.rs",
+   "crates/grapt-store/src/attempt_receipt/tests/lifecycle.rs",
+   "crates/grapt-store/src/attempt_receipt/tests/partial_text.rs",
+   "crates/grapt-store/src/attempt_receipt/tests/quarantine_and_terminal.rs",
+   "crates/grapt-store/src/attempt_receipt/tests/send_permit_contradiction.rs",
+   "crates/grapt-store/src/attempt_receipt/tests/shared_terminal.rs"
+  ],
+  "crates/grapt-store/src/session_list.rs": [
+   "crates/grapt-store/src/session_list/budget.rs",
+   "crates/grapt-store/src/session_list/migration.rs",
+   "crates/grapt-store/src/session_list/schema.rs"
+  ],
+  "crates/grapt-store/src/write/tests.rs": [
+   "crates/grapt-store/src/write/tests/append_and_replay.rs",
+   "crates/grapt-store/src/write/tests/fencing_and_projection.rs",
+   "crates/grapt-store/src/write/tests/new_writer_claim.rs",
+   "crates/grapt-store/src/write/tests/reconciliation_and_schema.rs"
+  ],
+  "crates/grapt-types/src/checkpoint.rs": [
+   "crates/grapt-types/src/checkpoint/tests/admission_and_preconditions.rs",
+   "crates/grapt-types/src/checkpoint/tests/capture_and_reference.rs",
+   "crates/grapt-types/src/checkpoint/tests/restore_plan_rescue_and_lease.rs"
+  ],
+  "crates/grapt-types/src/context.rs": [
+   "crates/grapt-types/src/context/tests.rs"
+  ]
+ }
+}

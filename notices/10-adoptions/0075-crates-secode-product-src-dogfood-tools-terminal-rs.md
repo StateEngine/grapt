@@ -1,0 +1,1 @@
+| `crates/secode-product/src/dogfood/tools/terminal.rs` | `openai/codex`: `codex-rs/core/src/unified_exec/process_manager.rs` | `bb64b894fd67158be0f874872e6d7bfe717e7368` | Modified: typed session-owned handles, bounded reservations, acknowledged output cursor and canceled-input cleanup. |

@@ -1,0 +1,181 @@
+{
+  "name": "J04 — subagent presentation, both clients, one product",
+  "about": [
+    "The subagent dimension, added at r3 because the child producer is new in",
+    "this revision: before it, a subagent could be described and recovered but",
+    "never launched, so there was nothing on either screen to compare.",
+    "",
+    "WHAT IS BEING COMPARED IS PRESENTATION, not the mechanism. The mechanism —",
+    "admission, the authority ask, the child's own Session and turn, the",
+    "durable terminal, the result bound to this call — is witnessed inside the",
+    "product by the headless subagent witnesses, where the assertions can be",
+    "exact. What no in-process witness can answer is what a person SEES: that a",
+    "delegated turn announces itself as an authority decision like any other",
+    "tool, that the wait is visible rather than a frozen screen, and that the",
+    "answer arrives attributed to the call that asked for it.",
+    "",
+    "THE ASK IS ANSWERED IN THE CLIENT, not through the API. A run that",
+    "approved over HTTP would prove the product settles an ask and would say",
+    "nothing about either client's authority surface, which is the half this",
+    "dimension exists for.",
+    "",
+    "The retained client has no subagent tool of its own to invoke here; what",
+    "it is being asked for is how it renders the SAME product's tool call and",
+    "result. Where it declares no expectation, the step is recorded as skipped",
+    "for that side rather than silently shared.",
+    "",
+    "THE RETAINED WAIT IS ON THE PARENT'S ANSWER, not on the word `subagent`.",
+    "B2: it used to wait for the bare token `subagent`, which the",
+    "retained client draws the moment the call is ANNOUNCED — its renderer shows",
+    "`Delegating...` with a spinner while running — so the capture captioned",
+    "'the child's answer' was gated on nothing that required an answer to exist.",
+    "The attended frame showed exactly that: a spinner, and exit 0.",
+    "",
+    "The parent's continuation turn cannot happen until the tool RESULT is back,",
+    "so a fragment of the answer it then streams is a token only a settled,",
+    "displayed result can produce. The native side keeps its own completion",
+    "token. Neither side waits on the other's vocabulary; both wait on the same",
+    "FACT.",
+    "",
+    "The retained token is the answer's LAST words, not its first. Waiting on an",
+    "early fragment matched while the reply was still streaming, and the capture",
+    "that followed photographed a half-drawn screen — which the coherence gate",
+    "then caught, correctly. The end of the scripted answer is the point at which",
+    "there is nothing left to arrive.",
+    "",
+    "The final capture is declared `settled` for the NATIVE side only. That",
+    "frame is the evidence for its own caption — the tool row, the task and the",
+    "answer, attributed to the call — so a mid-render photograph of it would be",
+    "worthless. The retained client repaints continuously in a live session",
+    "(twelve retakes over three seconds, never quiescent), so its frame is an",
+    "illustration and is recorded with its coherence rather than pretended to be",
+    "proof. What proves the retained side is the WAIT above it, which cannot",
+    "match until the parent's own answer has streamed to its last words — and",
+    "that answer cannot exist until the tool result came back."
+  ],
+  "steps": [
+    {
+      "expect": {
+        "native": "PROJECTS",
+        "retained": "Select a project"
+      },
+      "polls": 240
+    },
+    {
+      "capture": "the opening screen"
+    },
+    {
+      "key": {
+        "native": "Enter",
+        "retained": "i"
+      }
+    },
+    {
+      "expect": {
+        "native": "AGENTS",
+        "retained": "ctrl+x tab agents"
+      },
+      "polls": 240
+    },
+    {
+      "key": {
+        "native": "Enter",
+        "retained": "Enter"
+      }
+    },
+    {
+      "expect": {
+        "native": "MODELS"
+      },
+      "polls": 240
+    },
+    {
+      "paste": {
+        "native": "Sol"
+      }
+    },
+    {
+      "expect": {
+        "native": "Sol"
+      },
+      "polls": 240
+    },
+    {
+      "key": {
+        "native": "Enter"
+      }
+    },
+    {
+      "expect": {
+        "native": "model openai/GPT-5.6 Sol"
+      },
+      "polls": 240
+    },
+    {
+      "key": {
+        "native": "n"
+      }
+    },
+    {
+      "expect": {
+        "native": "TRANSCRIPT"
+      },
+      "polls": 240
+    },
+    {
+      "absent": {
+        "native": "PERMISSION",
+        "retained": "Allow once"
+      },
+      "polls": 240
+    },
+    {
+      "paste": "Delegate: read the transcript and say what this session is for"
+    },
+    {
+      "key": "Enter"
+    },
+    {
+      "expect": {
+        "native": "PERMISSION",
+        "retained": "Allow once"
+      },
+      "polls": 960
+    },
+    {
+      "capture": "the subagent ask, before any child exists"
+    },
+    {
+      "key": {
+        "native": "o",
+        "retained": "Enter"
+      }
+    },
+    {
+      "absent": {
+        "native": "PERMISSION",
+        "retained": "Allow once"
+      },
+      "polls": 480
+    },
+    {
+      "expect": {
+        "native": "tool subagent completed",
+        "retained": "exactly as a model"
+      },
+      "polls": 960
+    },
+    {
+      "capture": "the child's answer, attributed to the call that asked for it",
+      "settled": {
+        "native": true
+      }
+    },
+    {
+      "key": {
+        "native": "Control+q",
+        "retained": "Control+c"
+      }
+    }
+  ]
+}

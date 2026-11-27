@@ -1,0 +1,1569 @@
+{
+  "lane": "IA0-1R",
+  "prefix": "IPR",
+  "crate": "grapt-product",
+  "mutations": [
+    {
+      "id": "IPR01",
+      "package": "grapt-product",
+      "test_target": "product_root",
+      "test": "absent_store_refuses_before_registration_authority",
+      "file": "crates/grapt-product/src/compose.rs",
+      "old": "    let platform = grapt_platform::PlatformOwner::prepare(service_root)\n        .map_err(|error| ProductRefusal::Platform(error.to_string()))?;",
+      "new": "    let platform = match grapt_platform::PlatformOwner::prepare(service_root) {\n        Ok(platform) => platform,\n        Err(_error) => {\n            let database = service_root.join(\"database.sqlite3\");\n            let store = grapt_store::EventStore::open(&database, env!(\"CARGO_PKG_VERSION\"))\n                .map_err(|error| ProductRefusal::Platform(error.to_string()))?;\n            drop(store);\n            let migrations = grapt_store::ProductionMigrations::load()\n                .map_err(|error| ProductRefusal::Platform(error.to_string()))?;\n            grapt_store::apply_migrations(\n                &database,\n                service_root,\n                env!(\"CARGO_PKG_VERSION\"),\n                &migrations.as_slice(),\n            )\n            .map_err(|error| ProductRefusal::Platform(error.to_string()))?;\n            grapt_platform::PlatformOwner::prepare(service_root)\n                .map_err(|error| ProductRefusal::Platform(error.to_string()))?\n        }\n    };",
+      "red": "an absent store launched the product",
+      "repin_note": "Commit 2ba71e34 moved first-contact classification and exact owned-open authority out of product composition. The current equivalent law is the product boundary's refusal to synthesize, migrate and retry around a refused PlatformOwner; changing only the platform absent arm still refuses at the store's explicit migration authority boundary and therefore witnesses nothing."
+    },
+    {
+      "id": "IPR02",
+      "package": "grapt-product",
+      "test_target": "product_root",
+      "test": "absent_store_refuses_before_registration_authority",
+      "file": "crates/grapt-product/src/compose.rs",
+      "old": "    let platform = grapt_platform::PlatformOwner::prepare(service_root)\n        .map_err(|error| ProductRefusal::Platform(error.to_string()))?;",
+      "new": "    let platform = match grapt_platform::PlatformOwner::prepare(service_root) {\n        Ok(platform) => platform,\n        Err(error) => {\n            let _premature = std::fs::write(service_root.join(\"registration\"), b\"premature\");\n            return Err(ProductRefusal::Platform(error.to_string()));\n        }\n    };",
+      "red": "absent store created registration",
+      "repin_note": "Commit 2ba71e34 replaced product-local readiness matching with PlatformOwner::prepare. Product composition still owns the ordering law: a refused platform acquisition returns before any registration artifact or controller authority exists."
+    },
+    {
+      "id": "IPR03",
+      "package": "grapt-product",
+      "test_target": "product_root",
+      "test": "ready_store_serves_registers_probes_drains_and_releases",
+      "file": "crates/grapt-product/src/compose.rs",
+      "old": "BasicAuthVerifier::new(&credential.username, &credential.secret)",
+      "new": "BasicAuthVerifier::new(&credential.username, \"mutated-server-secret\")",
+      "red": "before ready publication"
+    },
+    {
+      "id": "IPR04",
+      "package": "grapt-product",
+      "test_target": "product_root",
+      "test": "ready_store_serves_registers_probes_drains_and_releases",
+      "file": "crates/grapt-product/src/compose.rs",
+      "old": "let health = ProductHealth::new(\n        pid.value(),",
+      "new": "let health = ProductHealth::new(\n        1,",
+      "red": "before ready publication"
+    },
+    {
+      "id": "IPR05",
+      "package": "grapt-service",
+      "test_target": "integration",
+      "test": "authenticated_health_probe::mismatched_build_refuses_attribution",
+      "file": "crates/grapt-service/src/authenticated_health_probe.rs",
+      "old": "|| health.build != self.expected.build",
+      "new": "|| false",
+      "red": "mismatched_build_refuses_attribution"
+    },
+    {
+      "id": "IPR06",
+      "package": "grapt-product",
+      "test_target": "lib",
+      "test": "failed_authenticated_self_probe_creates_no_registration_artifacts",
+      "file": "crates/grapt-product/src/compose.rs",
+      "old": "    let probe_outcome = match probe.probe().await {\n        Ok(outcome) => outcome,\n        Err(error) => {\n            return stop_and_refuse(host, ProductRefusal::Probe(error.to_string())).await;\n        }\n    };\n    let authority = match startup\n        .commit(service_root, &declared, probe_outcome, &version)\n        .await\n    {\n        Ok(authority) => authority,\n        Err(error) => return stop_and_refuse(host, error).await,\n    };",
+      "new": "    let authority = match startup\n        .commit(service_root, &declared, grapt_service::ProbeOutcome::Attributed(declared.clone()), &version)\n        .await\n    {\n        Ok(authority) => authority,\n        Err(error) => return stop_and_refuse(host, error).await,\n    };\n    let probe_outcome = match probe.probe().await {\n        Ok(outcome) => outcome,\n        Err(error) => {\n            return stop_and_refuse(host, ProductRefusal::Probe(error.to_string())).await;\n        }\n    };\n    let _authenticated_probe = probe_outcome;",
+      "red": "failed probe created registration",
+      "repin_note": "Retained campaign r3 wires restart through StartupSnapshot::commit. Preserve the same premature-authority mutant and named failed-self-probe witness at the current composition boundary."
+    },
+    {
+      "id": "IPR07",
+      "package": "grapt-api",
+      "test_target": "lib",
+      "test": "health_is_versioned_numeric_and_the_only_registered_route",
+      "file": "crates/grapt-api/src/product_health.rs",
+      "old": "pub const PRODUCT_HEALTH_PATH: &str = \"/api/health\";",
+      "new": "pub const PRODUCT_HEALTH_PATH: &str = \"/api/healthz\";",
+      "red": "health_is_versioned_numeric_and_the_only_registered_route"
+    },
+    {
+      "id": "IPR08",
+      "package": "grapt-product",
+      "test_target": "lib",
+      "test": "drain_releases_the_observed_address_before_process_exit",
+      "file": "crates/grapt-product/src/compose.rs",
+      "old": "async fn drain_host(host: RunningApiHost) -> grapt_api::ApiHostExit {\n    host.stop().await\n}",
+      "new": "async fn drain_host(host: RunningApiHost) -> grapt_api::ApiHostExit {\n    std::mem::forget(host);\n    grapt_api::ApiHostExit::StoppedGracefully {\n        admitted_connections: 0,\n        completed_connections: 0,\n        failed_connections: 0,\n        admitted_requests: 0,\n        refused_requests: 0,\n    }\n}",
+      "red": "drained address did not rebind"
+    },
+    {
+      "id": "IPR09",
+      "package": "grapt-service",
+      "test_target": "integration",
+      "test": "authenticated_health_probe::mismatched_environment_refuses_attribution",
+      "file": "crates/grapt-service/src/authenticated_health_probe.rs",
+      "old": "|| health.environment != owner.environment().as_str()",
+      "new": "|| false",
+      "red": "mismatched_environment_refuses_attribution"
+    },
+    {
+      "id": "IPR10",
+      "package": "grapt-service",
+      "test_target": "integration",
+      "test": "authenticated_health_probe::mismatched_service_instance_refuses_attribution",
+      "file": "crates/grapt-service/src/authenticated_health_probe.rs",
+      "old": "|| health.service_instance != owner.instance().as_str()",
+      "new": "|| false",
+      "red": "mismatched_service_instance_refuses_attribution"
+    },
+    {
+      "id": "IPR11",
+      "package": "grapt-product",
+      "test_target": "lib",
+      "test": "acceptance_corpus_is_schema_valid_closed_and_executable",
+      "file": "crates/grapt-product/src/compose.rs",
+      "old": "    fn schema_matches(schema: &Value, value: &Value) -> bool {\n        let Some(rules) = schema.as_object() else {\n            return schema != &Value::Bool(false);\n        };",
+      "new": "    fn schema_matches(schema: &Value, value: &Value) -> bool {\n        if std::hint::black_box(true) {\n            return true;\n        }\n        let Some(rules) = schema.as_object() else {\n            return schema != &Value::Bool(false);\n        };",
+      "red": "schema validator admitted an undeclared manifest field"
+    },
+    {
+      "id": "IPR12",
+      "package": "grapt-product",
+      "test_target": "lib",
+      "test": "failed_authenticated_self_probe_creates_no_registration_artifacts",
+      "edits": [
+        {
+          "file": "crates/grapt-product/src/compose.rs",
+          "old": "    let probe_outcome = match probe.probe().await {\n        Ok(outcome) => outcome,\n        Err(error) => {\n            return stop_and_refuse(host, ProductRefusal::Probe(error.to_string())).await;\n        }\n    };\n    let authority = match startup\n        .commit(service_root, &declared, probe_outcome, &version)\n        .await\n    {\n        Ok(authority) => authority,\n        Err(error) => return stop_and_refuse(host, error).await,\n    };",
+          "new": "    let authority = match startup\n        .commit(service_root, &declared, grapt_service::ProbeOutcome::Attributed(declared.clone()), &version)\n        .await\n    {\n        Ok(authority) => authority,\n        Err(error) => return stop_and_refuse(host, error).await,\n    };\n    let probe_outcome = match probe.probe().await {\n        Ok(outcome) => outcome,\n        Err(error) => {\n            return stop_and_refuse(host, ProductRefusal::Probe(error.to_string())).await;\n        }\n    };\n    let _authenticated_probe = probe_outcome;"
+        },
+        {
+          "file": "crates/grapt-product/src/compose.rs",
+          "old": "BasicAuthVerifier::new(&credential.username, &credential.secret)",
+          "new": "BasicAuthVerifier::new(&credential.username, \"mutated-server-secret\")"
+        }
+      ],
+      "red": "failed probe created registration",
+      "repin_note": "Retained campaign r3 wires restart through StartupSnapshot::commit. Preserve the same premature-authority mutant and named failed-self-probe witness at the current composition boundary."
+    },
+    {
+      "id": "IPR13",
+      "package": "grapt-service",
+      "test_target": "integration",
+      "test": "authenticated_health_probe::mismatched_schema_refuses_attribution",
+      "file": "crates/grapt-service/src/authenticated_health_probe.rs",
+      "old": "health.schema != HEALTH_SCHEMA",
+      "new": "false",
+      "red": "mismatched_schema_refuses_attribution"
+    },
+    {
+      "id": "IPR14",
+      "package": "grapt-service",
+      "test_target": "integration",
+      "test": "authenticated_health_probe::mismatched_",
+      "edits": [
+        {
+          "file": "crates/grapt-service/src/authenticated_health_probe.rs",
+          "old": "|| health.environment != owner.environment().as_str()",
+          "new": "|| false"
+        },
+        {
+          "file": "crates/grapt-service/src/authenticated_health_probe.rs",
+          "old": "|| health.service_instance != owner.instance().as_str()",
+          "new": "|| false"
+        }
+      ],
+      "reds": [
+        "mismatched_environment_refuses_attribution",
+        "mismatched_service_instance_refuses_attribution"
+      ]
+    },
+    {
+      "id": "IPR15",
+      "package": "grapt-product",
+      "test_target": "lib",
+      "test": "acceptance_corpus_is_schema_valid_closed_and_executable",
+      "file": "crates/grapt-product/src/compose.rs",
+      "old": "    fn pattern_matches(pattern: &str, value: &str) -> bool {\n        match pattern {",
+      "new": "    fn pattern_matches(pattern: &str, value: &str) -> bool {\n        if std::hint::black_box(true) {\n            return true;\n        }\n        match pattern {",
+      "red": "pattern validator admitted an invalid manifest id"
+    },
+    {
+      "id": "IPR16",
+      "package": "grapt-product",
+      "test_target": "integration",
+      "test": "grapt_product_dependencies_are_exactly_the_wiring_set",
+      "file": "crates/grapt-product/Cargo.toml",
+      "old": "grapt-api = { path = \"../grapt-api\" }",
+      "new": "grapt-api = { path = \"../grapt-api\" }\ngrapt-stream = { path = \"../grapt-stream\" }",
+      "red": "grapt-product dependency set drifted",
+      "repin_note": "Final current-canonical composition makes grapt-permission a legitimate product dependency while preserving the accepted provider wiring, so the former resurrection became a duplicate manifest key that Cargo refused before the owned dependency-direction witness ran. grapt-stream is a live workspace library outside the exact product wiring set, so this mutation reaches and kills the named architecture gate. Retained r3 adds external Git identity dependencies before grapt-api; anchor the exact dependency row so the same forbidden workspace edge still reaches the witness. The bait was retargeted from the removed grapt-campaign crate to grapt-stream, which does not depend on the product and adds nothing new to compile."
+    },
+    {
+      "id": "IPR17",
+      "package": "grapt-product",
+      "test_target": "lib",
+      "test": "registration_failure_stops_host_before_refusal",
+      "file": "crates/grapt-product/src/compose.rs",
+      "old": "        Err(error) => return stop_and_refuse(host, error).await,",
+      "new": "        Err(error) => {\n            std::mem::forget(host);\n            return Err(error);\n        }",
+      "red": "registration refusal leaked host address",
+      "repin_note": "Corrupt startup snapshots now refuse before host construction. The existing host-drain witness obstructs the elected-controller file after a valid empty snapshot, preserving reachability of this same post-probe refusal mutation."
+    },
+    {
+      "id": "IPR18",
+      "package": "grapt-product",
+      "test_target": "lib",
+      "test": "non_release_outcome_is_never_reported_as_released",
+      "file": "crates/grapt-product/src/compose.rs",
+      "old": "fn registration_was_released(outcome: &StopOutcome) -> bool {\n    matches!(outcome, StopOutcome::Released { .. })\n}",
+      "new": "fn registration_was_released(outcome: &StopOutcome) -> bool {\n    let _outcome = outcome;\n    true\n}",
+      "red": "non-release outcome was reported as released"
+    },
+    {
+      "id": "IPR19",
+      "package": "grapt-product",
+      "test_target": "lib",
+      "test": "failed_authenticated_self_probe_creates_no_registration_artifacts",
+      "file": "crates/grapt-product/src/compose.rs",
+      "old": "    let probe_outcome = match probe.probe().await {\n        Ok(outcome) => outcome,\n        Err(error) => {\n            return stop_and_refuse(host, ProductRefusal::Probe(error.to_string())).await;\n        }\n    };",
+      "new": "    let probe_outcome = match probe.probe().await {\n        Ok(outcome) => outcome,\n        Err(_error) => grapt_service::ProbeOutcome::Attributed(declared.clone()),\n    };",
+      "red": "failed authenticated probe launched the product"
+    },
+    {
+      "id": "IPR20",
+      "package": "grapt-product",
+      "test_target": "lib",
+      "test": "acceptance_corpus_is_schema_valid_closed_and_executable",
+      "edits": [
+        {
+          "file": "crates/grapt-product/src/compose.rs",
+          "old": "        assert!(\n            schema_matches(&schema, &manifest),\n            \"manifest violates the ratified schema\"\n        );",
+          "new": "        let _schema_guard_removed = schema_matches(&schema, &manifest);"
+        },
+        {
+          "file": "fixtures/rust-reconstruction/ia0-product-root-v1/manifest.json",
+          "old": "\"title\":\"IA0-1R read-only-ready authenticated product root\",\"oracle\"",
+          "new": "\"title\":\"IA0-1R read-only-ready authenticated product root\",\"unexpected\":true,\"oracle\""
+        }
+      ],
+      "red": "manifest top-level contract drifted"
+    },
+    {
+      "id": "IPR21",
+      "package": "grapt-product",
+      "test_target": "integration",
+      "test": "grapt_product_dependencies_are_exactly_the_wiring_set",
+      "file": "crates/grapt-product/Cargo.toml",
+      "old": "[target.'cfg(windows)'.dependencies]\n",
+      "new": "[target.'cfg(windows)'.dependencies]\ngrapt-stream = { path = \"../grapt-stream\" }\n",
+      "red": "grapt-product dependency set drifted",
+      "repin_note": "The dependency gate intentionally compares an effective identity set, so repeating an allowed identity in a target mirror is observationally equivalent and survives. Final current-canonical composition admits grapt-permission; out-of-set grapt-stream preserves IPR21's target-specific-table traversal law while making the resurrection observable. The bait was retargeted from the removed grapt-campaign crate to grapt-stream, which does not depend on the product and adds nothing new to compile. The product manifest now carries its own cfg(windows) dependency table, so the bait row is added inside that table rather than as a second copy of its header."
+    },
+    {
+      "id": "IPR22",
+      "package": "grapt-product",
+      "test_target": "integration",
+      "test": "grapt_product_dependencies_are_exactly_the_wiring_set",
+      "edits": [
+        {
+          "file": "Cargo.toml",
+          "old": "[workspace.package]",
+          "new": "[workspace.dependencies]\nbridge = { package = \"grapt-stream\", path = \"crates/grapt-stream\" }\n\n[workspace.package]"
+        },
+        {
+          "file": "crates/grapt-product/Cargo.toml",
+          "old": "serde = { version = \"1\", features = [\"derive\"] }",
+          "new": "bridge.workspace = true\nserde = { version = \"1\", features = [\"derive\"] }"
+        }
+      ],
+      "red": "grapt-product dependency set drifted",
+      "repin_note": "Final current-canonical composition admits grapt-permission, so resolving a renamed workspace alias to that identity no longer changes the gate's effective set. Resolving bridge to out-of-set grapt-stream preserves the alias-resolution law and restores its named red. The bait was retargeted from the removed grapt-campaign crate to grapt-stream, which does not depend on the product and adds nothing new to compile."
+    },
+    {
+      "id": "DGH01",
+      "package": "grapt-product",
+      "features": [
+        "loopback-provider-testkit"
+      ],
+      "test_target": "dogfood_headless",
+      "test": "headless_real_process_closes_every_journey_law",
+      "file": "crates/grapt-product/src/compose.rs",
+      "old": "    let module_count = if dogfood.is_some() {\n        1 + DOGFOOD_NON_SSE_ROUTE_COUNT + 1\n    } else {\n        1\n    };",
+      "new": "    let module_count = if dogfood.is_some() {\n        1 + DOGFOOD_NON_SSE_ROUTE_COUNT\n    } else {\n        1\n    };",
+      "red": "product exited before readiness"
+    },
+    {
+      "id": "DGH02",
+      "package": "grapt-product",
+      "test_target": "lib",
+      "test": "stable_retry_rechecks_durable_pending_work_through_the_coordinator",
+      "file": "crates/grapt-product/src/dogfood/support.rs",
+      "old": "        AdmitOutcome::Admitted {\n            wake: WakeDisposition::WakeAdvised,\n            ..\n        } | AdmitOutcome::Reconciled {\n            wake: WakeDisposition::WakeAdvised,\n        }",
+      "new": "        AdmitOutcome::Admitted {\n            wake: WakeDisposition::WakeAdvised,\n            ..\n        }",
+      "red": "stable_retry_rechecks_durable_pending_work_through_the_coordinator"
+    },
+    {
+      "id": "DGH03",
+      "package": "grapt-product",
+      "features": [
+        "loopback-provider-testkit"
+      ],
+      "test_target": "dogfood_headless",
+      "test": "headless_real_process_closes_every_journey_law",
+      "file": "crates/grapt-product/src/dogfood/application_port.rs",
+      "old": "            .get(\"id\")\n            .and_then(Value::as_str)",
+      "new": "            .get(\"mutated-id\")\n            .and_then(Value::as_str)",
+      "red": "stable prompt identity was not preserved"
+    },
+    {
+      "id": "DGH04",
+      "package": "grapt-product",
+      "features": [
+        "loopback-provider-testkit"
+      ],
+      "test_target": "dogfood_headless",
+      "test": "headless_real_process_closes_every_journey_law",
+      "file": "crates/grapt-product/src/dogfood/support.rs",
+      "old": "    for field in [\"files\", \"agents\"] {",
+      "new": "    for field in [\"agents\"] {",
+      "red": "Dogfood-1 accepted an excluded attachment"
+    },
+    {
+      "id": "DGH05",
+      "package": "grapt-product",
+      "features": [
+        "loopback-provider-testkit"
+      ],
+      "test_target": "dogfood_headless",
+      "test": "headless_real_process_closes_every_journey_law",
+      "file": "crates/grapt-product/src/dogfood/history_json.rs",
+      "old": "            .map(|committed| committed.created_ms)",
+      "new": "            .map(|_| 0)",
+      "red": "assistant message substituted zero for its durable creation time"
+    },
+    {
+      "id": "DGH06",
+      "package": "grapt-product",
+      "test_target": "lib",
+      "test": "service_config_cannot_author_product_build_identity",
+      "file": "crates/grapt-product/src/input.rs",
+      "old": "            \"slot\"\n                | \"instance\"\n                | \"environment\"\n                | \"version\"",
+      "new": "            \"slot\"\n                | \"instance\"\n                | \"environment\"\n                | \"build\"\n                | \"version\"",
+      "red": "service.conf shadowed PublishedConfig build"
+    },
+    {
+      "id": "DGH09",
+      "package": "grapt-product",
+      "features": [
+        "loopback-provider-testkit"
+      ],
+      "test_target": "dogfood_headless",
+      "test": "headless_real_process_closes_every_journey_law",
+      "file": "crates/grapt-product/src/dogfood/usage.rs",
+      "old": "        output: usage.output().map(|field| field.count().value()),",
+      "new": "        output: None,",
+      "red": "public provider input is fresh input, not inclusive input"
+    },
+    {
+      "id": "RMH01",
+      "package": "grapt-product",
+      "test_target": "lib",
+      "test": "first_attempt_consumes_preissued_target_and_retry_issues_fresh",
+      "file": "crates/grapt-product/src/dogfood/production.rs",
+      "old": "        let target = match self.first_target.take() {",
+      "new": "        let target = match self.first_target.take().filter(|_| false) {",
+      "red": "the preissued first target was not consumed exactly once"
+    },
+    {
+      "id": "RMH02",
+      "package": "grapt-runtime",
+      "test_target": "lib",
+      "test": "a_new_chain_preserves_its_session_step_offset",
+      "file": "crates/grapt-runtime/src/application.rs",
+      "old": "    step.value()",
+      "new": "    1",
+      "red": "a_new_chain_preserves_its_session_step_offset"
+    },
+    {
+      "id": "FS01",
+      "suite": "profile",
+      "file": "remote-compute/secode-linux.json",
+      "old": "      {\"id\":\"reconnect-manifest\",\"local_path\":\"secode/fixtures/rust-reconstruction/reconnect-cursor-convergence-replay/manifest.json\",\"remote_path\":\"fixtures/rust-reconstruction/reconnect-cursor-convergence-replay/manifest.json\",\"bytes\":2344,\"sha256\":\"6d1cc6e48724f8a1b0aedfa63b6f07af743f1aa6f50db8c936474bd093ae0372\",\"mode\":\"0444\"},\n",
+      "new": "",
+      "reds": [
+        "reconnect-manifest: absent"
+      ]
+    },
+    {
+      "id": "FS02",
+      "suite": "profile",
+      "file": "remote-compute/secode-linux-evidence.json",
+      "old": "      {\"id\":\"reconnect-manifest\",\"local_path\":\"secode/fixtures/rust-reconstruction/reconnect-cursor-convergence-replay/manifest.json\",\"remote_path\":\"fixtures/rust-reconstruction/reconnect-cursor-convergence-replay/manifest.json\",\"bytes\":2344,\"sha256\":\"6d1cc6e48724f8a1b0aedfa63b6f07af743f1aa6f50db8c936474bd093ae0372\",\"mode\":\"0444\"},\n",
+      "new": "",
+      "reds": [
+        "reconnect-manifest: absent",
+        "secode-linux-evidence"
+      ]
+    },
+    {
+      "id": "FS03",
+      "suite": "profile",
+      "file": "remote-compute/secode-linux.json",
+      "old": "\"sha256\":\"e0421d98c411050df04b7842be65f9b3ada5c3f28a61aa8c080a29880b0b23f5\"",
+      "new": "\"sha256\":\"0000000000000000000000000000000000000000000000000000000000000000\"",
+      "reds": [
+        "reconnect-actions: sha256 is"
+      ]
+    },
+    {
+      "id": "FS04",
+      "package": "grapt-session",
+      "test_target": "session_list_acceptance_corpus",
+      "test": "the_corpus_manifest_validates_against_the_ratified_schema",
+      "file": "fixtures/rust-reconstruction/session-list-keyset-v1/manifest.json",
+      "old": "97c14bd84ac1c742721865b66259d718bb4125b50fa429976ad4467e1c15c581",
+      "new": "36fbf3b96258565ff14924d597a1c3a83e6307672b23a754d9f1287e92aa272a",
+      "reds": [
+        "the nine ordered law sources or their digests drifted from the ratified pin"
+      ]
+    },
+    {
+      "id": "LH01",
+      "package": "grapt-product",
+      "features": [
+        "loopback-provider-testkit"
+      ],
+      "test_target": "dogfood_headless",
+      "test": "live_headless_wire_failure_and_resurrection_witnesses",
+      "file": "crates/grapt-platform/src/credential.rs",
+      "old": "            Secret::new(material),",
+      "new": "            Secret::new(\"mutated-credential\".to_owned()),",
+      "red": "live request did not carry the exact platform credential capability"
+    },
+    {
+      "id": "LH02",
+      "package": "grapt-product",
+      "features": [
+        "loopback-provider-testkit"
+      ],
+      "test_target": "dogfood_headless",
+      "test": "live_headless_wire_failure_and_resurrection_witnesses",
+      "file": "crates/grapt-product/src/dogfood/execution/helpers.rs",
+      "old": "        .map(|input| input.text)",
+      "new": "        .map(|input| format!(\"mutated:{}\", input.text))",
+      "red": "first admitted prompt must reach the provider exactly once"
+    },
+    {
+      "id": "LH03",
+      "package": "grapt-product",
+      "features": [
+        "loopback-provider-testkit"
+      ],
+      "test_target": "dogfood_headless",
+      "test": "live_headless_wire_failure_and_resurrection_witnesses",
+      "file": "crates/grapt-product/src/dogfood/execution/observations.rs",
+      "old": "if self.hub.publish(&event).is_err() {",
+      "new": "if true { // MUTATED: suppress the committed execution terminal publication.",
+      "red": "event stream carried no execution.succeeded"
+    },
+    {
+      "id": "LH04",
+      "package": "grapt-product",
+      "features": [
+        "loopback-provider-testkit"
+      ],
+      "test_target": "lib",
+      "test": "dogfood::execution::interrupt_truth_tests::coordinator_noop_and_error_never_leak_interrupted_terminal_truth",
+      "file": "crates/grapt-product/src/dogfood/execution.rs",
+      "old": "        if matches!(outcome, grapt_runtime::InterruptOutcome::Interrupted)\n            && !sessions.contains(session)",
+      "new": "        if !sessions.contains(session)",
+      "red": "post-run/pre-active-map NoOpIdle leaked an interrupted terminal"
+    },
+    {
+      "id": "LH05",
+      "package": "grapt-product",
+      "features": [
+        "loopback-provider-testkit"
+      ],
+      "test_target": "lib",
+      "test": "dogfood::execution::interrupt_truth_tests::interrupted_outcome_is_recorded_before_terminal_publication_can_read_it",
+      "file": "crates/grapt-product/src/dogfood/execution.rs",
+      "old": "        let mut sessions = match self.sessions.lock() {\n            Ok(guard) => guard,\n            Err(poisoned) => poisoned.into_inner(),\n        };\n        let outcome = interrupt()?;",
+      "new": "        let outcome = interrupt()?;\n        let mut sessions = match self.sessions.lock() {\n            Ok(guard) => guard,\n            Err(poisoned) => poisoned.into_inner(),\n        };",
+      "red": "terminal reader never blocked under interrupted outcome custody"
+    },
+    {
+      "id": "LH06",
+      "package": "grapt-provider",
+      "features": [
+        "loopback-testkit"
+      ],
+      "test_target": "lib",
+      "test": "route::tests::loopback_base_requires_exact_parsed_authority",
+      "file": "crates/grapt-provider/src/route.rs",
+      "old": "        let exact_authority = parsed.scheme() == \"http\"\n            && parsed.host_str() == Some(\"127.0.0.1\")\n            && parsed.port().is_some()\n            && parsed.username().is_empty()\n            && parsed.password().is_none()\n            && parsed.path() == \"/\"\n            && parsed.query().is_none()\n            && parsed.fragment().is_none();",
+      "new": "        let exact_authority = raw.starts_with(\"http://127.0.0.1:\");",
+      "red": "parsed non-loopback authority was admitted"
+    },
+    {
+      "id": "LH07",
+      "package": "grapt-product",
+      "features": [
+        "loopback-provider-testkit"
+      ],
+      "test_target": "dogfood_headless",
+      "test": "output_advisory::committed_output_bounds_and_two_session_publication_are_advisory",
+      "file": "crates/grapt-product/src/dogfood/execution.rs",
+      "old": "        let observed = if result.is_err() {",
+      "new": "        let observed = if result.is_err() || self.publication.take(&session).is_some() {",
+      "red": "publication loss rewrote canonical runtime outcomes"
+    },
+    {
+      "id": "LH08",
+      "package": "grapt-product",
+      "features": [
+        "loopback-provider-testkit"
+      ],
+      "test_target": "lib",
+      "test": "dogfood::committed_projection_tests::publication_refusal_custody_is_per_session",
+      "file": "crates/grapt-product/src/dogfood/execution.rs",
+      "old": "            Ok(mut guard) => guard.remove(session),",
+      "new": "            Ok(mut guard) => {\n                let first = guard.keys().next().cloned();\n                first.and_then(|held| guard.remove(&held))\n            },",
+      "red": "Session B consumed Session A's advisory refusal"
+    },
+    {
+      "id": "LH09",
+      "package": "grapt-product",
+      "features": [
+        "loopback-provider-testkit"
+      ],
+      "test_target": "dogfood_headless",
+      "test": "output_advisory::committed_output_bounds_and_two_session_publication_are_advisory",
+      "file": "crates/grapt-product/src/dogfood/application_port.rs",
+      "old": "        if !should_execute {\n            return ready(response);\n        }\n        if !self.executor.is_production() {",
+      "new": "        if should_execute {\n            return ready(Err(SessionPromptApplicationError::Conflict(conflict(\n                \"post-admission execution authority refused the durable input\",\n            ))));\n        }\n        if !should_execute {\n            return ready(response);\n        }\n        if !self.executor.is_production() {",
+      "red": "post-admission execution authority refused the durable input"
+    },
+    {
+      "id": "LH10",
+      "package": "grapt-product",
+      "features": [
+        "loopback-provider-testkit"
+      ],
+      "test_target": "lib",
+      "test": "dogfood::committed_projection_tests::terminal_projection_stays_bound_to_n_when_input_n_plus_one_admits_before_serialization",
+      "file": "crates/grapt-session-history/src/history/store.rs",
+      "old": "        Ok(history)\n",
+      "new": "        // MUTATED: substitute the newest aggregate row for the typed terminal.\n        if let Some(position) = history.terminal_positions.values_mut().max_by_key(|held| held.seq) {\n            position.seq = rows.iter().filter_map(|(_, seq, _, _, _)| u64::try_from(*seq).ok()).max().unwrap_or(position.seq);\n        }\n        Ok(history)\n",
+      "red": "the Step projection must retain terminal N, never input N+1"
+    },
+    {
+      "id": "LH11",
+      "package": "grapt-session-history",
+      "features": [],
+      "test_target": "lib",
+      "test": "history::tests::terminal_commit_is_projected_without_an_assistant_message",
+      "file": "crates/grapt-session-history/src/history.rs",
+      "old": "        self.terminal_positions\n            .values()\n            .max_by_key(|committed| committed.seq)",
+      "new": "        self.terminal_positions\n            .iter()\n            .filter(|(step, _)| self.messages.values().any(|opened| opened.step.value() == **step))\n            .map(|(_, position)| position)\n            .max_by_key(|committed| committed.seq)",
+      "red": "the typed terminal position must not depend on AssistantMessage existence"
+    },
+    {
+      "id": "LH12",
+      "package": "grapt-types",
+      "features": [],
+      "test_target": "direct_include_format",
+      "test": "every_direct_include_carrier_is_pinned_rustfmt_clean",
+      "file": "crates/grapt-runtime/tests/coordinator.rs",
+      "old": "include!(\"coordinator/store_failure_and_quiescence.rs\");\n\n// ---------------------------------------------------------------------------",
+      "new": "include!(\"coordinator/store_failure_and_quiescence.rs\");\ninclude!(\"coordinator/capacity_projection.rs\");\n\n// ---------------------------------------------------------------------------",
+      "red": "expected exactly 78 direct include sites, found 79"
+    },
+    {
+      "id": "LH13",
+      "package": "grapt-types",
+      "features": [],
+      "test_target": "no_god_files",
+      "test": "rust_sources_do_not_create_or_grow_god_files",
+      "edits": [
+        {
+          "file": "crates/grapt-product/src/dogfood/execution/interrupt_truth_tests.rs",
+          "old": "        Err(_) => panic!(\"terminal reader panicked\"),\n    }\n}",
+          "new": "        Err(_) => panic!(\"terminal reader panicked\"),\n    }\n}\n// MUTATED: resurrect successor execution growth 1\n// MUTATED: resurrect successor execution growth 2\n// MUTATED: resurrect successor execution growth 3\n// MUTATED: resurrect successor execution growth 4\n// MUTATED: resurrect successor execution growth 5\n// MUTATED: resurrect successor execution growth 6\n// MUTATED: resurrect successor execution growth 7\n// MUTATED: resurrect successor execution growth 8\n// MUTATED: resurrect successor execution growth 9\n// MUTATED: resurrect successor execution growth 10\n// MUTATED: resurrect successor execution growth 11\n// MUTATED: resurrect successor execution growth 12\n// MUTATED: resurrect successor execution growth 13\n// MUTATED: resurrect successor execution growth 14\n// MUTATED: resurrect successor execution growth 15\n// MUTATED: resurrect successor execution growth 16\n// MUTATED: resurrect successor execution growth 17\n// MUTATED: resurrect successor execution growth 18\n// MUTATED: resurrect successor execution growth 19\n// MUTATED: resurrect successor execution growth 20\n// MUTATED: resurrect successor execution growth 21\n// MUTATED: resurrect successor execution growth 22\n// MUTATED: resurrect successor execution growth 23\n// MUTATED: resurrect successor execution growth 24\n// MUTATED: resurrect successor execution growth 25\n// MUTATED: resurrect successor execution growth 26\n// MUTATED: resurrect successor execution growth 27\n// MUTATED: resurrect successor execution growth 28\n// MUTATED: resurrect successor execution growth 29\n// MUTATED: resurrect successor execution growth 30\n// MUTATED: resurrect successor execution growth 31\n// MUTATED: resurrect successor execution growth 32\n// MUTATED: resurrect successor execution growth 33\n// MUTATED: resurrect successor execution growth 34\n// MUTATED: resurrect successor execution growth 35\n// MUTATED: resurrect successor execution growth 36\n// MUTATED: resurrect successor execution growth 37\n// MUTATED: resurrect successor execution growth 38\n// MUTATED: resurrect successor execution growth 39\n// MUTATED: resurrect successor execution growth 40\n// MUTATED: resurrect successor execution growth 41\n// MUTATED: resurrect successor execution growth 42\n// MUTATED: resurrect successor execution growth 43\n// MUTATED: resurrect successor execution growth 44\n// MUTATED: resurrect successor execution growth 45\n// MUTATED: resurrect successor execution growth 46\n// MUTATED: resurrect successor execution growth 47\n// MUTATED: resurrect successor execution growth 48\n// MUTATED: resurrect successor execution growth 49\n// MUTATED: resurrect successor execution growth 50\n// MUTATED: resurrect successor execution growth 51\n// MUTATED: resurrect successor execution growth 52\n// MUTATED: resurrect successor execution growth 53\n// MUTATED: resurrect successor execution growth 54\n// MUTATED: resurrect successor execution growth 55\n// MUTATED: resurrect successor execution growth 56\n// MUTATED: resurrect successor execution growth 57\n// MUTATED: resurrect successor execution growth 58\n// MUTATED: resurrect successor execution growth 59\n// MUTATED: resurrect successor execution growth 60\n// MUTATED: resurrect successor execution growth 61\n// MUTATED: resurrect successor execution growth 62\n// MUTATED: resurrect successor execution growth 63\n// MUTATED: resurrect successor execution growth 64\n// MUTATED: resurrect successor execution growth 65\n// MUTATED: resurrect successor execution growth 66\n// MUTATED: resurrect successor execution growth 67\n// MUTATED: resurrect successor execution growth 68\n// MUTATED: resurrect successor execution growth 69\n// MUTATED: resurrect successor execution growth 70\n// MUTATED: resurrect successor execution growth 71\n// MUTATED: resurrect successor execution growth 72\n// MUTATED: resurrect successor execution growth 73\n// MUTATED: resurrect successor execution growth 74\n// MUTATED: resurrect successor execution growth 75\n// MUTATED: resurrect successor execution growth 76\n// MUTATED: resurrect successor execution growth 77\n// MUTATED: resurrect successor execution growth 78\n// MUTATED: resurrect successor execution growth 79\n// MUTATED: resurrect successor execution growth 80\n// MUTATED: resurrect successor execution growth 81\n// MUTATED: resurrect successor execution growth 82\n// MUTATED: resurrect successor execution growth 83\n// MUTATED: resurrect successor execution growth 84\n// MUTATED: resurrect successor execution growth 85\n// MUTATED: resurrect successor execution growth 86\n// MUTATED: resurrect successor execution growth 87\n// MUTATED: resurrect successor execution growth 88\n// MUTATED: resurrect successor execution growth 89\n// MUTATED: resurrect successor execution growth 90\n// MUTATED: resurrect successor execution growth 91\n// MUTATED: resurrect successor execution growth 92\n// MUTATED: resurrect successor execution growth 93\n// MUTATED: resurrect successor execution growth 94\n// MUTATED: resurrect successor execution growth 95\n// MUTATED: resurrect successor execution growth 96\n// MUTATED: resurrect successor execution growth 97\n// MUTATED: resurrect successor execution growth 98\n// MUTATED: resurrect successor execution growth 99\n// MUTATED: resurrect successor execution growth 100\n// MUTATED: resurrect successor execution growth 101\n// MUTATED: resurrect successor execution growth 102\n// MUTATED: resurrect successor execution growth 103\n// MUTATED: resurrect successor execution growth 104\n// MUTATED: resurrect successor execution growth 105\n// MUTATED: resurrect successor execution growth 106\n// MUTATED: resurrect successor execution growth 107\n// MUTATED: resurrect successor execution growth 108\n// MUTATED: resurrect successor execution growth 109\n// MUTATED: resurrect successor execution growth 110\n// MUTATED: resurrect successor execution growth 111\n// MUTATED: resurrect successor execution growth 112\n// MUTATED: resurrect successor execution growth 113\n// MUTATED: resurrect successor execution growth 114\n// MUTATED: resurrect successor execution growth 115\n// MUTATED: resurrect successor execution growth 116\n// MUTATED: resurrect successor execution growth 117\n// MUTATED: resurrect successor execution growth 118\n// MUTATED: resurrect successor execution growth 119\n// MUTATED: resurrect successor execution growth 120\n// MUTATED: resurrect successor execution growth 121\n// MUTATED: resurrect successor execution growth 122\n// MUTATED: resurrect successor execution growth 123\n// MUTATED: resurrect successor execution growth 124\n// MUTATED: resurrect successor execution growth 125\n// MUTATED: resurrect successor execution growth 126\n// MUTATED: resurrect successor execution growth 127\n// MUTATED: resurrect successor execution growth 128\n// MUTATED: resurrect successor execution growth 129\n// MUTATED: resurrect successor execution growth 130\n// MUTATED: resurrect successor execution growth 131\n// MUTATED: resurrect successor execution growth 132\n// MUTATED: resurrect successor execution growth 133\n// MUTATED: resurrect successor execution growth 134\n// MUTATED: resurrect successor execution growth 135\n// MUTATED: resurrect successor execution growth 136\n// MUTATED: resurrect successor execution growth 137\n// MUTATED: resurrect successor execution growth 138\n// MUTATED: resurrect successor execution growth 139\n// MUTATED: resurrect successor execution growth 140\n// MUTATED: resurrect successor execution growth 141\n// MUTATED: resurrect successor execution growth 142\n// MUTATED: resurrect successor execution growth 143\n// MUTATED: resurrect successor execution growth 144\n// MUTATED: resurrect successor execution growth 145\n// MUTATED: resurrect successor execution growth 146\n// MUTATED: resurrect successor execution growth 147\n// MUTATED: resurrect successor execution growth 148\n// MUTATED: resurrect successor execution growth 149\n// MUTATED: resurrect successor execution growth 150\n// MUTATED: resurrect successor execution growth 151\n// MUTATED: resurrect successor execution growth 152\n// MUTATED: resurrect successor execution growth 153\n// MUTATED: resurrect successor execution growth 154\n// MUTATED: resurrect successor execution growth 155\n// MUTATED: resurrect successor execution growth 156\n// MUTATED: resurrect successor execution growth 157\n// MUTATED: resurrect successor execution growth 158\n// MUTATED: resurrect successor execution growth 159\n// MUTATED: resurrect successor execution growth 160\n// MUTATED: resurrect successor execution growth 161\n// MUTATED: resurrect successor execution growth 162\n// MUTATED: resurrect successor execution growth 163\n// MUTATED: resurrect successor execution growth 164\n// MUTATED: resurrect successor execution growth 165\n// MUTATED: resurrect successor execution growth 166\n// MUTATED: resurrect successor execution growth 167\n// MUTATED: resurrect successor execution growth 168\n// MUTATED: resurrect successor execution growth 169\n// MUTATED: resurrect successor execution growth 170\n// MUTATED: resurrect successor execution growth 171\n// MUTATED: resurrect successor execution growth 172\n// MUTATED: resurrect successor execution growth 173\n// MUTATED: resurrect successor execution growth 174\n// MUTATED: resurrect successor execution growth 175\n// MUTATED: resurrect successor execution growth 176\n// MUTATED: resurrect successor execution growth 177\n// MUTATED: resurrect successor execution growth 178\n// MUTATED: resurrect successor execution growth 179\n// MUTATED: resurrect successor execution growth 180\n// MUTATED: resurrect successor execution growth 181\n// MUTATED: resurrect successor execution growth 182\n// MUTATED: resurrect successor execution growth 183\n// MUTATED: resurrect successor execution growth 184\n// MUTATED: resurrect successor execution growth 185\n// MUTATED: resurrect successor execution growth 186\n// MUTATED: resurrect successor execution growth 187\n// MUTATED: resurrect successor execution growth 188\n// MUTATED: resurrect successor execution growth 189\n// MUTATED: resurrect successor execution growth 190\n// MUTATED: resurrect successor execution growth 191\n// MUTATED: resurrect successor execution growth 192\n// MUTATED: resurrect successor execution growth 193\n// MUTATED: resurrect successor execution growth 194\n// MUTATED: resurrect successor execution growth 195\n// MUTATED: resurrect successor execution growth 196\n// MUTATED: resurrect successor execution growth 197\n// MUTATED: resurrect successor execution growth 198\n// MUTATED: resurrect successor execution growth 199\n// MUTATED: resurrect successor execution growth 200\n// MUTATED: resurrect successor execution growth 201\n// MUTATED: resurrect successor execution growth 202\n// MUTATED: resurrect successor execution growth 203\n// MUTATED: resurrect successor execution growth 204\n// MUTATED: resurrect successor execution growth 205\n// MUTATED: resurrect successor execution growth 206\n// MUTATED: resurrect successor execution growth 207\n// MUTATED: resurrect successor execution growth 208\n// MUTATED: resurrect successor execution growth 209\n// MUTATED: resurrect successor execution growth 210\n// MUTATED: resurrect successor execution growth 211\n// MUTATED: resurrect successor execution growth 212\n// MUTATED: resurrect successor execution growth 213\n// MUTATED: resurrect successor execution growth 214\n// MUTATED: resurrect successor execution growth 215\n// MUTATED: resurrect successor execution growth 216\n// MUTATED: resurrect successor execution growth 217\n// MUTATED: resurrect successor execution growth 218\n// MUTATED: resurrect successor execution growth 219\n// MUTATED: resurrect successor execution growth 220\n// MUTATED: resurrect successor execution growth 221\n// MUTATED: resurrect successor execution growth 222\n// MUTATED: resurrect successor execution growth 223\n// MUTATED: resurrect successor execution growth 224\n// MUTATED: resurrect successor execution growth 225\n// MUTATED: resurrect successor execution growth 226\n// MUTATED: resurrect successor execution growth 227\n// MUTATED: resurrect successor execution growth 228\n// MUTATED: resurrect successor execution growth 229\n// MUTATED: resurrect successor execution growth 230\n// MUTATED: resurrect successor execution growth 231\n// MUTATED: resurrect successor execution growth 232\n// MUTATED: resurrect successor execution growth 233\n// MUTATED: resurrect successor execution growth 234\n// MUTATED: resurrect successor execution growth 235\n// MUTATED: resurrect successor execution growth 236\n// MUTATED: resurrect successor execution growth 237\n// MUTATED: resurrect successor execution growth 238\n// MUTATED: resurrect successor execution growth 239\n// MUTATED: resurrect successor execution growth 240\n// MUTATED: resurrect successor execution growth 241\n// MUTATED: resurrect successor execution growth 242\n// MUTATED: resurrect successor execution growth 243\n// MUTATED: resurrect successor execution growth 244\n// MUTATED: resurrect successor execution growth 245\n// MUTATED: resurrect successor execution growth 246\n// MUTATED: resurrect successor execution growth 247\n// MUTATED: resurrect successor execution growth 248\n// MUTATED: resurrect successor execution growth 249\n// MUTATED: resurrect successor execution growth 250\n// MUTATED: resurrect successor execution growth 251\n// MUTATED: resurrect successor execution growth 252\n// MUTATED: resurrect successor execution growth 253\n// MUTATED: resurrect successor execution growth 254\n// MUTATED: resurrect successor execution growth 255\n// MUTATED: resurrect successor execution growth 256\n// MUTATED: resurrect successor execution growth 257\n// MUTATED: resurrect successor execution growth 258\n// MUTATED: resurrect successor execution growth 259\n// MUTATED: resurrect successor execution growth 260\n// MUTATED: resurrect successor execution growth 261\n// MUTATED: resurrect successor execution growth 262\n// MUTATED: resurrect successor execution growth 263\n// MUTATED: resurrect successor execution growth 264\n// MUTATED: resurrect successor execution growth 265\n// MUTATED: resurrect successor execution growth 266\n// MUTATED: resurrect successor execution growth 267\n// MUTATED: resurrect successor execution growth 268\n// MUTATED: resurrect successor execution growth 269\n// MUTATED: resurrect successor execution growth 270\n// MUTATED: resurrect successor execution growth 271\n// MUTATED: resurrect successor execution growth 272\n// MUTATED: resurrect successor execution growth 273\n// MUTATED: resurrect successor execution growth 274\n// MUTATED: resurrect successor execution growth 275\n// MUTATED: resurrect successor execution growth 276\n// MUTATED: resurrect successor execution growth 277\n// MUTATED: resurrect successor execution growth 278\n// MUTATED: resurrect successor execution growth 279\n// MUTATED: resurrect successor execution growth 280\n// MUTATED: resurrect successor execution growth 281\n// MUTATED: resurrect successor execution growth 282\n// MUTATED: resurrect successor execution growth 283\n// MUTATED: resurrect successor execution growth 284\n// MUTATED: resurrect successor execution growth 285\n// MUTATED: resurrect successor execution growth 286\n// MUTATED: resurrect successor execution growth 287\n// MUTATED: resurrect successor execution growth 288\n// MUTATED: resurrect successor execution growth 289\n// MUTATED: resurrect successor execution growth 290\n// MUTATED: resurrect successor execution growth 291\n// MUTATED: resurrect successor execution growth 292\n// MUTATED: resurrect successor execution growth 293\n// MUTATED: resurrect successor execution growth 294\n// MUTATED: resurrect successor execution growth 295\n// MUTATED: resurrect successor execution growth 296\n// MUTATED: resurrect successor execution growth 297\n// MUTATED: resurrect successor execution growth 298\n// MUTATED: resurrect successor execution growth 299\n// MUTATED: resurrect successor execution growth 300\n// MUTATED: resurrect successor execution growth 301\n// MUTATED: resurrect successor execution growth 302\n// MUTATED: resurrect successor execution growth 303\n// MUTATED: resurrect successor execution growth 304\n// MUTATED: resurrect successor execution growth 305\n// MUTATED: resurrect successor execution growth 306\n// MUTATED: resurrect successor execution growth 307\n// MUTATED: resurrect successor execution growth 308\n// MUTATED: resurrect successor execution growth 309\n// MUTATED: resurrect successor execution growth 310\n// MUTATED: resurrect successor execution growth 311\n// MUTATED: resurrect successor execution growth 312\n// MUTATED: resurrect successor execution growth 313\n// MUTATED: resurrect successor execution growth 314\n// MUTATED: resurrect successor execution growth 315\n// MUTATED: resurrect successor execution growth 316\n// MUTATED: resurrect successor execution growth 317\n// MUTATED: resurrect successor execution growth 318\n// MUTATED: resurrect successor execution growth 319\n// MUTATED: resurrect successor execution growth 320\n// MUTATED: resurrect successor execution growth 321\n// MUTATED: resurrect successor execution growth 322\n// MUTATED: resurrect successor execution growth 323\n// MUTATED: resurrect successor execution growth 324\n// MUTATED: resurrect successor execution growth 325\n// MUTATED: resurrect successor execution growth 326\n// MUTATED: resurrect successor execution growth 327\n// MUTATED: resurrect successor execution growth 328\n// MUTATED: resurrect successor execution growth 329\n// MUTATED: resurrect successor execution growth 330\n// MUTATED: resurrect successor execution growth 331\n// MUTATED: resurrect successor execution growth 332\n// MUTATED: resurrect successor execution growth 333\n// MUTATED: resurrect successor execution growth 334\n// MUTATED: resurrect successor execution growth 335\n// MUTATED: resurrect successor execution growth 336\n// MUTATED: resurrect successor execution growth 337\n// MUTATED: resurrect successor execution growth 338\n// MUTATED: resurrect successor execution growth 339\n// MUTATED: resurrect successor execution growth 340\n// MUTATED: resurrect successor execution growth 341\n// MUTATED: resurrect successor execution growth 342\n// MUTATED: resurrect successor execution growth 343\n// MUTATED: resurrect successor execution growth 344\n// MUTATED: resurrect successor execution growth 345\n// MUTATED: resurrect successor execution growth 346\n// MUTATED: resurrect successor execution growth 347\n// MUTATED: resurrect successor execution growth 348\n// MUTATED: resurrect successor execution growth 349\n// MUTATED: resurrect successor execution growth 350\n// MUTATED: resurrect successor execution growth 351\n// MUTATED: resurrect successor execution growth 352\n// MUTATED: resurrect successor execution growth 353\n// MUTATED: resurrect successor execution growth 354\n// MUTATED: resurrect successor execution growth 355\n// MUTATED: resurrect successor execution growth 356\n// MUTATED: resurrect successor execution growth 357\n// MUTATED: resurrect successor execution growth 358\n// MUTATED: resurrect successor execution growth 359\n// MUTATED: resurrect successor execution growth 360\n// MUTATED: resurrect successor execution growth 361\n// MUTATED: resurrect successor execution growth 362\n// MUTATED: resurrect successor execution growth 363\n// MUTATED: resurrect successor execution growth 364\n// MUTATED: resurrect successor execution growth 365\n// MUTATED: resurrect successor execution growth 366\n// MUTATED: resurrect successor execution growth 367\n// MUTATED: resurrect successor execution growth 368\n// MUTATED: resurrect successor execution growth 369\n// MUTATED: resurrect successor execution growth 370\n// MUTATED: resurrect successor execution growth 371\n// MUTATED: resurrect successor execution growth 372\n// MUTATED: resurrect successor execution growth 373\n// MUTATED: resurrect successor execution growth 374\n// MUTATED: resurrect successor execution growth 375\n// MUTATED: resurrect successor execution growth 376\n// MUTATED: resurrect successor execution growth 377\n// MUTATED: resurrect successor execution growth 378\n// MUTATED: resurrect successor execution growth 379\n// MUTATED: resurrect successor execution growth 380\n// MUTATED: resurrect successor execution growth 381\n// MUTATED: resurrect successor execution growth 382\n// MUTATED: resurrect successor execution growth 383\n// MUTATED: resurrect successor execution growth 384\n// MUTATED: resurrect successor execution growth 385\n// MUTATED: resurrect successor execution growth 386\n// MUTATED: resurrect successor execution growth 387\n// MUTATED: resurrect successor execution growth 388\n// MUTATED: resurrect successor execution growth 389\n// MUTATED: resurrect successor execution growth 390\n// MUTATED: resurrect successor execution growth 391\n// MUTATED: resurrect successor execution growth 392\n// MUTATED: resurrect successor execution growth 393\n// MUTATED: resurrect successor execution growth 394\n// MUTATED: resurrect successor execution growth 395\n// MUTATED: resurrect successor execution growth 396\n// MUTATED: resurrect successor execution growth 397\n// MUTATED: resurrect successor execution growth 398\n// MUTATED: resurrect successor execution growth 399\n// MUTATED: resurrect successor execution growth 400\n// MUTATED: resurrect successor execution growth 401\n// MUTATED: resurrect successor execution growth 402\n// MUTATED: resurrect successor execution growth 403\n// MUTATED: resurrect successor execution growth 404\n// MUTATED: resurrect successor execution growth 405\n// MUTATED: resurrect successor execution growth 406\n// MUTATED: resurrect successor execution growth 407\n// MUTATED: resurrect successor execution growth 408\n// MUTATED: resurrect successor execution growth 409\n// MUTATED: resurrect successor execution growth 410\n// MUTATED: resurrect successor execution growth 411\n// MUTATED: resurrect successor execution growth 412\n// MUTATED: resurrect successor execution growth 413\n// MUTATED: resurrect successor execution growth 414\n// MUTATED: resurrect successor execution growth 415\n// MUTATED: resurrect successor execution growth 416\n// MUTATED: resurrect successor execution growth 417\n// MUTATED: resurrect successor execution growth 418\n// MUTATED: resurrect successor execution growth 419\n// MUTATED: resurrect successor execution growth 420\n// MUTATED: resurrect successor execution growth 421\n// MUTATED: resurrect successor execution growth 422\n// MUTATED: resurrect successor execution growth 423\n// MUTATED: resurrect successor execution growth 424\n// MUTATED: resurrect successor execution growth 425\n// MUTATED: resurrect successor execution growth 426\n// MUTATED: resurrect successor execution growth 427\n// MUTATED: resurrect successor execution growth 428\n// MUTATED: resurrect successor execution growth 429\n// MUTATED: resurrect successor execution growth 430\n// MUTATED: resurrect successor execution growth 431\n// MUTATED: resurrect successor execution growth 432\n// MUTATED: resurrect successor execution growth 433\n// MUTATED: resurrect successor execution growth 434\n// MUTATED: resurrect successor execution growth 435\n// MUTATED: resurrect successor execution growth 436\n// MUTATED: resurrect successor execution growth 437\n// MUTATED: resurrect successor execution growth 438\n// MUTATED: resurrect successor execution growth 439\n// MUTATED: resurrect successor execution growth 440\n// MUTATED: resurrect successor execution growth 441\n// MUTATED: resurrect successor execution growth 442\n// MUTATED: resurrect successor execution growth 443\n// MUTATED: resurrect successor execution growth 444\n// MUTATED: resurrect successor execution growth 445\n// MUTATED: resurrect successor execution growth 446\n// MUTATED: resurrect successor execution growth 447\n// MUTATED: resurrect successor execution growth 448\n// MUTATED: resurrect successor execution growth 449\n// MUTATED: resurrect successor execution growth 450\n// MUTATED: resurrect successor execution growth 451\n// MUTATED: resurrect successor execution growth 452\n// MUTATED: resurrect successor execution growth 453\n// MUTATED: resurrect successor execution growth 454\n// MUTATED: resurrect successor execution growth 455\n// MUTATED: resurrect successor execution growth 456\n// MUTATED: resurrect successor execution growth 457\n// MUTATED: resurrect successor execution growth 458\n// MUTATED: resurrect successor execution growth 459\n// MUTATED: resurrect successor execution growth 460\n// MUTATED: resurrect successor execution growth 461\n// MUTATED: resurrect successor execution growth 462\n// MUTATED: resurrect successor execution growth 463\n// MUTATED: resurrect successor execution growth 464\n// MUTATED: resurrect successor execution growth 465\n// MUTATED: resurrect successor execution growth 466\n// MUTATED: resurrect successor execution growth 467\n// MUTATED: resurrect successor execution growth 468\n// MUTATED: resurrect successor execution growth 469\n// MUTATED: resurrect successor execution growth 470\n// MUTATED: resurrect successor execution growth 471\n// MUTATED: resurrect successor execution growth 472\n// MUTATED: resurrect successor execution growth 473\n// MUTATED: resurrect successor execution growth 474\n// MUTATED: resurrect successor execution growth 475\n// MUTATED: resurrect successor execution growth 476\n// MUTATED: resurrect successor execution growth 477\n// MUTATED: resurrect successor execution growth 478\n// MUTATED: resurrect successor execution growth 479\n// MUTATED: resurrect successor execution growth 480\n// MUTATED: resurrect successor execution growth 481\n// MUTATED: resurrect successor execution growth 482\n// MUTATED: resurrect successor execution growth 483\n// MUTATED: resurrect successor execution growth 484\n// MUTATED: resurrect successor execution growth 485\n// MUTATED: resurrect successor execution growth 486\n// MUTATED: resurrect successor execution growth 487\n// MUTATED: resurrect successor execution growth 488\n// MUTATED: resurrect successor execution growth 489\n// MUTATED: resurrect successor execution growth 490\n// MUTATED: resurrect successor execution growth 491\n// MUTATED: resurrect successor execution growth 492\n// MUTATED: resurrect successor execution growth 493\n// MUTATED: resurrect successor execution growth 494\n// MUTATED: resurrect successor execution growth 495\n// MUTATED: resurrect successor execution growth 496\n// MUTATED: resurrect successor execution growth 497\n// MUTATED: resurrect successor execution growth 498\n// MUTATED: resurrect successor execution growth 499\n// MUTATED: resurrect successor execution growth 500\n// MUTATED: resurrect successor execution growth 501\n// MUTATED: resurrect successor execution growth 502\n// MUTATED: resurrect successor execution growth 503\n// MUTATED: resurrect successor execution growth 504\n// MUTATED: resurrect successor execution growth 505\n// MUTATED: resurrect successor execution growth 506\n// MUTATED: resurrect successor execution growth 507\n// MUTATED: resurrect successor execution growth 508\n// MUTATED: resurrect successor execution growth 509\n// MUTATED: resurrect successor execution growth 510\n// MUTATED: resurrect successor execution growth 511\n// MUTATED: resurrect successor execution growth 512\n// MUTATED: resurrect successor execution growth 513\n// MUTATED: resurrect successor execution growth 514\n// MUTATED: resurrect successor execution growth 515\n// MUTATED: resurrect successor execution growth 516\n// MUTATED: resurrect successor execution growth 517\n// MUTATED: resurrect successor execution growth 518\n// MUTATED: resurrect successor execution growth 519\n// MUTATED: resurrect successor execution growth 520\n// MUTATED: resurrect successor execution growth 521\n// MUTATED: resurrect successor execution growth 522\n// MUTATED: resurrect successor execution growth 523\n// MUTATED: resurrect successor execution growth 524\n// MUTATED: resurrect successor execution growth 525\n// MUTATED: resurrect successor execution growth 526\n// MUTATED: resurrect successor execution growth 527\n// MUTATED: resurrect successor execution growth 528\n// MUTATED: resurrect successor execution growth 529\n// MUTATED: resurrect successor execution growth 530\n// MUTATED: resurrect successor execution growth 531\n// MUTATED: resurrect successor execution growth 532\n// MUTATED: resurrect successor execution growth 533\n// MUTATED: resurrect successor execution growth 534\n// MUTATED: resurrect successor execution growth 535\n// MUTATED: resurrect successor execution growth 536\n// MUTATED: resurrect successor execution growth 537\n// MUTATED: resurrect successor execution growth 538\n// MUTATED: resurrect successor execution growth 539\n// MUTATED: resurrect successor execution growth 540\n// MUTATED: resurrect successor execution growth 541\n// MUTATED: resurrect successor execution growth 542\n// MUTATED: resurrect successor execution growth 543\n// MUTATED: resurrect successor execution growth 544\n// MUTATED: resurrect successor execution growth 545\n// MUTATED: resurrect successor execution growth 546\n// MUTATED: resurrect successor execution growth 547\n// MUTATED: resurrect successor execution growth 548\n// MUTATED: resurrect successor execution growth 549\n// MUTATED: resurrect successor execution growth 550\n// MUTATED: resurrect successor execution growth 551\n// MUTATED: resurrect successor execution growth 552\n// MUTATED: resurrect successor execution growth 553\n// MUTATED: resurrect successor execution growth 554\n// MUTATED: resurrect successor execution growth 555\n// MUTATED: resurrect successor execution growth 556\n// MUTATED: resurrect successor execution growth 557\n// MUTATED: resurrect successor execution growth 558\n// MUTATED: resurrect successor execution growth 559\n// MUTATED: resurrect successor execution growth 560\n// MUTATED: resurrect successor execution growth 561\n// MUTATED: resurrect successor execution growth 562\n// MUTATED: resurrect successor execution growth 563\n// MUTATED: resurrect successor execution growth 564\n// MUTATED: resurrect successor execution growth 565\n// MUTATED: resurrect successor execution growth 566\n// MUTATED: resurrect successor execution growth 567\n// MUTATED: resurrect successor execution growth 568\n// MUTATED: resurrect successor execution growth 569\n// MUTATED: resurrect successor execution growth 570\n// MUTATED: resurrect successor execution growth 571\n// MUTATED: resurrect successor execution growth 572\n// MUTATED: resurrect successor execution growth 573\n// MUTATED: resurrect successor execution growth 574\n// MUTATED: resurrect successor execution growth 575\n// MUTATED: resurrect successor execution growth 576\n// MUTATED: resurrect successor execution growth 577\n// MUTATED: resurrect successor execution growth 578\n// MUTATED: resurrect successor execution growth 579\n// MUTATED: resurrect successor execution growth 580\n// MUTATED: resurrect successor execution growth 581\n// MUTATED: resurrect successor execution growth 582\n// MUTATED: resurrect successor execution growth 583\n// MUTATED: resurrect successor execution growth 584\n// MUTATED: resurrect successor execution growth 585\n// MUTATED: resurrect successor execution growth 586\n// MUTATED: resurrect successor execution growth 587\n// MUTATED: resurrect successor execution growth 588\n// MUTATED: resurrect successor execution growth 589\n// MUTATED: resurrect successor execution growth 590\n// MUTATED: resurrect successor execution growth 591\n// MUTATED: resurrect successor execution growth 592\n// MUTATED: resurrect successor execution growth 593\n// MUTATED: resurrect successor execution growth 594\n// MUTATED: resurrect successor execution growth 595\n// MUTATED: resurrect successor execution growth 596\n// MUTATED: resurrect successor execution growth 597\n// MUTATED: resurrect successor execution growth 598\n// MUTATED: resurrect successor execution growth 599\n// MUTATED: resurrect successor execution growth 600\n// MUTATED: resurrect successor execution growth 601\n// MUTATED: resurrect successor execution growth 602\n// MUTATED: resurrect successor execution growth 603\n// MUTATED: resurrect successor execution growth 604\n// MUTATED: resurrect successor execution growth 605\n// MUTATED: resurrect successor execution growth 606\n// MUTATED: resurrect successor execution growth 607\n// MUTATED: resurrect successor execution growth 608\n// MUTATED: resurrect successor execution growth 609\n// MUTATED: resurrect successor execution growth 610\n// MUTATED: resurrect successor execution growth 611\n// MUTATED: resurrect successor execution growth 612\n// MUTATED: resurrect successor execution growth 613\n// MUTATED: resurrect successor execution growth 614\n// MUTATED: resurrect successor execution growth 615\n// MUTATED: resurrect successor execution growth 616\n// MUTATED: resurrect successor execution growth 617\n// MUTATED: resurrect successor execution growth 618\n// MUTATED: resurrect successor execution growth 619\n// MUTATED: resurrect successor execution growth 620\n// MUTATED: resurrect successor execution growth 621\n// MUTATED: resurrect successor execution growth 622\n// MUTATED: resurrect successor execution growth 623\n// MUTATED: resurrect successor execution growth 624\n// MUTATED: resurrect successor execution growth 625\n// MUTATED: resurrect successor execution growth 626\n// MUTATED: resurrect successor execution growth 627\n// MUTATED: resurrect successor execution growth 628\n// MUTATED: resurrect successor execution growth 629\n// MUTATED: resurrect successor execution growth 630\n// MUTATED: resurrect successor execution growth 631\n// MUTATED: resurrect successor execution growth 632\n// MUTATED: resurrect successor execution growth 633\n// MUTATED: resurrect successor execution growth 634\n// MUTATED: resurrect successor execution growth 635\n// MUTATED: resurrect successor execution growth 636\n// MUTATED: resurrect successor execution growth 637\n// MUTATED: resurrect successor execution growth 638\n// MUTATED: resurrect successor execution growth 639\n// MUTATED: resurrect successor execution growth 640\n// MUTATED: resurrect successor execution growth 641\n// MUTATED: resurrect successor execution growth 642\n// MUTATED: resurrect successor execution growth 643\n// MUTATED: resurrect successor execution growth 644\n// MUTATED: resurrect successor execution growth 645\n// MUTATED: resurrect successor execution growth 646\n// MUTATED: resurrect successor execution growth 647\n// MUTATED: resurrect successor execution growth 648\n// MUTATED: resurrect successor execution growth 649\n// MUTATED: resurrect successor execution growth 650\n// MUTATED: resurrect successor execution growth 651\n// MUTATED: resurrect successor execution growth 652\n// MUTATED: resurrect successor execution growth 653\n// MUTATED: resurrect successor execution growth 654\n// MUTATED: resurrect successor execution growth 655\n// MUTATED: resurrect successor execution growth 656\n// MUTATED: resurrect successor execution growth 657\n// MUTATED: resurrect successor execution growth 658\n// MUTATED: resurrect successor execution growth 659\n// MUTATED: resurrect successor execution growth 660\n// MUTATED: resurrect successor execution growth 661\n// MUTATED: resurrect successor execution growth 662\n// MUTATED: resurrect successor execution growth 663\n// MUTATED: resurrect successor execution growth 664\n// MUTATED: resurrect successor execution growth 665\n// MUTATED: resurrect successor execution growth 666\n// MUTATED: resurrect successor execution growth 667\n// MUTATED: resurrect successor execution growth 668\n// MUTATED: resurrect successor execution growth 669\n// MUTATED: resurrect successor execution growth 670\n// MUTATED: resurrect successor execution growth 671\n// MUTATED: resurrect successor execution growth 672\n// MUTATED: resurrect successor execution growth 673\n// MUTATED: resurrect successor execution growth 674\n// MUTATED: resurrect successor execution growth 675\n// MUTATED: resurrect successor execution growth 676\n// MUTATED: resurrect successor execution growth 677\n// MUTATED: resurrect successor execution growth 678\n// MUTATED: resurrect successor execution growth 679\n// MUTATED: resurrect successor execution growth 680\n// MUTATED: resurrect successor execution growth 681\n// MUTATED: resurrect successor execution growth 682\n// MUTATED: resurrect successor execution growth 683\n// MUTATED: resurrect successor execution growth 684\n// MUTATED: resurrect successor execution growth 685\n// MUTATED: resurrect successor execution growth 686\n// MUTATED: resurrect successor execution growth 687\n// MUTATED: resurrect successor execution growth 688\n// MUTATED: resurrect successor execution growth 689\n// MUTATED: resurrect successor execution growth 690\n// MUTATED: resurrect successor execution growth 691\n// MUTATED: resurrect successor execution growth 692\n// MUTATED: resurrect successor execution growth 693\n// MUTATED: resurrect successor execution growth 694\n// MUTATED: resurrect successor execution growth 695\n// MUTATED: resurrect successor execution growth 696\n// MUTATED: resurrect successor execution growth 697\n// MUTATED: resurrect successor execution growth 698\n// MUTATED: resurrect successor execution growth 699\n// MUTATED: resurrect successor execution growth 700\n// MUTATED: resurrect successor execution growth 701\n// MUTATED: resurrect successor execution growth 702\n// MUTATED: resurrect successor execution growth 703\n// MUTATED: resurrect successor execution growth 704\n// MUTATED: resurrect successor execution growth 705\n// MUTATED: resurrect successor execution growth 706\n// MUTATED: resurrect successor execution growth 707\n// MUTATED: resurrect successor execution growth 708\n// MUTATED: resurrect successor execution growth 709\n// MUTATED: resurrect successor execution growth 710\n// MUTATED: resurrect successor execution growth 711\n// MUTATED: resurrect successor execution growth 712\n// MUTATED: resurrect successor execution growth 713\n// MUTATED: resurrect successor execution growth 714\n// MUTATED: resurrect successor execution growth 715\n// MUTATED: resurrect successor execution growth 716\n// MUTATED: resurrect successor execution growth 717\n// MUTATED: resurrect successor execution growth 718\n// MUTATED: resurrect successor execution growth 719\n// MUTATED: resurrect successor execution growth 720\n// MUTATED: resurrect successor execution growth 721\n// MUTATED: resurrect successor execution growth 722\n// MUTATED: resurrect successor execution growth 723\n// MUTATED: resurrect successor execution growth 724\n// MUTATED: resurrect successor execution growth 725\n// MUTATED: resurrect successor execution growth 726\n// MUTATED: resurrect successor execution growth 727\n// MUTATED: resurrect successor execution growth 728\n// MUTATED: resurrect successor execution growth 729\n// MUTATED: resurrect successor execution growth 730\n// MUTATED: resurrect successor execution growth 731\n// MUTATED: resurrect successor execution growth 732\n// MUTATED: resurrect successor execution growth 733\n// MUTATED: resurrect successor execution growth 734\n// MUTATED: resurrect successor execution growth 735\n// MUTATED: resurrect successor execution growth 736\n// MUTATED: resurrect successor execution growth 737\n// MUTATED: resurrect successor execution growth 738\n// MUTATED: resurrect successor execution growth 739\n// MUTATED: resurrect successor execution growth 740\n// MUTATED: resurrect successor execution growth 741\n// MUTATED: resurrect successor execution growth 742\n// MUTATED: resurrect successor execution growth 743\n// MUTATED: resurrect successor execution growth 744\n// MUTATED: resurrect successor execution growth 745\n// MUTATED: resurrect successor execution growth 746\n// MUTATED: resurrect successor execution growth 747\n// MUTATED: resurrect successor execution growth 748\n// MUTATED: resurrect successor execution growth 749\n// MUTATED: resurrect successor execution growth 750\n// MUTATED: resurrect successor execution growth 751\n// MUTATED: resurrect successor execution growth 752\n// MUTATED: resurrect successor execution growth 753\n// MUTATED: resurrect successor execution growth 754\n// MUTATED: resurrect successor execution growth 755\n// MUTATED: resurrect successor execution growth 756\n// MUTATED: resurrect successor execution growth 757\n// MUTATED: resurrect successor execution growth 758\n// MUTATED: resurrect successor execution growth 759\n// MUTATED: resurrect successor execution growth 760\n// MUTATED: resurrect successor execution growth 761\n// MUTATED: resurrect successor execution growth 762\n// MUTATED: resurrect successor execution growth 763\n// MUTATED: resurrect successor execution growth 764\n// MUTATED: resurrect successor execution growth 765\n// MUTATED: resurrect successor execution growth 766\n// MUTATED: resurrect successor execution growth 767\n// MUTATED: resurrect successor execution growth 768\n// MUTATED: resurrect successor execution growth 769\n// MUTATED: resurrect successor execution growth 770\n// MUTATED: resurrect successor execution growth 771\n// MUTATED: resurrect successor execution growth 772\n// MUTATED: resurrect successor execution growth 773\n// MUTATED: resurrect successor execution growth 774\n// MUTATED: resurrect successor execution growth 775\n// MUTATED: resurrect successor execution growth 776\n// MUTATED: resurrect successor execution growth 777\n// MUTATED: resurrect successor execution growth 778\n// MUTATED: resurrect successor execution growth 779\n// MUTATED: resurrect successor execution growth 780\n// MUTATED: resurrect successor execution growth 781\n// MUTATED: resurrect successor execution growth 782\n// MUTATED: resurrect successor execution growth 783\n// MUTATED: resurrect successor execution growth 784\n// MUTATED: resurrect successor execution growth 785\n// MUTATED: resurrect successor execution growth 786\n// MUTATED: resurrect successor execution growth 787\n// MUTATED: resurrect successor execution growth 788\n// MUTATED: resurrect successor execution growth 789\n// MUTATED: resurrect successor execution growth 790\n// MUTATED: resurrect successor execution growth 791\n// MUTATED: resurrect successor execution growth 792\n// MUTATED: resurrect successor execution growth 793\n// MUTATED: resurrect successor execution growth 794\n// MUTATED: resurrect successor execution growth 795\n// MUTATED: resurrect successor execution growth 796\n// MUTATED: resurrect successor execution growth 797\n// MUTATED: resurrect successor execution growth 798\n// MUTATED: resurrect successor execution growth 799\n// MUTATED: resurrect successor execution growth 800\n// MUTATED: resurrect successor execution growth 801\n// MUTATED: resurrect successor execution growth 802\n// MUTATED: resurrect successor execution growth 803\n// MUTATED: resurrect successor execution growth 804\n// MUTATED: resurrect successor execution growth 805\n// MUTATED: resurrect successor execution growth 806\n// MUTATED: resurrect successor execution growth 807\n// MUTATED: resurrect successor execution growth 808\n// MUTATED: resurrect successor execution growth 809\n// MUTATED: resurrect successor execution growth 810\n// MUTATED: resurrect successor execution growth 811\n// MUTATED: resurrect successor execution growth 812\n// MUTATED: resurrect successor execution growth 813\n// MUTATED: resurrect successor execution growth 814\n// MUTATED: resurrect successor execution growth 815\n// MUTATED: resurrect successor execution growth 816\n// MUTATED: resurrect successor execution growth 817\n// MUTATED: resurrect successor execution growth 818\n// MUTATED: resurrect successor execution growth 819\n// MUTATED: resurrect successor execution growth 820\n// MUTATED: resurrect successor execution growth 821\n// MUTATED: resurrect successor execution growth 822\n// MUTATED: resurrect successor execution growth 823\n// MUTATED: resurrect successor execution growth 824\n// MUTATED: resurrect successor execution growth 825\n// MUTATED: resurrect successor execution growth 826\n// MUTATED: resurrect successor execution growth 827\n// MUTATED: resurrect successor execution growth 828\n// MUTATED: resurrect successor execution growth 829\n// MUTATED: resurrect successor execution growth 830\n// MUTATED: resurrect successor execution growth 831\n// MUTATED: resurrect successor execution growth 832\n// MUTATED: resurrect successor execution growth 833\n// MUTATED: resurrect successor execution growth 834\n// MUTATED: resurrect successor execution growth 835\n// MUTATED: resurrect successor execution growth 836\n// MUTATED: resurrect successor execution growth 837\n// MUTATED: resurrect successor execution growth 838\n// MUTATED: resurrect successor execution growth 839\n// MUTATED: resurrect successor execution growth 840\n// MUTATED: resurrect successor execution growth 841\n// MUTATED: resurrect successor execution growth 842\n// MUTATED: resurrect successor execution growth 843\n// MUTATED: resurrect successor execution growth 844\n// MUTATED: resurrect successor execution growth 845\n// MUTATED: resurrect successor execution growth 846\n// MUTATED: resurrect successor execution growth 847\n// MUTATED: resurrect successor execution growth 848\n// MUTATED: resurrect successor execution growth 849\n// MUTATED: resurrect successor execution growth 850\n// MUTATED: resurrect successor execution growth 851\n// MUTATED: resurrect successor execution growth 852\n// MUTATED: resurrect successor execution growth 853\n// MUTATED: resurrect successor execution growth 854\n// MUTATED: resurrect successor execution growth 855\n// MUTATED: resurrect successor execution growth 856\n// MUTATED: resurrect successor execution growth 857\n// MUTATED: resurrect successor execution growth 858\n// MUTATED: resurrect successor execution growth 859\n// MUTATED: resurrect successor execution growth 860\n// MUTATED: resurrect successor execution growth 861\n// MUTATED: resurrect successor execution growth 862\n// MUTATED: resurrect successor execution growth 863\n// MUTATED: resurrect successor execution growth 864\n// MUTATED: resurrect successor execution growth 865\n// MUTATED: resurrect successor execution growth 866\n// MUTATED: resurrect successor execution growth 867\n// MUTATED: resurrect successor execution growth 868\n// MUTATED: resurrect successor execution growth 869\n// MUTATED: resurrect successor execution growth 870\n// MUTATED: resurrect successor execution growth 871\n// MUTATED: resurrect successor execution growth 872\n// MUTATED: resurrect successor execution growth 873\n// MUTATED: resurrect successor execution growth 874\n// MUTATED: resurrect successor execution growth 875\n// MUTATED: resurrect successor execution growth 876\n// MUTATED: resurrect successor execution growth 877\n// MUTATED: resurrect successor execution growth 878\n// MUTATED: resurrect successor execution growth 879\n// MUTATED: resurrect successor execution growth 880\n// MUTATED: resurrect successor execution growth 881\n// MUTATED: resurrect successor execution growth 882\n// MUTATED: resurrect successor execution growth 883\n// MUTATED: resurrect successor execution growth 884\n// MUTATED: resurrect successor execution growth 885\n// MUTATED: resurrect successor execution growth 886\n// MUTATED: resurrect successor execution growth 887\n// MUTATED: resurrect successor execution growth 888\n// MUTATED: resurrect successor execution growth 889\n// MUTATED: resurrect successor execution growth 890\n// MUTATED: resurrect successor execution growth 891\n// MUTATED: resurrect successor execution growth 892\n// MUTATED: resurrect successor execution growth 893\n// MUTATED: resurrect successor execution growth 894\n// MUTATED: resurrect successor execution growth 895\n// MUTATED: resurrect successor execution growth 896\n// MUTATED: resurrect successor execution growth 897\n// MUTATED: resurrect successor execution growth 898\n// MUTATED: resurrect successor execution growth 899\n// MUTATED: resurrect successor execution growth 900\n// MUTATED: resurrect successor execution growth 901\n// MUTATED: resurrect successor execution growth 902\n// MUTATED: resurrect successor execution growth 903\n// MUTATED: resurrect successor execution growth 904\n// MUTATED: resurrect successor execution growth 905\n// MUTATED: resurrect successor execution growth 906\n// MUTATED: resurrect successor execution growth 907\n// MUTATED: resurrect successor execution growth 908\n// MUTATED: resurrect successor execution growth 909\n// MUTATED: resurrect successor execution growth 910\n// MUTATED: resurrect successor execution growth 911\n// MUTATED: resurrect successor execution growth 912\n// MUTATED: resurrect successor execution growth 913"
+        },
+        {
+          "file": "crates/grapt-product/src/compose.rs",
+          "old": "        assert_eq!(\n            waivers[\"intentionally_excludes\"],\n            manifest[\"scope\"][\"intentionally_excludes\"]\n        );\n    }\n}",
+          "new": "        assert_eq!(\n            waivers[\"intentionally_excludes\"],\n            manifest[\"scope\"][\"intentionally_excludes\"]\n        );\n    }\n}\n// MUTATED: resurrect product module growth 01\n// MUTATED: resurrect product module growth 02\n// MUTATED: resurrect product module growth 03\n// MUTATED: resurrect product module growth 04\n// MUTATED: resurrect product module growth 05\n// MUTATED: resurrect product module growth 06\n// MUTATED: resurrect product module growth 07\n// MUTATED: resurrect product module growth 08"
+        }
+      ],
+      "file": "crates/grapt-product/src/dogfood/execution/interrupt_truth_tests.rs",
+      "old": "        Err(_) => panic!(\"terminal reader panicked\"),\n    }\n}",
+      "new": "        Err(_) => panic!(\"terminal reader panicked\"),\n    }\n}\n// MUTATED: resurrect successor execution growth 1\n// MUTATED: resurrect successor execution growth 2\n// MUTATED: resurrect successor execution growth 3\n// MUTATED: resurrect successor execution growth 4\n// MUTATED: resurrect successor execution growth 5\n// MUTATED: resurrect successor execution growth 6\n// MUTATED: resurrect successor execution growth 7\n// MUTATED: resurrect successor execution growth 8\n// MUTATED: resurrect successor execution growth 9\n// MUTATED: resurrect successor execution growth 10\n// MUTATED: resurrect successor execution growth 11\n// MUTATED: resurrect successor execution growth 12\n// MUTATED: resurrect successor execution growth 13\n// MUTATED: resurrect successor execution growth 14\n// MUTATED: resurrect successor execution growth 15\n// MUTATED: resurrect successor execution growth 16\n// MUTATED: resurrect successor execution growth 17\n// MUTATED: resurrect successor execution growth 18\n// MUTATED: resurrect successor execution growth 19\n// MUTATED: resurrect successor execution growth 20\n// MUTATED: resurrect successor execution growth 21\n// MUTATED: resurrect successor execution growth 22\n// MUTATED: resurrect successor execution growth 23\n// MUTATED: resurrect successor execution growth 24\n// MUTATED: resurrect successor execution growth 25\n// MUTATED: resurrect successor execution growth 26\n// MUTATED: resurrect successor execution growth 27\n// MUTATED: resurrect successor execution growth 28\n// MUTATED: resurrect successor execution growth 29\n// MUTATED: resurrect successor execution growth 30\n// MUTATED: resurrect successor execution growth 31\n// MUTATED: resurrect successor execution growth 32\n// MUTATED: resurrect successor execution growth 33\n// MUTATED: resurrect successor execution growth 34\n// MUTATED: resurrect successor execution growth 35\n// MUTATED: resurrect successor execution growth 36\n// MUTATED: resurrect successor execution growth 37\n// MUTATED: resurrect successor execution growth 38\n// MUTATED: resurrect successor execution growth 39\n// MUTATED: resurrect successor execution growth 40\n// MUTATED: resurrect successor execution growth 41\n// MUTATED: resurrect successor execution growth 42\n// MUTATED: resurrect successor execution growth 43\n// MUTATED: resurrect successor execution growth 44\n// MUTATED: resurrect successor execution growth 45\n// MUTATED: resurrect successor execution growth 46\n// MUTATED: resurrect successor execution growth 47\n// MUTATED: resurrect successor execution growth 48\n// MUTATED: resurrect successor execution growth 49\n// MUTATED: resurrect successor execution growth 50\n// MUTATED: resurrect successor execution growth 51\n// MUTATED: resurrect successor execution growth 52\n// MUTATED: resurrect successor execution growth 53\n// MUTATED: resurrect successor execution growth 54\n// MUTATED: resurrect successor execution growth 55\n// MUTATED: resurrect successor execution growth 56\n// MUTATED: resurrect successor execution growth 57\n// MUTATED: resurrect successor execution growth 58\n// MUTATED: resurrect successor execution growth 59\n// MUTATED: resurrect successor execution growth 60\n// MUTATED: resurrect successor execution growth 61\n// MUTATED: resurrect successor execution growth 62\n// MUTATED: resurrect successor execution growth 63\n// MUTATED: resurrect successor execution growth 64\n// MUTATED: resurrect successor execution growth 65\n// MUTATED: resurrect successor execution growth 66\n// MUTATED: resurrect successor execution growth 67\n// MUTATED: resurrect successor execution growth 68\n// MUTATED: resurrect successor execution growth 69\n// MUTATED: resurrect successor execution growth 70\n// MUTATED: resurrect successor execution growth 71\n// MUTATED: resurrect successor execution growth 72\n// MUTATED: resurrect successor execution growth 73\n// MUTATED: resurrect successor execution growth 74\n// MUTATED: resurrect successor execution growth 75\n// MUTATED: resurrect successor execution growth 76\n// MUTATED: resurrect successor execution growth 77\n// MUTATED: resurrect successor execution growth 78\n// MUTATED: resurrect successor execution growth 79\n// MUTATED: resurrect successor execution growth 80\n// MUTATED: resurrect successor execution growth 81\n// MUTATED: resurrect successor execution growth 82\n// MUTATED: resurrect successor execution growth 83\n// MUTATED: resurrect successor execution growth 84\n// MUTATED: resurrect successor execution growth 85\n// MUTATED: resurrect successor execution growth 86\n// MUTATED: resurrect successor execution growth 87\n// MUTATED: resurrect successor execution growth 88\n// MUTATED: resurrect successor execution growth 89\n// MUTATED: resurrect successor execution growth 90\n// MUTATED: resurrect successor execution growth 91\n// MUTATED: resurrect successor execution growth 92\n// MUTATED: resurrect successor execution growth 93\n// MUTATED: resurrect successor execution growth 94\n// MUTATED: resurrect successor execution growth 95\n// MUTATED: resurrect successor execution growth 96\n// MUTATED: resurrect successor execution growth 97\n// MUTATED: resurrect successor execution growth 98\n// MUTATED: resurrect successor execution growth 99\n// MUTATED: resurrect successor execution growth 100\n// MUTATED: resurrect successor execution growth 101\n// MUTATED: resurrect successor execution growth 102\n// MUTATED: resurrect successor execution growth 103\n// MUTATED: resurrect successor execution growth 104\n// MUTATED: resurrect successor execution growth 105\n// MUTATED: resurrect successor execution growth 106\n// MUTATED: resurrect successor execution growth 107\n// MUTATED: resurrect successor execution growth 108\n// MUTATED: resurrect successor execution growth 109\n// MUTATED: resurrect successor execution growth 110\n// MUTATED: resurrect successor execution growth 111\n// MUTATED: resurrect successor execution growth 112\n// MUTATED: resurrect successor execution growth 113\n// MUTATED: resurrect successor execution growth 114\n// MUTATED: resurrect successor execution growth 115\n// MUTATED: resurrect successor execution growth 116\n// MUTATED: resurrect successor execution growth 117\n// MUTATED: resurrect successor execution growth 118\n// MUTATED: resurrect successor execution growth 119\n// MUTATED: resurrect successor execution growth 120\n// MUTATED: resurrect successor execution growth 121\n// MUTATED: resurrect successor execution growth 122\n// MUTATED: resurrect successor execution growth 123\n// MUTATED: resurrect successor execution growth 124\n// MUTATED: resurrect successor execution growth 125\n// MUTATED: resurrect successor execution growth 126\n// MUTATED: resurrect successor execution growth 127\n// MUTATED: resurrect successor execution growth 128\n// MUTATED: resurrect successor execution growth 129\n// MUTATED: resurrect successor execution growth 130\n// MUTATED: resurrect successor execution growth 131\n// MUTATED: resurrect successor execution growth 132\n// MUTATED: resurrect successor execution growth 133\n// MUTATED: resurrect successor execution growth 134\n// MUTATED: resurrect successor execution growth 135\n// MUTATED: resurrect successor execution growth 136\n// MUTATED: resurrect successor execution growth 137\n// MUTATED: resurrect successor execution growth 138\n// MUTATED: resurrect successor execution growth 139\n// MUTATED: resurrect successor execution growth 140\n// MUTATED: resurrect successor execution growth 141\n// MUTATED: resurrect successor execution growth 142\n// MUTATED: resurrect successor execution growth 143\n// MUTATED: resurrect successor execution growth 144\n// MUTATED: resurrect successor execution growth 145\n// MUTATED: resurrect successor execution growth 146\n// MUTATED: resurrect successor execution growth 147\n// MUTATED: resurrect successor execution growth 148\n// MUTATED: resurrect successor execution growth 149\n// MUTATED: resurrect successor execution growth 150\n// MUTATED: resurrect successor execution growth 151\n// MUTATED: resurrect successor execution growth 152\n// MUTATED: resurrect successor execution growth 153\n// MUTATED: resurrect successor execution growth 154\n// MUTATED: resurrect successor execution growth 155\n// MUTATED: resurrect successor execution growth 156\n// MUTATED: resurrect successor execution growth 157\n// MUTATED: resurrect successor execution growth 158\n// MUTATED: resurrect successor execution growth 159\n// MUTATED: resurrect successor execution growth 160\n// MUTATED: resurrect successor execution growth 161\n// MUTATED: resurrect successor execution growth 162\n// MUTATED: resurrect successor execution growth 163\n// MUTATED: resurrect successor execution growth 164\n// MUTATED: resurrect successor execution growth 165\n// MUTATED: resurrect successor execution growth 166\n// MUTATED: resurrect successor execution growth 167\n// MUTATED: resurrect successor execution growth 168\n// MUTATED: resurrect successor execution growth 169\n// MUTATED: resurrect successor execution growth 170\n// MUTATED: resurrect successor execution growth 171\n// MUTATED: resurrect successor execution growth 172\n// MUTATED: resurrect successor execution growth 173\n// MUTATED: resurrect successor execution growth 174\n// MUTATED: resurrect successor execution growth 175\n// MUTATED: resurrect successor execution growth 176\n// MUTATED: resurrect successor execution growth 177\n// MUTATED: resurrect successor execution growth 178\n// MUTATED: resurrect successor execution growth 179\n// MUTATED: resurrect successor execution growth 180\n// MUTATED: resurrect successor execution growth 181\n// MUTATED: resurrect successor execution growth 182\n// MUTATED: resurrect successor execution growth 183\n// MUTATED: resurrect successor execution growth 184\n// MUTATED: resurrect successor execution growth 185\n// MUTATED: resurrect successor execution growth 186\n// MUTATED: resurrect successor execution growth 187\n// MUTATED: resurrect successor execution growth 188\n// MUTATED: resurrect successor execution growth 189\n// MUTATED: resurrect successor execution growth 190\n// MUTATED: resurrect successor execution growth 191\n// MUTATED: resurrect successor execution growth 192\n// MUTATED: resurrect successor execution growth 193\n// MUTATED: resurrect successor execution growth 194\n// MUTATED: resurrect successor execution growth 195\n// MUTATED: resurrect successor execution growth 196\n// MUTATED: resurrect successor execution growth 197\n// MUTATED: resurrect successor execution growth 198\n// MUTATED: resurrect successor execution growth 199\n// MUTATED: resurrect successor execution growth 200\n// MUTATED: resurrect successor execution growth 201\n// MUTATED: resurrect successor execution growth 202\n// MUTATED: resurrect successor execution growth 203\n// MUTATED: resurrect successor execution growth 204\n// MUTATED: resurrect successor execution growth 205\n// MUTATED: resurrect successor execution growth 206\n// MUTATED: resurrect successor execution growth 207\n// MUTATED: resurrect successor execution growth 208\n// MUTATED: resurrect successor execution growth 209\n// MUTATED: resurrect successor execution growth 210\n// MUTATED: resurrect successor execution growth 211\n// MUTATED: resurrect successor execution growth 212\n// MUTATED: resurrect successor execution growth 213\n// MUTATED: resurrect successor execution growth 214\n// MUTATED: resurrect successor execution growth 215\n// MUTATED: resurrect successor execution growth 216\n// MUTATED: resurrect successor execution growth 217\n// MUTATED: resurrect successor execution growth 218\n// MUTATED: resurrect successor execution growth 219\n// MUTATED: resurrect successor execution growth 220\n// MUTATED: resurrect successor execution growth 221\n// MUTATED: resurrect successor execution growth 222\n// MUTATED: resurrect successor execution growth 223\n// MUTATED: resurrect successor execution growth 224\n// MUTATED: resurrect successor execution growth 225\n// MUTATED: resurrect successor execution growth 226\n// MUTATED: resurrect successor execution growth 227\n// MUTATED: resurrect successor execution growth 228\n// MUTATED: resurrect successor execution growth 229\n// MUTATED: resurrect successor execution growth 230\n// MUTATED: resurrect successor execution growth 231\n// MUTATED: resurrect successor execution growth 232\n// MUTATED: resurrect successor execution growth 233\n// MUTATED: resurrect successor execution growth 234\n// MUTATED: resurrect successor execution growth 235\n// MUTATED: resurrect successor execution growth 236\n// MUTATED: resurrect successor execution growth 237\n// MUTATED: resurrect successor execution growth 238\n// MUTATED: resurrect successor execution growth 239\n// MUTATED: resurrect successor execution growth 240\n// MUTATED: resurrect successor execution growth 241\n// MUTATED: resurrect successor execution growth 242\n// MUTATED: resurrect successor execution growth 243\n// MUTATED: resurrect successor execution growth 244\n// MUTATED: resurrect successor execution growth 245\n// MUTATED: resurrect successor execution growth 246\n// MUTATED: resurrect successor execution growth 247\n// MUTATED: resurrect successor execution growth 248\n// MUTATED: resurrect successor execution growth 249\n// MUTATED: resurrect successor execution growth 250\n// MUTATED: resurrect successor execution growth 251\n// MUTATED: resurrect successor execution growth 252\n// MUTATED: resurrect successor execution growth 253\n// MUTATED: resurrect successor execution growth 254\n// MUTATED: resurrect successor execution growth 255\n// MUTATED: resurrect successor execution growth 256\n// MUTATED: resurrect successor execution growth 257\n// MUTATED: resurrect successor execution growth 258\n// MUTATED: resurrect successor execution growth 259\n// MUTATED: resurrect successor execution growth 260\n// MUTATED: resurrect successor execution growth 261\n// MUTATED: resurrect successor execution growth 262\n// MUTATED: resurrect successor execution growth 263\n// MUTATED: resurrect successor execution growth 264\n// MUTATED: resurrect successor execution growth 265\n// MUTATED: resurrect successor execution growth 266\n// MUTATED: resurrect successor execution growth 267\n// MUTATED: resurrect successor execution growth 268\n// MUTATED: resurrect successor execution growth 269\n// MUTATED: resurrect successor execution growth 270\n// MUTATED: resurrect successor execution growth 271\n// MUTATED: resurrect successor execution growth 272\n// MUTATED: resurrect successor execution growth 273\n// MUTATED: resurrect successor execution growth 274\n// MUTATED: resurrect successor execution growth 275\n// MUTATED: resurrect successor execution growth 276\n// MUTATED: resurrect successor execution growth 277\n// MUTATED: resurrect successor execution growth 278\n// MUTATED: resurrect successor execution growth 279\n// MUTATED: resurrect successor execution growth 280\n// MUTATED: resurrect successor execution growth 281\n// MUTATED: resurrect successor execution growth 282\n// MUTATED: resurrect successor execution growth 283\n// MUTATED: resurrect successor execution growth 284\n// MUTATED: resurrect successor execution growth 285\n// MUTATED: resurrect successor execution growth 286\n// MUTATED: resurrect successor execution growth 287\n// MUTATED: resurrect successor execution growth 288\n// MUTATED: resurrect successor execution growth 289\n// MUTATED: resurrect successor execution growth 290\n// MUTATED: resurrect successor execution growth 291\n// MUTATED: resurrect successor execution growth 292\n// MUTATED: resurrect successor execution growth 293\n// MUTATED: resurrect successor execution growth 294\n// MUTATED: resurrect successor execution growth 295\n// MUTATED: resurrect successor execution growth 296\n// MUTATED: resurrect successor execution growth 297\n// MUTATED: resurrect successor execution growth 298\n// MUTATED: resurrect successor execution growth 299\n// MUTATED: resurrect successor execution growth 300\n// MUTATED: resurrect successor execution growth 301\n// MUTATED: resurrect successor execution growth 302\n// MUTATED: resurrect successor execution growth 303\n// MUTATED: resurrect successor execution growth 304\n// MUTATED: resurrect successor execution growth 305\n// MUTATED: resurrect successor execution growth 306\n// MUTATED: resurrect successor execution growth 307\n// MUTATED: resurrect successor execution growth 308\n// MUTATED: resurrect successor execution growth 309\n// MUTATED: resurrect successor execution growth 310\n// MUTATED: resurrect successor execution growth 311\n// MUTATED: resurrect successor execution growth 312\n// MUTATED: resurrect successor execution growth 313\n// MUTATED: resurrect successor execution growth 314\n// MUTATED: resurrect successor execution growth 315\n// MUTATED: resurrect successor execution growth 316\n// MUTATED: resurrect successor execution growth 317\n// MUTATED: resurrect successor execution growth 318\n// MUTATED: resurrect successor execution growth 319\n// MUTATED: resurrect successor execution growth 320\n// MUTATED: resurrect successor execution growth 321\n// MUTATED: resurrect successor execution growth 322\n// MUTATED: resurrect successor execution growth 323\n// MUTATED: resurrect successor execution growth 324\n// MUTATED: resurrect successor execution growth 325\n// MUTATED: resurrect successor execution growth 326\n// MUTATED: resurrect successor execution growth 327\n// MUTATED: resurrect successor execution growth 328\n// MUTATED: resurrect successor execution growth 329\n// MUTATED: resurrect successor execution growth 330\n// MUTATED: resurrect successor execution growth 331\n// MUTATED: resurrect successor execution growth 332\n// MUTATED: resurrect successor execution growth 333\n// MUTATED: resurrect successor execution growth 334\n// MUTATED: resurrect successor execution growth 335\n// MUTATED: resurrect successor execution growth 336\n// MUTATED: resurrect successor execution growth 337\n// MUTATED: resurrect successor execution growth 338\n// MUTATED: resurrect successor execution growth 339\n// MUTATED: resurrect successor execution growth 340\n// MUTATED: resurrect successor execution growth 341\n// MUTATED: resurrect successor execution growth 342\n// MUTATED: resurrect successor execution growth 343\n// MUTATED: resurrect successor execution growth 344\n// MUTATED: resurrect successor execution growth 345\n// MUTATED: resurrect successor execution growth 346\n// MUTATED: resurrect successor execution growth 347\n// MUTATED: resurrect successor execution growth 348\n// MUTATED: resurrect successor execution growth 349\n// MUTATED: resurrect successor execution growth 350\n// MUTATED: resurrect successor execution growth 351\n// MUTATED: resurrect successor execution growth 352\n// MUTATED: resurrect successor execution growth 353\n// MUTATED: resurrect successor execution growth 354\n// MUTATED: resurrect successor execution growth 355\n// MUTATED: resurrect successor execution growth 356\n// MUTATED: resurrect successor execution growth 357\n// MUTATED: resurrect successor execution growth 358\n// MUTATED: resurrect successor execution growth 359\n// MUTATED: resurrect successor execution growth 360\n// MUTATED: resurrect successor execution growth 361\n// MUTATED: resurrect successor execution growth 362\n// MUTATED: resurrect successor execution growth 363\n// MUTATED: resurrect successor execution growth 364\n// MUTATED: resurrect successor execution growth 365\n// MUTATED: resurrect successor execution growth 366\n// MUTATED: resurrect successor execution growth 367\n// MUTATED: resurrect successor execution growth 368\n// MUTATED: resurrect successor execution growth 369\n// MUTATED: resurrect successor execution growth 370\n// MUTATED: resurrect successor execution growth 371\n// MUTATED: resurrect successor execution growth 372\n// MUTATED: resurrect successor execution growth 373\n// MUTATED: resurrect successor execution growth 374\n// MUTATED: resurrect successor execution growth 375\n// MUTATED: resurrect successor execution growth 376\n// MUTATED: resurrect successor execution growth 377\n// MUTATED: resurrect successor execution growth 378\n// MUTATED: resurrect successor execution growth 379\n// MUTATED: resurrect successor execution growth 380\n// MUTATED: resurrect successor execution growth 381\n// MUTATED: resurrect successor execution growth 382\n// MUTATED: resurrect successor execution growth 383\n// MUTATED: resurrect successor execution growth 384\n// MUTATED: resurrect successor execution growth 385\n// MUTATED: resurrect successor execution growth 386\n// MUTATED: resurrect successor execution growth 387\n// MUTATED: resurrect successor execution growth 388\n// MUTATED: resurrect successor execution growth 389\n// MUTATED: resurrect successor execution growth 390\n// MUTATED: resurrect successor execution growth 391\n// MUTATED: resurrect successor execution growth 392\n// MUTATED: resurrect successor execution growth 393\n// MUTATED: resurrect successor execution growth 394\n// MUTATED: resurrect successor execution growth 395\n// MUTATED: resurrect successor execution growth 396\n// MUTATED: resurrect successor execution growth 397\n// MUTATED: resurrect successor execution growth 398\n// MUTATED: resurrect successor execution growth 399\n// MUTATED: resurrect successor execution growth 400\n// MUTATED: resurrect successor execution growth 401\n// MUTATED: resurrect successor execution growth 402\n// MUTATED: resurrect successor execution growth 403\n// MUTATED: resurrect successor execution growth 404\n// MUTATED: resurrect successor execution growth 405\n// MUTATED: resurrect successor execution growth 406\n// MUTATED: resurrect successor execution growth 407\n// MUTATED: resurrect successor execution growth 408\n// MUTATED: resurrect successor execution growth 409\n// MUTATED: resurrect successor execution growth 410\n// MUTATED: resurrect successor execution growth 411\n// MUTATED: resurrect successor execution growth 412\n// MUTATED: resurrect successor execution growth 413\n// MUTATED: resurrect successor execution growth 414\n// MUTATED: resurrect successor execution growth 415\n// MUTATED: resurrect successor execution growth 416\n// MUTATED: resurrect successor execution growth 417\n// MUTATED: resurrect successor execution growth 418\n// MUTATED: resurrect successor execution growth 419\n// MUTATED: resurrect successor execution growth 420\n// MUTATED: resurrect successor execution growth 421\n// MUTATED: resurrect successor execution growth 422\n// MUTATED: resurrect successor execution growth 423\n// MUTATED: resurrect successor execution growth 424\n// MUTATED: resurrect successor execution growth 425\n// MUTATED: resurrect successor execution growth 426\n// MUTATED: resurrect successor execution growth 427\n// MUTATED: resurrect successor execution growth 428\n// MUTATED: resurrect successor execution growth 429\n// MUTATED: resurrect successor execution growth 430\n// MUTATED: resurrect successor execution growth 431\n// MUTATED: resurrect successor execution growth 432\n// MUTATED: resurrect successor execution growth 433\n// MUTATED: resurrect successor execution growth 434\n// MUTATED: resurrect successor execution growth 435\n// MUTATED: resurrect successor execution growth 436\n// MUTATED: resurrect successor execution growth 437\n// MUTATED: resurrect successor execution growth 438\n// MUTATED: resurrect successor execution growth 439\n// MUTATED: resurrect successor execution growth 440\n// MUTATED: resurrect successor execution growth 441\n// MUTATED: resurrect successor execution growth 442\n// MUTATED: resurrect successor execution growth 443\n// MUTATED: resurrect successor execution growth 444\n// MUTATED: resurrect successor execution growth 445\n// MUTATED: resurrect successor execution growth 446\n// MUTATED: resurrect successor execution growth 447\n// MUTATED: resurrect successor execution growth 448\n// MUTATED: resurrect successor execution growth 449\n// MUTATED: resurrect successor execution growth 450\n// MUTATED: resurrect successor execution growth 451\n// MUTATED: resurrect successor execution growth 452\n// MUTATED: resurrect successor execution growth 453\n// MUTATED: resurrect successor execution growth 454\n// MUTATED: resurrect successor execution growth 455\n// MUTATED: resurrect successor execution growth 456\n// MUTATED: resurrect successor execution growth 457\n// MUTATED: resurrect successor execution growth 458\n// MUTATED: resurrect successor execution growth 459\n// MUTATED: resurrect successor execution growth 460\n// MUTATED: resurrect successor execution growth 461\n// MUTATED: resurrect successor execution growth 462\n// MUTATED: resurrect successor execution growth 463\n// MUTATED: resurrect successor execution growth 464\n// MUTATED: resurrect successor execution growth 465\n// MUTATED: resurrect successor execution growth 466\n// MUTATED: resurrect successor execution growth 467\n// MUTATED: resurrect successor execution growth 468\n// MUTATED: resurrect successor execution growth 469\n// MUTATED: resurrect successor execution growth 470\n// MUTATED: resurrect successor execution growth 471\n// MUTATED: resurrect successor execution growth 472\n// MUTATED: resurrect successor execution growth 473\n// MUTATED: resurrect successor execution growth 474\n// MUTATED: resurrect successor execution growth 475\n// MUTATED: resurrect successor execution growth 476\n// MUTATED: resurrect successor execution growth 477\n// MUTATED: resurrect successor execution growth 478\n// MUTATED: resurrect successor execution growth 479\n// MUTATED: resurrect successor execution growth 480\n// MUTATED: resurrect successor execution growth 481\n// MUTATED: resurrect successor execution growth 482\n// MUTATED: resurrect successor execution growth 483\n// MUTATED: resurrect successor execution growth 484\n// MUTATED: resurrect successor execution growth 485\n// MUTATED: resurrect successor execution growth 486\n// MUTATED: resurrect successor execution growth 487\n// MUTATED: resurrect successor execution growth 488\n// MUTATED: resurrect successor execution growth 489\n// MUTATED: resurrect successor execution growth 490\n// MUTATED: resurrect successor execution growth 491\n// MUTATED: resurrect successor execution growth 492\n// MUTATED: resurrect successor execution growth 493\n// MUTATED: resurrect successor execution growth 494\n// MUTATED: resurrect successor execution growth 495\n// MUTATED: resurrect successor execution growth 496\n// MUTATED: resurrect successor execution growth 497\n// MUTATED: resurrect successor execution growth 498\n// MUTATED: resurrect successor execution growth 499\n// MUTATED: resurrect successor execution growth 500\n// MUTATED: resurrect successor execution growth 501\n// MUTATED: resurrect successor execution growth 502\n// MUTATED: resurrect successor execution growth 503\n// MUTATED: resurrect successor execution growth 504\n// MUTATED: resurrect successor execution growth 505\n// MUTATED: resurrect successor execution growth 506\n// MUTATED: resurrect successor execution growth 507\n// MUTATED: resurrect successor execution growth 508\n// MUTATED: resurrect successor execution growth 509\n// MUTATED: resurrect successor execution growth 510\n// MUTATED: resurrect successor execution growth 511\n// MUTATED: resurrect successor execution growth 512\n// MUTATED: resurrect successor execution growth 513\n// MUTATED: resurrect successor execution growth 514\n// MUTATED: resurrect successor execution growth 515\n// MUTATED: resurrect successor execution growth 516\n// MUTATED: resurrect successor execution growth 517\n// MUTATED: resurrect successor execution growth 518\n// MUTATED: resurrect successor execution growth 519\n// MUTATED: resurrect successor execution growth 520\n// MUTATED: resurrect successor execution growth 521\n// MUTATED: resurrect successor execution growth 522\n// MUTATED: resurrect successor execution growth 523\n// MUTATED: resurrect successor execution growth 524\n// MUTATED: resurrect successor execution growth 525\n// MUTATED: resurrect successor execution growth 526\n// MUTATED: resurrect successor execution growth 527\n// MUTATED: resurrect successor execution growth 528\n// MUTATED: resurrect successor execution growth 529\n// MUTATED: resurrect successor execution growth 530\n// MUTATED: resurrect successor execution growth 531\n// MUTATED: resurrect successor execution growth 532\n// MUTATED: resurrect successor execution growth 533\n// MUTATED: resurrect successor execution growth 534\n// MUTATED: resurrect successor execution growth 535\n// MUTATED: resurrect successor execution growth 536\n// MUTATED: resurrect successor execution growth 537\n// MUTATED: resurrect successor execution growth 538\n// MUTATED: resurrect successor execution growth 539\n// MUTATED: resurrect successor execution growth 540\n// MUTATED: resurrect successor execution growth 541\n// MUTATED: resurrect successor execution growth 542\n// MUTATED: resurrect successor execution growth 543\n// MUTATED: resurrect successor execution growth 544\n// MUTATED: resurrect successor execution growth 545\n// MUTATED: resurrect successor execution growth 546\n// MUTATED: resurrect successor execution growth 547\n// MUTATED: resurrect successor execution growth 548\n// MUTATED: resurrect successor execution growth 549\n// MUTATED: resurrect successor execution growth 550\n// MUTATED: resurrect successor execution growth 551\n// MUTATED: resurrect successor execution growth 552\n// MUTATED: resurrect successor execution growth 553\n// MUTATED: resurrect successor execution growth 554\n// MUTATED: resurrect successor execution growth 555\n// MUTATED: resurrect successor execution growth 556\n// MUTATED: resurrect successor execution growth 557\n// MUTATED: resurrect successor execution growth 558\n// MUTATED: resurrect successor execution growth 559\n// MUTATED: resurrect successor execution growth 560\n// MUTATED: resurrect successor execution growth 561\n// MUTATED: resurrect successor execution growth 562\n// MUTATED: resurrect successor execution growth 563\n// MUTATED: resurrect successor execution growth 564\n// MUTATED: resurrect successor execution growth 565\n// MUTATED: resurrect successor execution growth 566\n// MUTATED: resurrect successor execution growth 567\n// MUTATED: resurrect successor execution growth 568\n// MUTATED: resurrect successor execution growth 569\n// MUTATED: resurrect successor execution growth 570\n// MUTATED: resurrect successor execution growth 571\n// MUTATED: resurrect successor execution growth 572\n// MUTATED: resurrect successor execution growth 573\n// MUTATED: resurrect successor execution growth 574\n// MUTATED: resurrect successor execution growth 575\n// MUTATED: resurrect successor execution growth 576\n// MUTATED: resurrect successor execution growth 577\n// MUTATED: resurrect successor execution growth 578\n// MUTATED: resurrect successor execution growth 579\n// MUTATED: resurrect successor execution growth 580\n// MUTATED: resurrect successor execution growth 581\n// MUTATED: resurrect successor execution growth 582\n// MUTATED: resurrect successor execution growth 583\n// MUTATED: resurrect successor execution growth 584\n// MUTATED: resurrect successor execution growth 585\n// MUTATED: resurrect successor execution growth 586\n// MUTATED: resurrect successor execution growth 587\n// MUTATED: resurrect successor execution growth 588\n// MUTATED: resurrect successor execution growth 589\n// MUTATED: resurrect successor execution growth 590\n// MUTATED: resurrect successor execution growth 591\n// MUTATED: resurrect successor execution growth 592\n// MUTATED: resurrect successor execution growth 593\n// MUTATED: resurrect successor execution growth 594\n// MUTATED: resurrect successor execution growth 595\n// MUTATED: resurrect successor execution growth 596\n// MUTATED: resurrect successor execution growth 597\n// MUTATED: resurrect successor execution growth 598\n// MUTATED: resurrect successor execution growth 599\n// MUTATED: resurrect successor execution growth 600\n// MUTATED: resurrect successor execution growth 601\n// MUTATED: resurrect successor execution growth 602\n// MUTATED: resurrect successor execution growth 603\n// MUTATED: resurrect successor execution growth 604\n// MUTATED: resurrect successor execution growth 605\n// MUTATED: resurrect successor execution growth 606\n// MUTATED: resurrect successor execution growth 607\n// MUTATED: resurrect successor execution growth 608\n// MUTATED: resurrect successor execution growth 609\n// MUTATED: resurrect successor execution growth 610\n// MUTATED: resurrect successor execution growth 611\n// MUTATED: resurrect successor execution growth 612\n// MUTATED: resurrect successor execution growth 613\n// MUTATED: resurrect successor execution growth 614\n// MUTATED: resurrect successor execution growth 615\n// MUTATED: resurrect successor execution growth 616\n// MUTATED: resurrect successor execution growth 617\n// MUTATED: resurrect successor execution growth 618\n// MUTATED: resurrect successor execution growth 619\n// MUTATED: resurrect successor execution growth 620\n// MUTATED: resurrect successor execution growth 621\n// MUTATED: resurrect successor execution growth 622\n// MUTATED: resurrect successor execution growth 623\n// MUTATED: resurrect successor execution growth 624\n// MUTATED: resurrect successor execution growth 625\n// MUTATED: resurrect successor execution growth 626\n// MUTATED: resurrect successor execution growth 627\n// MUTATED: resurrect successor execution growth 628\n// MUTATED: resurrect successor execution growth 629\n// MUTATED: resurrect successor execution growth 630\n// MUTATED: resurrect successor execution growth 631\n// MUTATED: resurrect successor execution growth 632\n// MUTATED: resurrect successor execution growth 633\n// MUTATED: resurrect successor execution growth 634\n// MUTATED: resurrect successor execution growth 635\n// MUTATED: resurrect successor execution growth 636\n// MUTATED: resurrect successor execution growth 637\n// MUTATED: resurrect successor execution growth 638\n// MUTATED: resurrect successor execution growth 639\n// MUTATED: resurrect successor execution growth 640\n// MUTATED: resurrect successor execution growth 641\n// MUTATED: resurrect successor execution growth 642\n// MUTATED: resurrect successor execution growth 643\n// MUTATED: resurrect successor execution growth 644\n// MUTATED: resurrect successor execution growth 645\n// MUTATED: resurrect successor execution growth 646\n// MUTATED: resurrect successor execution growth 647\n// MUTATED: resurrect successor execution growth 648\n// MUTATED: resurrect successor execution growth 649\n// MUTATED: resurrect successor execution growth 650\n// MUTATED: resurrect successor execution growth 651\n// MUTATED: resurrect successor execution growth 652\n// MUTATED: resurrect successor execution growth 653\n// MUTATED: resurrect successor execution growth 654\n// MUTATED: resurrect successor execution growth 655\n// MUTATED: resurrect successor execution growth 656\n// MUTATED: resurrect successor execution growth 657\n// MUTATED: resurrect successor execution growth 658\n// MUTATED: resurrect successor execution growth 659\n// MUTATED: resurrect successor execution growth 660\n// MUTATED: resurrect successor execution growth 661\n// MUTATED: resurrect successor execution growth 662\n// MUTATED: resurrect successor execution growth 663\n// MUTATED: resurrect successor execution growth 664\n// MUTATED: resurrect successor execution growth 665\n// MUTATED: resurrect successor execution growth 666\n// MUTATED: resurrect successor execution growth 667\n// MUTATED: resurrect successor execution growth 668\n// MUTATED: resurrect successor execution growth 669\n// MUTATED: resurrect successor execution growth 670\n// MUTATED: resurrect successor execution growth 671\n// MUTATED: resurrect successor execution growth 672\n// MUTATED: resurrect successor execution growth 673\n// MUTATED: resurrect successor execution growth 674\n// MUTATED: resurrect successor execution growth 675\n// MUTATED: resurrect successor execution growth 676\n// MUTATED: resurrect successor execution growth 677\n// MUTATED: resurrect successor execution growth 678\n// MUTATED: resurrect successor execution growth 679\n// MUTATED: resurrect successor execution growth 680\n// MUTATED: resurrect successor execution growth 681\n// MUTATED: resurrect successor execution growth 682\n// MUTATED: resurrect successor execution growth 683\n// MUTATED: resurrect successor execution growth 684\n// MUTATED: resurrect successor execution growth 685\n// MUTATED: resurrect successor execution growth 686\n// MUTATED: resurrect successor execution growth 687\n// MUTATED: resurrect successor execution growth 688\n// MUTATED: resurrect successor execution growth 689\n// MUTATED: resurrect successor execution growth 690\n// MUTATED: resurrect successor execution growth 691\n// MUTATED: resurrect successor execution growth 692\n// MUTATED: resurrect successor execution growth 693\n// MUTATED: resurrect successor execution growth 694\n// MUTATED: resurrect successor execution growth 695\n// MUTATED: resurrect successor execution growth 696\n// MUTATED: resurrect successor execution growth 697\n// MUTATED: resurrect successor execution growth 698\n// MUTATED: resurrect successor execution growth 699\n// MUTATED: resurrect successor execution growth 700\n// MUTATED: resurrect successor execution growth 701\n// MUTATED: resurrect successor execution growth 702\n// MUTATED: resurrect successor execution growth 703\n// MUTATED: resurrect successor execution growth 704\n// MUTATED: resurrect successor execution growth 705\n// MUTATED: resurrect successor execution growth 706\n// MUTATED: resurrect successor execution growth 707\n// MUTATED: resurrect successor execution growth 708\n// MUTATED: resurrect successor execution growth 709\n// MUTATED: resurrect successor execution growth 710\n// MUTATED: resurrect successor execution growth 711\n// MUTATED: resurrect successor execution growth 712\n// MUTATED: resurrect successor execution growth 713\n// MUTATED: resurrect successor execution growth 714\n// MUTATED: resurrect successor execution growth 715\n// MUTATED: resurrect successor execution growth 716\n// MUTATED: resurrect successor execution growth 717\n// MUTATED: resurrect successor execution growth 718\n// MUTATED: resurrect successor execution growth 719\n// MUTATED: resurrect successor execution growth 720\n// MUTATED: resurrect successor execution growth 721\n// MUTATED: resurrect successor execution growth 722\n// MUTATED: resurrect successor execution growth 723\n// MUTATED: resurrect successor execution growth 724\n// MUTATED: resurrect successor execution growth 725\n// MUTATED: resurrect successor execution growth 726\n// MUTATED: resurrect successor execution growth 727\n// MUTATED: resurrect successor execution growth 728\n// MUTATED: resurrect successor execution growth 729\n// MUTATED: resurrect successor execution growth 730\n// MUTATED: resurrect successor execution growth 731\n// MUTATED: resurrect successor execution growth 732\n// MUTATED: resurrect successor execution growth 733\n// MUTATED: resurrect successor execution growth 734\n// MUTATED: resurrect successor execution growth 735\n// MUTATED: resurrect successor execution growth 736\n// MUTATED: resurrect successor execution growth 737\n// MUTATED: resurrect successor execution growth 738\n// MUTATED: resurrect successor execution growth 739\n// MUTATED: resurrect successor execution growth 740\n// MUTATED: resurrect successor execution growth 741\n// MUTATED: resurrect successor execution growth 742\n// MUTATED: resurrect successor execution growth 743\n// MUTATED: resurrect successor execution growth 744\n// MUTATED: resurrect successor execution growth 745\n// MUTATED: resurrect successor execution growth 746\n// MUTATED: resurrect successor execution growth 747\n// MUTATED: resurrect successor execution growth 748\n// MUTATED: resurrect successor execution growth 749\n// MUTATED: resurrect successor execution growth 750\n// MUTATED: resurrect successor execution growth 751\n// MUTATED: resurrect successor execution growth 752\n// MUTATED: resurrect successor execution growth 753\n// MUTATED: resurrect successor execution growth 754\n// MUTATED: resurrect successor execution growth 755\n// MUTATED: resurrect successor execution growth 756\n// MUTATED: resurrect successor execution growth 757\n// MUTATED: resurrect successor execution growth 758\n// MUTATED: resurrect successor execution growth 759\n// MUTATED: resurrect successor execution growth 760\n// MUTATED: resurrect successor execution growth 761\n// MUTATED: resurrect successor execution growth 762\n// MUTATED: resurrect successor execution growth 763\n// MUTATED: resurrect successor execution growth 764\n// MUTATED: resurrect successor execution growth 765\n// MUTATED: resurrect successor execution growth 766\n// MUTATED: resurrect successor execution growth 767\n// MUTATED: resurrect successor execution growth 768\n// MUTATED: resurrect successor execution growth 769\n// MUTATED: resurrect successor execution growth 770\n// MUTATED: resurrect successor execution growth 771\n// MUTATED: resurrect successor execution growth 772\n// MUTATED: resurrect successor execution growth 773\n// MUTATED: resurrect successor execution growth 774\n// MUTATED: resurrect successor execution growth 775\n// MUTATED: resurrect successor execution growth 776\n// MUTATED: resurrect successor execution growth 777\n// MUTATED: resurrect successor execution growth 778\n// MUTATED: resurrect successor execution growth 779\n// MUTATED: resurrect successor execution growth 780\n// MUTATED: resurrect successor execution growth 781\n// MUTATED: resurrect successor execution growth 782\n// MUTATED: resurrect successor execution growth 783\n// MUTATED: resurrect successor execution growth 784\n// MUTATED: resurrect successor execution growth 785\n// MUTATED: resurrect successor execution growth 786\n// MUTATED: resurrect successor execution growth 787\n// MUTATED: resurrect successor execution growth 788\n// MUTATED: resurrect successor execution growth 789\n// MUTATED: resurrect successor execution growth 790\n// MUTATED: resurrect successor execution growth 791\n// MUTATED: resurrect successor execution growth 792\n// MUTATED: resurrect successor execution growth 793\n// MUTATED: resurrect successor execution growth 794\n// MUTATED: resurrect successor execution growth 795\n// MUTATED: resurrect successor execution growth 796\n// MUTATED: resurrect successor execution growth 797\n// MUTATED: resurrect successor execution growth 798\n// MUTATED: resurrect successor execution growth 799\n// MUTATED: resurrect successor execution growth 800\n// MUTATED: resurrect successor execution growth 801\n// MUTATED: resurrect successor execution growth 802\n// MUTATED: resurrect successor execution growth 803\n// MUTATED: resurrect successor execution growth 804\n// MUTATED: resurrect successor execution growth 805\n// MUTATED: resurrect successor execution growth 806\n// MUTATED: resurrect successor execution growth 807\n// MUTATED: resurrect successor execution growth 808\n// MUTATED: resurrect successor execution growth 809\n// MUTATED: resurrect successor execution growth 810\n// MUTATED: resurrect successor execution growth 811\n// MUTATED: resurrect successor execution growth 812\n// MUTATED: resurrect successor execution growth 813\n// MUTATED: resurrect successor execution growth 814\n// MUTATED: resurrect successor execution growth 815\n// MUTATED: resurrect successor execution growth 816\n// MUTATED: resurrect successor execution growth 817\n// MUTATED: resurrect successor execution growth 818\n// MUTATED: resurrect successor execution growth 819\n// MUTATED: resurrect successor execution growth 820\n// MUTATED: resurrect successor execution growth 821\n// MUTATED: resurrect successor execution growth 822\n// MUTATED: resurrect successor execution growth 823\n// MUTATED: resurrect successor execution growth 824\n// MUTATED: resurrect successor execution growth 825\n// MUTATED: resurrect successor execution growth 826\n// MUTATED: resurrect successor execution growth 827\n// MUTATED: resurrect successor execution growth 828\n// MUTATED: resurrect successor execution growth 829\n// MUTATED: resurrect successor execution growth 830\n// MUTATED: resurrect successor execution growth 831\n// MUTATED: resurrect successor execution growth 832\n// MUTATED: resurrect successor execution growth 833\n// MUTATED: resurrect successor execution growth 834\n// MUTATED: resurrect successor execution growth 835\n// MUTATED: resurrect successor execution growth 836\n// MUTATED: resurrect successor execution growth 837\n// MUTATED: resurrect successor execution growth 838\n// MUTATED: resurrect successor execution growth 839\n// MUTATED: resurrect successor execution growth 840\n// MUTATED: resurrect successor execution growth 841\n// MUTATED: resurrect successor execution growth 842\n// MUTATED: resurrect successor execution growth 843\n// MUTATED: resurrect successor execution growth 844\n// MUTATED: resurrect successor execution growth 845\n// MUTATED: resurrect successor execution growth 846\n// MUTATED: resurrect successor execution growth 847\n// MUTATED: resurrect successor execution growth 848\n// MUTATED: resurrect successor execution growth 849\n// MUTATED: resurrect successor execution growth 850\n// MUTATED: resurrect successor execution growth 851\n// MUTATED: resurrect successor execution growth 852\n// MUTATED: resurrect successor execution growth 853\n// MUTATED: resurrect successor execution growth 854\n// MUTATED: resurrect successor execution growth 855\n// MUTATED: resurrect successor execution growth 856\n// MUTATED: resurrect successor execution growth 857\n// MUTATED: resurrect successor execution growth 858\n// MUTATED: resurrect successor execution growth 859\n// MUTATED: resurrect successor execution growth 860\n// MUTATED: resurrect successor execution growth 861\n// MUTATED: resurrect successor execution growth 862\n// MUTATED: resurrect successor execution growth 863\n// MUTATED: resurrect successor execution growth 864\n// MUTATED: resurrect successor execution growth 865\n// MUTATED: resurrect successor execution growth 866\n// MUTATED: resurrect successor execution growth 867\n// MUTATED: resurrect successor execution growth 868\n// MUTATED: resurrect successor execution growth 869\n// MUTATED: resurrect successor execution growth 870\n// MUTATED: resurrect successor execution growth 871\n// MUTATED: resurrect successor execution growth 872\n// MUTATED: resurrect successor execution growth 873\n// MUTATED: resurrect successor execution growth 874\n// MUTATED: resurrect successor execution growth 875\n// MUTATED: resurrect successor execution growth 876\n// MUTATED: resurrect successor execution growth 877\n// MUTATED: resurrect successor execution growth 878\n// MUTATED: resurrect successor execution growth 879\n// MUTATED: resurrect successor execution growth 880\n// MUTATED: resurrect successor execution growth 881\n// MUTATED: resurrect successor execution growth 882\n// MUTATED: resurrect successor execution growth 883\n// MUTATED: resurrect successor execution growth 884\n// MUTATED: resurrect successor execution growth 885\n// MUTATED: resurrect successor execution growth 886\n// MUTATED: resurrect successor execution growth 887\n// MUTATED: resurrect successor execution growth 888\n// MUTATED: resurrect successor execution growth 889\n// MUTATED: resurrect successor execution growth 890\n// MUTATED: resurrect successor execution growth 891\n// MUTATED: resurrect successor execution growth 892\n// MUTATED: resurrect successor execution growth 893\n// MUTATED: resurrect successor execution growth 894\n// MUTATED: resurrect successor execution growth 895\n// MUTATED: resurrect successor execution growth 896\n// MUTATED: resurrect successor execution growth 897\n// MUTATED: resurrect successor execution growth 898\n// MUTATED: resurrect successor execution growth 899\n// MUTATED: resurrect successor execution growth 900\n// MUTATED: resurrect successor execution growth 901\n// MUTATED: resurrect successor execution growth 902\n// MUTATED: resurrect successor execution growth 903\n// MUTATED: resurrect successor execution growth 904\n// MUTATED: resurrect successor execution growth 905\n// MUTATED: resurrect successor execution growth 906\n// MUTATED: resurrect successor execution growth 907\n// MUTATED: resurrect successor execution growth 908\n// MUTATED: resurrect successor execution growth 909\n// MUTATED: resurrect successor execution growth 910\n// MUTATED: resurrect successor execution growth 911\n// MUTATED: resurrect successor execution growth 912\n// MUTATED: resurrect successor execution growth 913",
+      "red": "new production modules may not exceed 1000"
+    },
+    {
+      "id": "LH14",
+      "package": "grapt-product",
+      "features": [
+        "loopback-provider-testkit"
+      ],
+      "test_target": "dogfood_headless",
+      "test": "provider_request_reader_bounds_header_body_and_aggregate_without_coercing_length",
+      "file": "crates/grapt-product/tests/dogfood_headless.rs",
+      "old": "fn read_bounded_provider_request<R: Read>(\n    stream: &mut R,\n) -> Result<(String, String), ProviderRequestReadError> {\n    let mut bytes = Vec::with_capacity(4_096);\n    let mut chunk = [0u8; 4_096];\n    let mut body_end = None;\n    loop {\n        if let Some(end) = body_end {\n            if bytes.len() >= end {\n                let split = bytes\n                    .windows(4)\n                    .position(|window| window == b\"\\r\\n\\r\\n\")\n                    .ok_or(ProviderRequestReadError::EndedBeforeBody)?;\n                let body_start = split\n                    .checked_add(4)\n                    .ok_or(ProviderRequestReadError::AggregateLengthOverflow)?;\n                return Ok((\n                    String::from_utf8_lossy(&bytes[..split]).into_owned(),\n                    String::from_utf8_lossy(&bytes[body_start..end]).into_owned(),\n                ));\n            }\n        }\n\n        let allowance = body_end\n            .map(|end| end.saturating_sub(bytes.len()))\n            .unwrap_or(chunk.len())\n            .min(chunk.len());\n        if allowance == 0 {\n            return Err(ProviderRequestReadError::EndedBeforeBody);\n        }\n        let count = stream\n            .read(&mut chunk[..allowance])\n            .map_err(|error| ProviderRequestReadError::Read(error.to_string()))?;\n        if count == 0 {\n            return Err(ProviderRequestReadError::EndedBeforeBody);\n        }\n        let next = bytes\n            .len()\n            .checked_add(count)\n            .ok_or(ProviderRequestReadError::AggregateLengthOverflow)?;\n        if next > PROVIDER_REQUEST_BYTES {\n            return Err(ProviderRequestReadError::HeaderTooLarge);\n        }\n        bytes.extend_from_slice(&chunk[..count]);\n        if body_end.is_some() {\n            continue;\n        }\n        let Some(split) = bytes.windows(4).position(|window| window == b\"\\r\\n\\r\\n\") else {\n            if bytes.len() == PROVIDER_REQUEST_BYTES {\n                return Err(ProviderRequestReadError::HeaderTooLarge);\n            }\n            continue;\n        };\n        let head = String::from_utf8_lossy(&bytes[..split]).into_owned();\n        let raw_length = head.lines().find_map(|line| {\n            line.split_once(':').and_then(|(name, value)| {\n                name.trim()\n                    .eq_ignore_ascii_case(\"content-length\")\n                    .then(|| value.trim().to_owned())\n            })\n        });\n        let raw_length = raw_length.ok_or(ProviderRequestReadError::MissingContentLength)?;\n        let length = raw_length.parse::<usize>().map_err(|_| {\n            ProviderRequestReadError::InvalidContentLength {\n                value: raw_length.clone(),\n            }\n        })?;\n        if length > PROVIDER_REQUEST_BYTES {\n            return Err(ProviderRequestReadError::BodyTooLarge { declared: length });\n        }\n        let body_start = split\n            .checked_add(4)\n            .ok_or(ProviderRequestReadError::AggregateLengthOverflow)?;\n        let declared = body_start\n            .checked_add(length)\n            .ok_or(ProviderRequestReadError::AggregateLengthOverflow)?;\n        if declared > PROVIDER_REQUEST_BYTES {\n            return Err(ProviderRequestReadError::AggregateTooLarge { declared });\n        }\n        body_end = Some(declared);\n    }\n}",
+      "new": "fn read_bounded_provider_request<R: Read>(\n    stream: &mut R,\n) -> Result<(String, String), ProviderRequestReadError> {\n    let mut bytes = Vec::new();\n    let mut chunk = [0u8; 4_096];\n    loop {\n        let count = stream\n            .read(&mut chunk)\n            .map_err(|error| ProviderRequestReadError::Read(error.to_string()))?;\n        if count == 0 {\n            break;\n        }\n        bytes.extend_from_slice(&chunk[..count]);\n        let Some(split) = bytes.windows(4).position(|window| window == b\"\\r\\n\\r\\n\") else {\n            continue;\n        };\n        let head = String::from_utf8_lossy(&bytes[..split]).into_owned();\n        let length = head\n            .lines()\n            .find_map(|line| {\n                line.to_ascii_lowercase()\n                    .strip_prefix(\"content-length: \")\n                    .and_then(|raw| raw.parse::<usize>().ok())\n            })\n            .unwrap_or(0);\n        if bytes.len() >= split + 4 + length {\n            return Ok((\n                head,\n                String::from_utf8_lossy(&bytes[split + 4..split + 4 + length]).into_owned(),\n            ));\n        }\n    }\n    Err(ProviderRequestReadError::EndedBeforeBody)\n}",
+      "red": "provider request header exceeded the 65,536-byte bound"
+    },
+    {
+      "id": "LH15",
+      "package": "grapt-product",
+      "features": [
+        "loopback-provider-testkit"
+      ],
+      "test_target": "dogfood_headless",
+      "test": "live_headless_wire_failure_and_resurrection_witnesses",
+      "file": "crates/grapt-product/src/dogfood/execution/observations.rs",
+      "old": "let durable = durable_ref(&observation.session, observation.position.seq)?;",
+      "new": "let seq = if matches!(observation.outcome, Some(Outcome::Interrupted)) {\n        observation.position.seq.saturating_sub(1)\n    } else { observation.position.seq };\n    let durable = durable_ref(&observation.session, seq)?;",
+      "red": "execution.interrupted must reference its exact durable execution terminal, not admission or Step"
+    },
+    {
+      "id": "LH16",
+      "package": "grapt-product",
+      "features": [],
+      "test_target": "lib",
+      "test": "dogfood::usage::tests::live_usage_projection_withholds_absence_preserves_reported_values_and_refuses_ceiling",
+      "file": "crates/grapt-product/src/dogfood/usage.rs",
+      "old": "    let (Some(input), Some(output), Some(reasoning), Some(cache_read), Some(cache_write)) = (\n        usage.input_fresh().value(),\n        usage.output().value(),\n        usage.reasoning().value(),\n        usage.cache_read().value(),\n        usage.cache_write().value(),\n    ) else {\n        return Ok(None);\n    };",
+      "new": "    let input = usage.input_fresh().value().unwrap_or(0);\n    let output = usage.output().value().unwrap_or(0);\n    let reasoning = usage.reasoning().value().unwrap_or(0);\n    let cache_read = usage.cache_read().value().unwrap_or(0);\n    let cache_write = usage.cache_write().value().unwrap_or(0);",
+      "red": "absent provider usage must be withheld, never emitted as observed zero"
+    },
+    {
+      "id": "LH17",
+      "package": "grapt-product",
+      "features": [],
+      "test_target": "lib",
+      "test": "dogfood::usage::tests::live_usage_projection_withholds_absence_preserves_reported_values_and_refuses_ceiling",
+      "file": "crates/grapt-product/src/dogfood/usage.rs",
+      "old": "fn bounded_usage_value(value: u64, field: &str) -> Result<FiniteF64, ExecutionRefusal> {\n    bounded_usage(value, field).map_err(ExecutionRefusal::Run)?;\n    let value = i64::try_from(value).map_err(|_| {\n        ExecutionRefusal::Run(format!(\n            \"provider usage {field} value cannot enter the public integer projection\"\n        ))\n    })?;\n    FiniteF64::try_new(value as f64).map_err(|error| ExecutionRefusal::Run(error.to_owned()))\n}",
+      "new": "fn bounded_usage_value(value: u64, _field: &str) -> Result<FiniteF64, ExecutionRefusal> {\n    let value = value as i64;\n    FiniteF64::try_new(value as f64).map_err(|error| ExecutionRefusal::Run(error.to_owned()))\n}",
+      "red": "the public DTO conversion bypassed the bounded carrier"
+    },
+    {
+      "id": "LH18",
+      "package": "grapt-runtime",
+      "features": [],
+      "test_target": "lib",
+      "test": "durable_owner::tests::usage_observations_reach_the_log_with_their_phase_and_absent_fields",
+      "file": "crates/grapt-runtime/src/durable_owner.rs",
+      "old": "                usage.reasoning().clone(),\n                usage.cache_read().clone(),\n                usage.cache_write().clone(),",
+      "new": "                grapt_types::UsageField::ABSENT,\n                grapt_types::UsageField::ABSENT,\n                grapt_types::UsageField::ABSENT,",
+      "red": "durable reported reasoning usage was lost"
+    },
+    {
+      "id": "LH19",
+      "package": "grapt-product",
+      "features": [],
+      "test_target": "lib",
+      "test": "dogfood::usage::tests::bounded_carrier_and_aggregation_refuse_crossing_the_exact_numeric_ceiling",
+      "file": "crates/grapt-product/src/dogfood/usage.rs",
+      "old": "fn bounded_usage(value: u64, field: &str) -> Result<u64, String> {\n    TokenCount::new(value)\n        .map(TokenCount::value)\n        .map_err(|error| format!(\"provider usage {field} is not carriable: {error}\"))\n}",
+      "new": "fn bounded_usage(value: u64, _field: &str) -> Result<u64, String> {\n    Ok(value)\n}",
+      "red": "the public float projection accepted an over-bound count"
+    },
+    {
+      "id": "LH20",
+      "package": "grapt-product",
+      "features": [],
+      "test_target": "lib",
+      "test": "dogfood::usage::tests::bounded_carrier_and_aggregation_refuse_crossing_the_exact_numeric_ceiling",
+      "file": "crates/grapt-product/src/dogfood/usage.rs",
+      "old": "    current\n        .checked_add(next)\n        .map(TokenCount::value)\n        .map_err(|error| format!(\"provider usage {field} aggregate is invalid: {error}\"))",
+      "new": "    Ok(current.value().saturating_add(next.value()))",
+      "red": "usage aggregation crossed its ceiling"
+    },
+    {
+      "id": "LH21",
+      "package": "grapt-client",
+      "features": [],
+      "test_target": "dogfood_journey",
+      "test": "the_real_process_serves_the_whole_essential_journey_over_a_real_socket",
+      "file": "crates/grapt-product/src/dogfood/history_json.rs",
+      "old": "        let usage = reconciled_usage(&message.usage)?;\n        let usage = usage.complete_if_observed();",
+      "new": "        let usage = reconciled_usage(&message.usage)?;\n        let usage = Some(usage.complete_if_observed()\n            .ok_or_else(|| \"assistant message has incomplete provider usage\".to_owned())?);",
+      "reds": [
+        "reconciliation failed: v2.message.list answered 500",
+        "assistant message has incomplete provider usage"
+      ]
+    },
+    {
+      "id": "DTV01",
+      "package": "grapt-provider",
+      "features": [],
+      "test_target": "lib",
+      "test": "routes::tests::responses_decodes_a_tool_call_end_to_end",
+      "file": "crates/grapt-provider/src/routes/responses.rs",
+      "old": "                    FinishReason::Stop if self.emitted_tool_call => FinishReason::ToolCalls,",
+      "new": "                    FinishReason::Stop if self.emitted_tool_call => FinishReason::Stop,",
+      "red": "a completed Responses function call settled as Stop instead of requesting the bounded continuation Step"
+    },
+    {
+      "id": "DTV02",
+      "package": "grapt-product",
+      "features": [],
+      "test_target": "lib",
+      "test": "dogfood::continuation::tests::reopened_history_retains_prior_exchange_as_context_for_new_input",
+      "file": "crates/grapt-product/src/dogfood/continuation.rs",
+      "old": "if input == self.input {\n                current_exchanges += 1;\n            }",
+      "new": "if true {\n                current_exchanges += 1;\n            }",
+      "red": "continued Step accepted missing tool evidence"
+    },
+    {
+      "id": "DTV03",
+      "package": "grapt-product",
+      "features": [],
+      "test_target": "lib",
+      "test": "dogfood::tools::tests::provider_projection_and_strict_rust_decode_agree",
+      "file": "crates/grapt-product/src/dogfood/tools.rs",
+      "old": "        optional limit: BoundedU64<1, FILE_EFFECT_MAX_BYTES>,",
+      "new": "        optional limit: BoundedU64<0, { u64::MAX }>,",
+      "red": "read arguments lost the positive bounded Rust type shared by decoding and schema projection"
+    },
+    {
+      "id": "DTV04",
+      "package": "grapt-product",
+      "features": [],
+      "test_target": "lib",
+      "test": "dogfood::execution::interrupt_truth_tests::coding_chain_has_no_turn_budget",
+      "file": "crates/grapt-product/src/dogfood/execution.rs",
+      "old": "fn coding_step_allowance() -> Option<grapt_runtime::StepAllowance> {\n    None\n}",
+      "new": "fn coding_step_allowance() -> Option<grapt_runtime::StepAllowance> {\n    grapt_runtime::StepAllowance::new(256)\n}",
+      "red": "the coding chain gained a turn budget without an explicit product decision",
+      "repin_note": "A9 removed the default turn budget; the mutation restores one through coding_step_allowance()."
+    },
+    {
+      "id": "DTV05",
+      "package": "grapt-session-history",
+      "features": [],
+      "test_target": "lib",
+      "test": "history::tests::tool_call_page_accepts_exactly_its_bound_and_observes_the_first_over_bound_row",
+      "file": "crates/grapt-session-history/src/history/store/call_pages.rs",
+      "old": "    if rows.len() > max_rows {",
+      "new": "    if rows.len() > max_rows + 1 {",
+      "red": "the first over-bound durable tool call was not observed"
+    },
+    {
+      "id": "DTV06",
+      "package": "grapt-permission",
+      "features": [],
+      "test_target": "integration",
+      "test": "permission_http::sixty_fifth_tool_ask_creates_zero_orphan_and_reconciles_truthfully",
+      "file": "crates/grapt-permission/src/tool_authority.rs",
+      "old": "        if pending.len() >= MAX_PENDING_TOOL_PERMISSIONS {",
+      "new": "        if false && pending.len() >= MAX_PENDING_TOOL_PERMISSIONS {",
+      "red": "the 65th tool ask did not fail at the process-local capacity boundary"
+    },
+    {
+      "id": "DTV07",
+      "package": "grapt-permission",
+      "features": [],
+      "test_target": "integration",
+      "test": "permission_http::sixty_fifth_tool_ask_creates_zero_orphan_and_reconciles_truthfully",
+      "file": "crates/grapt-permission/src/service/http.rs",
+      "old": "        let reservation = authority.reserve(id.clone(), session.clone(), capability)?;\n        Self::commit_ask(\n            store, owner, event, id, session, agent, project, action, resources, save, metadata,\n            source, created_ms,\n        )?;\n        reservation.commit().map_err(PermissionHttpError::from)",
+      "new": "        Self::commit_ask(\n            store, owner, event, id, session, agent, project, action, resources, save, metadata,\n            source, created_ms,\n        )?;\n        authority\n            .begin(effect, id.clone(), session.clone(), capability)\n            .map_err(PermissionHttpError::from)",
+      "red": "the 65th capacity refusal created a durable orphan"
+    },
+    {
+      "id": "DTV08",
+      "package": "grapt-permission",
+      "features": [],
+      "test_target": "lib",
+      "test": "tool_authority::tests::once_consumes_one_committed_reply_into_one_lease",
+      "edits": [
+        {
+          "file": "crates/grapt-permission/src/tool_authority.rs",
+          "old": "    pub async fn consume_and_run<F, T>(self, effect: F) -> Result<T, ToolAuthorizationError>",
+          "new": "    pub async fn consume_and_run<F, T>(self, mut effect: F) -> Result<T, ToolAuthorizationError>"
+        },
+        {
+          "file": "crates/grapt-permission/src/tool_authority.rs",
+          "old": "        F: FnOnce(CapabilityId) -> T,",
+          "new": "        F: FnMut(CapabilityId) -> T,"
+        },
+        {
+          "file": "crates/grapt-permission/src/tool_authority.rs",
+          "old": "        Ok(effect(lease.consume()))",
+          "new": "        let capability = lease.consume();\n        let _ = effect(capability.clone());\n        Ok(effect(capability))"
+        }
+      ],
+      "red": "one committed permission reply ran its governed effect more than once"
+    },
+    {
+      "id": "DTV09",
+      "package": "grapt-product",
+      "features": [],
+      "test_target": "lib",
+      "test": "dogfood::tools::tests::file_effects_are_exact_bounded_and_project_contained",
+      "file": "crates/grapt-product/src/dogfood/tools/paths.rs",
+      "old": "[\".git\", \".stateengine\", \".codex\", \"AGENTS.md\", \"CLAUDE.md\"].iter().any(|protected|",
+      "new": "[\".stateengine\", \".codex\", \"AGENTS.md\", \"CLAUDE.md\"].iter().any(|protected|",
+      "red": "a protected control path reached writable effect preparation"
+    },
+    {
+      "id": "DTV10",
+      "package": "grapt-product",
+      "features": [],
+      "test_target": "lib",
+      "test": "dogfood::tools::tests::file_effects_are_exact_bounded_and_project_contained",
+      "file": "crates/grapt-product/src/dogfood/tools/effects.rs",
+      "old": "    if before.match_indices(args.old_text.as_str()).take(2).count() != 1 {",
+      "new": "    if before.match_indices(args.old_text.as_str()).take(2).count() > 1 {",
+      "red": "an edit with zero exact matches reached its terminal write",
+      "edits": [
+        {
+          "file": "crates/grapt-product/src/dogfood/tools/effects.rs",
+          "old": "    if before.match_indices(args.old_text.as_str()).take(2).count() != 1 {",
+          "new": "    if before.match_indices(args.old_text.as_str()).take(2).count() > 1 {"
+        },
+        {
+          "file": "crates/grapt-product/src/dogfood/tools/effects.rs",
+          "old": "    let start = before\n        .find(old)\n        .ok_or(\"edit receipt lost its exact match\")?;",
+          "new": "    let start = before.find(old).unwrap_or(0);"
+        }
+      ]
+    },
+    {
+      "id": "DTV11",
+      "package": "grapt-product",
+      "features": [],
+      "test_target": "lib",
+      "test": "dogfood::tools::tests::shell_is_cwd_bound_timed_and_output_bounded",
+      "file": "crates/grapt-product/src/dogfood/tools/effects.rs",
+      "old": "    if status.success() {",
+      "new": "    if true {",
+      "red": "shell terminal was emitted before nonzero exit classification"
+    },
+    {
+      "id": "DTV12",
+      "package": "grapt-product",
+      "features": [],
+      "test_target": "lib",
+      "test": "dogfood::tools::tests::provider_projection_and_strict_rust_decode_agree",
+      "file": "crates/grapt-product/src/dogfood/tools/catalog.rs",
+      "old": "pub(super) fn definitions() -> Vec<ToolDefinition> {\n    vec![\n        tool_definition::<ReadArguments>(READ_DESCRIPTION),",
+      "new": "pub(super) fn definitions() -> Vec<ToolDefinition> {\n    vec![\n        tool_definition::<EditArguments>(READ_DESCRIPTION),",
+      "red": "provider definitions must be projections of their Rust decoder contracts"
+    },
+    {
+      "id": "DTV13",
+      "package": "grapt-product",
+      "features": [],
+      "test_target": "lib",
+      "test": "dogfood::tools::tests::provider_projection_and_strict_rust_decode_agree",
+      "file": "crates/grapt-product/src/dogfood/tools.rs",
+      "old": "                #[serde(default, deserialize_with = \"deserialize_present_non_null\")]\n                $visibility $optional_field: Option<$optional_type>,",
+      "new": "                #[serde(default)]\n                $visibility $optional_field: Option<$optional_type>,",
+      "red": "an optional tool argument accepted explicit null outside its non-null provider schema"
+    },
+    {
+      "id": "PC01",
+      "package": "grapt-provider",
+      "features": [],
+      "test_target": "lib",
+      "test": "request::tests::oracle_sha_session_keys_shed_the_prefix_and_first_over_bound_refuses",
+      "file": "crates/grapt-provider/src/request.rs",
+      "old": "        if bytes == 0 || bytes > MAX_PROMPT_CACHE_KEY_BYTES {",
+      "new": "        if bytes == 0 {",
+      "red": "right: Err(PromptCacheKeyError { bytes: 68 })"
+    },
+    {
+      "id": "PC02",
+      "package": "grapt-product",
+      "features": [],
+      "test_target": "lib",
+      "test": "dogfood::production::tests::first_attempt_consumes_preissued_target_and_retry_issues_fresh",
+      "file": "crates/grapt-product/src/dogfood/production.rs",
+      "old": "            ProtocolFamily::ChatGptCodex => ProviderRequest::ChatGptCodex(ChatGptCodexRequest {\n                model: authority.model().model_ref().clone(),\n                input,\n                prompt_cache_key: Some(self.prompt_cache_key.clone()),",
+      "new": "            ProtocolFamily::ChatGptCodex => ProviderRequest::ChatGptCodex(ChatGptCodexRequest {\n                model: authority.model().model_ref().clone(),\n                input,\n                prompt_cache_key: None,",
+      "red": "the initial attempt lost its Session-stable provider cache coordinate"
+    },
+    {
+      "id": "PC03",
+      "package": "grapt-provider",
+      "features": [],
+      "test_target": "lib",
+      "test": "routes::body::tests::openai_responses_families_emit_the_typed_prompt_cache_key_only_when_present",
+      "file": "crates/grapt-provider/src/routes/body.rs",
+      "old": "        serde_json::Value::Array(codex_input_array(&request.input)?),\n    );\n    if let Some(key) = request.prompt_cache_key.as_ref() {\n        body.insert(\n            \"prompt_cache_key\".to_owned(),\n            serde_json::Value::String(key.as_str().to_owned()),\n        );\n    }\n    body.insert(\"stream\".to_owned(), serde_json::Value::Bool(true));",
+      "new": "        serde_json::Value::Array(codex_input_array(&request.input)?),\n    );\n    body.insert(\"stream\".to_owned(), serde_json::Value::Bool(true));",
+      "red": "the OpenAI Responses body dropped its typed provider cache coordinate"
+    },
+    {
+      "id": "PC04",
+      "package": "grapt-provider",
+      "features": [],
+      "test_target": "lib",
+      "test": "routes::body::tests::openai_responses_families_emit_the_typed_prompt_cache_key_only_when_present",
+      "file": "crates/grapt-provider/src/routes/body.rs",
+      "old": "        serde_json::Value::Array(codex_input_array(&request.input)?),\n    );\n    if let Some(key) = request.prompt_cache_key.as_ref() {\n        body.insert(\n            \"prompt_cache_key\".to_owned(),\n            serde_json::Value::String(key.as_str().to_owned()),\n        );\n    }\n    // ChatGPT-plan requests are ephemeral at the provider boundary.",
+      "new": "        serde_json::Value::Array(codex_input_array(&request.input)?),\n    );\n    // ChatGPT-plan requests are ephemeral at the provider boundary.",
+      "red": "the ChatGPT Codex body dropped its typed provider cache coordinate"
+    },
+    {
+      "id": "PC05",
+      "package": "grapt-provider",
+      "features": [],
+      "test_target": "lib",
+      "test": "usage::tests::absence_zero_malformed_bounds_and_partition_failure_are_distinct",
+      "file": "crates/grapt-provider/src/usage.rs",
+      "old": "    let raw = total.value().checked_sub(used.value()).ok_or_else(|| {\n        error(\n            route,\n            UsageWireField::InputFresh,\n            UsageNormalizationReason::PartitionExceedsTotal,\n        )\n    })?;",
+      "new": "    let raw = total.value().saturating_sub(used.value());",
+      "red": "over-partition accepted"
+    },
+    {
+      "id": "PU01",
+      "package": "grapt-provider",
+      "features": [],
+      "test_target": "lib",
+      "test": "usage::tests::language_neutral_normalization_corpus_executes_every_route",
+      "file": "crates/grapt-provider/src/usage.rs",
+      "old": "    let input_fresh = derive_fresh(&input_total, &cache_read, &cache_write, route)?;",
+      "new": "    let input_fresh = input_total.clone();",
+      "red": "normalization action responses-complete produced the wrong truth"
+    },
+    {
+      "id": "PU02",
+      "package": "grapt-provider",
+      "features": [],
+      "test_target": "lib",
+      "test": "usage::tests::language_neutral_normalization_corpus_executes_every_route",
+      "file": "crates/grapt-provider/src/usage.rs",
+      "old": "    let input_total = derive_inclusive(&input_fresh, &cache_read, &cache_write, route)?;",
+      "new": "    let input_total = input_fresh.clone();",
+      "red": "normalization action anthropic-partition produced the wrong truth"
+    },
+    {
+      "id": "PU03",
+      "package": "grapt-provider",
+      "features": [],
+      "test_target": "lib",
+      "test": "usage::tests::language_neutral_normalization_corpus_executes_every_route",
+      "file": "crates/grapt-provider/src/usage.rs",
+      "old": "    let input_fresh = derive_fresh(\n        &input_total,\n        &cache_read,\n        &UsageField::reported(TokenCount::ZERO),\n        route,\n    )?;",
+      "new": "    let input_fresh = derive_fresh(\n        &input_total,\n        &cache_read,\n        &UsageField::ABSENT,\n        route,\n    )?;",
+      "red": "normalization action compatible-partition produced the wrong truth"
+    },
+    {
+      "id": "PU04",
+      "package": "grapt-provider",
+      "features": [],
+      "test_target": "lib",
+      "test": "usage::tests::language_neutral_normalization_corpus_executes_every_route",
+      "file": "crates/grapt-provider/src/usage.rs",
+      "old": "fn optional_nested_reported(\n    object: Option<&Map<String, Value>>,\n    key: &str,\n    route: UsageRoute,\n    field: UsageWireField,\n) -> Result<UsageField, UsageNormalizationError> {\n    match object {\n        Some(object) => optional_reported(object, key, route, field),\n        None => Ok(UsageField::ABSENT),\n    }\n}",
+      "new": "fn optional_nested_reported(\n    object: Option<&Map<String, Value>>,\n    key: &str,\n    route: UsageRoute,\n    field: UsageWireField,\n) -> Result<UsageField, UsageNormalizationError> {\n    match object {\n        Some(object) => optional_reported(object, key, route, field),\n        None => Ok(UsageField::reported(TokenCount::ZERO)),\n    }\n}",
+      "red": "normalization action compatible-observed-zero produced the wrong truth"
+    },
+    {
+      "id": "PU05",
+      "package": "grapt-provider",
+      "features": [],
+      "test_target": "lib",
+      "test": "usage::tests::language_neutral_normalization_corpus_executes_every_route",
+      "file": "crates/grapt-provider/src/usage.rs",
+      "old": "    let raw = value\n        .as_u64()\n        .ok_or_else(|| error(route, field, UsageNormalizationReason::WrongType))?;",
+      "new": "    let Some(raw) = value.as_u64() else {\n        return Ok(UsageField::ABSENT);\n    };",
+      "red": "normalization action compatible-string-count-refuses produced the wrong truth"
+    },
+    {
+      "id": "PU06",
+      "package": "grapt-provider",
+      "features": [],
+      "test_target": "lib",
+      "test": "usage::tests::language_neutral_normalization_corpus_executes_every_route",
+      "file": "crates/grapt-provider/src/usage.rs",
+      "old": "    let count = TokenCount::new(raw)\n        .map_err(|source| error(route, field, UsageNormalizationReason::OutOfRange(source)))?;",
+      "new": "    let count = TokenCount::new(raw.min(9_007_199_254_740_992))\n        .map_err(|source| error(route, field, UsageNormalizationReason::OutOfRange(source)))?;",
+      "red": "normalization action compatible-over-bound-refuses produced the wrong truth"
+    },
+    {
+      "id": "PU07",
+      "package": "grapt-provider",
+      "features": [],
+      "test_target": "lib",
+      "test": "usage::tests::language_neutral_normalization_corpus_executes_every_route",
+      "file": "crates/grapt-provider/src/usage.rs",
+      "old": "    Ok(UsageField::derived(\n        fresh,\n        UsageDerivation::FreshFromInclusiveInput,\n    ))",
+      "new": "    Ok(UsageField::reported(fresh))",
+      "red": "normalization action responses-complete produced the wrong truth"
+    },
+    {
+      "id": "PU08",
+      "package": "grapt-provider",
+      "features": [],
+      "test_target": "lib",
+      "test": "usage::tests::language_neutral_normalization_corpus_executes_every_route",
+      "file": "crates/grapt-provider/src/usage.rs",
+      "old": "    Ok(UsageField::reported(count))",
+      "new": "    Ok(UsageField::derived(\n        count,\n        UsageDerivation::FreshFromInclusiveInput,\n    ))",
+      "red": "normalization action responses-complete produced the wrong truth"
+    },
+    {
+      "id": "PU09",
+      "package": "grapt-provider",
+      "features": [],
+      "test_target": "lib",
+      "test": "usage::tests::language_neutral_normalization_corpus_executes_every_route",
+      "file": "crates/grapt-provider/src/usage.rs",
+      "old": "    if expected != total {\n        return Err(error(\n            route,\n            UsageWireField::Total,\n            UsageNormalizationReason::ReportedTotalMismatch,\n        ));\n    }",
+      "new": "    let _matches_reported_total = expected == total;",
+      "red": "normalization action responses-cross-total-refuses produced the wrong truth"
+    },
+    {
+      "id": "PU10",
+      "package": "grapt-provider",
+      "features": [],
+      "test_target": "lib",
+      "test": "routes::tests::malformed_present_usage_terminates_every_decoder_route",
+      "file": "crates/grapt-provider/src/transport/sink.rs",
+      "old": "    pub(crate) fn invalid_usage(&mut self, error: crate::usage::UsageNormalizationError) {\n        self.fail(\n            ProviderFailureClass::InvalidProviderOutput,\n            error.to_string(),\n        );\n    }",
+      "new": "    pub(crate) fn invalid_usage(\n        &mut self,\n        _error: crate::usage::UsageNormalizationError,\n    ) {\n    }",
+      "red": "responses dropped malformed present usage instead of terminating"
+    },
+    {
+      "id": "PCU01",
+      "package": "grapt-product",
+      "features": [],
+      "test_target": "lib",
+      "test": "cache_accounting::tests::positive_provider_read_without_eligibility_is_not_promoted_to_a_hit",
+      "file": "crates/grapt-product/src/cache_accounting.rs",
+      "old": "        let verified_hit = attempt.routing == RoutingKeyTruth::Present\n            && eligibility == EligibilityClass::Reusable\n            && read == CacheReadClass::Positive\n            && read_reported;",
+      "new": "        let verified_hit = attempt.routing == RoutingKeyTruth::Present\n            && read == CacheReadClass::Positive\n            && read_reported;",
+      "red": "an invalidated prefix plus positive provider usage was promoted to a verified hit"
+    },
+    {
+      "id": "PCU02",
+      "package": "grapt-product",
+      "features": [],
+      "test_target": "lib",
+      "test": "cache_accounting::tests::language_neutral_acceptance_corpus_executes_every_truth_class",
+      "file": "crates/grapt-product/src/cache_accounting.rs",
+      "old": "        let verified_hit = attempt.routing == RoutingKeyTruth::Present\n            && eligibility == EligibilityClass::Reusable",
+      "new": "        let verified_hit = eligibility == EligibilityClass::Reusable",
+      "red": "an absent provider routing coordinate was treated as a verified hit"
+    },
+    {
+      "id": "PCU03",
+      "package": "grapt-product",
+      "features": [],
+      "test_target": "lib",
+      "test": "cache_accounting::tests::estimated_cache_read_never_impersonates_provider_confirmation",
+      "file": "crates/grapt-product/src/cache_accounting.rs",
+      "old": "            && read == CacheReadClass::Positive\n            && read_reported;",
+      "new": "            && read == CacheReadClass::Positive;",
+      "red": "an estimated cache-read leaf impersonated provider confirmation"
+    },
+    {
+      "id": "PCU04",
+      "package": "grapt-product",
+      "features": [],
+      "test_target": "lib",
+      "test": "cache_accounting::tests::missing_is_not_zero_and_corrupt_entry_refuses_without_mutation",
+      "file": "crates/grapt-product/src/cache_accounting.rs",
+      "old": "        None => (CacheReadClass::Unavailable, 0, false),",
+      "new": "        None => (CacheReadClass::Zero, 0, false),",
+      "red": "a missing cache-read observation was reported as an observed zero"
+    },
+    {
+      "id": "PCU05",
+      "package": "grapt-product",
+      "features": [],
+      "test_target": "lib",
+      "test": "cache_accounting::tests::missing_is_not_zero_and_corrupt_entry_refuses_without_mutation",
+      "file": "crates/grapt-product/src/cache_accounting.rs",
+      "old": "        if let PrefixTruth::Corrupt(reason) = &attempt.prefix {\n            return Err(CacheMeasurementError::CorruptPrefix(reason.clone()));\n        }",
+      "new": "        if let PrefixTruth::Corrupt(_reason) = &attempt.prefix {\n            // MUTATED: continue with a corrupt cache entry.\n        }",
+      "red": "a corrupt prefix entry did not return its corruption failure before scorecard mutation"
+    },
+    {
+      "id": "PCU06",
+      "package": "grapt-product",
+      "features": [],
+      "test_target": "lib",
+      "test": "cache_accounting::tests::exact_checked_totals_do_not_saturate",
+      "file": "crates/grapt-product/src/cache_accounting.rs",
+      "old": "fn add_u64(left: u64, right: u64, field: &'static str) -> Result<u64, CacheMeasurementError> {\n    left.checked_add(right)\n        .ok_or(CacheMeasurementError::ArithmeticOverflow { field })\n}",
+      "new": "fn add_u64(left: u64, right: u64, _field: &'static str) -> Result<u64, CacheMeasurementError> {\n    Ok(left.saturating_add(right))\n}",
+      "red": "an overflowing cache token total saturated instead of refusing"
+    },
+    {
+      "id": "PCU07",
+      "package": "grapt-product",
+      "features": [],
+      "test_target": "lib",
+      "test": "cache_accounting::tests::attempt_profile_and_utf8_label_bounds_refuse",
+      "file": "crates/grapt-product/src/cache_accounting.rs",
+      "old": "        if next_attempts > bounds.max_attempts {",
+      "new": "        if false && next_attempts > bounds.max_attempts {",
+      "red": "the cache scorecard admitted an attempt beyond its injected bound"
+    },
+    {
+      "id": "PCU08",
+      "package": "grapt-policy",
+      "features": [],
+      "test_target": "lib",
+      "test": "prefix_identity::tests::order_content_and_each_version_invalidate_with_the_exact_reason",
+      "file": "crates/grapt-policy/src/prefix_identity.rs",
+      "old": "        if adapter != receipt.adapter() {",
+      "new": "        if false && adapter != receipt.adapter() {",
+      "red": "an adapter-version change reached content comparison instead of exact invalidation"
+    },
+    {
+      "id": "PCU09",
+      "package": "grapt-policy",
+      "features": [],
+      "test_target": "lib",
+      "test": "prefix_identity::tests::order_content_and_each_version_invalidate_with_the_exact_reason",
+      "file": "crates/grapt-policy/src/prefix_identity.rs",
+      "old": "            if before.contribution() != after.contribution()\n                && receipt",
+      "new": "            if false\n                && receipt",
+      "red": "a contribution reorder was mislabeled as content change"
+    },
+    {
+      "id": "PCU10",
+      "package": "grapt-policy",
+      "features": [],
+      "test_target": "lib",
+      "test": "prefix_identity::tests::key_rotation_is_a_resurrection_counterexample",
+      "edits": [
+        {
+          "file": "crates/grapt-policy/src/prefix_identity.rs",
+          "old": "        hmac_sha256(self.key.expose(), &bytes) // component identity key",
+          "new": "        hmac_sha256(b\"fixed-component-key\", &bytes) // component identity key"
+        },
+        {
+          "file": "crates/grapt-policy/src/prefix_identity.rs",
+          "old": "        hmac_sha256(self.key.expose(), &bytes) // whole prefix identity key",
+          "new": "        hmac_sha256(b\"fixed-whole-key\", &bytes) // whole prefix identity key"
+        }
+      ],
+      "red": "replacement key material resurrected an earlier receipt"
+    },
+    {
+      "id": "PCU11",
+      "package": "grapt-policy",
+      "features": [],
+      "test_target": "compile_fail",
+      "test": "prefix_comparison_authority_cannot_be_forged",
+      "edits": [
+        {
+          "file": "crates/grapt-policy/src/prefix_identity.rs",
+          "old": "pub struct VerifiedPrefixComparison {\n    committed: CommittedPrefixId,\n    outcome: VerifiedPrefixOutcome,\n}",
+          "new": "pub struct VerifiedPrefixComparison {\n    pub committed: CommittedPrefixId,\n    pub outcome: VerifiedPrefixOutcome,\n}"
+        },
+        {
+          "file": "crates/grapt-policy/src/prefix_identity.rs",
+          "old": "enum VerifiedPrefixOutcome {",
+          "new": "pub enum VerifiedPrefixOutcome {"
+        }
+      ],
+      "red": "Expected test case to fail to compile"
+    },
+    {
+      "id": "PCU12",
+      "package": "grapt-policy",
+      "features": [],
+      "test_target": "lib",
+      "test": "prefix_identity::tests::altered_receipt_components_cannot_ride_a_genuine_id_into_reuse",
+      "file": "crates/grapt-policy/src/prefix_identity.rs",
+      "old": "        if &offered == receipt {",
+      "new": "        if offered.id() == receipt.id() {",
+      "red": "altered receipt components rode a genuine whole-prefix id into reuse"
+    },
+    {
+      "id": "PCU13",
+      "package": "grapt-event",
+      "features": [],
+      "test_target": "lib",
+      "test": "session_message::tests::v2_neither_encodes_nor_decodes_the_legacy_input_coordinate",
+      "file": "crates/grapt-event/src/session_message.rs",
+      "old": "fn encode_usage(usage: &AttemptUsage) -> Value {\n    let mut out = Map::new();",
+      "new": "fn encode_usage(usage: &AttemptUsage) -> Value {\n    let mut out = Map::new();\n    out.insert(\"legacyInputTokens\".to_owned(), Value::from(0));",
+      "red": "v2 encoder authored legacyInputTokens"
+    },
+    {
+      "id": "PCU14",
+      "package": "grapt-event",
+      "features": [],
+      "test_target": "lib",
+      "test": "session_message::tests::v2_neither_encodes_nor_decodes_the_legacy_input_coordinate",
+      "file": "crates/grapt-event/src/session_message.rs",
+      "old": "        OBSERVED_V2_USAGE,\n        &[\n            \"inputTotalTokens\",",
+      "new": "        OBSERVED_V2_USAGE,\n        &[\n            \"legacyInputTokens\",\n            \"inputTotalTokens\",",
+      "red": "v2 decoder accepted legacyInputTokens"
+    },
+    {
+      "id": "PCU15",
+      "package": "grapt-types",
+      "features": [],
+      "test_target": "lib",
+      "test": "usage::tests::same_phase_conflict_is_corruption_and_legacy_input_stays_separate",
+      "file": "crates/grapt-types/src/usage.rs",
+      "old": "                    &mut reconciled.legacy_input,\n                    &observation.input_tokens_ambiguous,",
+      "new": "                    &mut reconciled.input_fresh,\n                    &observation.input_tokens_ambiguous,",
+      "red": "assertion `left == right` failed"
+    },
+    {
+      "id": "PCU16",
+      "package": "grapt-product",
+      "features": [],
+      "test_target": "lib",
+      "test": "cache_accounting::tests::atomic::every_checked_overflow_refuses_with_a_byte_identical_scorecard",
+      "file": "crates/grapt-product/src/cache_accounting.rs",
+      "old": "        let held_profile = self\n            .profiles",
+      "new": "        self.attempts = next_attempts; // MUTATED: commit before later checked deltas.\n        let held_profile = self\n            .profiles",
+      "red": "the scorecard changed before the profile-attempts refusal"
+    },
+    {
+      "id": "PCU17",
+      "package": "grapt-product",
+      "features": [],
+      "test_target": "lib",
+      "test": "cache_accounting::tests::atomic::every_checked_overflow_refuses_with_a_byte_identical_scorecard",
+      "file": "crates/grapt-product/src/cache_accounting.rs",
+      "old": "        let next_verified_hits =\n            add_u32(",
+      "new": "        self.profiles\n            .insert(attempt.profile.0.clone(), next_profile.clone()); // MUTATED: commit before global deltas.\n        let next_verified_hits =\n            add_u32(",
+      "red": "the scorecard changed before the verified-hits refusal"
+    },
+    {
+      "id": "PCU18",
+      "package": "grapt-product",
+      "features": [],
+      "test_target": "cache_usage_benchmark",
+      "test": "million_attempt_benchmark_executes_keyed_comparisons_for_exact_hit_and_miss_halves",
+      "file": "crates/grapt-product/src/bin/cache_usage_benchmark.rs",
+      "old": "                    offered_parts,",
+      "new": "                    &committed_parts[..],",
+      "red": "cold prefix comparisons were promoted to verified hits"
+    },
+    {
+      "id": "PCU19",
+      "package": "grapt-policy",
+      "features": [],
+      "test_target": "integration",
+      "test": "prefix_identity_bounds::authenticated_bounds_",
+      "file": "crates/grapt-policy/src/prefix_identity.rs",
+      "old": "        let mut bytes = self.coordinate_bytes(domain, coordinates);\n        field(&mut bytes, &bounds.max_components().to_be_bytes());\n        field(&mut bytes, &bounds.max_component_bytes().to_be_bytes());\n        field(&mut bytes, &bounds.max_total_bytes().to_be_bytes());\n        bytes",
+      "new": "        let _bounds = bounds; // MUTATED: restore unauthenticated public bounds.\n        self.coordinate_bytes(domain, coordinates)",
+      "reds": [
+        "component MAC ignored authority-selected prefix bounds",
+        "whole-prefix MAC ignored authority-selected prefix bounds",
+        "authority-selected prefix bounds were loosened by public receipt reconstruction",
+        "altered bounds did not refuse as a receipt identity mismatch"
+      ],
+      "red": "authority-selected prefix bounds were loosened by public receipt reconstruction"
+    },
+    {
+      "id": "RDT01",
+      "package": "grapt-runtime",
+      "features": [],
+      "test_target": "lib",
+      "test": "decision_wait_outlives_three_stall_windows_then_effect_gets_a_full_window",
+      "edits": [
+        {
+          "file": "crates/grapt-runtime/src/step.rs",
+          "old": "_ = &mut deadline, if !awaiting_decision => {",
+          "new": "_ = &mut deadline, if true || awaiting_decision => { // MUTATED: charge human deliberation as silence."
+        },
+        {
+          "file": "crates/grapt-runtime/src/step.rs",
+          "old": "if decision_waits.as_ref().is_some_and(|waiting| *waiting.borrow() > 0) {",
+          "new": "if false && decision_waits.as_ref().is_some_and(|waiting| *waiting.borrow() > 0) {"
+        }
+      ],
+      "red": "decision_wait_outlives_three_stall_windows_then_effect_gets_a_full_window ... FAILED"
+    },
+    {
+      "id": "RDT02",
+      "package": "grapt-product",
+      "features": [
+        "loopback-provider-testkit"
+      ],
+      "test_target": "dogfood_headless",
+      "test": "interrupt_cancels_pending_tool_permission_and_restart_cannot_resurrect_it",
+      "file": "crates/grapt-product/src/dogfood/tools.rs",
+      "old": "        if self.armed {",
+      "new": "        if false && self.armed { // MUTATED: abandon durable pending permission on interrupt.",
+      "red": "interrupt_cancels_pending_tool_permission_and_restart_cannot_resurrect_it ... FAILED"
+    },
+    {
+      "id": "RDT03",
+      "package": "grapt-permission",
+      "features": [],
+      "test_target": "integration",
+      "test": "permission_http::tool_cancellation::tool_cancellation_requires_owner_and_commit_then_releases_capacity_without_effect",
+      "file": "crates/grapt-permission/src/service/http.rs",
+      "old": "super::PermissionService::cancel_in_store(store, event, id, created_ms)?",
+      "new": "super::PermissionService::cancel_in_store(store, event, id, created_ms).unwrap_or(CasOutcome::Applied)",
+      "red": "tool_cancellation_requires_owner_and_commit_then_releases_capacity_without_effect ... FAILED"
+    },
+    {
+      "id": "RDT04",
+      "package": "grapt-permission",
+      "features": [],
+      "test_target": "integration",
+      "test": "permission_http::tool_cancellation::tool_cancellation_requires_owner_and_commit_then_releases_capacity_without_effect",
+      "file": "crates/grapt-permission/src/tool_authority.rs",
+      "old": ".send(Err(ToolAuthorizationError::Cancelled(committed.permission)));",
+      "new": ".send(Ok(ToolEffectLease(entry.capability))); // MUTATED: resurrect cancelled effect authority.",
+      "red": "cancelled effect executed"
+    },
+    {
+      "id": "RDT05",
+      "package": "grapt-product",
+      "features": [
+        "loopback-provider-testkit"
+      ],
+      "test_target": "dogfood_headless",
+      "test": "coding_chain_continues_past_two_tools_to_a_final_answer",
+      "file": "crates/grapt-product/src/dogfood/execution.rs",
+      "old": "fn coding_step_allowance() -> Option<grapt_runtime::StepAllowance> {\n    None\n}",
+      "new": "fn coding_step_allowance() -> Option<grapt_runtime::StepAllowance> {\n    grapt_runtime::StepAllowance::new(2)\n}",
+      "red": "coding chain stopped before tool 3",
+      "repin_note": "A9 removed the default turn budget; the mutation restores one through coding_step_allowance()."
+    },
+    {
+      "id": "RDT06",
+      "package": "grapt-product",
+      "features": [
+        "loopback-provider-testkit"
+      ],
+      "test_target": "dogfood_headless",
+      "test": "live_headless_wire_failure_and_resurrection_witnesses",
+      "file": "crates/grapt-product/src/dogfood/execution/observations.rs",
+      "old": "self.hub.reconcile();",
+      "new": "self.hub.invalidate(); // MUTATED: discard valid queued terminal frames.",
+      "red": "event stream carried no execution.succeeded"
+    },
+    {
+      "id": "RDT07",
+      "package": "grapt-api",
+      "features": [],
+      "test_target": "lib",
+      "test": "u3a::sse::tests::reconciliation_drains_valid_frames_then_closes_without_replaying",
+      "file": "crates/grapt-api/src/u3a/sse.rs",
+      "old": "    pub fn reconcile(&self) {\n        let mut subscribers = match self.subscribers.lock() {",
+      "new": "    pub fn reconcile(&self) {\n        self.invalidate(); // MUTATED: make a successful boundary discard valid frames.\n        let mut subscribers = match self.subscribers.lock() {",
+      "red": "reconciliation discarded a valid queued frame"
+    },
+    {
+      "id": "SCO01",
+      "package": "grapt-runtime",
+      "features": [],
+      "test_target": "lib",
+      "test": "provider_source::tests",
+      "file": "crates/grapt-runtime/src/settlement.rs",
+      "old": "        let observed = self.context.clock.now_ms();",
+      "new": "        let observed = self.context.created_ms;",
+      "red": "Step completion reused its pre-I/O reservation instead of the one settlement observation"
+    },
+    {
+      "id": "SCO02",
+      "package": "grapt-product",
+      "features": [
+        "loopback-provider-testkit"
+      ],
+      "test_target": "dogfood_headless",
+      "test": "live_headless_wire_failure_and_resurrection_witnesses",
+      "file": "crates/grapt-product/src/dogfood/history_json.rs",
+      "old": "                    .map(|at| at.as_millis())",
+      "new": "                    .map(|_at| position.created_ms)",
+      "red": "public completion reused a pre-opening reservation instead of settlement"
+    },
+    {
+      "id": "SCO03",
+      "package": "grapt-event",
+      "features": [],
+      "test_target": "lib",
+      "test": "session_step_observed::tests",
+      "file": "crates/grapt-event/src/session_step_observed.rs",
+      "old": "(at.as_millis() > 0).then_some(Self(at))",
+      "new": "(at.as_millis() >= 0).then_some(Self(at))",
+      "red": "v3 accepted an invalid completion observation"
+    },
+    {
+      "id": "SCO04",
+      "package": "grapt-session-history",
+      "features": [],
+      "test_target": "lib",
+      "test": "completion_observation_is_step_bound_and_preserves_legacy_coordinates",
+      "file": "crates/grapt-session-history/src/history.rs",
+      "old": "at.as_millis() < position.created_ms",
+      "new": "at.as_millis() < 0",
+      "red": "completion observation before message opening was accepted"
+    },
+    {
+      "package": "grapt-product",
+      "features": [],
+      "test_target": "lib",
+      "id": "DDR01",
+      "test": "dogfood::continuation::tests::new_input_after_failed_tool_preserves_uncertainty_without_replay",
+      "file": "crates/grapt-product/src/dogfood/continuation.rs",
+      "old": "if *input == self.input || !failed_before_input {",
+      "new": "if true {",
+      "red": "no durable terminal output"
+    },
+    {
+      "package": "grapt-product",
+      "features": [],
+      "test_target": "lib",
+      "id": "DDR02",
+      "test": "dogfood::continuation::tests::new_input_cannot_hide_an_unsettled_tool_step",
+      "file": "crates/grapt-product/src/dogfood/continuation.rs",
+      "old": "if *input == self.input || !failed_before_input {",
+      "new": "if *input == self.input {",
+      "red": "an unsettled tool Step was hidden"
+    },
+    {
+      "package": "grapt-product",
+      "features": [],
+      "test_target": "lib",
+      "id": "DDR03",
+      "test": "dogfood::continuation::tests::new_input_after_failed_tool_preserves_uncertainty_without_replay",
+      "edits": [
+        {
+          "file": "crates/grapt-product/src/dogfood/continuation.rs",
+          "old": "if *input == self.input || !failed_before_input {",
+          "new": "if !failed_before_input {"
+        },
+        {
+          "file": "crates/grapt-product/src/dogfood/continuation.rs",
+          "old": "position.seq > call.seq && position.seq < users[current].seq",
+          "new": "position.seq > call.seq && position.seq < ceiling"
+        }
+      ],
+      "red": "old input acquired uncertain context"
+    },
+    {
+      "id": "DDR04",
+      "package": "grapt-session",
+      "features": [],
+      "test_target": "execution_observations",
+      "test": "failure_before_any_step_is_durable_and_cannot_resurrect_as_success",
+      "file": "crates/grapt-session/src/execution.rs",
+      "old": "failures.push(terminal.clone());",
+      "new": "let _missing_failure = terminal;",
+      "red": "assertion `left == right` failed"
+    },
+    {
+      "id": "DDR05",
+      "package": "grapt-session",
+      "features": [],
+      "test_target": "execution_observations",
+      "test": "failure_before_any_step_is_durable_and_cannot_resurrect_as_success",
+      "file": "crates/grapt-session/src/execution.rs",
+      "old": "if failures.len() == MAX_FAILURES {",
+      "new": "if false {",
+      "red": "failure history silently exceeded its bound"
+    },
+    {
+      "id": "DDR06",
+      "package": "grapt-product",
+      "features": [],
+      "test_target": "lib",
+      "test": "dogfood::history::tests::failure_message_roundtrips_through_public_message_page",
+      "file": "crates/grapt-product/src/dogfood/history.rs",
+      "old": "serde_json::to_string(&message).map_err(|error| error.to_string())",
+      "new": "serde_json::to_value(&message).map(|value| value.to_string()).map_err(|error| error.to_string())",
+      "red": "failure history rejected by public DTO"
+    },
+    {
+      "id": "DDR07",
+      "package": "grapt-product",
+      "features": [],
+      "test_target": "startup_inspection",
+      "test": "native_startup_advice_proves_dead_owner_without_retiring_custody",
+      "file": "crates/grapt-product/src/startup.rs",
+      "old": "            snapshot.generation.value(),",
+      "new": "            0,",
+      "red": "startup advice reset recovery generation"
+    },
+    {
+      "id": "DDR08",
+      "package": "grapt-product",
+      "features": [],
+      "test_target": "lib",
+      "test": "startup::tests::startup_snapshot_cannot_overwrite_changed_or_corrupt_registration",
+      "file": "crates/grapt-product/src/startup.rs",
+      "old": "        if process_is_present(owner.pid()).await? {",
+      "new": "        if false && process_is_present(owner.pid()).await? {",
+      "red": "inspection admitted a live predecessor"
+    },
+    {
+      "id": "DDR09",
+      "package": "grapt-product",
+      "features": [],
+      "test_target": "startup_inspection",
+      "test": "native_startup_advice_proves_dead_owner_without_retiring_custody",
+      "file": "crates/grapt-product/src/startup.rs",
+      "old": "            crate::ready::check_dead_predecessor(root, &dead)\n                .map_err(|error| ProductRefusal::Custody(error.to_string()))?;",
+      "new": "            let _ = dead;",
+      "red": "inspection accepted mismatched predecessor custody"
+    },
+    {
+      "id": "DDR10",
+      "package": "grapt-product",
+      "features": [],
+      "test_target": "startup_inspection",
+      "test": "native_startup_advice_proves_dead_owner_without_retiring_custody",
+      "file": "crates/grapt-product/src/startup.rs",
+      "old": "            snapshot.instance(instance)?.as_str().to_owned(),",
+      "new": "            instance.to_owned(),",
+      "red": "startup advice lost recovery instance"
+    }
+  ],
+  "tombstones": [],
+  "inventories": {
+    "IPR": {
+      "lane": "IA0-1R",
+      "rows": 22
+    },
+    "DGH": {
+      "lane": "DOGFOOD-1",
+      "rows": 7
+    },
+    "RMH": {
+      "lane": "REAL-MODEL-HEADLESS-1",
+      "rows": 2
+    },
+    "FS": {
+      "lane": "FSR1",
+      "rows": 4
+    },
+    "LH": {
+      "lane": "LIVE-HEADLESS-1",
+      "rows": 21
+    },
+    "DTV": {
+      "lane": "D2A-RUST-TOOL-VERTICAL",
+      "rows": 13
+    },
+    "PC": {
+      "lane": "PC1-PROMPT-CACHE-ROUTING",
+      "rows": 5
+    },
+    "PU": {
+      "lane": "PC2-USAGE-TRUTH",
+      "rows": 10
+    },
+    "PCU": {
+      "lane": "PC2-CACHE-USAGE-PRODUCT-CLOSURE",
+      "rows": 19
+    },
+    "RDT": {
+      "lane": "RETAINED-TUI-RUST-DOGFOOD-01",
+      "rows": 7
+    },
+    "SCO": {
+      "lane": "RETAINED-TUI-RUST-DOGFOOD-01",
+      "rows": 4
+    },
+    "DDR": {
+      "lane": "RETAINED-DESKTOP-DOGFOOD-D4-D5",
+      "rows": 10
+    }
+  }
+}

@@ -1,0 +1,1 @@
+| `crates/secode-provider/src/routes/body.rs` (`mark_conversation_breakpoints`) | `xai-org/grok-build` / `crates/codegen/xai-grok-sampling-types/src/conversation/messages.rs` (`apply_cache_breakpoints`) | `2bdd1d6a6369de0e8c68132ea4539e9abd9e14a8` | modified: existing JSON projection, cacheable blocks, three manual markers including tools; one gateway slot reserved |

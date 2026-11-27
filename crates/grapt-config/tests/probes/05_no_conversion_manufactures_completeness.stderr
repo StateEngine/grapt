@@ -1,0 +1,7 @@
+error[E0277]: the trait bound `CompleteLedger: From<ConfigLedger>` is not satisfied
+  --> tests/probes/05_no_conversion_manufactures_completeness.rs:18:36
+   |
+18 |     let _: CompleteLedger = ledger.into();
+   |                                    ^^^^ the trait `From<ConfigLedger>` is not implemented for `CompleteLedger`
+   |
+   = note: required for `ConfigLedger` to implement `Into<CompleteLedger>`

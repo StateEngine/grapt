@@ -1,0 +1,27 @@
+warning: unreachable expression
+ --> tests/probes/forge_verified_prefix_comparison.rs:5:5
+  |
+5 | /     VerifiedPrefixComparison {
+6 | |         committed,
+7 | |         outcome: todo!(),
+  | |                  ------- any code following this expression is unreachable
+8 | |     }
+  | |_____^ unreachable expression
+  |
+  = note: `#[warn(unreachable_code)]` (part of `#[warn(unused)]`) on by default
+
+error[E0451]: fields `committed` and `outcome` of struct `VerifiedPrefixComparison` are private
+ --> tests/probes/forge_verified_prefix_comparison.rs:6:9
+  |
+5 |     VerifiedPrefixComparison {
+  |     ------------------------ in this type
+6 |         committed,
+  |         ^^^^^^^^^ private field
+7 |         outcome: todo!(),
+  |         ^^^^^^^ private field
+
+error: type `grapt_policy::prefix_identity::VerifiedPrefixOutcome` is private
+ --> tests/probes/forge_verified_prefix_comparison.rs:7:18
+  |
+7 |         outcome: todo!(),
+  |                  ^^^^^^^ private type

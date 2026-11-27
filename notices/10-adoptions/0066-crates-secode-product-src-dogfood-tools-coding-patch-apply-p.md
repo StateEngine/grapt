@@ -1,0 +1,1 @@
+| `crates/secode-product/src/dogfood/tools/coding/patch/apply_patch.rs` | `openai/codex`: `codex-rs/apply-patch/src/lib.rs` | `bb64b894fd67158be0f874872e6d7bfe717e7368` | Modified: bounded parsing/matching and ordered workspace effects through the existing governed executor. |

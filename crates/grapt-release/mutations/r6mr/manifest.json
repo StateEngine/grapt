@@ -1,0 +1,159 @@
+{
+  "schema": "grapt.mutation-manifest.v1",
+  "prefix": "R6MR",
+  "mutations": [
+    {
+      "id": "R6MR01",
+      "file": "crates/grapt-release/src/rehearsal.rs",
+      "old": "        if source == *artifact {\n",
+      "new": "        if false && source == *artifact {\n",
+      "test": "r6_migration::source_aliasing_a_fixed_candidate_name_is_refused_before_mutation",
+      "target": "integration"
+    },
+    {
+      "id": "R6MR02",
+      "file": "crates/grapt-release/src/snapshot.rs",
+      "old": "    if pending.exists() {\n        std::fs::remove_file(&pending)?;\n    }\n",
+      "new": "    if false && pending.exists() {\n        std::fs::remove_file(&pending)?;\n    }\n",
+      "test": "r6_migration::interrupted_pending_publications_are_rebuilt_without_becoming_truth",
+      "target": "integration"
+    },
+    {
+      "id": "R6MR03",
+      "file": "crates/grapt-release/src/journal.rs",
+      "old": "        if pending.exists() {\n            std::fs::remove_file(&pending)?;\n        }\n",
+      "new": "        if false && pending.exists() {\n            std::fs::remove_file(&pending)?;\n        }\n",
+      "test": "r6_migration::interrupted_pending_publications_are_rebuilt_without_becoming_truth",
+      "target": "integration"
+    },
+    {
+      "id": "R6MR04",
+      "file": "crates/grapt-release/src/rehearsal.rs",
+      "old": "    if expected == observed {\n        return Ok(());\n    }\n",
+      "new": "    if expected != observed {\n        return Ok(());\n    }\n",
+      "test": "r6_migration::whole_rehearsal_is_idempotent_and_never_mutates_its_source",
+      "target": "integration"
+    },
+    {
+      "id": "R6MR05",
+      "file": "crates/grapt-release/src/bin/grapt-migrate.rs",
+      "old": "    if command == \"cutover\" {\n        return Err(CUTOVER_REFUSAL.to_owned());\n    }\n",
+      "new": "    if false && command == \"cutover\" {\n        return Err(CUTOVER_REFUSAL.to_owned());\n    }\n",
+      "test": "r6_migration::former_cutover_cli_is_refused_before_fabricated_retirement_can_write",
+      "target": "integration"
+    },
+    {
+      "id": "R6MR06",
+      "file": "crates/grapt-release/src/handoff.rs",
+      "old": "            outcome: \"eligible-for-unified-cutover-review\",\n",
+      "new": "            outcome: \"cutover-committed\",\n",
+      "test": "r6_migration::eligibility_handoff_contains_only_database_evidence",
+      "target": "integration"
+    },
+    {
+      "id": "R6MR07",
+      "file": "crates/grapt-release/src/rehearsal.rs",
+      "old": "        !journal.has(RehearsalPhase::BackupVerified),\n",
+      "new": "        true,\n",
+      "test": "r6_migration::absent_and_corrupt_backups_refuse_loudly",
+      "target": "integration"
+    },
+    {
+      "id": "R6MR08",
+      "file": "crates/grapt-release/src/rehearsal.rs",
+      "old": "    if journal.has(RehearsalPhase::Migrated)\n        && (evidence.clone_file_fingerprint.as_deref() != Some(candidate_file_fingerprint.as_str())\n            || evidence.clone_domain_digest.as_deref()\n                != Some(candidate_export.digest_hex.as_str()))\n",
+      "new": "    if journal.has(RehearsalPhase::Migrated)\n        && false\n        && (evidence.clone_file_fingerprint.as_deref() != Some(candidate_file_fingerprint.as_str())\n            || evidence.clone_domain_digest.as_deref()\n                != Some(candidate_export.digest_hex.as_str()))\n",
+      "test": "r6_migration::candidate_drift_after_a_migrated_checkpoint_refuses_resurrection",
+      "target": "integration"
+    },
+    {
+      "id": "R6MR09",
+      "file": "crates/grapt-release/src/journal.rs",
+      "old": "        if checkpoint.previous_checkpoint_sha256 != expected_previous {\n",
+      "new": "        if false && checkpoint.previous_checkpoint_sha256 != expected_previous {\n",
+      "test": "r6_migration::altered_checkpoint_bytes_break_the_hash_chain_even_when_json_remains_valid",
+      "target": "integration"
+    },
+    {
+      "id": "R6MR10",
+      "file": "crates/grapt-release/src/rehearsal.rs",
+      "old": "    let _ = grapt_permission::PermissionHttpState::rebuild_from_event_log(&mut store, &log)?;\n",
+      "new": "    if false { let _ = grapt_permission::PermissionHttpState::rebuild_from_event_log(&mut store, &log)?; }\n",
+      "target": "integration",
+      "test": "permission_survival::migration_rebuilds_primary_permission_coordinates_and_always_rule_authority"
+    },
+    {
+      "id": "R6MR11",
+      "file": "crates/grapt-store/src/migrations.rs",
+      "old": "        migrate_permission_http_primary(tx)?;\n",
+      "new": "        tx.execute_batch(PERMISSION_HTTP_PRIMARY_SCHEMA).map_err(|error| error.to_string())?;\n",
+      "target": "integration",
+      "test": "permission_survival::migration_rebuilds_primary_permission_coordinates_and_always_rule_authority"
+    },
+    {
+      "id": "R6MR12",
+      "file": "crates/grapt-release/src/snapshot.rs",
+      "old": "            if first.same_file_as(second) {\n",
+      "new": "            if false && first.same_file_as(second) {\n",
+      "test": "r6_migration::hardlinked_candidate_is_refused_before_checkpoint_or_source_mutation",
+      "target": "integration"
+    },
+    {
+      "id": "R6MR13",
+      "file": "crates/grapt-release/src/rehearsal.rs",
+      "old": "        match candidate.migrate_with_clock(backup_root, engine_version, clock)? {\n",
+      "new": "        match grapt_store::EventStore::migrate_with_clock(path, backup_root, engine_version, clock)? {\n",
+      "target": "lib",
+      "test": "rehearsal::tests::candidate_identity_is_revalidated_at_the_write_boundary"
+    },
+    {
+      "id": "R6MR14",
+      "file": "crates/grapt-release/src/rehearsal.rs",
+      "old": "    require_distinct_present(&[\n        Some(&source_identity),\n        Some(&backup_identity),\n        destination_identity.as_ref(),\n    ])?;\n",
+      "new": "",
+      "test": "r6_migration::standalone_restore_refuses_physical_aliases",
+      "target": "integration"
+    },
+    {
+      "id": "R6MR15",
+      "file": "fixtures/rust-reconstruction/r6-migration-rollback-v1/manifest.json",
+      "old": "      {\"path\":\"docs/reports/SECODE_RUST_RECONSTRUCTION_DISPOSITION_2026-08-07.md\",\"sha256\":\"cca761d01667451dbac9bda6a8c6424ce6c25313fdc4457882f41fc10b2a70fc\"},\n",
+      "new": "",
+      "target": "integration",
+      "test": "migration_corpus::corpus_pins_the_complete_ordered_current_law_pack"
+    },
+    {
+      "id": "R6MR16",
+      "file": "fixtures/rust-reconstruction/r6-migration-rollback-v1/manifest.json",
+      "old": "\"path\":\"specs/secode-rust-reconstruction-r1-2026-08-07.md\"",
+      "new": "\"path\":\"specs/substituted-rust-reconstruction-law.md\"",
+      "target": "integration",
+      "test": "migration_corpus::corpus_pins_the_complete_ordered_current_law_pack"
+    },
+    {
+      "id": "R6MR17",
+      "file": "fixtures/rust-reconstruction/r6-migration-rollback-v1/manifest.json",
+      "old": "      {\"path\":\"docs/reports/SECODE_CODEX_HARNESS_SURVEY_DISPOSITION_2026-08-08.md\",\"sha256\":\"548b5e4a6383d963a4d96231cf14f3786ac43cdfbad8902bd21c47b5f8d9390c\"},\n      {\"path\":\"docs/reports/SECODE_SURVEY_DELTA_DISPOSITION_2026-08-08.md\",\"sha256\":\"c25d65352aac7f8275adfc9284c83274f98b134d9e3b0ce1dffc22d9886faac3\"},\n",
+      "new": "      {\"path\":\"docs/reports/SECODE_SURVEY_DELTA_DISPOSITION_2026-08-08.md\",\"sha256\":\"c25d65352aac7f8275adfc9284c83274f98b134d9e3b0ce1dffc22d9886faac3\"},\n      {\"path\":\"docs/reports/SECODE_CODEX_HARNESS_SURVEY_DISPOSITION_2026-08-08.md\",\"sha256\":\"548b5e4a6383d963a4d96231cf14f3786ac43cdfbad8902bd21c47b5f8d9390c\"},\n",
+      "target": "integration",
+      "test": "migration_corpus::corpus_pins_the_complete_ordered_current_law_pack"
+    },
+    {
+      "id": "R6MR18",
+      "file": "fixtures/rust-reconstruction/r6-migration-rollback-v1/manifest.json",
+      "old": "\"sha256\":\"97c14bd84ac1c742721865b66259d718bb4125b50fa429976ad4467e1c15c581\"",
+      "new": "\"sha256\":\"36fbf3b96258565ff14924d597a1c3a83e6307672b23a754d9f1287e92aa272a\"",
+      "target": "integration",
+      "test": "migration_corpus::corpus_pins_the_complete_ordered_current_law_pack"
+    },
+    {
+      "id": "R6MR19",
+      "file": "crates/grapt-release/src/rehearsal.rs",
+      "old": "    let mut store = candidate.open_store(engine_version)?;\n",
+      "new": "    let mut store = grapt_store::EventStore::open(_candidate_path, engine_version)?;\n",
+      "target": "lib",
+      "test": "rehearsal::tests::candidate_identity_binds_projection_rebuild_write_boundary"
+    }
+  ],
+  "target": "integration"
+}

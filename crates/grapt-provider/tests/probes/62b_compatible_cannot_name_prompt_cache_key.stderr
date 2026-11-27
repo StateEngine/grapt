@@ -1,0 +1,17 @@
+warning: unreachable expression
+  --> tests/probes/62b_compatible_cannot_name_prompt_cache_key.rs:11:19
+   |
+10 |         model: todo!(),
+   |                ------- any code following this expression is unreachable
+11 |         messages: Vec::new(),
+   |                   ^^^^^^^^^^ unreachable expression
+   |
+   = note: `#[warn(unreachable_code)]` (part of `#[warn(unused)]`) on by default
+
+error[E0560]: struct `OpenAiCompatibleRequest` has no field named `prompt_cache_key`
+  --> tests/probes/62b_compatible_cannot_name_prompt_cache_key.rs:16:9
+   |
+16 |         prompt_cache_key: Option::<PromptCacheKey>::None,
+   |         ^^^^^^^^^^^^^^^^ `OpenAiCompatibleRequest` does not have this field
+   |
+   = note: all struct fields are already assigned

@@ -1,0 +1,1 @@
+| `crates/secode-provider/src/transport/client_pool.rs` | `openai/codex`: `codex-rs/http-client/src/route_aware_client_pool.rs` | `bb64b894fd67158be0f874872e6d7bfe717e7368` | **Modified by Grapt**: one lazy client scoped by account, credential version and route origin, with revocation invalidation and bounded idle reuse. Apache-2.0; Copyright 2025 OpenAI. |

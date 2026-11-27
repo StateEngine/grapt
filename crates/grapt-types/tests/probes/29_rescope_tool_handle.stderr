@@ -1,0 +1,16 @@
+error[E0451]: fields `provider`, `account`, `attempt`, `value` and `receipt` of struct `ProviderToolHandle` are private
+  --> tests/probes/29_rescope_tool_handle.rs:21:9
+   |
+20 |     let _rescoped = ProviderToolHandle {
+   |                     ------------------ in this type
+21 |         provider: ProviderId::new("openai").unwrap(),
+   |         ^^^^^^^^ private field
+22 |         account: AccountId::new("acct-1").unwrap(),
+   |         ^^^^^^^ private field
+23 |         // The lie: a handle opened under `att-1`, claimed for another attempt.
+24 |         attempt: PhysicalAttemptId::new("att-2").unwrap(),
+   |         ^^^^^^^ private field
+25 |         value: ProviderToolCallValue::new("call_1").unwrap(),
+   |         ^^^^^ private field
+26 |         receipt: AdapterOpenCloseReceipt::new("open-close-1").unwrap(),
+   |         ^^^^^^^ private field

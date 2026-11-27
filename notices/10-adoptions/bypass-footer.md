@@ -1,0 +1,1 @@
+| `crates/secode-tui/src/chrome/bypass.rs` | `openai/codex`, `codex-rs/tui/src/bottom_pane/footer.rs` | `bb64b894fd67158be0f874872e6d7bfe717e7368` | Modified by Grapt: reserve footer space for a right-aligned effective-bypass warning and wrap the warning before optional labels. Copyright 2025 OpenAI, Apache-2.0; license and NOTICE in `licenses/openai-codex/`. |

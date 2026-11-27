@@ -1,0 +1,1 @@
+| `crates/secode-client/src/projection/plan.rs` | `openai/codex`: `codex-rs/tui/src/history_cell/plans.rs` | `bb64b894fd67158be0f874872e6d7bfe717e7368` | Modified: plain checkbox presentation rebuilt from successful tool history and escaped display text. |

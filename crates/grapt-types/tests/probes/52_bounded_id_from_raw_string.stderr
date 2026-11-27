@@ -1,0 +1,13 @@
+error[E0308]: mismatched types
+  --> tests/probes/52_bounded_id_from_raw_string.rs:15:42
+   |
+15 |     let _bounded = BoundedAttemptId::new(String::from("att_1"), maximum);
+   |                    --------------------- ^^^^^^^^^^^^^^^^^^^^^ expected `PhysicalAttemptId`, found `String`
+   |                    |
+   |                    arguments to this function are incorrect
+   |
+note: associated function defined here
+  --> src/attempt_receipt.rs
+   |
+   |     pub fn new(id: PhysicalAttemptId, maximum: std::num::NonZeroU32) -> Result<Self, IdTooLong> {
+   |            ^^^

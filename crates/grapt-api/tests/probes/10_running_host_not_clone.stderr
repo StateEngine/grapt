@@ -1,0 +1,11 @@
+error[E0277]: the trait bound `RunningApiHost: Clone` is not satisfied
+  --> tests/probes/10_running_host_not_clone.rs:17:22
+   |
+17 |     requires_clone::<RunningApiHost>();
+   |                      ^^^^^^^^^^^^^^ the trait `Clone` is not implemented for `RunningApiHost`
+   |
+note: required by a bound in `requires_clone`
+  --> tests/probes/10_running_host_not_clone.rs:14:22
+   |
+14 | fn requires_clone<T: Clone>() {}
+   |                      ^^^^^ required by this bound in `requires_clone`

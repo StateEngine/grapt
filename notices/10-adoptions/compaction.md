@@ -1,0 +1,1 @@
+| Compaction disclosure | openai/codex | `codex-rs/tui/src/history_cell/mod.rs` | `bb64b894fd67158be0f874872e6d7bfe717e7368` | Apache-2.0 | Adapted stable activity identity and retained compact/detail presentation using the existing native diff disclosure owner. |

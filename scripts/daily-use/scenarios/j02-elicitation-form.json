@@ -1,0 +1,119 @@
+{
+  "name": "J02 global elicitation reply and tool continuation",
+  "about": [
+    "Uses the real retained form and permission UI. Correlate screen, server transcript and durable facts; prompt echo alone never proves completion. Requires the eliciting server config and a rebuilt product."
+  ],
+  "steps": [
+    {
+      "expect": {
+        "retained": "Select a project"
+      },
+      "polls": 240
+    },
+    {
+      "capture": "the opening screen"
+    },
+    {
+      "key": {
+        "retained": "i"
+      }
+    },
+    {
+      "expect": {
+        "retained": "ctrl+x tab agents"
+      },
+      "polls": 240
+    },
+    {
+      "capture": "after choosing where to work"
+    },
+    {
+      "key": {
+        "retained": "Enter"
+      }
+    },
+    {
+      "absent": {
+        "retained": "Allow once"
+      },
+      "polls": 240
+    },
+    {
+      "capture": "the transcript before any ask"
+    },
+    {
+      "paste": "Call the journey_echo tool with the text daily-use and then report, character for character, the exact text the tool returned."
+    },
+    {
+      "key": "Enter",
+      "submission": true
+    },
+    {
+      "expect": {
+        "retained": "Allow once"
+      },
+      "polls": 960
+    },
+    {
+      "capture": "the MCP permission ask, before it is answered"
+    },
+    {
+      "key": {
+        "retained": "Enter"
+      }
+    },
+    {
+      "absent": {
+        "retained": "Allow once"
+      },
+      "polls": 480
+    },
+    {
+      "expect": {
+        "retained": "journey_echo needs a confirmation before it runs"
+      },
+      "polls": 480
+    },
+    {
+      "capture": "live global MCP form before reply"
+    },
+    {
+      "paste": "CONFIRMED"
+    },
+    {
+      "key": "Enter"
+    },
+    {
+      "expect": {
+        "retained": "enter submit"
+      },
+      "polls": 120
+    },
+    {
+      "capture": "review the completed MCP form"
+    },
+    {
+      "key": "Enter"
+    },
+    {
+      "expect": {
+        "retained": "ZULUQUEBEC7731"
+      },
+      "polls": 960
+    },
+    {
+      "expect": {
+        "retained": "confirmation=CONFIRMED"
+      },
+      "polls": 480
+    },
+    {
+      "capture": "MCP result after the global form reply"
+    },
+    {
+      "key": {
+        "retained": "Control+c"
+      }
+    }
+  ]
+}

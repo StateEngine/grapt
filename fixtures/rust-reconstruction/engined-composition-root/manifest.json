@@ -1,0 +1,62 @@
+{
+  "$schema": "../oracle-receipt-manifest.schema.json",
+  "schema_version": 1,
+  "id": "engined-composition-root",
+  "title": "E1a grapt-engined composition root: argument admission, platform refusal, receipt custody and the single JSON receipt",
+  "law_pack": {
+    "revision": 9,
+    "sources": [
+      {
+        "path": "specs/secode-rust-reconstruction-r1-2026-08-07.md",
+        "sha256": "626333034f4760faf2fd2769e1a797d2ebbad5187e0bd787d33b99bf32a47865"
+      },
+      {
+        "path": "docs/reports/SECODE_RUST_RECONSTRUCTION_DISPOSITION_2026-08-07.md",
+        "sha256": "cca761d01667451dbac9bda6a8c6424ce6c25313fdc4457882f41fc10b2a70fc"
+      },
+      {
+        "path": "docs/reports/SECODE_RUST_FOUNDATIONAL_TYPES_AND_LIFECYCLES_2026-08-07.md",
+        "sha256": "31d4ae9af4229939225374efb9c721e752bc0fc163615e3f188acebed051b032"
+      },
+      {
+        "path": "docs/reports/SECODE_RUST_PROVIDER_STREAM_RUNTIME_CONTRACT_2026-08-08.md",
+        "sha256": "6c202f89e1e8bdc1de7304f22539ba043a4032f90376434841718f9b5624cdf6"
+      },
+      {
+        "path": "fixtures/rust-reconstruction/README.md",
+        "sha256": "26ebe50177d2d7ba0436c646f477e3dd220cd8f1acffdfe1f4c5f1205e760c3a"
+      },
+      {
+        "path": "specs/secode-rust-agency-continuity-amendment-r1-2026-08-08.md",
+        "sha256": "36fbf3b96258565ff14924d597a1c3a83e6307672b23a754d9f1287e92aa272a"
+      },
+      {
+        "path": "docs/reports/SECODE_CODEX_HARNESS_SURVEY_DISPOSITION_2026-08-08.md",
+        "sha256": "548b5e4a6383d963a4d96231cf14f3786ac43cdfbad8902bd21c47b5f8d9390c"
+      },
+      {
+        "path": "docs/reports/SECODE_SURVEY_DELTA_DISPOSITION_2026-08-08.md",
+        "sha256": "c25d65352aac7f8275adfc9284c83274f98b134d9e3b0ce1dffc22d9886faac3"
+      },
+      {
+        "path": "specs/secode-rust-campaign-mode-amendment-r1-2026-08-08.md",
+        "sha256": "775a3485b707232c991a557856cdb6778a5ce2a9220111dad18fcdeacda1ae2d"
+      }
+    ],
+    "matrix": {
+      "path": "docs/reports/SECODE_RUST_RATIFIED_ARCHITECTURE_SUPERSESSION_MATRIX_2026-08-08.md",
+      "sha256": "9301ccee905750352cbd904a63c6909bc5a2b87982bacec3ca29e7ec1c89af9b"
+    }
+  },
+  "owner": {
+    "crate": "grapt-engined",
+    "test_target": "engined_acceptance_corpus",
+    "note": "Pattern A. The validator resolves this scenario from env!(\"CARGO_MANIFEST_DIR\") inside the candidate tree and never calls test-support/fixtures.rs, so it imports no cross-repository read, no SECODE_FIXTURES precedence and no Linux failure mode. That is also what keeps this corpus out of the mutation profile's inputs.artifacts list: no EB witness reaches a fixture path, so a missing-input failure cannot be mistaken for a fired witness."
+  },
+  "surfaces": [
+    "actions.jsonl",
+    "expected/receipts.jsonl",
+    "expected/waivers.json"
+  ],
+  "note": "Every row drives the built binary as a caller meets it and compares the ONE JSON object it prints, byte for byte. Nothing is normalised and nothing is re-blessed during a run. The corpus is closed in both directions: a row here with no case in the validator is refused, and a case in the validator with no row here is refused. TWO ARGV PLACEHOLDERS EXIST AND ARE INPUT-ONLY: `{absent_registration}` and `{unreadable_registration}` resolve to paths OUTSIDE the repository, because a `service status` row needs a slot that does not exist and a slot holding undecodable bytes, and committing either would move the direct-include inventory while a file written under a candidate tree voids the battery that reads it. The substitution touches only the arguments a row supplies; the receipt it produces is still compared as parsed values with nothing rewritten."
+}

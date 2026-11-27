@@ -1,0 +1,147 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/grapt-diagnostics",
+    "crates/grapt-login",
+    "crates/grapt-connections",
+    "crates/grapt-console",
+    "crates/grapt-window-lease",
+    "crates/grapt-stream",
+    "crates/grapt-image",
+    "crates/grapt-auth-basic",
+    "crates/grapt-types",
+    "crates/grapt-codemode",
+    "crates/grapt-schema",
+    "crates/grapt-artifact",
+    "crates/grapt-event",
+    "crates/grapt-store",
+    "crates/grapt-permission",
+    "crates/grapt-policy",
+    "crates/grapt-plugin",
+    "crates/grapt-checkpoint",
+    "crates/grapt-config",
+    "crates/grapt-form",
+    "crates/grapt-inbox",
+    "crates/grapt-subagent",
+    "crates/grapt-shell",
+    "crates/grapt-sandbox",
+    "crates/grapt-session",
+    "crates/grapt-service-state",
+    "crates/grapt-session-history",
+    "crates/grapt-toolchain",
+    "crates/grapt-mcp",
+    "crates/grapt-mcp-client",
+    "crates/grapt-web",
+    "crates/grapt-provider",
+    "crates/grapt-runtime",
+    "crates/grapt-instruction",
+    "crates/grapt-mail-transport",
+    "crates/grapt-location",
+    "crates/grapt-worktree",
+    "crates/grapt-api",
+    "crates/grapt-service",
+    "crates/grapt-release",
+    "crates/grapt-engined",
+    "crates/grapt-platform",
+    "crates/grapt-tools-local",
+    "crates/grapt-context",
+    "crates/grapt-mcp-host",
+    "crates/grapt-product",
+    "crates/grapt-stateengine-api",
+    "crates/grapt-cli",
+    "crates/grapt-client",
+    "crates/grapt-client-transport",
+    "crates/grapt-tui-driver",
+    "crates/grapt-tui",
+    "crates/grapt-tui-transcript",
+    "crates/grapt-tui-forms",
+]
+
+# Row-11 negative fixture. It deliberately fails `clippy::disallowed_methods`,
+# so it must never be reached by a workspace command; that is what keeps
+# `cargo clippy --workspace --all-targets --all-features -- -D warnings` green.
+# It is compiled only by its own explicit gate — see
+# fixtures/negative/ambient-clock/src/lib.rs.
+exclude = [
+    "scripts/qualification/codemode-runtime",
+    "scripts/qualification/codemode-deno",
+    "fixtures/negative/ambient-clock",
+    "fixtures/negative/ambient-randomness",
+    # Standalone first-run build smoke is scanned, but is not a workspace member.
+    "fixtures/first-run/build-smoke",
+    # The vendored `regress` patch below. It is Rust source in this tree and is
+    # NOT a workspace member, and saying both here is what lets the repository
+    # scanners attribute its files instead of refusing them as source under no
+    # declared root. Declaring it is not excusing it: the gates still read it,
+    # they simply now know whose it is.
+    "third-party/regress-0.10.5",
+    "third-party/windows-spawn-0.1.0",
+    "third-party/conpty-oxide-0.1.2",
+    "third-party/notify-8.2.0",
+]
+
+[workspace.package]
+edition = "2021"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/StateEngine/grapt"
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+missing_debug_implementations = "warn"
+unused_must_use = "deny"
+
+[workspace.lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+# Structure limits; thresholds live in clippy.toml. Existing offenders carry an
+# item-level `#[expect]`, which fails the build once the item is fixed.
+too_many_lines = "warn"
+cognitive_complexity = "warn"
+struct_excessive_bools = "warn"
+too_many_arguments = "warn"
+
+# Keep workspace file/line backtraces without retaining full development symbols.
+# The test profile inherits this; dependencies do not need debug information.
+[profile.dev]
+debug = "line-tables-only"
+
+[profile.dev.package."*"]
+debug = false
+
+# Plugin runtime admission verifies the 126 MB Node runtime with three full
+# SHA-256 passes before its first spawn. Unoptimized, each pass took about 8.4 s
+# on the Linux carrier, so the first plugin request outran its 30 s test deadline
+# (R6-CUTOVER-SOAK-01 run 20260924024640-e3722744c75a4005). Only `sha2` is
+# optimized here; every hash still runs, and debug assertions and overflow
+# checks keep their development defaults. The test profile inherits this.
+[profile.dev.package.sha2]
+opt-level = 3
+
+# Package-scoped native code generation; development assertions, overflow
+# checks and SQLite API armor retain their defaults, and none of these
+# dev-package overrides applies to the release profile below.
+[profile.dev.package.libsqlite3-sys]
+opt-level = 2
+
+# Release profile: thin LTO plus bounded codegen units, and debuginfo
+# stripped while keeping symbol names so panic backtraces still name
+# functions. Panic stays unwind: crash and terminal-failure text depend on
+# unwinding, so abort is deliberately not set.
+[profile.release]
+lto = "thin"
+codegen-units = 4
+strip = "debuginfo"
+
+# The form validator evaluates a caller-supplied `pattern` in the request path.
+# Upstream `regress` exposes no evaluator work budget, and an unbounded
+# backtracker is not admissible there: a wall-clock timeout cannot stop a runaway
+# match, only observe it. This pins a vendored copy carrying the smallest patch
+# that adds a DETERMINISTIC work budget with a distinct exhausted result.
+# Provenance, license and the exact change list are in the vendored directory.
+[patch.crates-io]
+regress = { path = "third-party/regress-0.10.5" }
+windows-spawn = { path = "third-party/windows-spawn-0.1.0" }
+conpty-oxide = { path = "third-party/conpty-oxide-0.1.2" }
+
+# notify 8.2.0, CC0-1.0.
+notify = { path = "third-party/notify-8.2.0" }

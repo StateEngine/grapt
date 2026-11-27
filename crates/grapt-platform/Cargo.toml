@@ -1,0 +1,29 @@
+[package]
+name = "grapt-platform"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+description = "Dogfood-0 platform bootstrap: first-contact store authority, published configuration, catalog issuance, and credential custody."
+
+[dependencies]
+reqwest = { version = "0.13.4", default-features = false }
+grapt-config = { path = "../grapt-config" }
+grapt-connections = { path = "../grapt-connections" }
+grapt-login = { path = "../grapt-login" }
+grapt-provider = { path = "../grapt-provider" }
+grapt-store = { path = "../grapt-store" }
+grapt-types = { path = "../grapt-types" }
+same-file = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+thiserror = "2"
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+[dev-dependencies]
+rusqlite = { version = "0.41", features = ["bundled"] }
+
+[lints]
+workspace = true

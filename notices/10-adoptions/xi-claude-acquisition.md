@@ -1,0 +1,1 @@
+| Claude git source decoding | `crates/secode-plugin/src/claude/source.rs` | `xai-org/grok-build`, `crates/codegen/xai-grok-agent/src/plugins/git_install.rs`, commit `2bdd1d6a6369de0e8c68132ea4539e9abd9e14a8` | Apache-2.0 | Adapted Git operand and full commit identity validation for bounded Claude source objects. |

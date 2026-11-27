@@ -1,0 +1,75 @@
+{
+  "schema": "grapt.toolchain-activation.local-run-receipt/v1",
+  "campaign": "TOOLCHAIN-ACTIVATION-01",
+  "command": "tma-workspace-final",
+  "variant": "local serialized rerun at the C3 candidate on the Windows host",
+  "candidate": "2e4946a153ef3bf0bcf893cec59ee13ce13ca204",
+  "run_root": "C:\\fixtures\\rust-toolchain-delta-r1",
+  "candidate_custody": {
+    "head_at_run": "2e4946a153ef3bf0bcf893cec59ee13ce13ca204 (detached, clean worktree)",
+    "zero_executable_diff_to_branch_tip": "6771be8f3ef8cc9a1d6ed215b1349e4668e4ba68 (crates, Cargo.toml, Cargo.lock)",
+    "checked_out_to_branch_after_run": "toolchain-activation @ 6771be8f3ef8cc9a1d6ed215b1349e4668e4ba68, clean"
+  },
+  "host": { "platform": "windows", "arch": "x86_64", "machine": "FIXTURE-HOST", "os": "Microsoft Windows 11 Home" },
+  "toolchain": {
+    "rustc": "rustc 1.97.1 (8bab26f4f 2026-07-14)",
+    "cargo": "cargo 1.97.1 (c980f4866 2026-06-30)",
+    "python": "Python 3.14.6"
+  },
+  "serialization": { "cargo_jobs": 1, "test_threads": 1 },
+  "env": {
+    "CI": "1",
+    "RUST_BACKTRACE": "1",
+    "CARGO_TERM_COLOR": "never",
+    "CLIPPY_CONF_DIR": ". (workspace and negative clippy steps)",
+    "SECODE_FIXTURES": "C:\\workspace\\repo\\fixtures\\rust-reconstruction (test step; oracle-receipt-manifest.schema.json sha256 6d855521e8107668025de7461cc0742654eac316ebcdba32a396c9ccb632f07f verified)"
+  },
+  "started_utc": "2026-09-18T07:12:02Z",
+  "finished_utc": "2026-09-18T07:34:27Z",
+  "steps": [
+    {
+      "id": "workspace-clippy", "position": 1,
+      "argv": ["cargo", "+1.97.1", "clippy", "--workspace", "--all-targets", "--all-features", "--locked", "-j", "1", "--", "-D", "warnings"],
+      "expected_exit": 0, "exit_code": 0, "exit_matched": true, "duration_seconds": 84,
+      "log": "step1-clippy.log", "log_sha256": "390f5a53edb61b8b39fefdd11eeafbcbff1e2b0665dcdc17a23669285583c93c", "log_bytes": 6066,
+      "notes": "the single live warning is the pre-existing clippy configuration diagnostic on the workspace getrandom::fill disallowed-methods entry, identical to carrier runs 20260917233655-028095a753bf4cac and 20260918021252-db7af5d6b16a47d6; a config diagnostic, not a code lint, and the step exits 0"
+    },
+    {
+      "id": "workspace-test", "position": 2,
+      "argv": ["cargo", "+1.97.1", "test", "--workspace", "--no-fail-fast", "--locked", "-j", "1", "--", "--test-threads=1"],
+      "expected_exit": 0, "exit_code": 0, "exit_matched": true, "duration_seconds": 1058,
+      "log": "step2-test.log", "log_sha256": "4197b5b4f7012b4b50dba6d85149f22d7d8552ab6e69258ac9814d0decb7f124", "log_bytes": 399230,
+      "summary": { "test_binaries": 278, "binaries_ok": 278, "tests_passed": 3718, "tests_failed": 0, "tests_ignored": 26 },
+      "notes": "the named environmental test compose::tests::acceptance_corpus_is_schema_valid_closed_and_executable ran and passed with SECODE_FIXTURES pinned; the 29 plugin-containment cgroup tests of carrier runs 1-2 and 6 are cfg(linux)-gated (supervisor module linux) and do not run on this platform; the grapt-plugin bridge and transport suites that red those tests on the degraded carrier passed here"
+    },
+    {
+      "id": "negative-clock", "position": 3,
+      "argv": ["cargo", "+1.97.1", "clippy", "--manifest-path", "fixtures/negative/ambient-clock/Cargo.toml", "--", "-D", "warnings"],
+      "expected_exit": 101, "exit_code": 101, "exit_matched": true, "duration_seconds": 1,
+      "log": "step3-negative-clock.log", "log_sha256": "587ecd8be3a0d34e41d670317ff2d6815b030dd45c907d41f118b97f4ed6efdb", "log_bytes": 800,
+      "notes": "the gate fires: error naming clippy::disallowed_methods with the ClockAuthority note"
+    },
+    {
+      "id": "negative-randomness", "position": 4,
+      "argv": ["cargo", "+1.97.1", "clippy", "--manifest-path", "fixtures/negative/ambient-randomness/Cargo.toml", "--", "-D", "warnings"],
+      "expected_exit": 101, "exit_code": 101, "exit_matched": true, "duration_seconds": 1,
+      "log": "step4-negative-randomness.log", "log_sha256": "0646ee40f1ae335ee2aba2149d31733999cf9c7e9ecf88e12176c71b1d9ed6c6", "log_bytes": 880,
+      "notes": "the gate fires: error naming clippy::disallowed_methods with the IdAuthority note"
+    },
+    {
+      "id": "final-gate", "position": 5,
+      "argv": ["python", "scripts\\qualification\\toolchain-activation\\final_gate.py", "--candidate", "2e4946a153ef3bf0bcf893cec59ee13ce13ca204", "--receipt", "E:\\temp\\tma-c3-windows-serialized\\tma-2e4946a1-workspace-final-windows-serialized.json"],
+      "expected_exit": 0, "exit_code": 0, "exit_matched": true, "duration_seconds": 1,
+      "log": "step5-final-gate.log", "log_sha256": "3801940ea68e844e17bcccdc6251f59bae1a67a50c8103e888b76ffe8450864d", "log_bytes": 304,
+      "receipt": "tma-2e4946a1-workspace-final-windows-serialized.json",
+      "receipt_sha256": "1d7d887d99955f2c68ed2852f4bfb6ac7c12d5717724af32c13ce852a45575f6", "receipt_bytes": 2021,
+      "notes": "TMA-WORKSPACE-FINAL PASSED on windows/x86_64: candidate, integrity (battery fixtures/toolchain-activation/receipts/tma-f7eca67d-battery.json, 7 red rows, zero_executable_change against battery candidate f7eca67d67eb73bf917127b7e068d3ceeaf8a93a) and TM01 all-passed (78 checks across install/reuse/recut/target-removed/rollback, x86_64-pc-windows-msvc); TM01 binary sha256 0b7d9356d713bda0b99545ce950916620502480ae8c7f7187ce0a1440e24d55f - executable content unchanged (byte-comparison), bytes differ from item 7's 04754f0f only because this run rebuilt the binary (MSVC linking is not byte-deterministic across builds)"
+    }
+  ],
+  "log_archive": {
+    "path": "tma-2e4946a1-workspace-final-windows-serialized-logs.tar.gz",
+    "sha256": "b03a0efb53564d1c8ee9152a7e15428abcc883c036224f846a92f115ef70b23c", "bytes": 92486,
+    "contents": ["manifest.txt", "step1-clippy.log", "step2-test.log", "step3-negative-clock.log", "step4-negative-randomness.log", "step5-final-gate.log"]
+  },
+  "outcome": "passed"
+}

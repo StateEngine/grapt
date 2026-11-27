@@ -1,0 +1,16 @@
+error: cannot construct `DurableAttemptReceipt` with struct literal syntax due to private fields
+  --> tests/probes/51_attempt_receipt_without_reservation.rs:12:20
+   |
+12 |     let _receipt = DurableAttemptReceipt {
+   |                    ^^^^^^^^^^^^^^^^^^^^^
+13 |         request_sent: Some(_sent),
+   |         ------------------------- private field
+   |
+   = note: ...and other private fields `attempt`, `session`, `step`, `ordinal`, `reserved` and `settled` that were not provided
+help: you might have meant to use the `reserved` associated function
+   |
+12 -     let _receipt = DurableAttemptReceipt {
+13 -         request_sent: Some(_sent),
+14 -     };
+12 +     let _receipt = DurableAttemptReceipt::reserved(_, _, _, _, _);
+   |

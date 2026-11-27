@@ -1,0 +1,1 @@
+| Grapt compact tool activity | `openai/codex` | `codex-rs/tui/src/exec_cell/compact.rs`, `codex-rs/tui/src/thread_transcript/tools.rs` | `bb64b894fd67158be0f874872e6d7bfe717e7368` | Apache-2.0 | Adapted one-call disclosure and typed wait presentation; original calls and outputs stay retained. |

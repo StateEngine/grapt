@@ -1,0 +1,33 @@
+# This repository runs with `core.autocrlf=true` and has no repository-root
+# `.gitattributes`, so a fresh worktree otherwise receives CRLF and changes every
+# byte this crate's gates read. Three sibling crates already carry this file for
+# exactly that reason; `grapt-api` did not, and R1 HOLD-2 is what that cost.
+#
+# `tests/host_architecture.rs` reads the production modules with `include_str!`
+# and scans the bytes ON DISK. On a CRLF checkout its test-module stripper found
+# nothing to strip, so `admission.rs`'s `#[cfg(test)]` module — which legitimately
+# calls `tokio::time::timeout` in a witness — was scanned as production source and
+# the clock-placement gate fired on test code: 107 passed / 1 failed on a fresh
+# default-config clone against 108 / 0 / 0 on an LF one, same commit, same
+# toolchain, same machine.
+#
+# The stripper is independently newline-agnostic now, so this file is not the
+# only thing standing between the gate and a false red. Both are here on purpose:
+# the attribute pins what the gates read, and the stripper stops the gates
+# depending on it. A checkout contract that is the sole defence is one that fails
+# silently the first time someone clones with a different configuration.
+#
+# `tests/**` also covers the trybuild `.stderr` probes, which are byte-compared
+# and would redden on a CRLF checkout with no content change.
+src/** text eol=lf
+tests/** text eol=lf
+mutations/** text eol=lf
+
+# The residuals are cited BY DIGEST in this lane's delivery receipt, so their
+# bytes have to be the same for the reviewer as for the author. R1 measured
+# exactly this drift before the rest of this file existed: a fresh default-config
+# clone reported `R4HH_RESIDUALS.md` at 12,662 B against the admitted 12,448 B,
+# the difference being precisely its line endings, and the reviewer had to
+# reconfigure and re-check-out to reproduce the digest the receipt named. A cited
+# hash that only holds on the machine that authored it is not evidence.
+*.md text eol=lf

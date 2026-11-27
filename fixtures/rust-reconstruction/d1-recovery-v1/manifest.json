@@ -1,0 +1,47 @@
+{
+  "$schema": "../oracle-receipt-manifest.schema.json",
+  "schema_version": 1,
+  "id": "d1-recovery-v1",
+  "title": "D1 request-sent process-loss recovery acceptance corpus",
+  "oracle": {
+    "branch": "grapt",
+    "commit": "42e4888cc0",
+    "note": "Observable compatibility commitments only; settlement architecture is Rust-native."
+  },
+  "scope": {
+    "preserves": [
+      "an admitted user input remains visible after restart",
+      "a request-sent unresolved Physical Attempt settles to one exact ambiguous ProcessLoss terminal",
+      "restart and stable retry make no second provider request",
+      "an untrustworthy receipt is quarantined without a fabricated terminal",
+      "a second recovery pass cannot resurrect the terminal"
+    ],
+    "intentionally_excludes": [
+      "billable external providers",
+      "TUI or desktop redesign",
+      "D2A and prompt-cache behavior"
+    ]
+  },
+  "paths": {
+    "actions": "actions.jsonl",
+    "expected": {
+      "durable": "expected/durable.jsonl",
+      "state": "expected/state.json",
+      "waivers": "expected/waivers.json"
+    }
+  },
+  "evidence": [
+    {
+      "path": "crates/grapt-product/tests/dogfood_headless/process_loss.rs",
+      "test": "request_sent_process_loss_recovers_on_restart_without_a_second_provider_call"
+    },
+    {
+      "path": "crates/grapt-runtime/src/recovery.rs",
+      "test": "row_outside_the_injected_ceiling_is_quarantined_without_a_terminal"
+    },
+    {
+      "path": "crates/grapt-runtime/src/recovery.rs",
+      "test": "sent_attempt_restart_settles_without_replay_and_resurrection_cannot_duplicate"
+    }
+  ]
+}

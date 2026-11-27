@@ -1,0 +1,89 @@
+{
+  "schema_version": 1,
+  "contract": "grapt-api-auth-acceptance-corpus/v1",
+  "lane": "R4H-A",
+  "owning_crate": "grapt-api",
+  "ruling": "closed authentication boundary",
+  "base": "364c23d0a37406205d04b18d0e98304110a477fa",
+  "note": "Language-neutral statements of the R4H-A transport trust boundary. Each scenario names the exact compiled test that proves it; tests/acceptance_corpus.rs refuses a scenario whose owner is not a real #[test] in the named target. This corpus is A's alone: R4H-L owns fixtures/rust-reconstruction/r4-host-auth-foundation under contract grapt-location-acceptance-corpus/v1, whose validator admits exactly four scenarios in order, so adding a row there would turn that lane red. R4HA-08 rules the separation.",
+  "scenarios": [
+    {
+      "id": "sealed-mapping-mints-principal",
+      "claim": "A fixture-verified subject resolves server-side to exactly one recipient and one client identity, and the minted principal reports both plus the directory generation it was minted under.",
+      "test_target": "lib",
+      "test": "a_verified_subject_resolves_server_side_and_mints_the_sealed_principal"
+    },
+    {
+      "id": "dto-recipient-never-selects",
+      "claim": "A DTO naming recipient B under seat A's authentication never reads, snapshots, subscribes or emits B; the server-derived recipient is authoritative.",
+      "test_target": "lib",
+      "test": "a_dto_recipient_never_selects_the_principal"
+    },
+    {
+      "id": "dto-recipient-disagreement-refused",
+      "claim": "On a route carrying a recipient field, a value disagreeing with the derived recipient is refused before any application call, and a value that agrees grants nothing.",
+      "test_target": "lib",
+      "test": "a_disagreeing_dto_recipient_is_refused_before_the_application_call"
+    },
+    {
+      "id": "inert-client-id-is-refused",
+      "claim": "A syntactically valid caller-authored AuthenticatedClientId is refused because of its provenance, not its shape, even when it equals an identity the directory really issued.",
+      "test_target": "lib",
+      "test": "a_caller_authored_client_identity_is_refused_for_provenance"
+    },
+    {
+      "id": "unauthenticated-never-reaches-application",
+      "claim": "With no verified subject the application service is not invoked at all.",
+      "test_target": "lib",
+      "test": "an_unauthenticated_request_never_reaches_the_application"
+    },
+    {
+      "id": "authentication-is-not-authorization",
+      "claim": "A valid, current principal receives a typed authorization refusal for an action no capability proof covers, and the application is not invoked.",
+      "test_target": "lib",
+      "test": "an_authentic_principal_is_still_refused_without_a_capability_proof"
+    },
+    {
+      "id": "revocation-invalidates-live-principal",
+      "claim": "After the directory advances a generation, a principal minted under the old generation authorizes nothing, and is refused as stale rather than as unproven.",
+      "test_target": "lib",
+      "test": "a_principal_minted_under_a_superseded_generation_authorizes_nothing"
+    },
+    {
+      "id": "directory-bound-refuses-oversize",
+      "claim": "Configuration beyond max_principal_mappings is refused whole, with no partial directory, and the refusal names the bound rather than the observed count.",
+      "test_target": "lib",
+      "test": "an_oversized_directory_configuration_is_refused_whole"
+    },
+    {
+      "id": "takeover-displaces-prior-lease",
+      "claim": "A second acquisition for one recipient displaces the first; the displaced lease cannot claim current ownership and cannot release the live slot.",
+      "test_target": "lib",
+      "test": "a_displaced_lease_is_not_current"
+    },
+    {
+      "id": "takeover-slot-bound-refuses",
+      "claim": "A new distinct recipient is refused when the registry is full, while a same-recipient handoff stays bounded and is not refused at capacity.",
+      "test_target": "lib",
+      "test": "a_new_recipient_is_refused_when_the_registry_is_full"
+    },
+    {
+      "id": "router-composition-is-deterministic",
+      "claim": "Identical registrations applied in different orders compose an identical route set.",
+      "test_target": "router_contract",
+      "test": "two_registration_orders_compose_the_same_route_set"
+    },
+    {
+      "id": "router-refuses-before-serving",
+      "claim": "Duplicate, conflicting and over-capacity registrations are refused before the router is sealed, ahead of the axum call that panics.",
+      "test_target": "router_contract",
+      "test": "a_conflicting_route_registration_is_refused"
+    },
+    {
+      "id": "errors-do-not-echo",
+      "claim": "Refusals name the bound and never the rejected credential, the rejected recipient text, or the observed length.",
+      "test_target": "lib",
+      "test": "a_refusal_never_renders_what_it_observed"
+    }
+  ]
+}

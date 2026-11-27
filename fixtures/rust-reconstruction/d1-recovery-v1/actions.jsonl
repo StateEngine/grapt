@@ -1,0 +1,21 @@
+{"scenario":"request-sent-restart-settlement","step":1,"op":"begin","session":"ses_d1_corpus_settlement","attempt":"attempt-d1-corpus-settlement","terminal":"evt_d1_corpus_settlement"}
+{"scenario":"request-sent-restart-settlement","step":2,"op":"admit_user","event":"evt_d1_corpus_admit","input":"msg_d1_corpus_settlement","text":"survive restart","delivery":"queue","resume":true,"created_ms":1}
+{"scenario":"request-sent-restart-settlement","step":3,"op":"promote_user","event":"evt_d1_corpus_promote","scope":"input-at-idle","created_ms":2}
+{"scenario":"request-sent-restart-settlement","step":4,"op":"provider_request_accepted"}
+{"scenario":"request-sent-restart-settlement","step":5,"op":"reserve_attempt","receipt_ceiling":4096,"step_number":1,"attempt_ordinal":1,"reserved_ms":10,"terminal_created_ms":30}
+{"scenario":"request-sent-restart-settlement","step":6,"op":"permit_send","receipt_ceiling":4096,"sent_ms":20}
+{"scenario":"request-sent-restart-settlement","step":7,"op":"recover_process_loss","receipt_ceiling":4096,"now_ms":40}
+{"scenario":"request-sent-restart-settlement","step":8,"op":"stable_retry","event":"evt_d1_corpus_retry","input":"msg_d1_corpus_settlement","text":"survive restart","delivery":"queue","resume":true,"created_ms":50}
+{"scenario":"request-sent-restart-settlement","step":9,"op":"observe","observation":"after-restart"}
+{"scenario":"untrustworthy-receipt-quarantine","step":1,"op":"begin","session":"ses_d1_corpus_quarantine","attempt":"attempt-d1-corpus-quarantine","terminal":"evt_d1_corpus_quarantine"}
+{"scenario":"untrustworthy-receipt-quarantine","step":2,"op":"reserve_attempt","receipt_ceiling":4096,"step_number":1,"attempt_ordinal":1,"reserved_ms":10,"terminal_created_ms":30}
+{"scenario":"untrustworthy-receipt-quarantine","step":3,"op":"permit_send","receipt_ceiling":4096,"sent_ms":20}
+{"scenario":"untrustworthy-receipt-quarantine","step":4,"op":"recover_process_loss","receipt_ceiling":1,"now_ms":40}
+{"scenario":"untrustworthy-receipt-quarantine","step":5,"op":"observe","observation":"after-quarantine"}
+{"scenario":"second-restart-no-resurrection","step":1,"op":"begin","session":"ses_d1_corpus_resurrection","attempt":"attempt-d1-corpus-resurrection","terminal":"evt_d1_corpus_resurrection"}
+{"scenario":"second-restart-no-resurrection","step":2,"op":"reserve_attempt","receipt_ceiling":4096,"step_number":1,"attempt_ordinal":1,"reserved_ms":10,"terminal_created_ms":30}
+{"scenario":"second-restart-no-resurrection","step":3,"op":"permit_send","receipt_ceiling":4096,"sent_ms":20}
+{"scenario":"second-restart-no-resurrection","step":4,"op":"recover_process_loss","receipt_ceiling":4096,"now_ms":40}
+{"scenario":"second-restart-no-resurrection","step":5,"op":"observe","observation":"after-first-recovery"}
+{"scenario":"second-restart-no-resurrection","step":6,"op":"recover_process_loss","receipt_ceiling":4096,"now_ms":50}
+{"scenario":"second-restart-no-resurrection","step":7,"op":"observe","observation":"after-second-recovery"}

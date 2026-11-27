@@ -1,0 +1,16 @@
+error[E0624]: associated function `prepare` is private
+  --> tests/probes/72_public_prepare_bypasses_attempt_admission.rs:13:30
+   |
+13 |       let _ = AttemptProtocol::prepare::<R, T, O>;
+   |                                ^^^^^^^ private associated function
+   |
+  ::: src/attempt_admission.rs
+   |
+   | /     pub(crate) fn prepare<R, T, O>(
+   | |         preparation: AttemptPreparation<R>,
+   | |         _tools: Arc<T>,
+   | |         owner: O,
+...  |
+   | |         T: ToolRunner,
+   | |         O: AttemptOwner,
+   | |________________________- private associated function defined here

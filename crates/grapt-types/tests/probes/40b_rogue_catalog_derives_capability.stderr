@@ -1,0 +1,16 @@
+error[E0624]: associated function `resolve` is private
+  --> tests/probes/40b_rogue_catalog_derives_capability.rs:40:40
+   |
+40 |       let _target = ResolvedModelTarget::resolve(
+   |                                          ^^^^^^^ private associated function
+   |
+  ::: src/model/target.rs
+   |
+   | /     pub(crate) fn resolve(
+   | |         model: ModelRef,
+   | |         route: ModelRouteId,
+   | |         account: AccountId,
+   | |         credential_version: CredentialVersion,
+   | |         policy: PolicyVersion,
+   | |     ) -> Self {
+   | |_____________- private associated function defined here

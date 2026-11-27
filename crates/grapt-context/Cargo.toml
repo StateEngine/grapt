@@ -1,0 +1,17 @@
+[package]
+name = "grapt-context"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+description = "Builds what a model sees each turn: request context, history paging, compaction and summarization."
+
+[dependencies]
+grapt-event = { path = "../grapt-event" }
+grapt-provider = { path = "../grapt-provider" }
+grapt-session = { path = "../grapt-session" }
+grapt-types = { path = "../grapt-types" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[lints]
+workspace = true

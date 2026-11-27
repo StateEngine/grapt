@@ -1,0 +1,82 @@
+{
+  "purpose": "R2C5A0 — the operational attempt receipt's type/contract half. PL rows pin the structural classification law (reserved-without-sent is NoneInitiated and replayable; sent-without-settled is Ambiguous and never automatically replayed; settled is not reconciled at all), the first-write-wins marker discipline, and the agreement between this crate's replay convenience and the landed ExternalEffectState rule. PL06 pins that a conflicting marker preserves the held instant. Review R1 findings H1-H3 hardened this manifest's runner rather than its rows. PL07-PL08 pin the injected byte bounds on the two identity fields, which are the receipt's only variable-length content.",
+  "run": "python crates/grapt-types/mutations/run.py",
+  "isolation": "Every mutation is applied in its own disposable worktree at the exact committed candidate. The calling worktree remains unchanged.",
+  "scope_note": "A0 is types and contract only. The store table, the fenced write path, the startup reconciler and every crash cut belong to A1/B/I and receive NO rows here — a row for an absent producer would witness an invention. The unrepresentability of a request-sent-without-reservation receipt is compile-fail-carried by probe 51 and is deliberately not re-earned by a runnable row.",
+  "prefix_note": "This manifest owns ONE whole prefix, PL, allocated by the mutation prefix policy after a read-only inventory across the accepted canonical and every admitted active candidate root found it globally unused. Whole-prefix comparison keeps PL distinct from the landed P rows in the store manifest.",
+  "mutations": [
+    {
+      "id": "PL01",
+      "law": "A reserved attempt that never sent bytes is NoneInitiated, and therefore replayable",
+      "package": "grapt-types",
+      "file": "crates/grapt-types/src/attempt_receipt.rs",
+      "test": "attempt_receipt::tests::reserved_without_sent_is_none_initiated_and_replayable",
+      "old": "            None => ReceiptDisposition::Lost(LostEffect::NoneInitiated),",
+      "new": "            None => ReceiptDisposition::Lost(LostEffect::Ambiguous {\n                sent_at: self.reserved.at(),\n            }),"
+    },
+    {
+      "id": "PL02",
+      "law": "An attempt whose request was sent and never settled is Ambiguous, and is never automatically replayed",
+      "package": "grapt-types",
+      "file": "crates/grapt-types/src/attempt_receipt.rs",
+      "test": "attempt_receipt::tests::sent_without_settled_is_ambiguous_and_never_replayable",
+      "old": "            Some(sent) => ReceiptDisposition::Lost(LostEffect::Ambiguous { sent_at: sent.at() }),",
+      "new": "            Some(_sent) => ReceiptDisposition::Lost(LostEffect::NoneInitiated),"
+    },
+    {
+      "id": "PL03",
+      "law": "A settled receipt is not reconciled at all, so no reconciler can write a second terminal for it",
+      "package": "grapt-types",
+      "file": "crates/grapt-types/src/attempt_receipt.rs",
+      "test": "attempt_receipt::tests::a_settled_receipt_is_not_reconciled_at_all",
+      "old": "        if self.settled.is_some() {\n            return ReceiptDisposition::AlreadySettled;\n        }",
+      "new": "        if false && self.settled.is_some() {\n            return ReceiptDisposition::AlreadySettled;\n        }"
+    },
+    {
+      "id": "PL04",
+      "law": "An exact retry of the same marker instant is idempotent, and a DIFFERENT second marker is a typed conflict that never silently replaces the held one",
+      "package": "grapt-types",
+      "file": "crates/grapt-types/src/attempt_receipt.rs",
+      "test": "attempt_receipt::tests::an_exact_retry_is_idempotent_and_a_different_marker_is_a_conflict",
+      "old": "            Some(held) if held.at() == marker.at() => (self, MarkerOutcome::ExactRetry),\n            Some(held) => {\n                let outcome = MarkerOutcome::Conflict {\n                    held: held.at(),\n                    offered: marker.at(),\n                };\n                (self, outcome)\n            }\n        }\n    }\n\n    /// Record the durable terminal",
+      "new": "            Some(_held) => (self, MarkerOutcome::ExactRetry),\n        }\n    }\n\n    /// Record the durable terminal"
+    },
+    {
+      "id": "PL05",
+      "law": "The receipt's replay convenience agrees with the landed ExternalEffectState rule and cannot become a softer second rule",
+      "package": "grapt-types",
+      "file": "crates/grapt-types/src/attempt_receipt.rs",
+      "test": "attempt_receipt::tests::the_replay_rule_agrees_with_the_landed_vocabulary",
+      "old": "    pub fn safe_to_replay(self) -> bool {\n        matches!(self, LostEffect::NoneInitiated)\n    }",
+      "new": "    pub fn safe_to_replay(self) -> bool {\n        true\n    }"
+    },
+    {
+      "id": "PL06",
+      "law": "A conflicting second marker preserves the held instant rather than overwriting it",
+      "package": "grapt-types",
+      "file": "crates/grapt-types/src/attempt_receipt.rs",
+      "test": "attempt_receipt::tests::an_exact_retry_is_idempotent_and_a_different_marker_is_a_conflict",
+      "old": "            Some(held) => {\n                let outcome = MarkerOutcome::Conflict {\n                    held: held.at(),\n                    offered: marker.at(),\n                };\n                (self, outcome)\n            }\n        }\n    }\n\n    pub fn attempt",
+      "new": "            Some(held) => {\n                let outcome = MarkerOutcome::Conflict {\n                    held: held.at(),\n                    offered: marker.at(),\n                };\n                self.settled = Some(marker);\n                (self, outcome)\n            }\n        }\n    }\n\n    pub fn attempt"
+    },
+    {
+      "id": "PL07",
+      "law": "An attempt identity longer than the injected maximum cannot form a receipt, and the bound is measured in UTF-8 bytes",
+      "package": "grapt-types",
+      "file": "crates/grapt-types/src/attempt_receipt.rs",
+      "test": "attempt_receipt::tests::an_identity_at_the_maximum_is_admitted_and_one_over_is_refused",
+      "old": "        let bytes = id.as_str().len();\n        if bytes > maximum.get() as usize {\n            return Err(IdTooLong {\n                kind: BoundedIdKind::Attempt,",
+      "new": "        let bytes = id.as_str().len();\n        if false && bytes > maximum.get() as usize {\n            return Err(IdTooLong {\n                kind: BoundedIdKind::Attempt,"
+    },
+    {
+      "id": "PL08",
+      "law": "The session identity bound is enforced too, and its refusal is a distinct kind",
+      "package": "grapt-types",
+      "file": "crates/grapt-types/src/attempt_receipt.rs",
+      "test": "attempt_receipt::tests::the_session_bound_is_measured_in_bytes_and_named_separately",
+      "old": "        let bytes = id.as_str().len();\n        if bytes > maximum.get() as usize {\n            return Err(IdTooLong {\n                kind: BoundedIdKind::Session,",
+      "new": "        let bytes = id.as_str().len();\n        if false && bytes > maximum.get() as usize {\n            return Err(IdTooLong {\n                kind: BoundedIdKind::Session,"
+    }
+  ],
+  "tombstones": []
+}

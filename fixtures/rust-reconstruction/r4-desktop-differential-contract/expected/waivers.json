@@ -1,0 +1,4 @@
+{
+  "waivers": [],
+  "note": "An empty waivers array is a meaningful assertion here, and it is meaningful precisely because there is no cross-engine comparison to waive anything from. This corpus records a driver CONTRACT: every surface is produced by the grapt-service model from the action rows and compared exhaustively, with no normalisation, no tolerance and no excluded field. Nothing is compared against the frozen TypeScript engine, so no intentional non-parity can arise. The day this contract acquires a live differential, any cross-engine difference must either fail a comparison or be named here — there is no global normalisation switch."
+}

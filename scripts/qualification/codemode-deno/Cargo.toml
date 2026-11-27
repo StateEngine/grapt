@@ -1,0 +1,20 @@
+[package]
+name = "codemode-deno-qualification"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[workspace]
+
+[dependencies]
+deno_core = { version = "=0.411.0", default-features = false, features = ["v8", "v8_use_custom_libcxx", "reactor-tokio"] }
+serde_json = "1"
+tokio = { version = "1", default-features = false, features = ["rt", "time"] }
+
+[lints.rust]
+unsafe_code = "forbid"
+unused_must_use = "deny"
+
+[lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"

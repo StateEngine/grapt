@@ -1,0 +1,5 @@
+# The pending inventory is verified by SHA-256 over the bytes on disk. With
+# core.autocrlf=true and no attribute, a fresh checkout rewrites LF to CRLF and
+# every digest in MANIFEST.tsv goes red for a reason that has nothing to do with
+# preservation — the gate would only hold on the machine that authored it.
+tests/pending/** text eol=lf

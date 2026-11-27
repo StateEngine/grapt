@@ -1,0 +1,306 @@
+{
+  "schema": "grapt.toolchain-activation.contract.v1",
+  "campaign": "TOOLCHAIN-ACTIVATION-01",
+  "revision": 3,
+  "mutation_prefix": "TMA",
+  "accepted_base": "6fe79ddf09272aab309d5ce14276af8db3c15da8",
+  "owner_crate": "grapt-toolchain",
+  "product_seam": "grapt-server toolchain activate --root <root> --target <triple> --pin <pin-file>",
+  "law": {
+    "source": "docs/reports/SECODE_RUST_RECONSTRUCTION_DISPOSITION_2026-08-07.md section 8, row 1",
+    "statement": "A tool binary activates only when its archive sha256, source URL and per-target pin all match; a revoked or re-cut pin at the same version refuses; identity write failure rolls back activation.",
+    "oracle_witness": "packages/core/src/ripgrep/acquire.ts with packages/core/test/ripgrep-acquire.test.ts at oracle 42e4888cc0 (19/0, mutation-proven), consumed as observable compatibility evidence only"
+  },
+  "typed_values": [
+    {
+      "name": "ToolName",
+      "shape": "1..=64 [a-z0-9._-], leading byte [a-z0-9], no Windows reserved device name",
+      "law": "names the tool: the first layout segment of the activation tree; a segment the host treats as a device is not a name, and the identity record and pin must agree on it"
+    },
+    {
+      "name": "ToolVersion",
+      "shape": "1..=32 printable ASCII, no whitespace",
+      "law": "upstream release version; equal version with a changed digest is a re-cut, not an upgrade"
+    },
+    {
+      "name": "TargetTriple",
+      "shape": "1..=128 [a-z0-9._-]",
+      "law": "the per-target pin key; an absent entry is target-unsupported, never a default"
+    },
+    {
+      "name": "SourceUrl",
+      "shape": "1..=1024 bytes, no control bytes, scheme-less relative path",
+      "law": "the exact position of the archive relative to the activation root; the shipped deterministic adapter admits scheme-less relative paths only, so any scheme prefix (including file:) is refused source-unsupported (R11), and a network source is an explicit release-input boundary, not a core capability"
+    },
+    {
+      "name": "Sha256",
+      "shape": "exactly 64 lowercase hex characters",
+      "law": "archive digest and binary digest are separate facts and both are carried in the identity"
+    },
+    {
+      "name": "ArchiveFormat",
+      "shape": "closed vocabulary: tar",
+      "law": "the shipped bounded decoder admits only uncompressed ustar tar; the vocabulary is a closed typed value, so a pin declaring any other format is refused pin-malformed (R06) at pin decode — a runtime format refusal is unreachable, which is why revision 2 removed R12 from the matrix"
+    },
+    {
+      "name": "EntryName",
+      "shape": "1..=256 bytes, relative, no dot segments, no absolute, final segment not a Windows reserved device name",
+      "law": "the pinned path of the binary inside the archive; the final segment is where the executable lands on disk"
+    },
+    {
+      "name": "InstalledIdentity",
+      "shape": "grapt.toolchain.identity.v1 JSON, 9 fields",
+      "law": "presence of a binary is not evidence of provenance; only a record that matches the CURRENT pin vouches for it"
+    }
+  ],
+  "identity_fields": [
+    "tool",
+    "version",
+    "platform",
+    "arch",
+    "target",
+    "source",
+    "archive_sha256",
+    "binary_sha256",
+    "installed_at_ms"
+  ],
+  "match_law": "identity matches the current pin only when tool, version, platform, arch, target, source AND archive_sha256 all equal, and the canonical bytes hash to identity.binary_sha256; version and target alone never match, so a revoked or re-cut pin at the same version refuses reuse and re-acquires",
+  "bounds": {
+    "pin_file_bytes": 65536,
+    "pin_entries": 16,
+    "pin_schema": "secode.toolchain.pins.v1",
+    "identity_file_bytes": 4096,
+    "identity_schema": "grapt.toolchain.identity.v1",
+    "archive_bytes": 8388608,
+    "binary_bytes": 8388608,
+    "tar_entries": 16,
+    "tar_path_depth": 4,
+    "tar_entry_name_bytes": 256,
+    "receipt_bytes": 16384
+  },
+  "layout": {
+    "canonical": "tools/<tool>/bin/<exe>",
+    "staged": "tools/<tool>/bin/<exe>.staged",
+    "last_known_good": "tools/<tool>/bin/<exe>.last-known-good",
+    "identity": "tools/<tool>/identity.json",
+    "staging_root": "tools/<tool>/.staging",
+    "lock": "tools/<tool>/.activation.lock"
+  },
+  "refusal_matrix": [
+    {
+      "id": "R01",
+      "reason": "root-missing",
+      "class": "workspace-state",
+      "condition": "the activation root does not exist or is not a directory",
+      "distinct_from": [
+        "pin-missing",
+        "pin-unreadable"
+      ]
+    },
+    {
+      "id": "R02",
+      "reason": "root-unreadable",
+      "class": "workspace-state",
+      "condition": "the root exists but the tool directory tree cannot be read or created",
+      "distinct_from": [
+        "pin-missing",
+        "pin-unreadable"
+      ]
+    },
+    {
+      "id": "R03",
+      "reason": "pin-missing",
+      "class": "pin-data",
+      "condition": "the pin file does not exist",
+      "distinct_from": [
+        "target-unsupported",
+        "root-missing"
+      ]
+    },
+    {
+      "id": "R04",
+      "reason": "pin-unreadable",
+      "class": "pin-data",
+      "condition": "the pin file exists but cannot be read or is not a regular file",
+      "distinct_from": [
+        "pin-missing",
+        "pin-source-not-git"
+      ]
+    },
+    {
+      "id": "R05",
+      "reason": "pin-oversized",
+      "class": "pin-data",
+      "condition": "the pin file exceeds the 64 KiB bound",
+      "distinct_from": [
+        "pin-malformed"
+      ]
+    },
+    {
+      "id": "R06",
+      "reason": "pin-malformed",
+      "class": "pin-data",
+      "condition": "the pin file is not a JSON object, carries a foreign schema, or a typed field is absent or out of bound",
+      "distinct_from": [
+        "target-unsupported"
+      ]
+    },
+    {
+      "id": "R07",
+      "reason": "pin-source-not-git",
+      "class": "workspace-state",
+      "condition": "the pin file's directory is not a Git worktree, or the git attribution plumbing cannot be believed; an unattributable pin is a non-Git workspace state, not missing data",
+      "distinct_from": [
+        "pin-missing",
+        "pin-unreadable",
+        "pin-source-untracked"
+      ]
+    },
+    {
+      "id": "R08",
+      "reason": "pin-source-untracked",
+      "class": "workspace-state",
+      "condition": "the pin file sits in a worktree but is not tracked at HEAD",
+      "distinct_from": [
+        "pin-source-dirty",
+        "pin-source-not-git"
+      ]
+    },
+    {
+      "id": "R09",
+      "reason": "pin-source-dirty",
+      "class": "workspace-state",
+      "condition": "the pin file is tracked but its on-disk bytes differ from the HEAD blob; an uncommitted re-cut is not an admissible pin, the pin change is a commit",
+      "distinct_from": [
+        "pin-source-untracked",
+        "pin-malformed"
+      ]
+    },
+    {
+      "id": "R10",
+      "reason": "target-unsupported",
+      "class": "pin-contents",
+      "condition": "the well-formed pin table has no entry for the requested target",
+      "distinct_from": [
+        "pin-missing",
+        "pin-unreadable",
+        "pin-malformed"
+      ]
+    },
+    {
+      "id": "R11",
+      "reason": "source-unsupported",
+      "class": "pin-contents",
+      "condition": "the pin names a source the shipped deterministic adapter does not admit: it delivers scheme-less relative paths under the activation root only, so any scheme prefix (including file:) or a non-relative location refuses; a network source is an explicit release-input boundary, not a core capability",
+      "distinct_from": [
+        "source-fetch-failed"
+      ]
+    },
+    {
+      "id": "R13",
+      "reason": "source-fetch-failed",
+      "class": "acquisition",
+      "condition": "the deterministic adapter could not deliver the pinned archive bytes",
+      "distinct_from": [
+        "archive-digest-mismatch"
+      ]
+    },
+    {
+      "id": "R14",
+      "reason": "archive-digest-mismatch",
+      "class": "acquisition",
+      "condition": "the delivered archive bytes do not hash to the pinned archive sha256; nothing is staged or activated",
+      "distinct_from": [
+        "source-fetch-failed",
+        "staged-copy-incomplete"
+      ]
+    },
+    {
+      "id": "R15",
+      "reason": "archive-missing-binary",
+      "class": "acquisition",
+      "condition": "the verified archive does not contain the pinned entry",
+      "distinct_from": [
+        "archive-unsafe-entry"
+      ]
+    },
+    {
+      "id": "R16",
+      "reason": "archive-unsafe-entry",
+      "class": "acquisition",
+      "condition": "a symlink, hardlink, absolute path, dot segment, non-regular entry, or a bound violation (entry count, path depth, entry size, name length) inside the archive",
+      "distinct_from": [
+        "archive-missing-binary"
+      ]
+    },
+    {
+      "id": "R17",
+      "reason": "archive-truncated",
+      "class": "acquisition",
+      "condition": "the tar stream is structurally inconsistent at the framing level: an empty stream, not a whole number of blocks, a single zero block, data after the terminator, an entry size overrun, non-zero padding, or a missing terminator",
+      "distinct_from": [
+        "archive-malformed",
+        "archive-unsafe-entry"
+      ]
+    },
+    {
+      "id": "R18",
+      "reason": "activation-in-flight",
+      "class": "concurrency",
+      "condition": "another activation holds the exclusive lock; concurrent callers serialize rather than race, and no partial bytes are exposed",
+      "distinct_from": [
+        "activation-failed"
+      ]
+    },
+    {
+      "id": "R19",
+      "reason": "staged-copy-incomplete",
+      "class": "activation",
+      "condition": "the staged executable re-reads to a digest different from the verified binary digest; the staged file is removed and the previous activation is untouched",
+      "distinct_from": [
+        "archive-digest-mismatch"
+      ]
+    },
+    {
+      "id": "R20",
+      "reason": "activation-failed",
+      "class": "activation",
+      "condition": "the staged-to-canonical rename failed; the canonical path is untouched (the previous executable remains when there was one) and the staged file is removed",
+      "distinct_from": [
+        "identity-write-failed"
+      ]
+    },
+    {
+      "id": "R21",
+      "reason": "identity-write-failed",
+      "class": "activation",
+      "condition": "the identity record cannot be written after the binary is in place; activation rolls back: the new binary is removed, the previous executable and its record restored (or nothing left when there was no previous), so an unattributable binary is never left executable",
+      "distinct_from": [
+        "activation-failed"
+      ]
+    },
+    {
+      "id": "R22",
+      "reason": "archive-malformed",
+      "class": "acquisition",
+      "condition": "a header or entry the decoder cannot verify or parse: over the byte bound, a non-NUL-terminated name, non-octal size or checksum fields, an unverified header checksum, non-ustar magic, a foreign ustar version, a prefix without a name, or a directory entry with non-zero size",
+      "distinct_from": [
+        "archive-truncated",
+        "archive-unsafe-entry"
+      ]
+    }
+  ],
+  "diagnostic_law": "every refusal that has a decoded pin entry names the failed tool, version, target, source and pin archive digest; earlier refusals name the facts they have; no diagnostic leaks filesystem paths or secrets",
+  "base_counterexample": {
+    "survey_script": "scripts/qualification/toolchain-activation/survey_base.py",
+    "receipt": "fixtures/toolchain-activation/receipts/base-6fe79ddf-counterexample.json",
+    "seam": "grapt-server toolchain activate --root <disposable-root> --target <triple> --pin <pin-file>",
+    "expected_at_base": "the product binary has no toolchain verb (unknown-command refusal, exit 2) and the workspace has no grapt-toolchain member: S1 has no Rust owner at the accepted base",
+    "proves": "S1 is not already satisfied: no typed activation contract, no verified staged activation, no re-cut refusal, no identity-write rollback anywhere in the Rust product"
+  },
+  "revisions": {
+    "1": "J01 witness matrix, as first authored from the code's refusal taxonomy.",
+    "2": "Two amendments, both aligning the matrix to behavior the code already proved: (a) R12 (format-unsupported) removed — the format vocabulary is a closed typed value, so a foreign format string is a malformed pin refused R06 at pin decode; the runtime reason was unreachable, and an unreachable row is not a refusal the boundary owes. The matrix now carries twenty reasons, R01..R21 minus R12, which is the set the code's taxonomy test counts. (b) SourceUrl corrected — the shipped deterministic adapter admits scheme-less relative paths only; any scheme prefix, including file:, is refused source-unsupported (R11). Revision 1's 'file: scheme only' wording described an adapter the code never shipped.",
+    "3": "Review corrections on the composed candidate: (a) R22 (archive-malformed) added and R17 reframed to framing facts only — a header the decoder cannot verify or parse is malformed, a short or cut stream is truncation; the matrix now carries twenty-one reasons, R01..R22 minus R12. (b) The binary bound unified into the single 8 MiB archive bound: the archive decodes in memory and is never staged as a file, so a separate binary staging bound was a second owner of one fact. (c) The publish law restated: the previous executable is retained as a hard link to last-known-good, then ONE replace-existing rename publishes; a crash anywhere in the window leaves the previous or the new executable at the canonical path, never neither (R20 reframed to match). (d) ToolName and EntryName gain the layout-segment law: the first and final segments of the activation tree must not be names a host filesystem treats as devices. (e) The diagnostic context gains the pin source and archive digest for every refusal after pin decode. (f) The product seam admits a target only when it describes this host: the seam activates the host's own tool tree."
+  }
+}

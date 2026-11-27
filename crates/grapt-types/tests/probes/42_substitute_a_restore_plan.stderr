@@ -1,0 +1,27 @@
+error[E0308]: arguments to this function are incorrect
+  --> tests/probes/42_substitute_a_restore_plan.rs:31:5
+   |
+31 |     SettledRestorePlan::apply(checkpoint, rescue, preconditions, lease, authorities)
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^ ----------                         ----- expected `CheckpointRestoreAuthorityLease`, found `AuthorityLease`
+   |                               |
+   |                               expected `SettledRestorePlan`, found `WorkspaceCheckpointRef`
+   |
+note: method defined here
+  --> src/checkpoint/restore_admission.rs
+   |
+   |     pub fn apply(
+   |            ^^^^^
+
+error[E0308]: arguments to this function are incorrect
+  --> tests/probes/42_substitute_a_restore_plan.rs:41:5
+   |
+41 |     SettledRestorePlan::apply(plan, rescue, preconditions, lease, authorities)
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^ ----                         ----- expected `CheckpointRestoreAuthorityLease`, found `AuthorityLease`
+   |                               |
+   |                               expected `SettledRestorePlan`, found `CheckpointRestorePlanId`
+   |
+note: method defined here
+  --> src/checkpoint/restore_admission.rs
+   |
+   |     pub fn apply(
+   |            ^^^^^

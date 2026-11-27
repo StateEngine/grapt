@@ -1,0 +1,1 @@
+| `crates/secode-tools-local/src/patch/seek.rs` | `openai/codex`: `codex-rs/apply-patch/src/seek_sequence.rs` | `bb64b894fd67158be0f874872e6d7bfe717e7368` | Modified: bounded parsing/matching and ordered workspace effects through the existing governed executor. |

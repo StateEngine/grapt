@@ -1,0 +1,39 @@
+[package]
+name = "grapt-client"
+version = "0.1.0"
+edition.workspace = true
+license = "MIT OR Apache-2.0"
+description = "Shared typed client, projection and presentation helpers for terminal consumers of the versioned product API."
+
+[dependencies]
+# Clients observe product truth through the versioned DTO/protocol surface,
+# never through a runtime, store or provider dependency.
+grapt-api = { path = "../grapt-api" }
+grapt-types = { path = "../grapt-types" }
+grapt-schema = { path = "../grapt-schema" }
+grapt-client-transport = { path = "../grapt-client-transport" }
+
+# Frame-independent mention search, with the approved features and exact pins.
+nucleo = { version = "=0.5.0", default-features = false }
+ignore = { version = "=0.4.33", default-features = false }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# Live-block content proof: a running SHA-256 per block (B3 S2c-1a).
+sha2 = { version = "=0.10.9", default-features = false }
+thiserror = "2"
+# Shared cell layout measures glyphs as grapheme clusters.
+unicode-width = { version = "=0.2.1", default-features = false }
+unicode-segmentation = { version = "=1.13.3", default-features = false }
+# Scheduling clock only: no runtime, reactor, tasks or I/O features.
+tokio = { version = "=1.53.3", default-features = false, features = ["time"] }
+
+[lints]
+workspace = true
+
+[dev-dependencies]
+grapt-types = { path = "../grapt-types" }
+serde_json = "1"
+# Structural dependency gates parse all dependency tables as TOML.
+toml = "0.8"
+# Verify that no public route bypasses the protocol boundary.
+trybuild = "1.0.120"

@@ -1,0 +1,119 @@
+{
+  "purpose": "DAILY-USE-BACKEND-01 J01 resurrection evidence. Each row removes exactly one configured-multi-account invariant and names the witness that must turn red. The rows cover account isolation (a second connection may not claim another's provider, credential input or discovery input), the two input-widening escapes, per-account issuance and protocol resolution, refusal of an unconfigured provider by name, and the two retained-frontend projection corrections: the provider listing is the connected set, and each model row carries the provider it is issuable through.",
+  "run": "python crates/grapt-platform/mutations/dub/run.py --prefix DUB",
+  "lane": "DAILY-USE-BACKEND-01",
+  "prefix": "DUB",
+  "rows": 10,
+  "mutations": [
+    {
+      "id": "DUB01",
+      "law": "A second configured account may not claim a provider another connection already holds.",
+      "package": "grapt-platform",
+      "test_target": "platform_vertical",
+      "test": "account_composition_refuses_contradictory_or_unbounded_declarations",
+      "file": "crates/grapt-platform/src/config.rs",
+      "old": "        if provider == primary.provider\n            || admitted.iter().any(|account| account.provider == provider)\n        {",
+      "new": "        if false {\n            // MUTATED: DUB01",
+      "red": "a second account claiming the primary provider was refused by the wrong guard"
+    },
+    {
+      "id": "DUB02",
+      "law": "A second configured account may not read its secret from another connection's credential input.",
+      "package": "grapt-platform",
+      "test_target": "platform_vertical",
+      "test": "account_composition_refuses_contradictory_or_unbounded_declarations",
+      "file": "crates/grapt-platform/src/config.rs",
+      "old": "        if credential_source == primary.credential_source\n            || admitted\n                .iter()\n                .any(|account| account.credential_source == credential_source)\n        {",
+      "new": "        if false {\n            // MUTATED: DUB02",
+      "red": "a second account reusing the primary credential input was admitted"
+    },
+    {
+      "id": "DUB03",
+      "law": "A second configured account may not be served another connection's discovery snapshot.",
+      "package": "grapt-platform",
+      "test_target": "platform_vertical",
+      "test": "account_composition_refuses_contradictory_or_unbounded_declarations",
+      "file": "crates/grapt-platform/src/config.rs",
+      "old": "        if discovery == primary.discovery\n            || admitted\n                .iter()\n                .any(|account| account.discovery == discovery)\n        {",
+      "new": "        if false {\n            // MUTATED: DUB03",
+      "red": "a second account reusing the primary discovery input was refused by the wrong guard"
+    },
+    {
+      "id": "DUB04",
+      "law": "Configuration names which bounded input carries a credential, never where the platform may read.",
+      "package": "grapt-platform",
+      "test_target": "__lib__",
+      "test": "credential::tests::a_configured_credential_source_cannot_widen_where_the_platform_reads",
+      "file": "crates/grapt-platform/src/credential.rs",
+      "old": "        plain.then(|| Self(name.to_owned()))",
+      "new": "        let _ = plain; // MUTATED: DUB04\n        Some(Self(name.to_owned()))",
+      "red": "credential source \"../elsewhere.credential\" was admitted"
+    },
+    {
+      "id": "DUB05",
+      "law": "Configuration names which bounded input carries account discovery, never where the platform may read.",
+      "package": "grapt-platform",
+      "test_target": "__lib__",
+      "test": "model_inventory::tests::a_configured_discovery_name_cannot_widen_where_the_platform_reads",
+      "file": "crates/grapt-platform/src/model_inventory.rs",
+      "old": "    if name.starts_with('.') || name.contains(\"..\") || !name.ends_with(\".json\") {",
+      "new": "    if false {\n        // MUTATED: DUB05",
+      "red": "discovery name \".hidden.json\" was admitted"
+    },
+    {
+      "id": "DUB06",
+      "law": "A provider with no configured account is refused by name and never served by the default connection.",
+      "package": "grapt-platform",
+      "test_target": "platform_vertical",
+      "test": "an_unconfigured_provider_is_refused_by_name_and_never_served_by_the_default_account",
+      "file": "crates/grapt-platform/src/config.rs",
+      "old": "        self.accounts()\n            .find(|account| &account.provider == provider)",
+      "new": "        let _ = provider; // MUTATED: DUB06\n        Some(&self.primary)",
+      "red": "an unconfigured provider must be refused by name, not silently rerouted"
+    },
+    {
+      "id": "DUB07",
+      "law": "A connection is spoken to in its own protocol, not the default account's.",
+      "package": "grapt-platform",
+      "test_target": "platform_vertical",
+      "test": "a_second_configured_account_is_connected_and_issues_through_its_own_coordinates",
+      "file": "crates/grapt-platform/src/config.rs",
+      "old": "            .map(|account| account.protocol_family)",
+      "new": "            .map(|_| self.protocol_family) // MUTATED: DUB07",
+      "red": "a second connection must be spoken to in its own protocol, not the default account's"
+    },
+    {
+      "id": "DUB08",
+      "law": "Selection resolves through the account that owns the selected provider.",
+      "package": "grapt-platform",
+      "test_target": "platform_vertical",
+      "test": "a_second_configured_account_is_connected_and_issues_through_its_own_coordinates",
+      "file": "crates/grapt-platform/src/config.rs",
+      "old": "            .issue(provider, model, variant, account.routing.clone())",
+      "new": "            .issue(provider, model, variant, self.catalog.routing().clone()) // MUTATED: DUB08",
+      "red": "selection must resolve through the account that owns the selected provider"
+    },
+    {
+      "id": "DUB09",
+      "law": "The retained provider listing is the connected set, not the public catalog.",
+      "package": "grapt-product",
+      "test_target": "__bins__",
+      "test": "dogfood::model_inventory::tests::only_configured_providers_are_reported_connected",
+      "file": "crates/grapt-product/src/dogfood/model_inventory.rs",
+      "old": "        Some(inventory) => Value::Array(inventory.connected().iter().filter_map(|provider| {",
+      "new": "        Some(inventory) => Value::Array(inventory.providers().keys().filter_map(|provider| { // MUTATED: DUB09",
+      "red": "the provider listing must be the connected set, not the public catalog"
+    },
+    {
+      "id": "DUB10",
+      "law": "A selection is accepted only on a whole connected (provider, model, variant) coordinate.",
+      "package": "grapt-product",
+      "test_target": "__bins__",
+      "test": "dogfood::model_inventory::tests::selection_is_accepted_only_on_a_whole_connected_coordinate",
+      "file": "crates/grapt-product/src/dogfood/model_inventory.rs",
+      "old": "            row.provider().as_str() == provider\n                && Some(row.id().as_str()) == id",
+      "new": "            true // MUTATED: DUB10\n                && Some(row.id().as_str()) == id",
+      "red": "a model was accepted under a provider that cannot issue it"
+    }
+  ]
+}

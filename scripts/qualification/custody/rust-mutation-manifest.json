@@ -1,0 +1,117 @@
+{
+  "purpose": "QUALIFICATION-CUSTODY-01 r3 (QCU) Rust resurrection rows for the witnesses this lane adapted: the bridge ownership helper's identity and output refusals, its client's stdout and reap bounds, the cleanup-before-judgment rule of the RSS and PLR112 witnesses, and the H1 scratch witness's real ignore rule. Run through the PLR custody runner with --manifest, one disposable worktree per row, intended RED then restored GREEN. PLR rows stay in the PLR manifest; this file admits only whole-token QCU ids.",
+  "run": "python3 scripts/qualification/plugin-linux-reap/run-mutations.py --manifest scripts/qualification/custody/rust-mutation-manifest.json --prefix QCU --receipt <outside-root>",
+  "prefix": "QCU",
+  "mutations": [
+    {
+      "id": "QCU201",
+      "law": "QCU r3 ownership helper: the inspected unit's Id, InvocationID and MainPID read after the executable helper must equal the identity read before it, so a reused pid or a restarted unit is refused rather than attributed to the owned runtime. Disabling the identity comparison admits every drift shape the seam witness feeds",
+      "package": "grapt-plugin",
+      "file": "crates/grapt-plugin/tests/bridge/unit_identity.rs",
+      "test_target": "integration",
+      "test": "bridge::unit_identity::identity_drift_refuses_a_reused_pid_or_restarted_unit",
+      "old": "    if after != Some(before) {",
+      "new": "    if false {",
+      "expected_diagnostic": "identity drift was admitted"
+    },
+    {
+      "id": "QCU202",
+      "law": "QCU r3 ownership helper: the helper's output is accepted only as exactly one complete absolute path. Dropping the embedded-newline refusal admits a two-path answer, which the output witness reds on",
+      "package": "grapt-plugin",
+      "file": "crates/grapt-plugin/tests/bridge/unit_identity.rs",
+      "test_target": "integration",
+      "test": "bridge::unit_identity::start_time_and_helper_output_are_read_exactly",
+      "old": "    if !path.starts_with(b\"/\") || path.contains(&b'\\n') || path.contains(&0) {",
+      "new": "    if !path.starts_with(b\"/\") || path.contains(&0) {",
+      "expected_diagnostic": "was admitted"
+    },
+    {
+      "id": "QCU203",
+      "law": "QCU H1 scratch witness: the owned scratch root carries the repository's real .gitignore, so the fresh __pycache__ is ignored by the real __pycache__/ rule. Copying other bytes in its place makes the directory an ordinary untracked entry, and the anti-vacuity assertion reds before any count is compared",
+      "package": "grapt-types",
+      "file": "crates/grapt-types/tests/direct_include_format/cases.rs",
+      "test_target": "direct_include_format",
+      "test": "cases::an_ignored_runtime_artifact_cannot_move_the_inventory",
+      "old": "        (source.join(\".gitignore\"), directory.join(\".gitignore\")),",
+      "new": "        (source.join(\"Cargo.toml\"), directory.join(\".gitignore\")),",
+      "expected_diagnostic": "is not git-ignored, so this witness cannot reproduce H1"
+    },
+    {
+      "id": "QCU204",
+      "law": "QCU r3 required control: the RSS ownership witness must fail when the production unit-bound stop is disabled. linux::stop_unit first SIGKILLs the unit's control group, then stops the unit; the mutant keeps the kill (so the attributed violation is unchanged) and replaces only the unit stop with a read-only query. The RemainAfterExit unit then stays loaded after the attributed failure and assert_owned_unit_absent reds; the witness's independent fixture teardown stops, resets and proves exactly that unit absent. The first QCU204 form (the whole stop_containment arm a no-op, run 20260929051802) also removed the kill, so the bridge kept running and the witness failed earlier on the violation reason, not the absence the row names",
+      "package": "grapt-plugin",
+      "file": "crates/grapt-plugin/src/supervisor/process/linux.rs",
+      "test_target": "integration",
+      "test": "bridge::resource::observed_rss_and_sustained_cpu_thresholds_terminate_the_owned_process",
+      "old": "    let stopped = bounded_systemctl(&[\"stop\", \"--no-block\", &service])",
+      "new": "    let stopped = bounded_systemctl(&[\"show\", \"--property=Id\", &service])",
+      "expected_diagnostic": "OOM containment unit remained after the attributed failure"
+    },
+    {
+      "id": "QCU205",
+      "law": "QCU r3 correction (QCU-R3-1): the helper client's bound covers its stdout reaching end-of-file, not only its exit. The mutant reads the stdout socket without a timeout, which restores the blocking read the review's probe overran (success after 2046 ms against a 200 ms bound): a client that exits while a descendant holds its stdout is then admitted once the holder exits",
+      "package": "grapt-plugin",
+      "file": "crates/grapt-plugin/tests/bridge/unit_identity.rs",
+      "test_target": "integration",
+      "test": "bridge::unit_identity::bounded_output_refuses_a_stdout_held_open_after_the_client_exits",
+      "old": "            .set_read_timeout(Some(left))",
+      "new": "            .set_read_timeout(None)",
+      "expected_diagnostic": "a stdout held past the bound was admitted"
+    },
+    {
+      "id": "QCU206",
+      "law": "QCU r3 correction (QCU-R3-1): a client's reap after its kill or failed status is bounded and an unreaped pid is named. The mutant keeps polling past the deadline, the unbounded Child::wait the review named, so a reap that stays pending holds the caller until the client exits on its own and is never named",
+      "package": "grapt-plugin",
+      "file": "crates/grapt-plugin/tests/bridge/unit_identity.rs",
+      "test_target": "integration",
+      "test": "bridge::unit_identity::a_pending_reap_is_bounded_and_named",
+      "old": "            Ok(None) if remaining(deadline).is_some() => {",
+      "new": "            Ok(None) if remaining(deadline).is_some() || child.id() > 0 => {",
+      "expected_diagnostic": "a pending reap was not named"
+    },
+    {
+      "id": "QCU207",
+      "law": "QCU r3 correction (QCU-R3-4): the PLR112 witness judges its scenario only once the launcher reap and the exact unit absence are proven, so an intended red never scores over unproven cleanup. The mutant drops that check, which restores the review's counterexample: the control's intended-red outcome with a failed reap or absence reaches the watchdog assertion and fires its diagnostic",
+      "package": "grapt-plugin",
+      "file": "crates/grapt-plugin/src/supervisor/process/linux/query_seam.rs",
+      "test_target": "lib",
+      "test": "supervisor::process::linux::query_seam::a_plr112_cleanup_failure_voids_the_intended_red_and_a_pass",
+      "old": "    if cleanup.is_err() || absent.is_err() {",
+      "new": "    if false {",
+      "expected_diagnostic": "control: intended red with failed cleanup"
+    },
+    {
+      "id": "QCU208",
+      "law": "QCU r3 correction (QCU-R3-4): the RSS witness's production judgment scores only over a proven fixture teardown. The mutant voids the witness for a teardown failure only when the judgment passed, the review's ordering defect: an intended owned-unit failure then hides a failed teardown and scores",
+      "package": "grapt-plugin",
+      "file": "crates/grapt-plugin/tests/bridge/owned_teardown.rs",
+      "test_target": "integration",
+      "test": "bridge::resource::owned_teardown::a_fixture_teardown_failure_voids_the_owned_unit_judgment",
+      "old": "    if let Err(error) = fixture {",
+      "new": "    if let (Ok(()), Err(error)) = (&production, fixture) {",
+      "expected_diagnostic": "an intended failure scored over a failed fixture teardown"
+    },
+    {
+      "id": "QCU209",
+      "law": "QCU r3 correction: the query-seam stub writer is bounded through its exit, and an overrun is killed with a bounded reap, so a stalled writer can neither hang a witness nor let it score. The mutant drops the deadline check, restoring the unbounded wait: the stalled-writer control then waits for the writer's own exit and admits it",
+      "package": "grapt-plugin",
+      "file": "crates/grapt-plugin/src/supervisor/process/linux/query_seam.rs",
+      "test_target": "lib",
+      "test": "supervisor::process::linux::query_seam::a_stalled_or_failing_stub_writer_is_refused_within_its_bound",
+      "old": "        if tokio::time::Instant::now() >= deadline {\n            return Ok(None);\n        }",
+      "new": "",
+      "expected_diagnostic": "a stalled stub writer was not killed and reaped"
+    },
+    {
+      "id": "QCU210",
+      "law": "QCU r3 test-diagnostics correction: the join witness releases the gated owner only after the second wake is observed registered against its drain, so it witnesses the same-Session join law rather than an interleaving. The mutant (product source, disposable worktree only) makes a wake never join an active drain: the second wake then claims beside the gated owner, never registers, and the witness reds on the missing registration",
+      "package": "grapt-runtime",
+      "file": "crates/grapt-runtime/src/coordinator.rs",
+      "test_target": "coordinator",
+      "test": "a_second_wake_joins_and_never_drains_concurrently",
+      "old": "                if slot.active {\n                    slot.wake_pending = true;",
+      "new": "                if false {\n                    slot.wake_pending = true;",
+      "expected_diagnostic": "the second wake never registered against the active drain within the deadline"
+    }
+  ]
+}

@@ -1,0 +1,46 @@
+{
+  "B01": {
+    "money.py": "from decimal import Decimal, ROUND_HALF_EVEN\n\ndef invoice_total(lines, discount=\"0\"):\n    total = Decimal(0)\n    for price, quantity in lines:\n        if quantity < 0: raise ValueError(\"negative quantity\")\n        total += Decimal(str(price)) * Decimal(str(quantity))\n    return (total * (1-Decimal(str(discount)))).quantize(Decimal(\"0.01\"), rounding=ROUND_HALF_EVEN)\n"
+  },
+  "B02": {
+    "paging.py": "def page(rows, cursor, limit):\n    if limit <= 0: raise ValueError(\"nonpositive limit\")\n    ordered = sorted(rows, key=lambda row: (row[\"timestamp\"],row[\"id\"]))\n    return [row for row in ordered if cursor is None or (row[\"timestamp\"],row[\"id\"])>cursor][:limit]\n"
+  },
+  "M01": {
+    "settings.py": "from dataclasses import dataclass\nimport math\n@dataclass(frozen=True)\nclass Settings:\n    max_attempts: int=3\n    base_delay: float=1\n    cap_delay: float=8\n    def __post_init__(self):\n        if not isinstance(self.max_attempts,int) or not 1<=self.max_attempts<=8: raise ValueError(\"attempt bound\")\n        if not math.isfinite(self.base_delay) or self.base_delay<0: raise ValueError(\"base bound\")\n        if not math.isfinite(self.cap_delay) or self.cap_delay<=0: raise ValueError(\"cap bound\")\n",
+    "retry.py": "class RetryableError(Exception): pass\n\ndef run(operation, settings, sleep):\n    for attempt in range(settings.max_attempts):\n        try: return operation()\n        except RetryableError:\n            if attempt+1 == settings.max_attempts: raise\n            sleep(min(settings.cap_delay, settings.base_delay * 2**attempt))\n"
+  },
+  "M02": {
+    "cli.py": "import json\nfrom importer import import_rows\nfrom settings import Settings\n\ndef execute(argv, save):\n    if len(argv) not in (1,2) or (len(argv)==2 and argv[0]!=\"--dry-run\"): raise ValueError(\"arguments\")\n    return import_rows(json.loads(argv[-1]), Settings(dry_run=len(argv)==2), save)\n",
+    "importer.py": "def import_rows(rows, settings, save):\n    if not isinstance(rows,list) or any(not isinstance(row,dict) or not isinstance(row.get(\"id\"),str) or not row[\"id\"] for row in rows):\n        raise ValueError(\"invalid rows\")\n    if not settings.dry_run:\n        for row in rows: save(row)\n    return len(rows)\n"
+  },
+  "M03": {
+    "cancellation.py": "import asyncio\nclass CancellationToken:\n    def __init__(self): self.event=asyncio.Event()\n    def cancel(self): self.event.set()\n    def is_cancelled(self): return self.event.is_set()\n",
+    "worker.py": "import asyncio\nasync def run_jobs(jobs, token):\n    results=[]\n    for job in jobs:\n        if token.is_cancelled(): break\n        results.append(await job())\n    return results\n"
+  },
+  "D01": {
+    "config.py": "def load(defaults, project, env):\n    result=dict(defaults)\n    result.update(project)\n    result.update({key[4:].lower():value for key,value in env.items() if key.startswith(\"APP_\")})\n    return result\n",
+    "DIAGNOSIS.md": "Filtering by truthiness discarded explicit false/zero values and updating the defaults object mutated its owner.\n"
+  },
+  "D02": {
+    "cache.py": "from pathlib import Path\nimport hashlib\nclass FileCache:\n    def __init__(self): self.entries={}\n    def read(self,path):\n        path=Path(path); data=path.read_bytes(); digest=hashlib.sha256(data).digest()\n        if path not in self.entries or self.entries[path][0]!=digest: self.entries[path]=(digest,data.decode(\"utf-8\"))\n        return self.entries[path][1]\n",
+    "DIAGNOSIS.md": "Size and mtime are metadata, not content identity; a same-size rewrite with preserved mtime collided.\n"
+  },
+  "D03": {
+    "importer.py": "import json\n\ndef import_log(text):\n    rows=[];seen=set()\n    for line in text.splitlines():\n        if not line.strip(): continue\n        row=json.loads(line)\n        if not isinstance(row,dict) or not isinstance(row.get(\"id\"),str) or not row[\"id\"] or row[\"id\"] in seen: raise ValueError(\"invalid id\")\n        seen.add(row[\"id\"]);rows.append(row)\n    return rows\n",
+    "DIAGNOSIS.md": "A caught decode failure was discarded instead of refusing the complete import.\n"
+  },
+  "R01": {
+    "state.py": "from copy import deepcopy\nclass State:\n    def __init__(self): self.values={}\n    def set(self,key,value): self.values[key]=deepcopy(value)\n    def get(self,key): return deepcopy(self.values[key])\n    def snapshot(self): return deepcopy(self.values)\n"
+  },
+  "R02": {
+    "codec.py": "import json\n\ndef encode(value): return json.dumps(value,sort_keys=True,separators=(\",\",\":\"),ensure_ascii=False,allow_nan=False)\n",
+    "http_layer.py": "import codec\n\ndef response(value): return codec.encode(value).encode(\"utf-8\")\n",
+    "report_layer.py": "import codec\n\ndef report(value): return codec.encode(value)\n"
+  },
+  "C01": {
+    "app.py": "class Budget:\n    def __init__(self,limit):\n        if limit<0: raise ValueError(\"limit\")\n        self.limit=limit;self.used=0\n    def reserve(self,n):\n        if n<0: raise ValueError(\"reservation\")\n        if self.used+n>self.limit: return False\n        self.used+=n;return True\n    def release(self,n):\n        if n<0 or n>self.used: raise ValueError(\"release\")\n        self.used-=n\n"
+  },
+  "C02": {
+    "app.py": "class Lease:\n    def __init__(self): self.generation=0;self.live=False\n    def acquire(self): self.generation+=1;self.live=True;return self.generation\n    def settle(self,generation):\n        if not self.live or generation!=self.generation: return False\n        self.live=False;return True\n"
+  }
+}

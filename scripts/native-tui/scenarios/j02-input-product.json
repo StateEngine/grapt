@@ -1,0 +1,190 @@
+{
+  "name": "J02 — input, Unicode, resize and scrolling against the real product",
+  "about": [
+    "J02 against the REAL PRODUCT — input, paste, Unicode, resize and scrolling.",
+    "",
+    "PURPOSE, and why this exists alongside `j02-input.json`. That scenario runs",
+    "against the in-process contract double, which is the right place to drive",
+    "the terminal edge deterministically — but it cannot close a claim about the",
+    "product, and two of its steps are double conventions: it presses Enter on",
+    "",
+    "The prefix is spelled for a SINGLE client because this runs through the",
+    "journey runner, which takes step values directly rather than per client; it",
+    "still selects the same model by filter and verifies the selection line.",
+    "the first model, and it waits for `echo <text>`, which is how the double",
+    "replies. Neither holds against a real provider.",
+    "",
+    "So the navigation prefix here is the one the other journeys use, selecting",
+    "the SAME model by filter and verifying the selection line.",
+    "",
+    "UNICODE IS ASSERTED TWICE, and the second time is the one that matters.",
+    "First in the COMPOSER, which tests the platform input path — a paste read",
+    "as bytes and rendered back. Then AFTER SUBMIT, where the text returns as",
+    "the durable user row: composed, sent, stored, re-listed and projected. A",
+    "composer-only assertion would prove the keyboard worked and nothing about",
+    "the wire.",
+    "",
+    "THREE SCRIPTS, chosen for what each breaks. Latin-1 supplement (naïve,",
+    "café) catches a single-byte decode; an em dash and mathematical symbols",
+    "catch a cp1252 round trip; East Asian characters occupy TWO CELLS each and",
+    "catch a client that counts characters where it should count columns.",
+    "",
+    "RESIZE HAPPENS WITH THAT CONTENT ON SCREEN, and the text is re-asserted",
+    "after each one. Capturing a frame after a resize proves the client did not",
+    "crash; requiring the wide characters to still be there proves it re-wrapped",
+    "them rather than truncating mid-character.",
+    "",
+    "The multiline paste carries a REAL TAB and is deliberately not submitted at",
+    "that point — a newline inside a paste must not become an Enter that submits",
+    "half of it.",
+    "",
+    "LIMITATION. This drives a real provider, so the assistant's reply is model",
+    "behaviour and nothing here asserts its content. Every assertion is about",
+    "text this scenario supplied and the product returned.",
+    "",
+    "WHAT THIS SCENARIO DOES NOT COVER, so its receipt is not read for more than",
+    "it shows:",
+    "",
+    "SCROLLING IS NOT ASSERTED HERE and its keystrokes are removed rather than",
+    "left in as decoration. This transcript is a few rows long, so PageUp has",
+    "nothing to travel through, and pressing a key without checking the view MOVED",
+    "is the exact defect corrected in j04-large-history. Scrolling movement,",
+    "including reaching the oldest line and returning to the tail, is proven",
+    "there.",
+    "",
+    "LARGE PASTE is not covered: this pastes a short prompt. The bounded-paste",
+    "refusal path is exercised against the double, where a bound can be reached",
+    "deterministically.",
+    "",
+    "FOCUS and INTERRUPTION are not covered here either. Focus is exercised in the",
+    "double run; interruption on the real product is j04-comparative, which drives",
+    "a live execution and requires the correlated terminal."
+  ],
+  "steps": [
+    {
+      "expect": "PROJECTS",
+      "polls": 240
+    },
+    {
+      "key": "Enter"
+    },
+    {
+      "expect": "AGENTS",
+      "polls": 240
+    },
+    {
+      "key": "Enter"
+    },
+    {
+      "expect": "MODELS",
+      "polls": 240
+    },
+    {
+      "paste": "Sol"
+    },
+    {
+      "expect": "Sol",
+      "polls": 240
+    },
+    {
+      "key": "Enter"
+    },
+    {
+      "expect": "model openai/GPT-5.6 Sol",
+      "polls": 240
+    },
+    {
+      "key": "n"
+    },
+    {
+      "expect": "TRANSCRIPT",
+      "polls": 240
+    },
+    {
+      "paste": "line one\n\tline two indented by a real tab\nline three"
+    },
+    {
+      "expect": "line three",
+      "polls": 240
+    },
+    {
+      "expect": "line one",
+      "polls": 240
+    },
+    {
+      "capture": "a multiline paste with a real tab, composed rather than submitted"
+    },
+    {
+      "paste": " naïve café — Ω ∑"
+    },
+    {
+      "expect": "naïve café — Ω ∑",
+      "polls": 240
+    },
+    {
+      "capture": "Latin-1 supplement, an em dash and mathematical symbols in the composer"
+    },
+    {
+      "paste": " 日本語のテキストは全角です"
+    },
+    {
+      "expect": "日本語のテキストは全角です",
+      "polls": 240
+    },
+    {
+      "capture": "wide East Asian characters, which occupy two cells each"
+    },
+    {
+      "resize": [
+        60,
+        20
+      ]
+    },
+    {
+      "expect": "日本語のテキストは全角です",
+      "polls": 240
+    },
+    {
+      "capture": "the same prompt after shrinking the terminal"
+    },
+    {
+      "resize": [
+        130,
+        42
+      ]
+    },
+    {
+      "expect": "naïve café — Ω ∑",
+      "polls": 240
+    },
+    {
+      "capture": "and after growing it back"
+    },
+    {
+      "key": "Enter"
+    },
+    {
+      "expect": "日本語のテキストは全角です",
+      "polls": 960
+    },
+    {
+      "expect": "naïve café — Ω ∑",
+      "polls": 960
+    },
+    {
+      "capture": "the prompt round-tripped through the product"
+    },
+    {
+      "resize": [
+        130,
+        16
+      ]
+    },
+    {
+      "capture": "a short terminal, transcript overflowing"
+    },
+    {
+      "key": "Control+q"
+    }
+  ]
+}

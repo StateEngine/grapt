@@ -1,0 +1,25 @@
+# This lane's corpus, pinned to LF.
+#
+# Scoped to THIS directory rather than to the fixture root, because a rule at
+# the root would silently change what every other lane's corpus is checked out
+# as, and no lane may quietly alter a sibling's evidence bytes. R4D-1 owns
+# `r4-desktop-attachment/` and R4D-2A owns `r4-desktop-differential-contract/`;
+# neither is touched by this file, and a validator that claims its whole
+# fixture directory is exactly why the directories stay one-per-lane.
+#
+# It is needed because the crate-local `crates/grapt-service/.gitattributes`
+# cannot reach here: this corpus lives outside the crate, and
+# `tests/controller_corpus.rs` compares the surfaces it produces against these
+# committed bytes exactly. Under `core.autocrlf=true` — this repository's
+# configuration — a fresh clone would otherwise receive CRLF and fail the
+# replay for a reason that has nothing to do with the model.
+#
+# The corpus reader normalises line endings independently, so this pin is the
+# belt rather than the only brace. Both are here because either alone fails in
+# a way the other catches: a reader that normalises cannot stop a reviewer's
+# digest of these files differing from the author's, and an attribute cannot
+# help a gate that never consults it.
+#
+# Verified before landing: all five files here already hold LF in the index, so
+# this pins the CHECKOUT and changes no stored content.
+* text eol=lf

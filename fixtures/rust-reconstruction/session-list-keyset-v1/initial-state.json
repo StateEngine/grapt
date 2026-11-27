@@ -1,0 +1,32 @@
+{
+  "rust_store": "absent",
+  "legacy_source": {
+    "domain": "typescript-session-v1@42e4888cc0",
+    "session_id_collation": "NOCASE",
+    "collation_note": "The shipped legacy table declares NOCASE on session.id. The bounded import orders by an explicit BINARY collation, so its batch continuation must carry the same explicit collation or the two disagree at a batch boundary and a valid row is silently dropped.",
+    "sessions": [
+      {
+        "id": "ses_legacy_a",
+        "project_id": "prj_a",
+        "workspace_id": null,
+        "parent_id": null,
+        "directory": "/work/a",
+        "title": "legacy A",
+        "time_updated": 9999
+      },
+      {
+        "id": "ses_legacy_b",
+        "project_id": "prj_b",
+        "workspace_id": "ws_b",
+        "parent_id": "ses_legacy_a",
+        "directory": "/work/b",
+        "title": "legacy B",
+        "time_updated": 200
+      }
+    ],
+    "event_heads": [
+      { "aggregate_id": "ses_legacy_a", "seq": 0 },
+      { "aggregate_id": "ses_legacy_b", "seq": 4 }
+    ]
+  }
+}

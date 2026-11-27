@@ -1,0 +1,157 @@
+{
+  "schema": "benchmark.cache-prices.v1",
+  "observed_utc": "2026-10-07T19:10:56.118442+00:00",
+  "source": "https://openrouter.ai/api/v1/models",
+  "snapshot": "/home/example/eta-evidence/haiku-transition-20261007/models-api.json",
+  "snapshot_sha256": "ff264f06c5b09dcba290362f9e80b0971541e2fc7c1c124264d77b3deffbcf4d",
+  "models": {
+    "anthropic/claude-haiku-5.5": {
+      "input_usd_per_million": "0.1000000",
+      "cache_read_usd_per_million": "0.01000000",
+      "raw_pricing": {
+        "prompt": "0.0000001",
+        "completion": "0.0000005",
+        "web_search": "0.01",
+        "input_cache_read": "0.00000001",
+        "input_cache_write": "0.000000125",
+        "input_cache_write_1h": "0.0000002",
+        "overrides": [
+          {
+            "min_prompt_tokens": 100000,
+            "prompt": "0.0000005",
+            "completion": "0.0000025",
+            "input_cache_read": "0.00000005",
+            "input_cache_write": "0.000000625",
+            "input_cache_write_1h": "0.000001"
+          }
+        ]
+      }
+    },
+    "anthropic/claude-sonnet-5.5": {
+      "input_usd_per_million": "2.000000",
+      "cache_read_usd_per_million": "0.2000000",
+      "raw_pricing": {
+        "prompt": "0.000002",
+        "completion": "0.00001",
+        "web_search": "0.01",
+        "input_cache_read": "0.0000002",
+        "input_cache_write": "0.0000025",
+        "input_cache_write_1h": "0.000004"
+      }
+    },
+    "openai/gpt-6-luna": {
+      "input_usd_per_million": "0.1000000",
+      "cache_read_usd_per_million": "0.01000000",
+      "raw_pricing": {
+        "prompt": "0.0000001",
+        "completion": "0.0000005",
+        "web_search": "0.01",
+        "input_cache_read": "0.00000001",
+        "input_cache_write": "0.000000125",
+        "overrides": [
+          {
+            "min_prompt_tokens": 272000,
+            "prompt": "0.0000002",
+            "completion": "0.00000075",
+            "input_cache_read": "0.00000002",
+            "input_cache_write": "0.00000025"
+          }
+        ]
+      }
+    },
+    "gpt-6-luna": {
+      "input_usd_per_million": "0.1000000",
+      "cache_read_usd_per_million": "0.01000000",
+      "raw_pricing": {
+        "prompt": "0.0000001",
+        "completion": "0.0000005",
+        "web_search": "0.01",
+        "input_cache_read": "0.00000001",
+        "input_cache_write": "0.000000125",
+        "overrides": [
+          {
+            "min_prompt_tokens": 272000,
+            "prompt": "0.0000002",
+            "completion": "0.00000075",
+            "input_cache_read": "0.00000002",
+            "input_cache_write": "0.00000025"
+          }
+        ]
+      },
+      "price_model": "openai/gpt-6-luna"
+    },
+    "claude-sonnet-5-5": {
+      "input_usd_per_million": "2.000000",
+      "cache_read_usd_per_million": "0.2000000",
+      "raw_pricing": {
+        "prompt": "0.000002",
+        "completion": "0.00001",
+        "web_search": "0.01",
+        "input_cache_read": "0.0000002",
+        "input_cache_write": "0.0000025",
+        "input_cache_write_1h": "0.000004"
+      },
+      "price_model": "anthropic/claude-sonnet-5.5"
+    },
+    "claude-haiku-5-5": {
+      "input_usd_per_million": "0.1000000",
+      "cache_read_usd_per_million": "0.01000000",
+      "raw_pricing": {
+        "prompt": "0.0000001",
+        "completion": "0.0000005",
+        "web_search": "0.01",
+        "input_cache_read": "0.00000001",
+        "input_cache_write": "0.000000125",
+        "input_cache_write_1h": "0.0000002",
+        "overrides": [
+          {
+            "min_prompt_tokens": 100000,
+            "prompt": "0.0000005",
+            "completion": "0.0000025",
+            "input_cache_read": "0.00000005",
+            "input_cache_write": "0.000000625",
+            "input_cache_write_1h": "0.000001"
+          }
+        ]
+      },
+      "price_model": "anthropic/claude-haiku-5.5"
+    },
+    "openrouter/anthropic/claude-sonnet-5.5": {
+      "input_usd_per_million": "2.000000",
+      "cache_read_usd_per_million": "0.2000000",
+      "raw_pricing": {
+        "prompt": "0.000002",
+        "completion": "0.00001",
+        "web_search": "0.01",
+        "input_cache_read": "0.0000002",
+        "input_cache_write": "0.0000025",
+        "input_cache_write_1h": "0.000004"
+      },
+      "price_model": "anthropic/claude-sonnet-5.5"
+    },
+    "openrouter/anthropic/claude-haiku-5.5": {
+      "input_usd_per_million": "0.1000000",
+      "cache_read_usd_per_million": "0.01000000",
+      "raw_pricing": {
+        "prompt": "0.0000001",
+        "completion": "0.0000005",
+        "web_search": "0.01",
+        "input_cache_read": "0.00000001",
+        "input_cache_write": "0.000000125",
+        "input_cache_write_1h": "0.0000002",
+        "overrides": [
+          {
+            "min_prompt_tokens": 100000,
+            "prompt": "0.0000005",
+            "completion": "0.0000025",
+            "input_cache_read": "0.00000005",
+            "input_cache_write": "0.000000625",
+            "input_cache_write_1h": "0.000001"
+          }
+        ]
+      },
+      "price_model": "anthropic/claude-haiku-5.5"
+    }
+  },
+  "meaning": "Frozen verified read/fresh and 5m/1h write/fresh ratios for input token equivalents, not subscription bills or output pricing. OpenAI write weight is zero in this calculation."
+}

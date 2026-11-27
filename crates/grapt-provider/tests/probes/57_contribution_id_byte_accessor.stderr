@@ -1,0 +1,10 @@
+error[E0624]: method `as_bytes` is private
+  --> tests/probes/57_contribution_id_byte_accessor.rs:14:43
+   |
+14 |     let _ = grapt_policy::ContributionId::as_bytes;
+   |                                           ^^^^^^^^ private method
+   |
+  ::: $WORKSPACE/crates/grapt-policy/src/authority.rs
+   |
+   |     pub(crate) fn as_bytes(&self) -> &[u8; 32] {
+   |     ------------------------------------------ private method defined here

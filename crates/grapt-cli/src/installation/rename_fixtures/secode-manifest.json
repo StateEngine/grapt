@@ -1,0 +1,86 @@
+{
+  "schema": "secode.release.package.v1",
+  "target": "x86_64-unknown-linux-gnu",
+  "profile": "debug",
+  "engine_version": "1111111111111111111111111111111111111111",
+  "binaries": {
+    "secode-server": {
+      "sha256": "4a6ca13d53fac130c4f2a639ddb75249a996e58376ca30ec58e64909f7cec9e6",
+      "bytes": 139,
+      "source_commit": "1111111111111111111111111111111111111111",
+      "profile": "debug",
+      "target": "x86_64-unknown-linux-gnu",
+      "build_receipt": "build.json",
+      "build_receipt_sha256": "cee982eb3e456aacaf9cf49c8fc900577705eb91b463d3f7078fb2a96823e694"
+    },
+    "secode": {
+      "sha256": "4a6ca13d53fac130c4f2a639ddb75249a996e58376ca30ec58e64909f7cec9e6",
+      "bytes": 139,
+      "source_commit": "1111111111111111111111111111111111111111",
+      "profile": "debug",
+      "target": "x86_64-unknown-linux-gnu",
+      "build_receipt": "build.json",
+      "build_receipt_sha256": "cee982eb3e456aacaf9cf49c8fc900577705eb91b463d3f7078fb2a96823e694"
+    },
+    "secode-engined": {
+      "sha256": "4a6ca13d53fac130c4f2a639ddb75249a996e58376ca30ec58e64909f7cec9e6",
+      "bytes": 139,
+      "source_commit": "1111111111111111111111111111111111111111",
+      "profile": "debug",
+      "target": "x86_64-unknown-linux-gnu",
+      "build_receipt": "build.json",
+      "build_receipt_sha256": "cee982eb3e456aacaf9cf49c8fc900577705eb91b463d3f7078fb2a96823e694"
+    },
+    "secode-migrate": {
+      "sha256": "4a6ca13d53fac130c4f2a639ddb75249a996e58376ca30ec58e64909f7cec9e6",
+      "bytes": 139,
+      "source_commit": "1111111111111111111111111111111111111111",
+      "profile": "debug",
+      "target": "x86_64-unknown-linux-gnu",
+      "build_receipt": "build.json",
+      "build_receipt_sha256": "cee982eb3e456aacaf9cf49c8fc900577705eb91b463d3f7078fb2a96823e694"
+    },
+    "secode-tui": {
+      "sha256": "4a6ca13d53fac130c4f2a639ddb75249a996e58376ca30ec58e64909f7cec9e6",
+      "bytes": 139,
+      "source_commit": "1111111111111111111111111111111111111111",
+      "profile": "debug",
+      "target": "x86_64-unknown-linux-gnu",
+      "build_receipt": "build.json",
+      "build_receipt_sha256": "cee982eb3e456aacaf9cf49c8fc900577705eb91b463d3f7078fb2a96823e694"
+    }
+  },
+  "signing": {
+    "secode-server": {
+      "signed": false,
+      "reason": "synthetic unsigned test"
+    },
+    "secode": {
+      "signed": false,
+      "reason": "synthetic unsigned test"
+    },
+    "secode-engined": {
+      "signed": false,
+      "reason": "synthetic unsigned test"
+    },
+    "secode-migrate": {
+      "signed": false,
+      "reason": "synthetic unsigned test"
+    },
+    "secode-tui": {
+      "signed": false,
+      "reason": "synthetic unsigned test"
+    }
+  },
+  "publisher": null,
+  "entry_points": [
+    "secode-server",
+    "secode",
+    "secode-engined",
+    "secode-migrate",
+    "secode-tui"
+  ],
+  "plugin_runtime": {
+    "status": "not-included"
+  }
+}

@@ -1,0 +1,26 @@
+[package]
+name = "grapt-connections"
+version = "0.1.0"
+edition.workspace = true
+license = "MIT OR Apache-2.0"
+description = "A profile's provider connections: sign-in, replacement and their profile files."
+
+[features]
+loopback-testkit = ["grapt-login/loopback-testkit"]
+
+[dependencies]
+grapt-config = { path = "../grapt-config" }
+grapt-login = { path = "../grapt-login" }
+grapt-types = { path = "../grapt-types" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+zeroize = "1.9"
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+[dev-dependencies]
+tokio = { version = "1", default-features = false, features = ["macros", "rt", "time"] }
+
+[lints]
+workspace = true

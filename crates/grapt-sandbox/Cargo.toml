@@ -1,0 +1,29 @@
+[package]
+name = "grapt-sandbox"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+description = "Safe native containment adapter; terminal lifetime and authorization remain with the caller."
+
+[dependencies]
+grapt-types = { path = "../grapt-types" }
+same-file = "=1.0.6"
+
+[target.'cfg(target_os = "linux")'.dependencies]
+nix = { version = "=0.30.1", default-features = false, features = ["fs", "poll", "process", "signal", "user"] }
+seccompiler = "=0.5.0"
+rustix = { version = "=1.1.6", default-features = false, features = ["std", "process"] }
+serde_json = "1"
+signal-hook = "=0.3.18"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+nix = { version = "=0.30.1", default-features = false, features = ["fs", "poll", "process", "signal", "user"] }
+
+[target.'cfg(windows)'.dependencies]
+# Hidden inherited-console APIs are isolated in native.rs and guarded by a canary.
+mxc-sdk = { version = "=1.0.1", default-features = false }
+winreg = "=0.10.1"
+winapi-util = "0.1"
+
+[lints]
+workspace = true

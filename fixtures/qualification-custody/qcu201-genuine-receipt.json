@@ -1,0 +1,111 @@
+{
+  "candidate": {
+    "after": {
+      "commit": "8dc081ba2dd266b814ffc98e6b7a6e35e9a8016b",
+      "status": "",
+      "tree": "63aad911ecbd4c8f899b8fd765892551bc4540d3"
+    },
+    "before": {
+      "commit": "8dc081ba2dd266b814ffc98e6b7a6e35e9a8016b",
+      "status": "",
+      "tree": "63aad911ecbd4c8f899b8fd765892551bc4540d3"
+    }
+  },
+  "entries": [
+    {
+      "artifact": {
+        "compiler_row_json": "{\"reason\":\"compiler-artifact\",\"package_id\":\"path+file:///tmp/stateengine-remote-scratch-20260929053537-e59a9d67c4784029/grapt-plr-mutations-2634604-8_3ghimp/QCU201/crates/grapt-plugin#0.1.0\",\"manifest_path\":\"/tmp/stateengine-remote-scratch-20260929053537-e59a9d67c4784029/grapt-plr-mutations-2634604-8_3ghimp/QCU201/crates/grapt-plugin/Cargo.toml\",\"target\":{\"kind\":[\"test\"],\"crate_types\":[\"bin\"],\"name\":\"bridge\",\"src_path\":\"/tmp/stateengine-remote-scratch-20260929053537-e59a9d67c4784029/grapt-plr-mutations-2634604-8_3ghimp/QCU201/crates/grapt-plugin/tests/bridge.rs\",\"edition\":\"2021\",\"doc\":false,\"doctest\":false,\"test\":true},\"profile\":{\"opt_level\":\"0\",\"debuginfo\":2,\"debug_assertions\":true,\"overflow_checks\":true,\"test\":true},\"features\":[],\"filenames\":[\"/tmp/stateengine-remote-scratch-20260929053537-e59a9d67c4784029/grapt-plr-mutations-2634604-8_3ghimp/mutant-target/debug/deps/bridge-1b465dc9f01e46d2\"],\"executable\":\"/tmp/stateengine-remote-scratch-20260929053537-e59a9d67c4784029/grapt-plr-mutations-2634604-8_3ghimp/mutant-target/debug/deps/bridge-1b465dc9f01e46d2\",\"fresh\":false}",
+        "compiler_row_sha256": "9cb69da132321d8f56562533bbc1a8b97339fef5eaf5a28c774af3e60c33a830",
+        "path": "/tmp/stateengine-remote-scratch-20260929053537-e59a9d67c4784029/grapt-plr-mutations-2634604-8_3ghimp/mutant-target/debug/deps/bridge-1b465dc9f01e46d2",
+        "sha256": "b42e16a0230edbbc5b2bd78bcc0791958e2587dedd1b3659c202887238a64e77",
+        "sha256_after": "b42e16a0230edbbc5b2bd78bcc0791958e2587dedd1b3659c202887238a64e77"
+      },
+      "build": {
+        "command": [
+          "cargo",
+          "test",
+          "-p",
+          "grapt-plugin",
+          "--test",
+          "bridge",
+          "--no-run",
+          "--no-fail-fast",
+          "--message-format=json"
+        ],
+        "exit": 0,
+        "output_sha256": "07bb5038fd20888e2fbe00270d7ebc99f12dd1ae47f410020c65144905fb7937"
+      },
+      "diagnostic": "thread 'lifecycle::unit_identity::identity_drift_refuses_a_reused_pid_or_restarted_unit' panicked at crates/grapt-plugin/tests/bridge/unit_identity.rs:443:9: identity drift was admitted: None Some(7)",
+      "expected_diagnostic": "identity drift was admitted",
+      "green": {
+        "artifact": {
+          "compiler_row_json": "{\"reason\":\"compiler-artifact\",\"package_id\":\"path+file:///tmp/stateengine-remote-scratch-20260929053537-e59a9d67c4784029/grapt-plr-mutations-2634604-8_3ghimp/green/crates/grapt-plugin#0.1.0\",\"manifest_path\":\"/tmp/stateengine-remote-scratch-20260929053537-e59a9d67c4784029/grapt-plr-mutations-2634604-8_3ghimp/green/crates/grapt-plugin/Cargo.toml\",\"target\":{\"kind\":[\"test\"],\"crate_types\":[\"bin\"],\"name\":\"bridge\",\"src_path\":\"/tmp/stateengine-remote-scratch-20260929053537-e59a9d67c4784029/grapt-plr-mutations-2634604-8_3ghimp/green/crates/grapt-plugin/tests/bridge.rs\",\"edition\":\"2021\",\"doc\":false,\"doctest\":false,\"test\":true},\"profile\":{\"opt_level\":\"0\",\"debuginfo\":2,\"debug_assertions\":true,\"overflow_checks\":true,\"test\":true},\"features\":[],\"filenames\":[\"/tmp/stateengine-remote-scratch-20260929053537-e59a9d67c4784029/grapt-plr-mutations-2634604-8_3ghimp/green-target/debug/deps/bridge-1b465dc9f01e46d2\"],\"executable\":\"/tmp/stateengine-remote-scratch-20260929053537-e59a9d67c4784029/grapt-plr-mutations-2634604-8_3ghimp/green-target/debug/deps/bridge-1b465dc9f01e46d2\",\"fresh\":false}",
+          "compiler_row_sha256": "d3614b3aefb7e47067cabe8b77c777488c82117c5239bdc4c56d8d1fe3cd98f0",
+          "path": "/tmp/stateengine-remote-scratch-20260929053537-e59a9d67c4784029/grapt-plr-mutations-2634604-8_3ghimp/green-target/debug/deps/bridge-1b465dc9f01e46d2",
+          "sha256": "7f343fd628e3880def225a6a4da61a49912960beed3815f37a9dada489b7f251",
+          "sha256_after": "7f343fd628e3880def225a6a4da61a49912960beed3815f37a9dada489b7f251"
+        },
+        "build": {
+          "command": [
+            "cargo",
+            "test",
+            "-p",
+            "grapt-plugin",
+            "--test",
+            "bridge",
+            "--no-run",
+            "--no-fail-fast",
+            "--message-format=json"
+          ],
+          "exit": 0,
+          "output_sha256": "a101fb9a4a1b8b6969c89646f9b32d3875ecc915f8dfd79c4faf0d3b73077a2b"
+        },
+        "command": [
+          "/tmp/stateengine-remote-scratch-20260929053537-e59a9d67c4784029/grapt-plr-mutations-2634604-8_3ghimp/green-target/debug/deps/bridge-1b465dc9f01e46d2",
+          "--exact",
+          "lifecycle::unit_identity::identity_drift_refuses_a_reused_pid_or_restarted_unit",
+          "--nocapture"
+        ],
+        "duration_seconds": 0.005,
+        "exit": 0,
+        "output_sha256": "ad8cf513c5cb36e6b4cd1efdfbe02001de1998ef3b0db91fa3614dfbfc181f56",
+        "tests": 1
+      },
+      "id": "QCU201",
+      "mutant_file": "crates/grapt-plugin/tests/bridge/unit_identity.rs",
+      "mutant_sha256": "56b7f5c82325d63501acdf1a921e4e97e183c12798e7c535f5a5d19fdfffc6b7",
+      "red": {
+        "command": [
+          "/tmp/stateengine-remote-scratch-20260929053537-e59a9d67c4784029/grapt-plr-mutations-2634604-8_3ghimp/mutant-target/debug/deps/bridge-1b465dc9f01e46d2",
+          "--exact",
+          "lifecycle::unit_identity::identity_drift_refuses_a_reused_pid_or_restarted_unit",
+          "--nocapture"
+        ],
+        "duration_seconds": 0.131,
+        "exit": 101,
+        "output_sha256": "cf6f8ae38035580ef896f164cba5a78ba89956bca05dc3bf6df95c747898c193",
+        "tests": 1
+      },
+      "source_changed": false
+    }
+  ],
+  "harness": {
+    "after": {
+      "/home/example/secode-remote-compute/runs/20260929053537-e59a9d67c4784029/checkout/scripts/qualification/custody/receipt.py": "191ece7987301162fbb0f5e40e8b4272cbc52a247b5392b3a0cddaaff8ed1af9",
+      "/home/example/secode-remote-compute/runs/20260929053537-e59a9d67c4784029/checkout/scripts/qualification/custody/rust-mutation-manifest.json": "5b0b10cf927e72e014c7d6bbe8b0676a6971bbb734008d108fd458408077c042",
+      "/home/example/secode-remote-compute/runs/20260929053537-e59a9d67c4784029/checkout/scripts/qualification/custody/source_watch.py": "35bbfc3df65e5c42c6fe39dbd39f0f06b0456e7a6bd8b795883acd8d573e285f",
+      "/home/example/secode-remote-compute/runs/20260929053537-e59a9d67c4784029/checkout/scripts/qualification/custody/verify.py": "8076e42dd02bea51ca86f7e3933a255672c696199bdefde5dbadb79bce073c1c",
+      "/home/example/secode-remote-compute/runs/20260929053537-e59a9d67c4784029/checkout/scripts/qualification/plugin-linux-reap/run-mutations.py": "ec4d5715e177608205c255e16dcb2062c503ab4eaa83ed4b5a81885275e3504b"
+    },
+    "before": {
+      "/home/example/secode-remote-compute/runs/20260929053537-e59a9d67c4784029/checkout/scripts/qualification/custody/receipt.py": "191ece7987301162fbb0f5e40e8b4272cbc52a247b5392b3a0cddaaff8ed1af9",
+      "/home/example/secode-remote-compute/runs/20260929053537-e59a9d67c4784029/checkout/scripts/qualification/custody/rust-mutation-manifest.json": "5b0b10cf927e72e014c7d6bbe8b0676a6971bbb734008d108fd458408077c042",
+      "/home/example/secode-remote-compute/runs/20260929053537-e59a9d67c4784029/checkout/scripts/qualification/custody/source_watch.py": "35bbfc3df65e5c42c6fe39dbd39f0f06b0456e7a6bd8b795883acd8d573e285f",
+      "/home/example/secode-remote-compute/runs/20260929053537-e59a9d67c4784029/checkout/scripts/qualification/custody/verify.py": "8076e42dd02bea51ca86f7e3933a255672c696199bdefde5dbadb79bce073c1c",
+      "/home/example/secode-remote-compute/runs/20260929053537-e59a9d67c4784029/checkout/scripts/qualification/plugin-linux-reap/run-mutations.py": "ec4d5715e177608205c255e16dcb2062c503ab4eaa83ed4b5a81885275e3504b"
+    }
+  },
+  "outcome": "accepted",
+  "schema": "qualification-custody/v1",
+  "source_changed": false
+}

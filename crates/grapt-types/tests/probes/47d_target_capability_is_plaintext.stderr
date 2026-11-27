@@ -1,0 +1,10 @@
+error[E0624]: method `capability` is private
+  --> tests/probes/47d_target_capability_is_plaintext.rs:21:12
+   |
+21 |     target.capability()
+   |            ^^^^^^^^^^ private method
+   |
+  ::: src/model/target.rs
+   |
+   |     pub(crate) fn capability(&self) -> &ModelTargetCapabilityId {
+   |     ----------------------------------------------------------- private method defined here

@@ -1,0 +1,431 @@
+{
+  "schema_version": 1,
+  "rows": [
+    {
+      "id": "DUB-CB01",
+      "definition": "scripts/daily-use/catalog_bounds_mutations.py",
+      "driver": "scripts/daily-use/catalog_bounds_mutations.py"
+    },
+    {
+      "id": "DUB-CB02",
+      "definition": "scripts/daily-use/catalog_bounds_mutations.py",
+      "driver": "scripts/daily-use/catalog_bounds_mutations.py"
+    },
+    {
+      "id": "DUB-CB03",
+      "definition": "scripts/daily-use/catalog_bounds_mutations.py",
+      "driver": "scripts/daily-use/catalog_bounds_mutations.py"
+    },
+    {
+      "id": "DUB-CG01",
+      "definition": "scripts/daily-use/replay_mutations.json",
+      "driver": "scripts/daily-use/replay_mutations.py",
+      "tree": "retained"
+    },
+    {
+      "id": "DUB-GF01",
+      "definition": "scripts/daily-use/global_form_mutations.py",
+      "driver": "scripts/daily-use/global_form_mutations.py"
+    },
+    {
+      "id": "DUB-GF02",
+      "definition": "scripts/daily-use/global_form_mutations.py",
+      "driver": "scripts/daily-use/global_form_mutations.py"
+    },
+    {
+      "id": "DUB-GF03",
+      "definition": "scripts/daily-use/global_form_mutations.py",
+      "driver": "scripts/daily-use/global_form_mutations.py"
+    },
+    {
+      "id": "DUB-GF04",
+      "definition": "scripts/daily-use/global_form_mutations.py",
+      "driver": "scripts/daily-use/global_form_mutations.py"
+    },
+    {
+      "id": "DUB-GF05",
+      "definition": "scripts/daily-use/global_form_mutations.py",
+      "driver": "scripts/daily-use/global_form_mutations.py"
+    },
+    {
+      "id": "DUB-GF06",
+      "definition": "scripts/daily-use/global_form_mutations.py",
+      "driver": "scripts/daily-use/global_form_mutations.py"
+    },
+    {
+      "id": "DUB-GF07",
+      "definition": "scripts/daily-use/global_form_mutations.py",
+      "driver": "scripts/daily-use/global_form_mutations.py"
+    },
+    {
+      "id": "DUB-GF08",
+      "definition": "scripts/daily-use/global_form_mutations.py",
+      "driver": "scripts/daily-use/global_form_mutations.py"
+    },
+    {
+      "id": "DUB-GF09",
+      "definition": "scripts/daily-use/global_form_mutations.py",
+      "driver": "scripts/daily-use/global_form_mutations.py"
+    },
+    {
+      "id": "DUB-GF10",
+      "definition": "scripts/daily-use/global_form_mutations.py",
+      "driver": "scripts/daily-use/global_form_mutations.py"
+    },
+    {
+      "id": "DUB-GUI01",
+      "definition": "scripts/daily-use/replay_mutations.json",
+      "driver": "scripts/daily-use/replay_mutations.py",
+      "tree": "retained"
+    },
+    {
+      "id": "DUB-GUI02",
+      "definition": "scripts/daily-use/replay_mutations.json",
+      "driver": "scripts/daily-use/replay_mutations.py",
+      "tree": "retained"
+    },
+    {
+      "id": "DUB-GUI03",
+      "definition": "scripts/daily-use/replay_mutations.json",
+      "driver": "scripts/daily-use/replay_mutations.py",
+      "tree": "retained"
+    },
+    {
+      "id": "DUB-GUI04",
+      "definition": "scripts/daily-use/replay_mutations.json",
+      "driver": "scripts/daily-use/replay_mutations.py",
+      "tree": "rust"
+    },
+    {
+      "id": "DUB-HS01",
+      "definition": "scripts/daily-use/replay_mutations.json",
+      "driver": "scripts/daily-use/replay_mutations.py",
+      "tree": "rust"
+    },
+    {
+      "id": "DUB-LT01",
+      "definition": "scripts/daily-use/global_form_mutations.py",
+      "driver": "scripts/daily-use/global_form_mutations.py"
+    },
+    {
+      "id": "DUB-LT02",
+      "definition": "scripts/daily-use/global_form_mutations.py",
+      "driver": "scripts/daily-use/global_form_mutations.py"
+    },
+    {
+      "id": "DUB-LT03",
+      "definition": "scripts/daily-use/global_form_mutations.py",
+      "driver": "scripts/daily-use/global_form_mutations.py"
+    },
+    {
+      "id": "DUB-MS01",
+      "definition": "scripts/daily-use/replay_mutations.json",
+      "driver": "scripts/daily-use/replay_mutations.py",
+      "tree": "retained"
+    },
+    {
+      "id": "DUB-MS02",
+      "definition": "scripts/daily-use/replay_mutations.json",
+      "driver": "scripts/daily-use/replay_mutations.py",
+      "tree": "retained"
+    },
+    {
+      "id": "DUB-MS03",
+      "definition": "scripts/daily-use/replay_mutations.json",
+      "driver": "scripts/daily-use/replay_mutations.py",
+      "tree": "retained"
+    },
+    {
+      "id": "DUB-MS04",
+      "definition": "scripts/daily-use/replay_mutations.json",
+      "driver": "scripts/daily-use/replay_mutations.py",
+      "tree": "rust"
+    },
+    {
+      "id": "DUB-MS05",
+      "definition": "scripts/daily-use/replay_mutations.json",
+      "driver": "scripts/daily-use/replay_mutations.py",
+      "tree": "rust"
+    },
+    {
+      "id": "DUB-MS06",
+      "definition": "scripts/daily-use/replay_mutations.json",
+      "driver": "scripts/daily-use/replay_mutations.py",
+      "tree": "rust"
+    },
+    {
+      "id": "DUB-OU01",
+      "definition": "scripts/daily-use/replay_mutations.json",
+      "driver": "scripts/daily-use/replay_mutations.py",
+      "tree": "retained"
+    },
+    {
+      "id": "DUB-OU02",
+      "definition": "scripts/daily-use/replay_mutations.json",
+      "driver": "scripts/daily-use/replay_mutations.py",
+      "tree": "retained"
+    },
+    {
+      "id": "DUB-OU03",
+      "definition": "scripts/daily-use/replay_mutations.json",
+      "driver": "scripts/daily-use/replay_mutations.py",
+      "tree": "retained"
+    },
+    {
+      "id": "DUB-OU04",
+      "definition": "scripts/daily-use/replay_mutations.json",
+      "driver": "scripts/daily-use/replay_mutations.py",
+      "tree": "retained"
+    },
+    {
+      "id": "DUB-OU05",
+      "definition": "scripts/daily-use/replay_mutations.json",
+      "driver": "scripts/daily-use/replay_mutations.py",
+      "tree": "retained"
+    },
+    {
+      "id": "DUB-OU06",
+      "definition": "scripts/daily-use/replay_mutations.json",
+      "driver": "scripts/daily-use/replay_mutations.py",
+      "tree": "rust"
+    },
+    {
+      "id": "DUB-OU07",
+      "definition": "scripts/daily-use/replay_mutations.json",
+      "driver": "scripts/daily-use/replay_mutations.py",
+      "tree": "rust"
+    },
+    {
+      "id": "DUB-OU08",
+      "definition": "scripts/daily-use/replay_mutations.json",
+      "driver": "scripts/daily-use/replay_mutations.py",
+      "tree": "rust"
+    },
+    {
+      "id": "DUB-OU09",
+      "definition": "scripts/daily-use/replay_mutations.json",
+      "driver": "scripts/daily-use/replay_mutations.py",
+      "tree": "retained"
+    },
+    {
+      "id": "DUB-PG01",
+      "definition": "scripts/daily-use/replay_mutations.json",
+      "driver": "scripts/daily-use/replay_mutations.py",
+      "tree": "rust"
+    },
+    {
+      "id": "DUB-PG02",
+      "definition": "scripts/daily-use/replay_mutations.json",
+      "driver": "scripts/daily-use/replay_mutations.py",
+      "tree": "rust"
+    },
+    {
+      "id": "DUB-PR01",
+      "definition": "scripts/daily-use/global_form_mutations.py",
+      "driver": "scripts/daily-use/global_form_mutations.py"
+    },
+    {
+      "id": "DUB-PR02",
+      "definition": "scripts/daily-use/global_form_mutations.py",
+      "driver": "scripts/daily-use/global_form_mutations.py"
+    },
+    {
+      "id": "DUB-PR03",
+      "definition": "scripts/daily-use/global_form_mutations.py",
+      "driver": "scripts/daily-use/global_form_mutations.py"
+    },
+    {
+      "id": "DUB-PR04",
+      "definition": "scripts/daily-use/global_form_mutations.py",
+      "driver": "scripts/daily-use/global_form_mutations.py"
+    },
+    {
+      "id": "DUB-PR05",
+      "definition": "scripts/daily-use/global_form_mutations.py",
+      "driver": "scripts/daily-use/global_form_mutations.py"
+    },
+    {
+      "id": "DUB-PR06",
+      "definition": "scripts/daily-use/global_form_mutations.py",
+      "driver": "scripts/daily-use/global_form_mutations.py"
+    },
+    {
+      "id": "DUB-SR01",
+      "definition": "scripts/daily-use/replay_mutations.json",
+      "driver": "scripts/daily-use/replay_mutations.py",
+      "tree": "retained"
+    },
+    {
+      "id": "DUB-SW01",
+      "definition": "scripts/daily-use/global_form_mutations.py",
+      "driver": "scripts/daily-use/global_form_mutations.py"
+    },
+    {
+      "id": "DUB-UI01",
+      "definition": "scripts/daily-use/replay_mutations.json",
+      "driver": "scripts/daily-use/replay_mutations.py",
+      "tree": "retained"
+    },
+    {
+      "id": "DUB-UI02",
+      "definition": "scripts/daily-use/replay_mutations.json",
+      "driver": "scripts/daily-use/replay_mutations.py",
+      "tree": "retained"
+    },
+    {
+      "id": "DUB-UI03",
+      "definition": "scripts/daily-use/replay_mutations.json",
+      "driver": "scripts/daily-use/replay_mutations.py",
+      "tree": "retained"
+    },
+    {
+      "id": "DUB-UI04",
+      "definition": "scripts/daily-use/replay_mutations.json",
+      "driver": "scripts/daily-use/replay_mutations.py",
+      "tree": "retained"
+    },
+    {
+      "id": "DUB-UI05",
+      "definition": "scripts/daily-use/replay_mutations.json",
+      "driver": "scripts/daily-use/replay_mutations.py",
+      "tree": "retained"
+    },
+    {
+      "id": "DUB-UI06",
+      "definition": "scripts/daily-use/replay_mutations.json",
+      "driver": "scripts/daily-use/replay_mutations.py",
+      "tree": "retained"
+    },
+    {
+      "id": "DUB-UI07",
+      "definition": "scripts/daily-use/replay_mutations.json",
+      "driver": "scripts/daily-use/replay_mutations.py",
+      "tree": "retained"
+    },
+    {
+      "id": "DUB01",
+      "definition": "crates/grapt-platform/mutations/dub/manifest.json",
+      "driver": "crates/grapt-platform/mutations/dub/run.py"
+    },
+    {
+      "id": "DUB02",
+      "definition": "crates/grapt-platform/mutations/dub/manifest.json",
+      "driver": "crates/grapt-platform/mutations/dub/run.py"
+    },
+    {
+      "id": "DUB03",
+      "definition": "crates/grapt-platform/mutations/dub/manifest.json",
+      "driver": "crates/grapt-platform/mutations/dub/run.py"
+    },
+    {
+      "id": "DUB04",
+      "definition": "crates/grapt-platform/mutations/dub/manifest.json",
+      "driver": "crates/grapt-platform/mutations/dub/run.py"
+    },
+    {
+      "id": "DUB05",
+      "definition": "crates/grapt-platform/mutations/dub/manifest.json",
+      "driver": "crates/grapt-platform/mutations/dub/run.py"
+    },
+    {
+      "id": "DUB06",
+      "definition": "crates/grapt-platform/mutations/dub/manifest.json",
+      "driver": "crates/grapt-platform/mutations/dub/run.py"
+    },
+    {
+      "id": "DUB07",
+      "definition": "crates/grapt-platform/mutations/dub/manifest.json",
+      "driver": "crates/grapt-platform/mutations/dub/run.py"
+    },
+    {
+      "id": "DUB08",
+      "definition": "crates/grapt-platform/mutations/dub/manifest.json",
+      "driver": "crates/grapt-platform/mutations/dub/run.py"
+    },
+    {
+      "id": "DUB09",
+      "definition": "crates/grapt-platform/mutations/dub/manifest.json",
+      "driver": "crates/grapt-platform/mutations/dub/run.py"
+    },
+    {
+      "id": "DUB10",
+      "definition": "crates/grapt-platform/mutations/dub/manifest.json",
+      "driver": "crates/grapt-platform/mutations/dub/run.py"
+    },
+    {
+      "id": "DUF01",
+      "definition": "crates/grapt-form/mutations/duf/manifest.json",
+      "driver": "crates/grapt-form/mutations/duf/run.py"
+    },
+    {
+      "id": "DUF02",
+      "definition": "crates/grapt-form/mutations/duf/manifest.json",
+      "driver": "crates/grapt-form/mutations/duf/run.py"
+    },
+    {
+      "id": "DUF03",
+      "definition": "crates/grapt-form/mutations/duf/manifest.json",
+      "driver": "crates/grapt-form/mutations/duf/run.py"
+    },
+    {
+      "id": "DUF04",
+      "definition": "crates/grapt-form/mutations/duf/manifest.json",
+      "driver": "crates/grapt-form/mutations/duf/run.py"
+    },
+    {
+      "id": "DUF05",
+      "definition": "crates/grapt-form/mutations/duf/manifest.json",
+      "driver": "crates/grapt-form/mutations/duf/run.py"
+    },
+    {
+      "id": "DUF06",
+      "definition": "crates/grapt-form/mutations/duf/manifest.json",
+      "driver": "crates/grapt-form/mutations/duf/run.py"
+    },
+    {
+      "id": "DUF07",
+      "definition": "crates/grapt-form/mutations/duf/manifest.json",
+      "driver": "crates/grapt-form/mutations/duf/run.py"
+    },
+    {
+      "id": "DUF08",
+      "definition": "crates/grapt-form/mutations/duf/manifest.json",
+      "driver": "crates/grapt-form/mutations/duf/run.py"
+    },
+    {
+      "id": "DUF09",
+      "definition": "crates/grapt-form/mutations/duf/manifest.json",
+      "driver": "crates/grapt-form/mutations/duf/run.py"
+    },
+    {
+      "id": "DUF10",
+      "definition": "crates/grapt-form/mutations/duf/manifest.json",
+      "driver": "crates/grapt-form/mutations/duf/run.py"
+    },
+    {
+      "id": "DUF11",
+      "definition": "crates/grapt-form/mutations/duf/manifest.json",
+      "driver": "crates/grapt-form/mutations/duf/run.py"
+    },
+    {
+      "id": "DUF12",
+      "definition": "crates/grapt-form/mutations/duf/manifest.json",
+      "driver": "crates/grapt-form/mutations/duf/run.py"
+    },
+    {
+      "id": "DUF13",
+      "definition": "crates/grapt-form/mutations/duf/manifest.json",
+      "driver": "crates/grapt-form/mutations/duf/run.py"
+    },
+    {
+      "id": "DUF14",
+      "definition": "crates/grapt-form/mutations/duf/manifest.json",
+      "driver": "crates/grapt-form/mutations/duf/run.py"
+    },
+    {
+      "id": "DUF15",
+      "definition": "crates/grapt-form/mutations/duf/manifest.json",
+      "driver": "crates/grapt-form/mutations/duf/run.py"
+    }
+  ]
+}

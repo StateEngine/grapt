@@ -1,0 +1,26 @@
+[
+  {
+    "state": "behind",
+    "answer": {},
+    "text": "StateEngine: this MCP door is serving code from aaaaaaaa — 2 landings behind the current head bbbbbbbb. A door is spawned by this session and never restarts on its own, so the fix is relaunching this session when convenient. Nothing is being refused: your tool calls work, and this notice appears once."
+  },
+  {
+    "state": "behind",
+    "answer": {
+      "refusal": "fixture-refusal"
+    },
+    "text": "StateEngine: this MCP door is serving code from aaaaaaaa — 2 landings behind the current head bbbbbbbb. A door is spawned by this session and never restarts on its own, so the fix is relaunching this session when convenient. This answer carries a refusal (fixture-refusal); read it as the answer, not as part of this notice, which appears once."
+  },
+  {
+    "state": "unreadable",
+    "answer": {},
+    "text": "StateEngine: this MCP door could not read its own staleness (landing-head-unreadable), so it cannot say it is current; `se status` shows the generation it serves. Nothing is being refused: your tool calls work, and this notice appears once."
+  },
+  {
+    "state": "unreadable",
+    "answer": {
+      "refusal": "fixture-refusal"
+    },
+    "text": "StateEngine: this MCP door could not read its own staleness (landing-head-unreadable), so it cannot say it is current; `se status` shows the generation it serves. This answer carries a refusal (fixture-refusal); read it as the answer, not as part of this notice, which appears once."
+  }
+]

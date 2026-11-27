@@ -1,0 +1,129 @@
+//! One-shot operators borrow a running service or own its ordinary terminal lifetime.
+use super::*;
+use std::path::{Path, PathBuf};
+
+type Failure = (ExitClass, String);
+
+pub(super) async fn open(
+    root: &Path,
+    create: bool,
+    limits: CliLimits,
+) -> Result<Option<ApiClient>, Failure> {
+    let present = match std::fs::symlink_metadata(root) {
+        Ok(_) => true,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => false,
+        Err(error) => {
+            return Err((
+                ExitClass::Discovery,
+                format!("profile is unreadable: {:?}", error.kind()),
+            ))
+        }
+    };
+    if !present && !create {
+        return Ok(None);
+    }
+    let discovery = ServiceDiscovery::try_new(root.to_path_buf(), env!("CARGO_PKG_VERSION"))
+        .map_err(|error| (ExitClass::Discovery, error.to_string()))?;
+    if present {
+        match discovery.discover().await {
+            Ok(service) => {
+                return ApiClient::from_discovered(&service, limits)
+                    .map(Some)
+                    .map_err(|error| (ExitClass::Protocol, error.to_string()))
+            }
+            Err(
+                crate::DiscoveryError::Absent
+                | crate::DiscoveryError::ReadyAbsent
+                | crate::DiscoveryError::Stale(_),
+            ) => (),
+            Err(error) => return Err((ExitClass::Discovery, error.to_string())),
+        }
+    }
+    let binary = product_binary()?;
+    if !present {
+        crate::client::terminal::create_profile_parent(root)
+            .map_err(|reason| (ExitClass::Usage, reason))?;
+    }
+    // A missing profile must be created by the product before log preparation.
+    let result = super::embedded_client_mode(
+        binary,
+        root.to_path_buf(),
+        limits,
+        "serve-connections",
+        present,
+    )
+    .await;
+    match result {
+        Ok(client) => Ok(Some(client)),
+        Err(original) => {
+            // An incumbent may have won election between discovery and launch.
+            // Attribution is repeated once; there is no write or launch retry.
+            match discovery.discover().await {
+                Ok(service) => ApiClient::from_discovered(&service, limits)
+                    .map(Some)
+                    .map_err(|error| (ExitClass::Protocol, error.to_string())),
+                Err(_) => Err(original),
+            }
+        }
+    }
+}
+
+fn product_binary() -> Result<PathBuf, Failure> {
+    let binary = std::env::current_exe().map_err(|_| {
+        (
+            ExitClass::Child,
+            "CLI installation path is unavailable".into(),
+        )
+    })?;
+    let directory = binary.parent().ok_or((
+        ExitClass::Child,
+        "CLI installation directory is unavailable".into(),
+    ))?;
+    let product = directory.join(if cfg!(windows) {
+        "grapt-server.exe"
+    } else {
+        "grapt-server"
+    });
+    if !product.is_file() {
+        return Err((
+            ExitClass::Child,
+            "grapt-server must be installed beside grapt".into(),
+        ));
+    }
+    Ok(product)
+}
+
+pub(super) async fn close(client: &ApiClient) -> Result<(), Failure> {
+    let Some(mut child) = client.take_embedded_child().await else {
+        return Ok(());
+    };
+    drop(child.stdin.take());
+    if let Ok(Ok(status)) = tokio::time::timeout(Duration::from_secs(15), child.wait()).await {
+        if status.success() {
+            return Ok(());
+        }
+        return Err((
+            ExitClass::Child,
+            format!("connection service exited with {status}"),
+        ));
+    }
+    let _stop = child.start_kill();
+    tokio::time::timeout(Duration::from_secs(5), child.wait())
+        .await
+        .map_err(|_| {
+            (
+                ExitClass::Child,
+                "connection service could not be reaped".into(),
+            )
+        })?
+        .map_err(|_| {
+            (
+                ExitClass::Child,
+                "connection service status is unavailable".into(),
+            )
+        })?;
+    Err((
+        ExitClass::Child,
+        "connection service did not finish draining".into(),
+    ))
+}

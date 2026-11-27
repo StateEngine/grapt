@@ -1,0 +1,55 @@
+{
+  "schema": 1,
+  "rows": [
+    {
+      "id": "NMA01",
+      "path": "crates/grapt-product/src/dogfood/native_mail.rs",
+      "before": "old.raw == current.raw",
+      "after": "true",
+      "witness": "dogfood::native_mail::tests::changing_only_binding_metadata_revokes_the_prepared_batch",
+      "law": "Exact raw current binding is required before model admission",
+      "crate": "grapt-product",
+      "target": "lib"
+    },
+    {
+      "id": "NMA02",
+      "path": "crates/grapt-product/src/dogfood/native_mail.rs",
+      "before": "Arc::ptr_eq(&old.capability, &current.capability)",
+      "after": "true",
+      "witness": "dogfood::native_mail::tests::invalid_or_uncustodied_binding_is_a_refusal_and_replacement_revokes_prepared_batch",
+      "law": "Private capability custody replacement revokes prepared mail even when bytes match",
+      "crate": "grapt-product",
+      "target": "lib"
+    },
+    {
+      "id": "NMA03",
+      "path": "crates/grapt-product/src/dogfood/native_mail.rs",
+      "before": "InstructionService::entries(inbox.store(), &self.session).map_err(|_| E::Binding)?",
+      "after": "InstructionService::entries(inbox.store(), &self.session).unwrap_or_default()",
+      "witness": "dogfood::native_mail::tests::unreadable_instruction_owner_is_not_an_absent_binding",
+      "law": "Unreadable authority owner must not become absent",
+      "crate": "grapt-product",
+      "target": "lib"
+    },
+    {
+      "id": "NMA04",
+      "path": "crates/grapt-api/src/u3a/sse.rs",
+      "before": "location.is_some_and(|location| !v2_interested(interest, Some(location)))",
+      "after": "location.is_some_and(|location| !v2_interested(interest, Some(location))) && false",
+      "witness": "u3a::sse::tests::mail_attention_hydration_and_live_frames_keep_owner_location_scope",
+      "law": "Reconnect mail readback preserves Session owner location scope",
+      "crate": "grapt-api",
+      "target": "lib"
+    },
+    {
+      "id": "NMA05",
+      "path": "crates/grapt-api/src/u3a/sse.rs",
+      "before": "let location = event.mail_attention_location().or(location);",
+      "after": "let location = location;",
+      "witness": "u3a::sse::tests::mail_attention_hydration_and_live_frames_keep_owner_location_scope",
+      "law": "Live mail scope cannot be replaced by caller location",
+      "crate": "grapt-api",
+      "target": "lib"
+    }
+  ]
+}

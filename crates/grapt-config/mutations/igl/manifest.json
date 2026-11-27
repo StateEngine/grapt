@@ -1,0 +1,292 @@
+{
+  "purpose": "IA0-2 U1b1, U1b2a and U1b2b evidence for `grapt-config`. IGL is exclusively U1b's prefix, reserved for it by U1a's own manifest; IGC remains U1a's alone. IGL01-IGL12 are U1b1's ACCEPTED source-custody allocation and are byte-for-byte untouched here. IGL13-IGL24 are U1b2a's contiguous allocation: the carried bounded-capture and ledger-admission laws, ordered contribution and the no-config-merge law, per-contribution provenance, the complete/incomplete authority boundary over BOTH invalid contributors and obstructed source outcomes, and the two captured-byte/census-rank ConfigLayer minting laws. The obstruction rows mutate ledger code and witness `ConfigLedger::complete` DIRECTLY: witnessing them through a consumer would also pass if the consumer refused for its own reasons. IGL25-IGL28 are U1b2b's contiguous allocation and the last of U1b's: holding a complete configuration ACROSS loads, under one invariant -- a generation advances exactly once per complete load, and a refused reload changes nothing. The four rows split that invariant along the four independent directions it can fail in, which is why it is four rows and not one: a refusal that ADVANCES the counter (IGL25), a complete load that installs the WRONG configuration (IGL26), a complete load that advances by an amount no load produced (IGL27), and a refusal that REPORTS a generation nothing loaded (IGL28). No row targets the reload path's remaining law -- that a refusal leaves the held configuration in force -- because that one is held STRUCTURALLY rather than by a check: every refusal is built by `ConfigSession::refused`, which takes `&self`, so a mutant that clobbers the held state on the way out does not compile, and this harness refuses to score a compile kill as a witness. It is witnessed all the same, by `a_refused_reload_leaves_the_previous_configuration_in_force`, which asserts the held bytes AFTER the refusal rather than asserting only the `Err`. Each row names one load-bearing behaviour, the exact edit that removes it, and the single witness that must turn red once it is gone.",
+  "run": "python crates/grapt-config/mutations/igl/run.py",
+  "prefix": "IGL",
+  "isolation": "Every mutation is applied inside its own disposable git worktree checked out at the exact candidate commit, and each worktree builds into its OWN deterministic CARGO_TARGET_DIR inside that worktree. No mutant is ever written into the calling worktree, and no mutant build ever inherits an ambient or shared target directory: two mutants sharing one target can be scored against each other's artifacts, and a mutant that read the caller's target could be scored against unmutated ones.",
+  "scope_note": "IGL05 and IGL06 are the two halves of one bound and are separate rows on purpose. IGL05 removes the probe-time check; its witness scores the reader's READ COUNT, because the outcome alone cannot tell a document refused before the read from one refused after it. IGL06 loosens the production adapter's own read cap rather than deleting it, so the mutant keeps `read` used and the row fails on a truncated capture rather than on an unused-variable warning. Two rows also carry paired positives inside their witness, because the mutant that hides a weakening is a strengthening: `a_bound_set_that_admits_more_slots_than_ranks_is_refused` asserts an admitted bound set beside the refused one, and `the_production_reader_caps_its_read_rather_than_trusting_the_probe` asserts a within-bound document reads back whole beside the over-bound refusal. IGL03 is the row this file exists for: rank derived from the slot and rank derived from the found-document count agree on every fully-populated tree, so its witness discovers the SAME tree twice with one file added, and a single-tree witness would score the mutant green. IGL09's mutant keeps the `slot_count` call as a discarded binding rather than deleting the whole block, so the row is scored by a red witness and not by an unused-variable diagnostic. IGL03's mutant numbers entries from the census vector's own contents, which is only expressible because `discover` ANNOTATES that vector's element type; inferring it from the first push made the same mutant an inference error, and this harness refused it as a compile kill rather than scoring it. `a_slot_ranks_the_same_under_two_different_bound_sets` strengthens IGL03's law without taking a row of its own: rank is derived from the slot alone and does not see the bound set, so the same tree under two depths must agree, and IGL01-IGL12 is this slice's whole allocation. No row targets `Component::CurDir` or any other match arm whose deletion is a non-exhaustive-match COMPILE error: a compile kill is not a witness and this harness refuses to score one as a witness. IGL11 and IGL12 are the two rows added by the correction campaign, and they are added rather than folded into an existing row because none of IGL01-IGL10 carries the boundary law: each of the ten pins a behaviour of the census (order, bounds, ranks, outcomes, redaction), while IGL11 pins what the locator IS relative to the foundational `path` row. IGL10 was the closest candidate and is still the wrong home -- it pins that no rendering leaks path BYTES, which is a secrecy law; IGL11 pins that the locator neither resolves nor claims the foundational outcome's NAME, which is an identity law. Folding them would make one red row ambiguous between a leak and a boundary collapse, and the manifest's own duplicate-evidence guard exists because one record standing for two laws is exactly the failure mode. IGL11's mutant makes the constructor resolve through the filesystem, which is the plausible edit that would collapse the locator into the outcome; its witness is non-vacuous because it asserts its fixture path is genuinely absent before relying on that. IGL11 and IGL12 are separate rows for the same reason IGL05 and IGL06 are: the boundary fails in two independent directions and one record cannot stand for both. IGL11 is SEMANTIC -- the locator stops being lexical and starts resolving, which is a behaviour change no name check would see. IGL12 is SURFACE -- the forbidden name comes back, which no behavioural witness would see because a `pub type PathIdentity = ConfigSourcePath;` alias changes nothing that runs. That alias is the cheapest and most likely resurrection, is exactly what the coordinator's ruling forbids retaining, and is what IGL12's mutant inserts. Its witness reads this crate's own sources and refuses the name in CODE while deliberately permitting it in DOC COMMENTS, because the boundary is explained by naming the thing it is a boundary against. U1b2 addendum. IGL13 exists because IGL05 is scored by its OUTCOME assertion: deleting the probe bound check changes the outcome, so that assertion fires first and IGL05's read-count assertion is never reached. IGL13's mutant instead hoists a DISCARDED read above an unchanged bound check, so the outcome and the probe count are identical and the only assertion that can fire is reads()==0. It has its OWN witness, an_oversized_document_is_refused_before_any_read_is_attempted, rather than pointing a second row at IGL05's witness. The reload DISCLOSED GAP that stood here is REMOVED, and not because it was tidied away. It claimed 'a refused reload leaves the previous configuration in force' could not be isolated by a mutation row because the property was structural. That was wrong: a mutant which returns the ORIGINAL Err while clobbering the held state on the way out compiles and is not short-circuited by `?`, and it reddens a witness that asserts the retained state AFTER the refusal rather than asserting only the Err. The gap was a witness weakness, not a structural guarantee. It is out of scope here in any case: reload is U1b2b and this unit names no session, so the paragraph is removed rather than carried forward pointing at rows this manifest no longer has. U1b2a additions. IGL21 and IGL22 witness `ConfigLedger::complete` DIRECTLY rather than through any consumer, because a consumer-mediated witness would also pass if the consumer refused for its own reasons; both are paired with positives asserting that absent, not-configured and duplicate slots COMPLETE normally, since a mutant that refuses every ledger is a strengthening and a strengthening hides as a pass. IGL24 compares two ANCESTOR slots rather than a global and an ancestor: both mint as the same `ConfigSource` class, so only the slot-derived rank can separate them, and an earlier fixture that differed in class too scored the renumbering mutant GREEN. The four `tests/probes/*.rs` files carry ONE law each because rustc stops emitting after the errors it reaches: a four-law probe authored as a single file produced three errors, never emitted the privacy error, and trybuild reported it PASSING while proving three of its four laws.",
+  "consumed_law_rows": {
+    "path": "Foundational report row `path`/`hook`/`credential`: \"one `PathIdentity` outcome; protected control metadata is removed from writable authority and enforced consistently.\" U1b1 CONSUMES this row rather than implementing it. `grapt_types::PathIdentity` remains the single authority/policy/receipt/backend normalization outcome. `grapt_config::ConfigSourcePath` is a bounded absolute LEXICAL locator used before any I/O: it performs no filesystem canonicalization, resolves no link, grants no authority, and has no unresolvable variant because it never attempts resolution. A consumer needing an authority answer converts at the later authority boundary. The config type was originally named `PathIdentity`, which collided with the foundational outcome and made that mistake easy; the name is REMOVED rather than aliased, because an alias would keep the collision reachable while claiming it had been removed. IGL11 is the resurrection guard for this row."
+  },
+  "mutations": [
+    {
+      "id": "IGL01",
+      "law": "The census is emitted farthest-to-nearest, so a consumer that folds it front-to-back gets nearest-wins",
+      "package": "grapt-config",
+      "file": "crates/grapt-config/src/source.rs",
+      "test": "discovery_order::the_census_runs_farthest_to_nearest_with_the_global_slot_first",
+      "test_target": "integration",
+      "old": "    walked.reverse();\n",
+      "new": ""
+    },
+    {
+      "id": "IGL02",
+      "law": "The ancestor walk is bounded by MaxAncestorDepth; a tree deeper than the bound yields the bound's worth of slots, not the tree's",
+      "package": "grapt-config",
+      "file": "crates/grapt-config/src/source.rs",
+      "test": "discovery_order::the_ancestor_walk_stops_at_the_depth_bound",
+      "test_target": "integration",
+      "old": "    for distance in 0..bounds.ancestor_depth().value() {",
+      "new": "    for distance in 0.. {"
+    },
+    {
+      "id": "IGL03",
+      "law": "A slot's rank is derived from the SLOT, never from how many documents were found, so a file appearing does not renumber its neighbours",
+      "package": "grapt-config",
+      "file": "crates/grapt-config/src/source.rs",
+      "test": "discovery_order::a_slot_rank_does_not_move_when_a_neighbouring_document_appears",
+      "test_target": "integration",
+      "old": "            rank: ranks[index],",
+      "new": "            rank: SourceRank(\n                entries\n                    .iter()\n                    .filter(|entry| matches!(entry.outcome, SourceOutcome::Captured { .. }))\n                    .count(),\n            ),"
+    },
+    {
+      "id": "IGL04",
+      "law": "Distinct slots take distinct ranks and the ranks ascend with the census; a collision is the PrecedenceConflict grapt_policy must never be handed",
+      "package": "grapt-config",
+      "file": "crates/grapt-config/src/source.rs",
+      "test": "discovery_order::every_slot_takes_a_distinct_rank_and_ranks_ascend_with_the_census",
+      "test_target": "integration",
+      "old": "            SourceSlot::Global => Some(SourceRank(0)),",
+      "new": "            SourceSlot::Global => Some(SourceRank(MaxAncestorDepth::CEILING)),"
+    },
+    {
+      "id": "IGL05",
+      "law": "The document byte bound is applied at the PROBE, so an oversized document is refused before the read that would allocate for it",
+      "package": "grapt-config",
+      "file": "crates/grapt-config/src/source.rs",
+      "test": "bounded_capture::an_oversized_document_is_refused_at_probe_without_a_read",
+      "test_target": "integration",
+      "old": "    if probe.byte_len() > bound.value() {\n        return SourceOutcome::TooLargeAtProbe {\n            actual: probe.byte_len(),\n            bound: bound.value(),\n        };\n    }\n",
+      "new": ""
+    },
+    {
+      "id": "IGL06",
+      "law": "The production reader caps its own read, so a document that grows past the probed length is refused rather than truncated into one that parses",
+      "package": "grapt-config",
+      "file": "crates/grapt-config/src/source.rs",
+      "test": "bounded_capture::the_production_reader_caps_its_read_rather_than_trusting_the_probe",
+      "test_target": "integration",
+      "old": "        if read > bound.value() {",
+      "new": "        if read > bound.value().saturating_mul(1024) {"
+    },
+    {
+      "id": "IGL07",
+      "law": "A document present at probe and gone at read has VANISHED, which is a race and not the configuration state of never having been written",
+      "package": "grapt-config",
+      "file": "crates/grapt-config/src/source.rs",
+      "test": "bounded_capture::absent_vanished_and_unreadable_are_three_distinct_outcomes",
+      "test_target": "integration",
+      "old": "        Err(SourceIoError::NotFound) => SourceOutcome::Vanished,",
+      "new": "        Err(SourceIoError::NotFound) => SourceOutcome::Absent,"
+    },
+    {
+      "id": "IGL08",
+      "law": "One file spelled two ways contributes ONCE, at its strongest slot; capturing it twice would let one document hold two precedences",
+      "package": "grapt-config",
+      "file": "crates/grapt-config/src/source.rs",
+      "test": "discovery_order::two_spellings_of_one_directory_produce_one_captured_document",
+      "test_target": "integration",
+      "old": "        if let Some(stronger) = claimed.get(path) {\n            outcomes[index] = Some(SourceOutcome::Duplicate { of: *stronger });\n            continue;\n        }\n",
+      "new": ""
+    },
+    {
+      "id": "IGL09",
+      "law": "A bound set whose walk admits more slots than documents is refused at construction, which is why discover carries no document counter to forget",
+      "package": "grapt-config",
+      "file": "crates/grapt-config/src/source_bounds.rs",
+      "test": "discovery_order::a_bound_set_whose_walk_outruns_its_document_bound_is_refused",
+      "test_target": "integration",
+      "old": "        let slots = Self::slot_count(ancestor_depth);\n        if slots > documents.value() {\n            return Err(SourceBoundsRefusal::MoreSlotsThanDocuments {\n                slots,\n                documents: documents.value(),\n            });\n        }\n",
+      "new": "        let _ = Self::slot_count(ancestor_depth);\n"
+    },
+    {
+      "id": "IGL10",
+      "law": "No public rendering of a discovered source reveals path bytes; a config path carries a home directory, a user name and a project name",
+      "package": "grapt-config",
+      "file": "crates/grapt-config/src/source.rs",
+      "test": "secret_containment::no_public_rendering_of_a_discovered_source_reveals_path_bytes",
+      "test_target": "integration",
+      "old": "        f.write_str(\"ConfigSourcePath(<redacted>)\")",
+      "new": "        write!(f, \"ConfigSourcePath({:?})\", self.0)"
+    },
+    {
+      "id": "IGL11",
+      "law": "The config locator is LEXICAL and is not the foundational grapt_types::PathIdentity: it resolves nothing, so a path that is not on disk is still admitted",
+      "package": "grapt-config",
+      "file": "crates/grapt-config/src/source.rs",
+      "test": "discovery_order::the_config_locator_is_lexical_and_is_not_the_foundational_path_identity",
+      "test_target": "integration",
+      "old": "        let actual = canonical.as_os_str().len();",
+      "new": "        let canonical = match std::fs::canonicalize(&canonical) {\n            Ok(resolved) => resolved,\n            Err(_) => return Err(PathRefusal::AboveRoot),\n        };\n        let actual = canonical.as_os_str().len();"
+    },
+    {
+      "id": "IGL12",
+      "law": "No CODE in this crate bears the foundational type's name: the collision is removed, not aliased, and a compatibility alias is the cheapest resurrection",
+      "package": "grapt-config",
+      "file": "crates/grapt-config/src/source.rs",
+      "test": "discovery_order::no_code_in_this_crate_bears_the_foundational_path_identity_name",
+      "test_target": "integration",
+      "old": "pub struct ConfigSourcePath(PathBuf);",
+      "new": "pub struct ConfigSourcePath(PathBuf);\n\n/// Compatibility alias for callers written against the previous name.\npub type PathIdentity = ConfigSourcePath;"
+    },
+    {
+      "id": "IGL13",
+      "law": "The document byte bound is applied BEFORE the read, so an oversized document is refused without a read ever being attempted",
+      "package": "grapt-config",
+      "file": "crates/grapt-config/src/source.rs",
+      "test": "bounded_capture::an_oversized_document_is_refused_before_any_read_is_attempted",
+      "test_target": "integration",
+      "old": "    if probe.byte_len() > bound.value() {\n",
+      "new": "    let _ = reader.read_bounded(path, bound);\n    if probe.byte_len() > bound.value() {\n"
+    },
+    {
+      "id": "IGL14",
+      "law": "A captured document that does not decode is kept as an invalid contributor rather than dropped",
+      "package": "grapt-config",
+      "file": "crates/grapt-config/src/ledger.rs",
+      "test": "ledger_admission::an_undecodable_document_is_kept_as_an_invalid_contributor",
+      "test_target": "integration",
+      "old": "        let state = classify(&bytes, bounds);\n",
+      "new": "        let state = classify(&bytes, bounds);\n        if matches!(state, ContributorState::Invalid(_)) {\n            continue;\n        }\n"
+    },
+    {
+      "id": "IGL15",
+      "law": "A document whose top level is not an object reports the kind that was actually found",
+      "package": "grapt-config",
+      "file": "crates/grapt-config/src/ledger.rs",
+      "test": "ledger_admission::a_document_whose_top_level_is_not_an_object_is_a_distinct_invalid_reason",
+      "test_target": "integration",
+      "old": "{ kind: other.kind() }",
+      "new": "{ kind: \"object\" }"
+    },
+    {
+      "id": "IGL16",
+      "law": "A census carrying more captured documents than the bound admits is refused whole, never truncated",
+      "package": "grapt-config",
+      "file": "crates/grapt-config/src/ledger.rs",
+      "test": "ledger_admission::a_census_over_the_document_bound_is_refused_whole",
+      "test_target": "integration",
+      "old": "    if captured.len() > bound.value() {\n        return Err(LedgerRefusal::TooManyDocuments {\n            found: captured.len(),\n            bound: bound.value(),\n        });\n    }\n",
+      "new": ""
+    },
+    {
+      "id": "IGL17",
+      "law": "Contributions are reported per contributor and never merged: two documents that author an object at one path stay two objects, each exactly as its author wrote it.",
+      "package": "grapt-config",
+      "file": "crates/grapt-config/src/resolve.rs",
+      "test": "resolution_precedence::two_contributors_at_one_path_are_reported_separately_and_never_merged",
+      "test_target": "integration",
+      "old": "        for (from, document) in &self.contributors {\n            if let Some(value) = descend(document.value(), path) {\n                found.push(Contribution {\n                    value,\n                    from: from.clone(),\n                });\n            }\n        }\n        found",
+      "new": "        for (from, document) in &self.contributors {\n            if let Some(value) = descend(document.value(), path) {\n                found.clear();\n                found.push(Contribution {\n                    value,\n                    from: from.clone(),\n                });\n            }\n        }\n        found"
+    },
+    {
+      "id": "IGL18",
+      "law": "Contribution order is the ledger's ascending precedence, so a caller folding front-to-back gets nearest-wins.",
+      "package": "grapt-config",
+      "file": "crates/grapt-config/src/resolve.rs",
+      "test": "resolution_precedence::contributions_arrive_weakest_first_with_the_nearest_slot_last",
+      "test_target": "integration",
+      "old": "    let mut contributors = Vec::new();\n    for entry in ledger.contributors() {",
+      "new": "    let mut contributors = Vec::new();\n    for entry in ledger.contributors().collect::<Vec<_>>().into_iter().rev() {"
+    },
+    {
+      "id": "IGL19",
+      "law": "Every contribution carries the contributor that supplied it.",
+      "package": "grapt-config",
+      "file": "crates/grapt-config/src/resolve.rs",
+      "test": "resolution_precedence::each_contribution_carries_the_contributor_that_supplied_it",
+      "test_target": "integration",
+      "old": "            if let Some(value) = descend(document.value(), path) {\n                found.push(Contribution {\n                    value,\n                    from: from.clone(),\n                });\n            }",
+      "new": "            if let Some(value) = descend(document.value(), path) {\n                let from = match self.contributors.first() {\n                    Some((first, _)) => first.clone(),\n                    None => from.clone(),\n                };\n                found.push(Contribution { value, from });\n            }"
+    },
+    {
+      "id": "IGL20",
+      "law": "An invalid contributor refuses the whole generation and never exposes the weaker document it was there to override.",
+      "package": "grapt-config",
+      "file": "crates/grapt-config/src/ledger.rs",
+      "test": "layer_bridge::an_incomplete_ledger_mints_nothing_at_all",
+      "test_target": "integration",
+      "old": "        match strongest {\n            None => Ok(CompleteLedger { ledger: self }),",
+      "new": "        match None::<&LedgerEntry> {\n            None => Ok(CompleteLedger { ledger: self }),"
+    },
+    {
+      "id": "IGL21",
+      "law": "An obstructed source outcome refuses completion: a slot that could not be read is not a slot that holds nothing, and an unreadable nearest file must not leave a weaker document authoritative",
+      "package": "grapt-config",
+      "file": "crates/grapt-config/src/ledger.rs",
+      "test": "ledger_admission::an_unreadable_slot_refuses_completion",
+      "test_target": "integration",
+      "old": "        SourceOutcome::Vanished\n        | SourceOutcome::NotAFile\n        | SourceOutcome::Unreadable { .. }\n        | SourceOutcome::TooLargeAtProbe { .. }\n        | SourceOutcome::GrewPastBound { .. } => Some(outcome.kind()),",
+      "new": "        SourceOutcome::Unreadable { .. } => None,\n        SourceOutcome::Vanished\n        | SourceOutcome::NotAFile\n        | SourceOutcome::TooLargeAtProbe { .. }\n        | SourceOutcome::GrewPastBound { .. } => Some(outcome.kind()),"
+    },
+    {
+      "id": "IGL22",
+      "law": "A vanished document is a RACE and refuses completion, never a configuration state the author wrote",
+      "package": "grapt-config",
+      "file": "crates/grapt-config/src/ledger.rs",
+      "test": "ledger_admission::a_vanished_document_refuses_completion",
+      "test_target": "integration",
+      "old": "        SourceOutcome::Vanished\n        | SourceOutcome::NotAFile\n        | SourceOutcome::Unreadable { .. }\n        | SourceOutcome::TooLargeAtProbe { .. }\n        | SourceOutcome::GrewPastBound { .. } => Some(outcome.kind()),",
+      "new": "        SourceOutcome::Vanished => None,\n        SourceOutcome::NotAFile\n        | SourceOutcome::Unreadable { .. }\n        | SourceOutcome::TooLargeAtProbe { .. }\n        | SourceOutcome::GrewPastBound { .. } => Some(outcome.kind()),"
+    },
+    {
+      "id": "IGL23",
+      "law": "Exactly one layer is minted per admitted contributor: none dropped and none duplicated, so the authority graph receives the whole complete ledger",
+      "package": "grapt-config",
+      "file": "crates/grapt-config/src/layer.rs",
+      "test": "layer_bridge::each_admitted_contributor_becomes_one_layer_in_ascending_precedence",
+      "test_target": "integration",
+      "old": "    for entry in ledger.contributors() {\n",
+      "new": "    for entry in ledger.contributors().take(1) {\n"
+    },
+    {
+      "id": "IGL24",
+      "law": "The minted identity is separated by the RANK, not by the source class: two ancestor slots mint the same class and must still mint different contributions.",
+      "package": "grapt-config",
+      "file": "crates/grapt-config/src/layer.rs",
+      "test": "layer_bridge::the_minted_identity_is_bound_to_the_census_rank",
+      "test_target": "integration",
+      "old": "            entry.rank().value() as u64,",
+      "new": "            layers.len() as u64,"
+    },
+    {
+      "id": "IGL25",
+      "law": "A REFUSED reload does not advance the generation. A generation numbers a configuration that loaded; advancing on a refusal both invents a version nobody loaded and pushes the counter past the number every cache is keyed to, which silently pins the stale answer as current.",
+      "package": "grapt-config",
+      "file": "crates/grapt-config/src/reload.rs",
+      "test": "reload_authority::a_refused_reload_leaves_the_generation_unchanged",
+      "test_target": "integration",
+      "old": "            Err(cause) => return Err(self.refused(cause)),",
+      "new": "            Err(cause) => { let refusal = self.refused(cause); self.generation = self.generation.next().unwrap_or(self.generation); return Err(refusal); }"
+    },
+    {
+      "id": "IGL26",
+      "law": "A complete reload installs the configuration it JUST LOADED. An advanced generation over a retained configuration is the worst available failure: every consumer is told something changed, re-derives, and re-derives from exactly the bytes it already had.",
+      "package": "grapt-config",
+      "file": "crates/grapt-config/src/reload.rs",
+      "test": "reload_authority::a_complete_reload_installs_the_newly_loaded_configuration",
+      "test_target": "integration",
+      "old": "        self.held = loaded;",
+      "new": "        self.held = core::mem::replace(&mut self.held, loaded);"
+    },
+    {
+      "id": "IGL27",
+      "law": "A complete load advances the generation by EXACTLY one. A consumer that steps generations to reconcile what happened since it last looked cannot tell a skipped number from a missed load, so an advance of two is unrecoverable in a way an advance of one never is.",
+      "package": "grapt-config",
+      "file": "crates/grapt-config/src/reload.rs",
+      "test": "reload_authority::a_complete_reload_advances_the_generation_exactly_once",
+      "test_target": "integration",
+      "old": "        let Some(next) = self.generation.next() else {",
+      "new": "        let Some(next) = self.generation.next().and_then(Generation::next) else {"
+    },
+    {
+      "id": "IGL28",
+      "law": "A refusal REPORTS the generation still in force, never the one the refused load would have produced. The number in the refusal is the number a caller logs, and logging the would-be generation tells the reader the program is running under a configuration that was never loaded.",
+      "package": "grapt-config",
+      "file": "crates/grapt-config/src/reload.rs",
+      "test": "reload_authority::a_refusal_reports_the_generation_still_in_force",
+      "test_target": "integration",
+      "old": "            held: self.generation,",
+      "new": "            held: self.generation.next().unwrap_or(self.generation),"
+    }
+  ]
+}

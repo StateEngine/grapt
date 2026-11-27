@@ -1,0 +1,18 @@
+error[E0308]: arguments to this function are incorrect
+  --> tests/probes/10_tool_schema_identity.rs:24:5
+   |
+24 |     register(schema, definition);
+   |     ^^^^^^^^ ------  ---------- expected `ToolSchemaVersion`, found `ToolDefinitionId`
+   |              |
+   |              expected `ToolDefinitionId`, found `ToolSchemaVersion`
+   |
+note: function defined here
+  --> tests/probes/10_tool_schema_identity.rs:13:4
+   |
+13 | fn register(_definition: ToolDefinitionId, _schema: ToolSchemaVersion) {}
+   |    ^^^^^^^^
+help: swap these arguments
+   |
+24 -     register(schema, definition);
+24 +     register(definition, schema);
+   |

@@ -1,0 +1,15 @@
+[package]
+name = "grapt-stream"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+description = "The event stream's transport-neutral core: bounds, positions, live blocks and reconcile counts."
+
+[dependencies]
+bytes = "1"
+grapt-types = { path = "../grapt-types" }
+serde = { version = "1", features = ["derive"] }
+thiserror = "2"
+
+[lints]
+workspace = true

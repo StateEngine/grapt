@@ -1,0 +1,101 @@
+{
+  "$schema": "../oracle-receipt-manifest.schema.json",
+  "schema_version": 1,
+  "id": "provider-usage-normalization-v1",
+  "title": "PC2 model-agnostic provider usage normalization",
+  "law_conformance": {
+    "basis": "ratified-law-pack",
+    "oracle_status": "not-implemented-in-frozen-typescript-engine",
+    "note": "The frozen oracle has route-shaped token accounting but not the PC2 fresh/inclusive split or per-leaf durable provenance. This corpus therefore executes the ratified foundational usage and provider-accounting laws rather than inventing oracle semantics."
+  },
+  "law_pack": {
+    "revision": 9,
+    "sources": [
+      {
+        "path": "specs/secode-rust-reconstruction-r1-2026-08-07.md",
+        "sha256": "626333034f4760faf2fd2769e1a797d2ebbad5187e0bd787d33b99bf32a47865"
+      },
+      {
+        "path": "docs/reports/SECODE_RUST_RECONSTRUCTION_DISPOSITION_2026-08-07.md",
+        "sha256": "cca761d01667451dbac9bda6a8c6424ce6c25313fdc4457882f41fc10b2a70fc"
+      },
+      {
+        "path": "docs/reports/SECODE_RUST_FOUNDATIONAL_TYPES_AND_LIFECYCLES_2026-08-07.md",
+        "sha256": "31d4ae9af4229939225374efb9c721e752bc0fc163615e3f188acebed051b032"
+      },
+      {
+        "path": "docs/reports/SECODE_RUST_PROVIDER_STREAM_RUNTIME_CONTRACT_2026-08-08.md",
+        "sha256": "6c202f89e1e8bdc1de7304f22539ba043a4032f90376434841718f9b5624cdf6"
+      },
+      {
+        "path": "fixtures/rust-reconstruction/README.md",
+        "sha256": "26ebe50177d2d7ba0436c646f477e3dd220cd8f1acffdfe1f4c5f1205e760c3a"
+      },
+      {
+        "path": "specs/secode-rust-agency-continuity-amendment-r1-2026-08-08.md",
+        "sha256": "97c14bd84ac1c742721865b66259d718bb4125b50fa429976ad4467e1c15c581"
+      },
+      {
+        "path": "docs/reports/SECODE_CODEX_HARNESS_SURVEY_DISPOSITION_2026-08-08.md",
+        "sha256": "548b5e4a6383d963a4d96231cf14f3786ac43cdfbad8902bd21c47b5f8d9390c"
+      },
+      {
+        "path": "docs/reports/SECODE_SURVEY_DELTA_DISPOSITION_2026-08-08.md",
+        "sha256": "c25d65352aac7f8275adfc9284c83274f98b134d9e3b0ce1dffc22d9886faac3"
+      },
+      {
+        "path": "specs/secode-rust-campaign-mode-amendment-r1-2026-08-08.md",
+        "sha256": "775a3485b707232c991a557856cdb6778a5ce2a9220111dad18fcdeacda1ae2d"
+      }
+    ],
+    "matrix": {
+      "path": "docs/reports/SECODE_RUST_RATIFIED_ARCHITECTURE_SUPERSESSION_MATRIX_2026-08-08.md",
+      "sha256": "9301ccee905750352cbd904a63c6909bc5a2b87982bacec3ca29e7ec1c89af9b"
+    }
+  },
+  "scope": {
+    "preserves": [
+      "Responses and Codex report inclusive input; fresh input is derived only from a complete checked cache partition.",
+      "Anthropic reports fresh input; inclusive input is derived only from a complete checked partition.",
+      "OpenAI-compatible usage reports inclusive input, cache read and any reported cache write (prompt_tokens_details.cache_write_tokens); an omitted cache write stays absent while fresh input uses the route's exact zero-write equation; explicit null also leaves fresh input unknown.",
+      "Every present leaf is bounded to the inclusive exact-token domain 0 through 2^53 and retains reported or named-derived provenance.",
+      "Missing and null optional fields remain absent, distinct from observed zero. Malformed, over-bound, over-partitioned and cross-total-mismatched reports keep typed normalization errors; streams retain a bounded warning and complete with usage unknown."
+    ],
+    "intentionally_excludes": [
+      "Provider billing or price inference. Token usage and cost truth are separate.",
+      "Any billable provider request. All wire objects are authored fixture literals.",
+      "Provider-specific identities in durable usage observations."
+    ]
+  },
+  "determinism": {
+    "clock": "No clock is read.",
+    "identifiers": "No identifier is minted.",
+    "network": "No network access or provider call occurs.",
+    "filesystem": "The test reads this bounded corpus and its expected files without writing them."
+  },
+  "paths": {
+    "actions": "actions.jsonl",
+    "expected": {
+      "durable": "expected/durable.jsonl",
+      "state": "expected/state.json",
+      "waivers": "expected/waivers.json"
+    }
+  },
+  "record_contracts": {
+    "actions": "One bounded JSON object per line. route selects one real adapter normalizer, wire is the provider-shaped input, and expect is the exact model-agnostic accepted, absent, or typed-refusal projection.",
+    "durable": "Empty by law: provider normalization itself performs no durable write; the runtime/event witnesses own persistence.",
+    "state": "Accepted, absent and refused counts plus route counts are recomputed by executing every action."
+  },
+  "evidence": [
+    {
+      "path": "crates/grapt-provider/src/usage.rs",
+      "test": "usage::tests::language_neutral_normalization_corpus_executes_every_route",
+      "claim": "Every action drives a real Responses, Codex, Anthropic or Compatible normalizer and compares the exact per-leaf values and provenance or typed refusal."
+    },
+    {
+      "path": "crates/grapt-event/src/session_message/tests.rs",
+      "test": "legacy_v1_input_decodes_only_into_the_ambiguous_migration_slot",
+      "claim": "Legacy v1 input remains readable without being relabeled as fresh or inclusive."
+    }
+  ]
+}

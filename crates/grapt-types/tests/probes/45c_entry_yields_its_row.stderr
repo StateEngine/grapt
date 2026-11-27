@@ -1,0 +1,5 @@
+error[E0599]: no method named `record` found for struct `ModelCatalogEntry` in the current scope
+  --> tests/probes/45c_entry_yields_its_row.rs:43:22
+   |
+43 |     let _row = entry.record();
+   |                      ^^^^^^ private field, not a method

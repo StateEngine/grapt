@@ -1,0 +1,69 @@
+error[E0603]: module `policy` is private
+ --> tests/probes/01_session_grant_private.rs:5:36
+  |
+5 |     let action = grapt_permission::policy::UnresolvedAction::new("fs.read");
+  |                                    ^^^^^^  ---------------- struct `UnresolvedAction` is not publicly re-exported
+  |                                    |
+  |                                    private module
+  |
+note: the module `policy` is defined here
+ --> src/lib.rs
+  |
+  | mod policy;
+  | ^^^^^^^^^^
+
+error[E0603]: module `policy` is private
+ --> tests/probes/01_session_grant_private.rs:6:39
+  |
+6 |     let _approval = grapt_permission::policy::UnresolvedApproval::record(action);
+  |                                       ^^^^^^  ------------------ struct `UnresolvedApproval` is not publicly re-exported
+  |                                       |
+  |                                       private module
+  |
+note: the module `policy` is defined here
+ --> src/lib.rs
+  |
+  | mod policy;
+  | ^^^^^^^^^^
+
+error[E0624]: associated function `new` is private
+ --> tests/probes/01_session_grant_private.rs:5:62
+  |
+5 |     let action = grapt_permission::policy::UnresolvedAction::new("fs.read");
+  |                                                              ^^^ private associated function
+  |
+ ::: src/policy.rs
+  |
+  |     pub(crate) fn new(action: &str) -> Option<Self> {
+  |     ----------------------------------------------- private associated function defined here
+
+error[E0624]: associated function `record` is private
+ --> tests/probes/01_session_grant_private.rs:6:67
+  |
+6 |     let _approval = grapt_permission::policy::UnresolvedApproval::record(action);
+  |                                                                   ^^^^^^ private associated function
+  |
+ ::: src/policy.rs
+  |
+  |     pub(crate) fn record(action: UnresolvedAction) -> Self {
+  |     ------------------------------------------------------ private associated function defined here
+
+error[E0308]: mismatched types
+ --> tests/probes/01_session_grant_private.rs:6:74
+  |
+6 |     let _approval = grapt_permission::policy::UnresolvedApproval::record(action);
+  |                     ---------------------------------------------------- ^^^^^^ expected `UnresolvedAction`, found `Option<UnresolvedAction>`
+  |                     |
+  |                     arguments to this function are incorrect
+  |
+  = note: expected struct `grapt_permission::policy::UnresolvedAction`
+               found enum `Option<grapt_permission::policy::UnresolvedAction>`
+note: associated function defined here
+ --> src/policy.rs
+  |
+  |     pub(crate) fn record(action: UnresolvedAction) -> Self {
+  |                   ^^^^^^
+help: consider using `Option::expect` to unwrap the `Option<grapt_permission::policy::UnresolvedAction>` value, panicking if the value is an `Option::None`
+  |
+6 |     let _approval = grapt_permission::policy::UnresolvedApproval::record(action.expect("REASON"));
+  |                                                                                +++++++++++++++++

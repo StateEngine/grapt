@@ -1,0 +1,1 @@
+| `xai-org/grok-build` | Apache-2.0 | `2bdd1d6a6369de0e8c68132ea4539e9abd9e14a8` | `crates/codegen/xai-ratatui-textarea/src/textarea.rs` mouse scrollbar priority/grab offset and `crates/codegen/xai-grok-pager-render/src/render/scrollbar.rs` padding grab zone, adapted in `secode-tui/src/mouse/scrollbar.rs`; Grapt adds end buttons and bounded hold repeat. |

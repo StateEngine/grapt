@@ -1,0 +1,21 @@
+error[E0599]: no associated function or constant named `default` found for struct `MaxValueDepth` in the current scope
+  --> tests/probes/01_bounds_have_no_default.rs:10:42
+   |
+10 |     let _ = grapt_config::MaxValueDepth::default();
+   |                                          ^^^^^^^ associated function or constant not found in `MaxValueDepth`
+   |
+note: if you're trying to build a new `MaxValueDepth`, consider using `MaxValueDepth::try_new` which returns `Result<MaxValueDepth, BoundRefusal>`
+  --> src/bounds.rs
+   |
+   |               pub fn try_new(value: usize) -> Result<Self, BoundRefusal> {
+   |               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+   | / bound!(
+   | |     MaxValueDepth,
+   | |     "max value depth",
+   | |     64,
+...  |
+   | |     "no panicking path, and an unbounded recursive descent would have one.",
+   | | );
+   | |_- in this macro invocation
+   = note: this error originates in the macro `bound` (in Nightly builds, run with -Z macro-backtrace for more info)

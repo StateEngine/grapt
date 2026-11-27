@@ -1,0 +1,1 @@
+| `crates/secode-permission/src/preset.rs` (`Layer::approvals`) | `openai/codex` / `codex-rs/execpolicy/src/rule.rs` and `codex-rs/core/src/exec_policy.rs` | `bb64b894fd67158be0f874872e6d7bfe717e7368` | Modified by Grapt: exact remembered call resources, keeping configured patterns and typed argv-prefix amendments separate; Copyright 2025 OpenAI, Apache-2.0. |

@@ -1,0 +1,29 @@
+[package]
+name = "grapt-codemode"
+autotests = false
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+description = "Bounded JavaScript guest and private worker protocol; no policy or durable effect ownership."
+
+[[test]]
+name = "integration"
+path = "tests/integration/main.rs"
+
+# The workspace-wide `--test dependency_direction` gate selects this target by name.
+[[test]]
+name = "dependency_direction"
+path = "tests/dependency_direction.rs"
+
+[dependencies]
+rquickjs = { version = "=0.13.0", default-features = false, features = ["std"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+grapt-types = { path = "../grapt-types" }
+
+[dev-dependencies]
+toml = "0.8"
+
+[lints]
+workspace = true

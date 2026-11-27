@@ -1,0 +1,21 @@
+error[E0624]: method `records` is private
+  --> tests/probes/45b_catalog_enumerates_families.rs:39:10
+   |
+39 |         .records()
+   |          ^^^^^^^ private method
+   |
+  ::: src/model/catalog.rs
+   |
+   |     pub(crate) fn records(&self) -> &[ModelCatalogRecord] {
+   |     ----------------------------------------------------- private method defined here
+
+error[E0624]: method `family` is private
+  --> tests/probes/45b_catalog_enumerates_families.rs:41:34
+   |
+41 |         .map(ModelCatalogRecord::family)
+   |                                  ^^^^^^ private method
+   |
+  ::: src/model/catalog.rs
+   |
+   |     pub(crate) fn family(&self) -> &ModelFamilyId {
+   |     --------------------------------------------- private method defined here

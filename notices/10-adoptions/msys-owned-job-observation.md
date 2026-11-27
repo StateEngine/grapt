@@ -1,0 +1,1 @@
+| Windows MSYS child diagnostic | `openai/codex`, Apache-2.0, commit `c465563aa9626d99420062135b187d299f904f81`, `codex-rs/utils/pty/src/win/job.rs` | Extends the existing safe job ownership adaptation with bounded, positive image observations; only failed contained commands receive a conditional MSYS consent hint. |

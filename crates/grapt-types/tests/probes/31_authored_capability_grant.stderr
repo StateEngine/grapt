@@ -1,0 +1,16 @@
+error[E0599]: no associated function or constant named `new` found for struct `CapabilityGrant` in the current scope
+  --> tests/probes/31_authored_capability_grant.rs:27:35
+   |
+27 |     let _grant = CapabilityGrant::new(capability, GrantScope::Attempt);
+   |                                   ^^^ associated function or constant not found in `CapabilityGrant`
+   |
+note: if you're trying to build a new `CapabilityGrant`, consider using `CapabilityGrant::from_live` which returns `Option<CapabilityGrant>`
+  --> src/capability.rs
+   |
+   |     pub fn from_live(decision: &crate::authority::LivePermissionDecision) -> Option<Self> {
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+help: there is a method `ne` with a similar name, but with different arguments
+  --> $RUST/core/src/cmp.rs
+   |
+   |     fn ne(&self, other: &Rhs) -> bool {
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

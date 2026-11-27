@@ -1,0 +1,134 @@
+{
+  "schema_version": 1,
+  "id": "capture-stream-replay-live-join",
+  "title": "Capture stream: durable replay crosses to bounded live delivery exactly once and reconnects from the minted cursor",
+  "campaign": "EVENT-STREAM-REPLAY-CURSOR-01",
+  "journey": "J03",
+  "base": {
+    "repository": "secode-rust",
+    "branch": "event-replay-cursor",
+    "commit": "a03e494c1c5dfec142a9b821b192fb28c808431b",
+    "note": "Lineage is pinned to the accepted base. The capture surface is this campaign's deliverable and does not exist at the base, so the scenario is engine-derived and executes at the J03 candidate commit that adds it; that commit carries the gates receipt naming the evidence tests."
+  },
+  "scope": {
+    "preserves": [
+      "the frozen protocol-v2 volatile route /api/event: no cursor, no SSE id, no Last-Event-ID; the capture surface is additive, versioned at /api/capture/v1/events and authenticated",
+      "exactly-once presentation: a coordinate at or below the held fence sequence is fenced whether it arrives as a concurrent live frame or is re-served on a reconnect page",
+      "gap-free crossover: replay pages cross to the live join without losing a frame committed between pages",
+      "cursor token honesty: the minted token names exactly the coordinates presented and is sealed to the interest; wrong-location and wrong-version tokens refuse before any store read",
+      "location isolation: a location interest presents only frames scoped to its location; unscoped and other-location frames never reach it",
+      "typed refusals precede stream and store work: unauthenticated 401, malformed query or cursor and wrong-version cursor 400, wrong location 409, future coordinate and stale aggregate 409, corrupt row and unreadable store 503"
+    ],
+    "intentionally_excludes": [
+      "the bounded store read itself: row/byte limits, continuation honesty and the cursor exclusion law are the J02 contract, executed in crates/grapt-store",
+      "protocol-v2 behavior change: the v2 route, its frames and its OpenAPI bytes are untouched",
+      "wall-clock timing: the scenario is deterministic frame order with no timers, ambient clock or randomness"
+    ]
+  },
+  "determinism": {
+    "identifiers": "Event ids are fixture-supplied (evt_*); the cursor token is an opaque, versioned, interest-bound base64url envelope, not a wall-clock or rowid value.",
+    "network": "No network or provider process is exercised; the hub and the store port are in-process doubles."
+  },
+  "paths": {
+    "actions": "actions-capture.jsonl",
+    "expected": {
+      "capture_stream": "expected/capture-stream-observation.json"
+    }
+  },
+  "record_contracts": {
+    "actions": "Ordered capture operations (open, page, publish, read, invalidate, reconnect, restart) each with the observable frame or typed receipt it must produce. Operations are the authenticated transport's public surface and the store port's page contract, not private internals.",
+    "capture_stream": "The exact frame set each stream presents, the coordinates fenced or never reached, the token content at terminal, and the typed refusal for each defective request."
+  },
+  "evidence": [
+    {
+      "path": "crates/grapt-api/src/u3a/capture_tests.rs",
+      "test": "the_stream_opens_with_the_connected_frame",
+      "claim": "The stream opens with the capture.connected frame and an empty replay crosses straight into the live join."
+    },
+    {
+      "path": "crates/grapt-api/src/u3a/capture_tests.rs",
+      "test": "replay_pages_cross_to_live_without_a_gap",
+      "claim": "Replay pages cross to live without a gap; a live frame committed at the crossover is fenced."
+    },
+    {
+      "path": "crates/grapt-api/src/u3a/capture_tests.rs",
+      "test": "a_cursor_token_frame_mints_every_64_presented_rows",
+      "claim": "The 64th presented row mints the capture.cursor token sealed at the last presented coordinates; row 65 follows the token."
+    },
+    {
+      "path": "crates/grapt-api/src/u3a/capture_tests.rs",
+      "test": "a_replay_fenced_live_frame_is_presented_exactly_once",
+      "claim": "A live frame at the replayed coordinate is presented exactly once; EVR3 removes the fence and this turns red."
+    },
+    {
+      "path": "crates/grapt-api/src/u3a/capture_tests.rs",
+      "test": "overflow_terminates_the_stream_with_the_named_reason",
+      "claim": "An overflowed bounded queue terminates the stream with the named reason and presents no queued frame."
+    },
+    {
+      "path": "crates/grapt-api/src/u3a/capture_tests.rs",
+      "test": "reconnect_from_the_minted_token_resumes_past_the_fence",
+      "claim": "A reconnect from the minted token presents only truth strictly after the fence; a re-served fenced row is dropped."
+    },
+    {
+      "path": "crates/grapt-api/src/u3a/capture_tests.rs",
+      "test": "a_restart_preserves_the_same_coordinate_set",
+      "claim": "A restart presents the same coordinates in the same order."
+    },
+    {
+      "path": "crates/grapt-api/src/u3a/capture_tests.rs",
+      "test": "a_location_interest_only_presents_its_own_frames",
+      "claim": "A location interest presents only frames scoped to its location; the terminal token holds only honestly served coordinates."
+    },
+    {
+      "path": "crates/grapt-api/src/u3a/capture_tests.rs",
+      "test": "unauthenticated_capture_is_refused_before_any_port_call",
+      "claim": "401 before any store page call."
+    },
+    {
+      "path": "crates/grapt-api/src/u3a/capture_tests.rs",
+      "test": "an_invalid_capture_query_refuses_before_any_stream",
+      "claim": "A malformed query refuses 400 before any stream."
+    },
+    {
+      "path": "crates/grapt-api/src/u3a/capture_tests.rs",
+      "test": "malformed_and_wrong_version_cursors_refuse_with_400",
+      "claim": "Malformed and wrong-version cursors refuse 400 before any store page call."
+    },
+    {
+      "path": "crates/grapt-api/src/u3a/capture_tests.rs",
+      "test": "a_wrong_location_cursor_refuses_with_409",
+      "claim": "A cursor sealed to another location refuses 409 before any store page call."
+    },
+    {
+      "path": "crates/grapt-api/src/u3a/capture_tests.rs",
+      "test": "a_refused_first_page_answers_409_and_503_by_failure_class",
+      "claim": "Future coordinate and stale aggregate answer 409; corrupt row and unreadable store answer 503; each refusal is the first page itself."
+    },
+    {
+      "path": "crates/grapt-api/src/u3a/capture_tests.rs",
+      "test": "reconcile_drains_the_queued_frames_then_closes",
+      "claim": "Reconcile drains the queued frames then closes."
+    },
+    {
+      "path": "crates/grapt-api/src/u3a/capture_tests.rs",
+      "test": "invalidate_closes_immediately_without_a_drain",
+      "claim": "Invalidate closes immediately without a drain."
+    },
+    {
+      "path": "crates/grapt-api/src/u3a/capture_tests.rs",
+      "test": "an_oversized_row_terminates_with_frame_bound_without_advancing_the_fence",
+      "claim": "An oversized row terminates with the frame bound without advancing the fence."
+    },
+    {
+      "path": "crates/grapt-api/tests/capture_route.rs",
+      "test": "capture_and_v2_routes_compose_into_one_router",
+      "claim": "The capture and v2 routes compose into one router."
+    },
+    {
+      "path": "crates/grapt-api/tests/capture_route.rs",
+      "test": "a_duplicate_capture_registration_refuses",
+      "claim": "A duplicate capture registration refuses."
+    }
+  ]
+}

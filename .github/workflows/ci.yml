@@ -1,0 +1,247 @@
+name: CI
+
+on:
+  # The base branch owns admission; fork changes cannot remove this condition.
+  pull_request_target:
+    branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review]
+  # Accepted pull requests land together, then main fast-forwards to their gate.
+  # Main and batch jobs have reserved capacity; PRs cannot occupy that runner.
+  push:
+    branches: [main, 'batch/**']
+  workflow_dispatch:
+    inputs:
+      tier:
+        type: choice
+        options: [landing, nightly]
+        default: landing
+        description: Exact slow-test tier from the native gate
+      windows:
+        type: boolean
+        default: false
+        description: Also run hosted Windows jobs
+      macos:
+        type: boolean
+        default: false
+        description: Also run standard Apple Silicon jobs
+  schedule:
+    - cron: '15 6 * * *'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request_target' }}
+
+env:
+  CARGO_BUILD_JOBS: '2'
+  CARGO_INCREMENTAL: '0'
+  CARGO_PROFILE_DEV_DEBUG: '0'
+  CARGO_PROFILE_TEST_DEBUG: '0'
+  PYTHONDONTWRITEBYTECODE: '1'
+  CI_FIXTURE_SHA256: 30748dab876cb7531f2dd4ed2a4519260488003b9985c5a34b5c8c9052505ccc
+  CI_NIGHTLY: ${{ github.event_name == 'schedule' || inputs.tier == 'nightly' }}
+  CI_SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  visibility:
+    # Box runners serve only the private repository; once public, every pull
+    # request uses the hosted gate. The repository record decides, because a
+    # schedule payload carries no repository.
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    permissions:
+      contents: read
+    outputs:
+      private: ${{ steps.read.outputs.private }}
+    steps:
+      - id: read
+        env:
+          GH_TOKEN: ${{ github.token }}
+        # A failed call, or any answer but true or false, fails this job;
+        # only a validated decision is published.
+        run: |
+          private=$(gh api "repos/$GITHUB_REPOSITORY" --jq .private)
+          case "$private" in
+            true|false) ;;
+            *) echo "Repository visibility unavailable: '$private'" >&2; exit 1 ;;
+          esac
+          echo "private=$private" >> "$GITHUB_OUTPUT"
+
+  changes:
+    needs: visibility
+    if: ${{ needs.visibility.result == 'success' && needs.visibility.outputs.private == 'true' && (github.event.pull_request == null || github.event.pull_request.head.repo.full_name == github.repository) }}
+    runs-on: [self-hosted, "${{ github.event_name == 'pull_request_target' && 'grapt-precheck' || 'grapt-landing' }}"]
+    timeout-minutes: 3
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      proven: ${{ steps.detect.outputs.proven }}
+      rust: ${{ steps.detect.outputs.rust }}
+      packages: ${{ steps.detect.outputs.packages }}
+      mode: ${{ steps.detect.outputs.mode }}
+      precheck: ${{ steps.detect.outputs.precheck }}
+      base: ${{ steps.detect.outputs.base }}
+      matrix: ${{ steps.detect.outputs.matrix }}
+      hosted: ${{ steps.detect.outputs.hosted }}
+      windows: ${{ steps.detect.outputs.windows }}
+      clippy-matrix: ${{ steps.detect.outputs.clippy-matrix }}
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          ref: ${{ env.CI_SOURCE_SHA }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Select affected crates (unresolved diffs run everything)
+        id: detect
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/ci/changes.py
+
+  linux:
+    needs: changes
+    # A main push that only fast-forwards to a passing batch is not gated twice.
+    if: ${{ !cancelled() && needs.changes.result == 'success' && needs.changes.outputs.proven != 'true' }}
+    runs-on: [self-hosted, "${{ github.event_name == 'pull_request_target' && 'grapt-precheck' || 'grapt-landing' }}"]
+    timeout-minutes: 180
+    env:
+      CI_PACKAGES: ${{ needs.changes.outputs.packages }}
+      CI_RUST: ${{ needs.changes.outputs.rust }}
+      CI_GATE_MODE: ${{ needs.changes.outputs.mode }}
+      CI_PRECHECK: ${{ needs.changes.outputs.precheck }}
+      CI_BASE_SHA: ${{ github.event.pull_request.base.sha || needs.changes.outputs.base || github.sha }}
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          ref: ${{ env.CI_SOURCE_SHA }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: ./.github/actions/hosted-rust
+      - name: Run the native gate through the shared scheduler
+        id: gate
+        run: |
+          set -euo pipefail
+          source scripts/build-cache.sh
+          case "$CI_GATE_MODE" in
+            full|affected) ;;
+            *) echo 'Change detection did not select a gate mode' >&2; exit 1 ;;
+          esac
+          args=("$CI_GATE_MODE" --base "$CI_BASE_SHA" --timeout 7200
+                --log "$RUNNER_TEMP/batch-gate-report/gate.log")
+          if [[ "$CI_NIGHTLY" == true ]]; then
+            args+=(--nightly)
+          fi
+          if [[ "$CI_PRECHECK" == true ]]; then
+            args+=(--precheck)
+          fi
+          if [[ "$GITHUB_EVENT_NAME" == push && "$GITHUB_REF" == refs/heads/batch/* ]]; then
+            # A batch push is a landing gate, never a precheck; the two policies
+            # are opposites, so refuse rather than hand gate.py a contradiction.
+            if [[ "$CI_PRECHECK" == true ]]; then
+              echo 'A batch push cannot also be a precheck' >&2
+              exit 1
+            fi
+            args+=(--batch)
+          fi
+          python3 -B scripts/build/heavy.py --nvme --owner github-actions -- \
+            bash --noprofile --norc -e -o pipefail -c '
+              python3 scripts/ci/run.py helpers
+              if [[ "$CI_RUST" == true ]]; then
+                python3 scripts/ci/run.py fmt
+              fi
+            '
+          # The gate command must be visible to the scheduler so full gates
+          # reserve workspace capacity before taking a shared heavy lease.
+          python3 -B scripts/build/heavy.py --nvme --owner github-actions -- \
+            bash scripts/gate.sh "${args[@]}"
+
+      - name: Bind batch test evidence to this run
+        if: ${{ always() && startsWith(github.ref, 'refs/heads/batch/') }}
+        run: python3 -B scripts/build/batch_report.py "$RUNNER_TEMP/batch-gate-report"
+      - name: Retain batch test evidence
+        if: ${{ always() && startsWith(github.ref, 'refs/heads/batch/') }}
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: batch-gate-report
+          path: |
+            ${{ runner.temp }}/batch-gate-report/manifest.json
+            ${{ runner.temp }}/batch-gate-report/gate.log.nextest.xml
+          if-no-files-found: error
+          retention-days: 7
+
+  clippy:
+    needs: [changes, linux]
+    if: ${{ !cancelled() && needs.changes.outputs.rust != 'false' && needs.changes.outputs.windows == 'true' && needs.linux.result == 'success' }}
+    strategy:
+      fail-fast: true
+      matrix: ${{ fromJSON(needs.changes.outputs.clippy-matrix) }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    env:
+      CARGO_TARGET_DIR: ${{ github.workspace }}/target
+      CI_PACKAGES: ${{ needs.changes.outputs.packages }}
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          ref: ${{ env.CI_SOURCE_SHA }}
+          persist-credentials: false
+      - uses: ./.github/actions/hosted-rust
+        id: tools
+      - uses: Swatinem/rust-cache@e9d7b9f1e587218970671bac74e5511ed9506e6a # v2
+        with:
+          shared-key: hosted-v2-clippy-${{ matrix.platform }}-acceptance-and-plain
+          key: ${{ steps.tools.outputs.feature-key }}
+      - run: python scripts/ci/run.py clippy --platform '${{ matrix.platform }}'
+
+  platform:
+    needs: [changes, linux]
+    if: ${{ !cancelled() && needs.changes.outputs.rust != 'false' && needs.changes.outputs.hosted == 'true' && needs.linux.result == 'success' }}
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.changes.outputs.matrix) }}
+    uses: ./.github/workflows/hosted-platform.yml
+    with:
+      os: ${{ matrix.os }}
+      platform: ${{ matrix.platform }}
+      packages: ${{ needs.changes.outputs.packages }}
+      nightly: ${{ github.event_name == 'schedule' || inputs.tier == 'nightly' }}
+      fixture-sha256: 30748dab876cb7531f2dd4ed2a4519260488003b9985c5a34b5c8c9052505ccc
+
+  check:
+    name: check
+    if: ${{ always() && needs.visibility.result == 'success' && needs.visibility.outputs.private == 'true' && (github.event.pull_request == null || github.event.pull_request.head.repo.full_name == github.repository) }}
+    needs: [visibility, changes, linux, clippy, platform]
+    runs-on: [self-hosted, "${{ github.event_name == 'pull_request_target' && 'grapt-precheck' || 'grapt-landing' }}"]
+    timeout-minutes: 2
+    permissions:
+      contents: read
+      statuses: write
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          ref: ${{ env.CI_SOURCE_SHA }}
+          persist-credentials: false
+      - name: Require every applicable job
+        id: verify
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+        run: python3 scripts/ci/check.py
+      # pull_request_target attaches its check run to the base commit. Publish
+      # the verified aggregate on the exact same-repository head we tested.
+      - name: Report the pull request head status
+        if: ${{ always() && github.event_name == 'pull_request_target' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERIFY_RESULT: ${{ steps.verify.outcome }}
+        run: |
+          state=failure
+          if [[ "$VERIFY_RESULT" == success ]]; then state=success; fi
+          gh api --method POST "repos/$GITHUB_REPOSITORY/statuses/$CI_SOURCE_SHA" \
+            -f "state=$state" -f 'context=check' \
+            -f "target_url=$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"

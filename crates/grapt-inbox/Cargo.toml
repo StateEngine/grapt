@@ -1,0 +1,26 @@
+[package]
+name = "grapt-inbox"
+autotests = false
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+description = "Durable input admission domain: strict event decode and pending fold, proven against the real frozen clone."
+
+[[test]]
+name = "integration"
+path = "tests/integration/main.rs"
+
+# Remote evidence runs this target by name, repeatedly, for concurrency.
+[[test]]
+name = "inbox_admission"
+path = "tests/inbox_admission.rs"
+
+[dependencies]
+grapt-types = { path = "../grapt-types" }
+grapt-store = { path = "../grapt-store" }
+rusqlite = { version = "0.41", features = ["bundled"] }
+serde_json = "1"
+thiserror = "2"
+
+[lints]
+workspace = true

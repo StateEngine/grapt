@@ -1,0 +1,38 @@
+{"action":"seed","note":"The slot starts unclaimed.","ordinal":1,"slot_state":"empty"}
+{"action":"ensure","ordinal":2,"probe":null,"required_version":"0.1.0"}
+{"action":"switch","candidate":{"generation":0,"instance":"inst-a","pid":4242,"port":8080},"now":1700000000000,"ordinal":3,"probe":"self","retirement":"no-incumbent"}
+{"action":"ensure","ordinal":4,"probe":{"generation":0,"instance":"inst-a","pid":4242,"port":8080},"required_version":"0.1.0"}
+{"action":"ensure","ordinal":5,"probe":"unattributed","required_version":"0.1.0"}
+{"action":"ensure","note":"A different instance that inherited the incumbent's PID and endpoint.","ordinal":6,"probe":{"generation":0,"instance":"inst-z","pid":4242,"port":8080},"required_version":"0.1.0"}
+{"action":"ensure","note":"The same owner rebound to a new PID and ephemeral port.","ordinal":7,"probe":{"generation":0,"instance":"inst-a","pid":9999,"port":9090},"required_version":"0.1.0"}
+{"action":"ensure","ordinal":8,"probe":{"generation":0,"instance":"inst-a","pid":4242,"port":8080},"required_version":"0.2.0"}
+{"action":"switch","candidate":{"generation":1,"instance":"inst-b","pid":5353,"port":8081},"now":1700000001000,"ordinal":9,"probe":"self","retirement":"retired"}
+{"action":"abandon","candidate":{"generation":2,"instance":"inst-c","pid":6464,"port":8082},"now":1700000001500,"ordinal":10,"probe":"self"}
+{"action":"switch","candidate":{"generation":2,"instance":"inst-c","pid":6464,"port":8082},"now":1700000002000,"ordinal":11,"probe":"unattributed","retirement":"retired"}
+{"action":"switch","candidate":{"generation":2,"instance":"inst-c","pid":6464,"port":8082},"note":"Owner identity matches; the process that answered does not.","now":1700000002000,"ordinal":12,"probe":{"generation":2,"instance":"inst-c","pid":7777,"port":8082},"retirement":"retired"}
+{"action":"switch","candidate":{"generation":2,"instance":"inst-c","pid":6464,"port":8081},"note":"The incumbent's own endpoint.","now":1700000002000,"ordinal":13,"probe":"self","retirement":"retired"}
+{"action":"switch","candidate":{"generation":2,"instance":"inst-b","pid":5353,"port":8081},"note":"The incumbent replacing itself.","now":1700000002000,"ordinal":14,"probe":"self","retirement":"retired"}
+{"action":"switch","candidate":{"generation":9,"instance":"inst-c","pid":6464,"port":8082},"now":1700000002000,"ordinal":15,"probe":"self","retirement":"retired"}
+{"action":"switch","candidate":{"environment":"env-beta","generation":2,"instance":"inst-c","pid":6464,"port":8082},"now":1700000002000,"ordinal":16,"probe":"self","retirement":"retired"}
+{"action":"switch","candidate":{"generation":2,"instance":"inst-c","pid":6464,"port":8082,"slot":"slot-other"},"now":1700000002000,"ordinal":17,"probe":"self","retirement":"retired"}
+{"action":"switch","candidate":{"generation":2,"instance":"inst-c","pid":6464,"port":8082},"now":1700000003000,"ordinal":18,"probe":"self","retirement":"timed-out"}
+{"action":"switch","candidate":{"generation":3,"instance":"inst-d","pid":7070,"port":8083},"now":1700000004000,"ordinal":19,"post_commit":"candidate-failed","probe":"self","retirement":"failed"}
+{"action":"stop","ordinal":20,"owner":{"generation":3,"instance":"inst-z","pid":7070,"port":8083}}
+{"action":"stop","ordinal":21,"owner":{"generation":3,"instance":"inst-d","pid":7070,"port":8083}}
+{"action":"stop","ordinal":22,"owner":{"generation":3,"instance":"inst-d","pid":7070,"port":8083}}
+{"action":"seed","note":"The crash cut a controller cannot decode.","ordinal":23,"raw":"this is not a registration\n"}
+{"action":"ensure","ordinal":24,"probe":null,"required_version":"0.1.0"}
+{"action":"switch","candidate":{"generation":0,"instance":"inst-e","pid":8181,"port":8084},"now":1700000005000,"ordinal":25,"probe":"self","retirement":"no-incumbent"}
+{"action":"reclaim","candidate":{"generation":0,"instance":"inst-e","pid":8181,"port":8084},"now":1700000005000,"ordinal":26,"probe":"self","retirement":"no-incumbent"}
+{"action":"reclaim","candidate":{"generation":1,"instance":"inst-f","pid":8282,"port":8085},"note":"The slot is readable now, so there is nothing to reclaim.","now":1700000006000,"ordinal":27,"probe":"self","retirement":"no-incumbent"}
+{"action":"seed","note":"Begin the semantic-upgrade matrix from absence.","ordinal":28,"slot_state":"empty"}
+{"action":"switch","candidate":{"generation":0,"instance":"inst-u","pid":8383,"port":8086},"now":1700000007000,"ordinal":29,"probe":"self","retirement":"no-incumbent","version":"1.2.3+incumbent-build"}
+{"action":"upgrade","candidate":{"generation":1,"instance":"inst-v","pid":8484,"port":8087},"now":1700000008000,"ordinal":30,"probe":"self","retirement":"retired","version":"1.3.0+candidate-build"}
+{"action":"upgrade","candidate":{"generation":2,"instance":"inst-w","pid":8585,"port":8088},"now":1700000009000,"ordinal":31,"probe":"self","retirement":"retired","version":"1.3.0+other-build"}
+{"action":"upgrade","candidate":{"generation":2,"instance":"inst-w","pid":8585,"port":8088},"now":1700000009000,"ordinal":32,"probe":"self","retirement":"retired","version":"1.2.99"}
+{"action":"upgrade","candidate":{"generation":2,"instance":"inst-w","pid":8585,"port":8088},"now":1700000009000,"ordinal":33,"probe":"self","retirement":"retired","version":"nightly-candidate"}
+{"action":"seed","ordinal":34,"slot_state":"empty"}
+{"action":"switch","candidate":{"generation":0,"instance":"inst-x","pid":8686,"port":8089},"now":1700000010000,"ordinal":35,"probe":"self","retirement":"no-incumbent","version":"nightly-incumbent"}
+{"action":"upgrade","candidate":{"generation":1,"instance":"inst-y","pid":8787,"port":8090},"now":1700000011000,"ordinal":36,"probe":"self","retirement":"retired","version":"2.0.0"}
+{"action":"seed","ordinal":37,"slot_state":"empty"}
+{"action":"upgrade","candidate":{"generation":0,"instance":"inst-z","pid":8888,"port":8091},"now":1700000012000,"ordinal":38,"probe":"self","retirement":"no-incumbent","version":"1.0.0"}

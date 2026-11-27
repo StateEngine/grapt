@@ -1,0 +1,39 @@
+warning: unreachable expression
+  --> tests/probes/43c_author_a_settled_restore_plan.rs:17:20
+   |
+16 |         plan: todo!(),
+   |               ------- any code following this expression is unreachable
+17 |         operation: todo!(),
+   |                    ^^^^^^^ unreachable expression
+   |
+   = note: `#[warn(unreachable_code)]` (part of `#[warn(unused)]`) on by default
+
+error[E0451]: fields `plan`, `operation`, `checkpoint`, `root`, `lanes`, `consequences`, `unusual`, `preconditions`, `enforcement`, `required_capability`, `settled_at` and `expires_at` of struct `SettledRestorePlan` are private
+  --> tests/probes/43c_author_a_settled_restore_plan.rs:16:9
+   |
+15 |     SettledRestorePlan {
+   |     ------------------ in this type
+16 |         plan: todo!(),
+   |         ^^^^ private field
+17 |         operation: todo!(),
+   |         ^^^^^^^^^ private field
+18 |         checkpoint: todo!(),
+   |         ^^^^^^^^^^ private field
+19 |         root: todo!(),
+   |         ^^^^ private field
+20 |         lanes: todo!(),
+   |         ^^^^^ private field
+21 |         consequences: todo!(),
+   |         ^^^^^^^^^^^^ private field
+22 |         unusual: todo!(),
+   |         ^^^^^^^ private field
+23 |         preconditions: todo!(),
+   |         ^^^^^^^^^^^^^ private field
+24 |         enforcement: todo!(),
+   |         ^^^^^^^^^^^ private field
+25 |         required_capability: todo!(),
+   |         ^^^^^^^^^^^^^^^^^^^ private field
+26 |         settled_at: todo!(),
+   |         ^^^^^^^^^^ private field
+27 |         expires_at: todo!(),
+   |         ^^^^^^^^^^ private field

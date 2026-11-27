@@ -1,0 +1,99 @@
+{
+  "actions_run": 38,
+  "durable_rows": 24,
+  "outcomes": {
+    "failed-after-commit": 1,
+    "replaced": 6,
+    "replaced-retire-pending": 1,
+    "rolled-back": 1
+  },
+  "refusal_labels": [
+    "candidate-is-the-incumbent",
+    "endpoint-not-independent",
+    "generation-not-successor",
+    "not-the-expected-environment",
+    "not-this-slot",
+    "nothing-to-reclaim",
+    "pid-does-not-match-the-probe",
+    "unattributed",
+    "unreadable-registration",
+    "upgrade-candidate-version-unorderable",
+    "upgrade-downgrade",
+    "upgrade-incumbent-version-unorderable",
+    "upgrade-no-incumbent",
+    "upgrade-same-precedence"
+  ],
+  "refusals": [
+    {
+      "label": "unattributed",
+      "message": "the probe answered but named no owner: a health answer proves liveness, not which engine served it",
+      "ordinal": 11
+    },
+    {
+      "label": "pid-does-not-match-the-probe",
+      "message": "the candidate declares PID 6464 but its probe attributed PID 7777: owner identity matched while the process did not, so the declaration describes a different process than the one that answered",
+      "ordinal": 12
+    },
+    {
+      "label": "endpoint-not-independent",
+      "message": "the candidate is at http://127.0.0.1:8081, which is the incumbent's endpoint: a candidate must hold an independent port before the switch, or a failed candidate leaves the incumbent's address serving nothing",
+      "ordinal": 13
+    },
+    {
+      "label": "candidate-is-the-incumbent",
+      "message": "the candidate is already the registered owner of this slot: a replacement needs a candidate with a private registration, not the incumbent replacing itself",
+      "ordinal": 14
+    },
+    {
+      "label": "generation-not-successor",
+      "message": "the candidate declares generation 9 where this slot's next ownership is 2: a candidate does not choose its own generation, and a wrong one is refused rather than quietly rewritten",
+      "ordinal": 15
+    },
+    {
+      "label": "not-the-expected-environment",
+      "message": "the candidate carries environment receipt env-beta but this controller requires env-alpha: an environment receipt is checked before the switch, not after it",
+      "ordinal": 16
+    },
+    {
+      "label": "not-this-slot",
+      "message": "the candidate names slot slot-other but this controller owns slot slot-secode: a candidate is never registered into a slot it did not name",
+      "ordinal": 17
+    },
+    {
+      "label": "unreadable-registration",
+      "message": "this slot holds bytes that decode to no record (registration has 1 lines, not the exact 9 this version defines: a record with a missing or extra field is refused rather than partially read); an ordinary replacement is refused because the prior generation is unknowable, and recovery is the explicitly named reclaim transition",
+      "ordinal": 25
+    },
+    {
+      "label": "nothing-to-reclaim",
+      "message": "reclaim applies only to a slot whose bytes decode to no record; this slot is readable or empty and has an ordinary replacement path",
+      "ordinal": 27
+    },
+    {
+      "label": "upgrade-same-precedence",
+      "message": "candidate version 1.3.0+other-build has the same semantic precedence as incumbent 1.3.0+candidate-build: equal precedence is not an upgrade",
+      "ordinal": 31
+    },
+    {
+      "label": "upgrade-downgrade",
+      "message": "candidate version 1.2.99 has lower semantic precedence than incumbent 1.3.0+candidate-build: downgrade is refused",
+      "ordinal": 32
+    },
+    {
+      "label": "upgrade-candidate-version-unorderable",
+      "message": "candidate version has no precedence: version core needs exactly 3 dot-separated fields, found 1",
+      "ordinal": 33
+    },
+    {
+      "label": "upgrade-incumbent-version-unorderable",
+      "message": "incumbent version has no precedence: version core needs exactly 3 dot-separated fields, found 1",
+      "ordinal": 36
+    },
+    {
+      "label": "upgrade-no-incumbent",
+      "message": "upgrade requires a readable incumbent registration; this slot is empty",
+      "ordinal": 38
+    }
+  ],
+  "refused": 14
+}

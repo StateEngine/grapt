@@ -1,0 +1,61 @@
+{
+  "waivers": [
+    {
+      "capability": "session",
+      "not_exercised": "No session is created, resumed, listed or projected. `session list` is held for grapt-cli under ruling 8."
+    },
+    {
+      "capability": "prompt-admission",
+      "not_exercised": "No prompt is admitted, queued, steered or promoted."
+    },
+    {
+      "capability": "model-target",
+      "not_exercised": "No model target is resolved and no capability identity is derived. R8."
+    },
+    {
+      "capability": "provider",
+      "not_exercised": "No provider call is made and no provider stream is opened. R5."
+    },
+    {
+      "capability": "tool",
+      "not_exercised": "No tool is executed and no effect is dispatched. R6."
+    },
+    {
+      "capability": "credential",
+      "not_exercised": "No credential is read, issued or refreshed. R7. The host this corpus starts is real and authenticated, so every request it received would be answered 401; the ready receipt discloses that posture and this corpus sends no request."
+    },
+    {
+      "capability": "permission",
+      "not_exercised": "No permission is requested, settled or reconstructed."
+    },
+    {
+      "capability": "form",
+      "not_exercised": "No form or question is issued, answered or suspended."
+    },
+    {
+      "capability": "subagent",
+      "not_exercised": "No subagent is admitted, routed or delivered."
+    },
+    {
+      "capability": "checkpoint",
+      "not_exercised": "No workspace checkpoint is captured, planned, applied or reconciled."
+    },
+    {
+      "capability": "product-http-route",
+      "not_exercised": "No product HTTP route is served. The binary really composes and runs its host now, but the router it seals has nothing registered -- not even /health -- so there is no route for a request to reach."
+    },
+    {
+      "capability": "store",
+      "not_exercised": "No database is opened, migrated, audited or exported. That is E1b."
+    },
+    {
+      "capability": "config-discovery",
+      "not_exercised": "No config or instruction discovery is performed. R9."
+    },
+    {
+      "capability": "registration-mutation",
+      "not_exercised": "No registration is written. `service ensure` and `service stop` are refused by design in E1a and deferred to the controller lane behind the adapter-relocation lane, and `service status` reads without taking a lock. Two of status's three observations ARE exercised here end to end -- an absent slot and an undecodable one, compared against each other so they cannot collapse -- but the third, a decodable registration with an owner, cannot be reached from this corpus: creating one needs the `ensure` this cut refuses. It is witnessed instead by eb_service, which encodes a record through the crate that owns its byte contract and then runs this binary against it."
+    }
+  ],
+  "note": "This list is deliberately NON-EMPTY and is the point of the file. E1a is a composition root, and a green run of this corpus proves argument admission, platform refusal, receipt custody, the single-JSON-object receipt, and one real bind-run-report cycle whose exit disposition comes from the host itself -- nothing else. Naming every capability the corpus does not exercise means a green run can never be read as end-to-end product coverage by someone who did not author it. Nothing here is a comparison exclusion: every surface the corpus DOES compare is compared byte for byte with no normalisation."
+}

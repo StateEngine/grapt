@@ -1,0 +1,80 @@
+[package]
+name = "windows-spawn"
+version = "0.1.0"
+authors = ["Yasunobu Sakashita"]
+edition = "2021"
+rust-version = "1.75"
+license = "MIT OR Apache-2.0"
+description = "Windows process creation with explicit handle, Job, mitigation, ConPTY, and child ownership"
+documentation = "https://docs.rs/windows-spawn"
+repository = "https://github.com/P4suta/windows-spawn"
+readme = "README.md"
+keywords = ["windows", "process", "createprocess", "job-object", "spawn"]
+categories = ["os::windows-apis", "api-bindings"]
+include = [
+  "/src/**",
+  "/tests/**",
+  "/examples/**",
+  "/docs/adr/**",
+  "/docs/crate.md",
+  "/README.md",
+  "/CHANGELOG.md",
+  "/REUSE.toml",
+  "/LICENSE-APACHE",
+  "/LICENSE-MIT",
+  "/LICENSES/**",
+]
+
+[package.metadata.docs.rs]
+default-target = "x86_64-pc-windows-msvc"
+targets = ["x86_64-pc-windows-msvc", "aarch64-pc-windows-msvc"]
+
+[[test]]
+name = "argv_roundtrip"
+path = "tests/argv_roundtrip.rs"
+harness = false
+
+[target.'cfg(windows)'.dependencies.windows-sys]
+version = "0.61"
+features = [
+  "Win32_Foundation",
+  "Win32_Globalization",
+  "Win32_Security",
+  "Win32_Storage_FileSystem",
+  "Win32_System_Console",
+  "Win32_System_Environment",
+  "Win32_System_IO",
+  "Win32_System_JobObjects",
+  "Win32_System_Pipes",
+  "Win32_System_SystemInformation",
+  "Win32_System_Threading",
+]
+
+[workspace]
+members = ["xtask"]
+default-members = ["."]
+resolver = "2"
+
+[workspace.lints.rust]
+missing_docs = "deny"
+rust_2018_idioms = { level = "deny", priority = -1 }
+unsafe_op_in_unsafe_fn = "deny"
+unreachable_pub = "deny"
+unused_qualifications = "deny"
+
+[workspace.lints.clippy]
+all = { level = "deny", priority = -1 }
+pedantic = { level = "deny", priority = -1 }
+
+# CONTRIBUTING requires a specific safety justification on every `unsafe` block.
+# This restriction lint is what makes that rule machine-checked rather than a
+# convention, so a missing justification fails the build.
+#
+# `multiple_unsafe_ops_per_block` is deliberately not enabled: several blocks
+# here acquire two OS resources that must be adopted together to stay
+# exception-safe (see `pipe`), and splitting them would widen the window in
+# which one handle can leak.
+undocumented_unsafe_blocks = "deny"
+
+[lints]
+workspace = true

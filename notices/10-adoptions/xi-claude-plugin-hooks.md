@@ -1,0 +1,1 @@
+| Installed Claude command hooks | xai-org/grok-build | `crates/codegen/xai-grok-agent/src/plugins/manifest.rs` | `2bdd1d6a6369de0e8c68132ea4539e9abd9e14a8` | Apache-2.0 | Extended manifest path/object forms; plugin declarations reuse Grapt’s existing adapted Codex hook planner and bounded command executor. |

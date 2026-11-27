@@ -1,0 +1,1 @@
+| `crates/secode-tui/src/record_input.rs` | `crossterm-rs/crossterm`, `src/event/source/windows.rs` | `36d95b26a26e64b0f8c12edfe11f410a6d56a812` | Modified by Grapt: native focus conversion in the existing record adapter, exercised by notification tests. Copyright (c) 2019 Timon, MIT; license in `licenses/crossterm/LICENSE`. |

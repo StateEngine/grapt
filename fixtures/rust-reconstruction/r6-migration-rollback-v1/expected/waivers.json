@@ -1,0 +1,1 @@
+{"waivers":[],"note":"Every persisted domain row and source byte is compared exactly. No normalization or cross-engine waiver applies."}

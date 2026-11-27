@@ -1,0 +1,92 @@
+{
+  "$schema": "../oracle-receipt-manifest.schema.json",
+  "schema_version": 1,
+  "id": "usage-compat-vocabulary-v1",
+  "title": "R4D-2G1 Money.USD and TokenUsage.Info compatibility vocabulary",
+  "oracle": {
+    "branch": "grapt",
+    "commit": "430859db2dd049b3b2767c083af4f14f83379911",
+    "note": "The frozen engine implements both shapes, so this corpus is oracle-backed rather than law-only. The exact sources are packages/schema/src/money.ts and packages/schema/src/token-usage.ts, cross-checked against the ratified compatibility artifacts fixtures/rust-reconstruction/compat/openapi/openapi.json and compat/generated-client/promise/generated/types.ts, which agree on every leaf."
+  },
+  "scope": {
+    "preserves": [
+      "Money.USD is Schema.Finite: NaN and both infinities are refused, and the refusal names which of the three it saw.",
+      "Money.USD carries no sign constraint, so a negative amount is accepted rather than narrowed away.",
+      "Money.USD normalises -0.0 to 0.0, matching the oracle where -0 === 0 and JSON.stringify(-0) is \"0\".",
+      "TokenUsage.Info is a closed struct of exactly five leaves in the order input, output, reasoning, cache.read, cache.write.",
+      "This lane chooses the contiguous exact-integer ceiling 2^53: every integer in [0, 2^53] is binary64-representable, 2^53 is admitted, and every larger count is refused even though some isolated larger integers are representable. This is distinct from JavaScript Number.MAX_SAFE_INTEGER = 2^53 - 1.",
+      "An unobserved counter refuses NAMING its leaf and is never defaulted to zero, per the ratified grapt-types::usage row 'absent is not zero'.",
+      "Money arithmetic refuses a non-finite result; token arithmetic refuses a result outside this lane's contiguous count domain instead of saturating, wrapping, or selectively admitting sparse larger binary64 integers."
+    ],
+    "intentionally_excludes": [
+      "Money.USDPerMillionTokens: a model-pricing value, not part of Session.Info, and not admitted to this lane.",
+      "Any policy for what a caller does with a refused projection. Whether a missing usage record means zero or unknown is product semantics (R4D-2G preflight H-G2) and is deliberately undecided here.",
+      "time.created for a head-compacted session (R4D-2G preflight H-G1): a route and projection question, not a vocabulary one.",
+      "The session_list_projection migration, the verify_schema_shape column constant and the bounded legacy backfill: all owned by R4D-2G2.",
+      "The going-forward session.usage.recorded.1 fold: owned by R4D-2G3 and off the differential path.",
+      "A conversion from grapt-types::usage::AttemptUsage. AttemptUsage currently owns input/output only; reasoning, cache.read and cache.write have no upstream grapt-types owner yet. R4D-2G2's bounded legacy projection and R4D-2G3's session.usage.recorded.1 fold are the expected five-leaf source seams. G1 does not synthesize zeros or invent a conversion.",
+      "Any JSON or wire codec. grapt-types declares no library dependencies at all, and this lane does not become the first exception; the ordered leaf projection is the seam a codec owner consumes."
+    ]
+  },
+  "determinism": {
+    "clock": "No clock is read. Every value in this corpus is a literal; no action observes time.",
+    "identifiers": "No identifier is minted. The vocabulary carries values only, and no action constructs an ID.",
+    "network": "No network access. Every action is a pure in-process construction.",
+    "filesystem": "The gate reads this fixture directory plus the ratified oracle-receipt-manifest.schema.json through the frozen fixture root. No action writes any file."
+  },
+  "paths": {
+    "actions": "actions.jsonl",
+    "expected": {
+      "durable": "expected/durable.jsonl",
+      "state": "expected/state.json",
+      "waivers": "expected/waivers.json"
+    }
+  },
+  "record_contracts": {
+    "actions": "One JSON object per line. `action` names the constructor under test; `expect.outcome` is \"accepted\" or \"refused\"; a refusal carries `error` and, where the contract distinguishes them, `detail`, `field`, `cause` and exact binary64 `value_bits`. Monetary amounts and contract-number inputs are JSON numbers except the three values JSON cannot spell, which are the strings \"nan\", \"+inf\" and \"-inf\", plus the corpus spelling \"f64::MAX\". Unsigned and signed integer-column inputs are decimal strings so their integer identity does not depend on the fixture reader. An `action` of \"note\" carries no expectation and asserts nothing.",
+    "durable": "EMPTY BY LAW, and the gate asserts it is empty rather than skipping the file. This lane owns a value vocabulary in grapt-types, the root of the crate graph, which declares no library dependencies and therefore has no store, codec or socket to write through. A durable row here would prove that property had been broken.",
+    "state": "The aggregate projection the gate derives BY EXECUTING every action: the contract leaf labels, the accepted/refused/note totals, and the refusal census keyed by error. It is recomputed from the run, never copied from the actions file, so an action whose recorded expectation drifted from what the code does fails here as well as at its own line."
+  },
+  "evidence": [
+    {
+      "path": "crates/grapt-types/tests/usage_compat_acceptance_corpus.rs",
+      "test": "every_action_is_executed_against_the_vocabulary",
+      "claim": "Every action line is executed against the real constructors and its outcome, error, detail, field and cause are compared with the recorded expectation. The corpus is not deserialised and asserted against itself."
+    },
+    {
+      "path": "crates/grapt-types/tests/usage_compat_acceptance_corpus.rs",
+      "test": "the_manifest_validates_against_the_ratified_schema_file",
+      "claim": "This manifest is validated against the ratified fixtures/rust-reconstruction/oracle-receipt-manifest.schema.json read from the frozen fixture root, not against a second copy of its rules living in the test."
+    },
+    {
+      "path": "crates/grapt-types/tests/usage_compat_acceptance_corpus.rs",
+      "test": "the_aggregate_state_is_recomputed_from_the_run",
+      "claim": "expected/state.json is compared with totals derived by executing the corpus, so a stale expectation cannot agree with a stale action."
+    },
+    {
+      "path": "crates/grapt-types/tests/usage_compat_acceptance_corpus.rs",
+      "test": "the_durable_surface_is_empty_and_that_is_asserted",
+      "claim": "expected/durable.jsonl is read and proven empty; the file is not merely absent or skipped."
+    },
+    {
+      "path": "crates/grapt-types/src/usage_compat.rs",
+      "test": "usage_compat::tests::each_of_the_five_leaves_can_be_the_absent_one",
+      "claim": "Absence refuses at every one of the five leaves, so no leaf is left silently defaulting behind a refusal that fires only for the others."
+    },
+    {
+      "path": "crates/grapt-types/src/money.rs",
+      "test": "money::tests::negative_zero_normalises_so_the_rust_value_matches_the_javascript_one",
+      "claim": "-0.0 is normalised bitwise, compared with to_bits rather than ==, which would have passed either way."
+    },
+    {
+      "path": "crates/grapt-types/src/money.rs",
+      "test": "money::tests::the_legacy_edge_refuses_every_non_finite_amount_and_says_which",
+      "claim": "MoneyUsd::from_legacy_column is itself witnessed for NaN and both infinities; the public legacy edge is not covered only by a test of MoneyUsd::new."
+    },
+    {
+      "path": "crates/grapt-types/src/usage_compat.rs",
+      "test": "usage_compat::tests::an_above_bound_contract_number_refusal_preserves_the_supplied_f64_bits",
+      "claim": "The distinct pre-cast above-bound refusal exposes the exact supplied binary64 bits, replacing the held candidate's fabricated 2^53 + 1 sentinel."
+    }
+  ]
+}

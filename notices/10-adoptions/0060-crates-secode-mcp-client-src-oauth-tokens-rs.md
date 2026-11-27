@@ -1,0 +1,1 @@
+| `crates/secode-mcp-client/src/oauth/tokens.rs`, `oauth/registration.rs` | `openai/codex`, `codex-rs/rmcp-client/src/oauth.rs`, `oauth/refresh_transaction.rs` | `092d3acd6bec3e3a14bdc7e7a2810ab628ab759d` | Modified: Secret token custody, explicit timestamps, exact credential binding, public-client registration and store-owned persistence. |

@@ -1,0 +1,1 @@
+| `openai/codex` | Apache-2.0 | `bb64b894fd67158be0f874872e6d7bfe717e7368` | `codex-rs/tui/src/transcript_view.rs` entry-local reading anchors and relative scrolling, adapted in `secode-tui/src/transcript/window/seek.rs`; Grapt resolves a frozen scrollbar range through cached row weights and holds one incoming projection until release. |

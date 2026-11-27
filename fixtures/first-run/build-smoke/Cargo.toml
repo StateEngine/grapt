@@ -1,0 +1,9 @@
+[package]
+name = "frc-build-smoke"
+version = "0.1.0"
+edition = "2024"
+
+[workspace]
+
+[lints.rust]
+unsafe_code = "forbid"

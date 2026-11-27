@@ -1,0 +1,1 @@
+| openai/codex | `codex-rs/tui/src/chatwidget/input_restore.rs` and `chatwidget/turn_runtime.rs` at `83086188ae0614bd882818ff1aa23f3194962012` | Apache-2.0 | Local FIFO follow-up queue and return-to-composer editing, adapted to bounded typed Session ownership, explicit send custody and completion-triggered admission. License and notice retained in `licenses/openai-codex/`. |

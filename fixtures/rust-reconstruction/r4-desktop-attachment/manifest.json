@@ -1,0 +1,105 @@
+{
+  "$schema": "../oracle-receipt-manifest.schema.json",
+  "schema_version": 1,
+  "id": "r4-desktop-attachment",
+  "title": "R4D-1 engine selection and attribution receipt",
+  "law_pack": {
+    "revision": 9,
+    "sources": [
+      {
+        "path": "specs/secode-rust-reconstruction-r1-2026-08-07.md",
+        "sha256": "626333034f4760faf2fd2769e1a797d2ebbad5187e0bd787d33b99bf32a47865"
+      },
+      {
+        "path": "docs/reports/SECODE_RUST_RECONSTRUCTION_DISPOSITION_2026-08-07.md",
+        "sha256": "cca761d01667451dbac9bda6a8c6424ce6c25313fdc4457882f41fc10b2a70fc"
+      },
+      {
+        "path": "docs/reports/SECODE_RUST_FOUNDATIONAL_TYPES_AND_LIFECYCLES_2026-08-07.md",
+        "sha256": "31d4ae9af4229939225374efb9c721e752bc0fc163615e3f188acebed051b032"
+      },
+      {
+        "path": "docs/reports/SECODE_RUST_PROVIDER_STREAM_RUNTIME_CONTRACT_2026-08-08.md",
+        "sha256": "6c202f89e1e8bdc1de7304f22539ba043a4032f90376434841718f9b5624cdf6"
+      },
+      {
+        "path": "fixtures/rust-reconstruction/README.md",
+        "sha256": "26ebe50177d2d7ba0436c646f477e3dd220cd8f1acffdfe1f4c5f1205e760c3a"
+      },
+      {
+        "path": "specs/secode-rust-agency-continuity-amendment-r1-2026-08-08.md",
+        "sha256": "36fbf3b96258565ff14924d597a1c3a83e6307672b23a754d9f1287e92aa272a"
+      },
+      {
+        "path": "docs/reports/SECODE_CODEX_HARNESS_SURVEY_DISPOSITION_2026-08-08.md",
+        "sha256": "548b5e4a6383d963a4d96231cf14f3786ac43cdfbad8902bd21c47b5f8d9390c"
+      },
+      {
+        "path": "docs/reports/SECODE_SURVEY_DELTA_DISPOSITION_2026-08-08.md",
+        "sha256": "c25d65352aac7f8275adfc9284c83274f98b134d9e3b0ce1dffc22d9886faac3"
+      },
+      {
+        "path": "specs/secode-rust-campaign-mode-amendment-r1-2026-08-08.md",
+        "sha256": "775a3485b707232c991a557856cdb6778a5ce2a9220111dad18fcdeacda1ae2d"
+      }
+    ],
+    "matrix": {
+      "path": "docs/reports/SECODE_RUST_RATIFIED_ARCHITECTURE_SUPERSESSION_MATRIX_2026-08-08.md",
+      "sha256": "9301ccee905750352cbd904a63c6909bc5a2b87982bacec3ca29e7ec1c89af9b"
+    }
+  },
+  "law_conformance": {
+    "basis": "ratified-law-pack",
+    "oracle_status": "not-implemented-in-frozen-typescript-engine",
+    "note": "The engine-selection receipt does not exist in the frozen TypeScript engine at 42e4888cc0. That engine persists exactly one thing about engine choice: the string under the desktop store key defaultServerUrl, read and written by getDefaultServerUrl/setDefaultServerUrl in packages/desktop/src/main/server.ts. There is no EngineSelection, no owner identity, no ServiceSlotId/ServiceInstanceId/EnvironmentReceipt binding, no generation, and no selection receipt of any kind. Its health probe accepts any 2xx from GET /api/health, so it cannot even attribute an answer to an engine. There is therefore nothing to capture and no cross-engine differential to run here, and this manifest carries NO oracle block rather than naming a commit it was not captured from. The live cross-engine attachment receipt belongs to R4D-2 and is blocked until an accepted HTTP host exists."
+  },
+  "scope": {
+    "preserves": [
+      "The reversible selector the frozen desktop already exposes: an operator-supplied engine URL, persisted, with the retained sidecar as the state reached by clearing it.",
+      "Owner identity as {ServiceSlotId, ServiceInstanceId, EnvironmentReceipt}, with PID and endpoint as attributes, exactly as landed in grapt-types::service."
+    ],
+    "intentionally_excludes": [
+      "Filesystem persistence of a selection. Nothing here writes or reads a store; the receipt is a value and its reconstruction is from the durable representation in this corpus.",
+      "A live service, a socket, an HTTP request or a health probe over the network. No engine is started and none is contacted.",
+      "The service controller: no file lock, no discovery registration mutation, and no ensure/stop/replace/rollback transition. ReplacementOutcome is never produced by this lane.",
+      "Any TypeScript execution and any desktop driver. The frozen tree is read as evidence and never run.",
+      "The V2 compatibility surface. The frozen OpenAPI carries 101 paths and 120 operations; this corpus exercises none of them."
+    ]
+  },
+  "determinism": {
+    "clock": "Every selected_at is supplied by the harness from an injected ClockAuthority as an exact millisecond value named in actions.jsonl; no ambient time is read anywhere in the crate or the suite.",
+    "identifiers": "Every slot, instance, environment and endpoint is supplied verbatim by actions.jsonl; none is minted ambiently and none is derived from the host.",
+    "network": "No network. No socket is opened, no port is bound and no request is issued; every owner receipt is a value constructed from the action row.",
+    "filesystem": "Read-only. The suite reads this corpus by exact path and writes nothing; no temporary directory, database or store is created."
+  },
+  "paths": {
+    "actions": "actions.jsonl",
+    "expected": {
+      "durable": "expected/durable.jsonl",
+      "state": "expected/state.json",
+      "waivers": "expected/waivers.json"
+    }
+  },
+  "record_contracts": {
+    "actions": "Ordered attachment actions: admit (a selection plus a probe outcome and the exact injected clock value), still-current (an observed owner checked against the scenario's recorded attachment), differential (the scenario's first two admitted receipts offered as a comparison) and revert. Each row carries its own inputs; nothing is inherited from ambient state.",
+    "durable": "The ordered receipts that were ADMITTED, by action ordinal, each carrying its selection, the three owner identity coordinates, the generation, PID and endpoint attributes, and the injected selected_at. A refused action contributes no durable row. This is the receipt MODEL and its reconstruction: it is not a filesystem record and it does not assert that any service was running.",
+    "state": "The projection folded from those durable rows plus the typed refusal each rejected action produced: how many receipts were admitted, the per-engine counts, the ordered refusals with their exact variant, the confirmations, the admitted differentials, and the terminal selector state of each scenario. All four refusal words reach this surface, so none of the recorded vocabulary is carried by a variant match alone. Every value here is derived from the durable rows and the refusals; nothing is observed from a process."
+  },
+  "evidence": [
+    {
+      "path": "crates/grapt-service/tests/attachment_corpus.rs",
+      "test": "the_corpus_replays_through_the_model_and_matches_every_expected_surface",
+      "claim": "Executed against the grapt-service model in the R4D-1 candidate root. The suite replays actions.jsonl through the real public API and PRODUCES expected/durable.jsonl and expected/state.json, then compares both exhaustively — every durable row and every projection key. Nothing in expected/* is projected or hand-written, and a missing expected file fails loudly rather than being skipped."
+    },
+    {
+      "path": "crates/grapt-service/tests/selection_contract.rs",
+      "test": "health-only, stale owner, reused PID, both differential refusals, and reversion from every state",
+      "claim": "Executed against the same model. Each refusal is asserted against its own AttachmentRefusal variant, so no one law passes by tripping another's guard."
+    },
+    {
+      "path": "crates/grapt-service/tests/dependency_direction.rs",
+      "test": "grapt_service_depends_only_on_allowed_lower_crates and its back-edge, unresolvable-identity and legal-declaration controls",
+      "claim": "Executed against the crate's real Cargo.toml and the workspace root, parsed structurally with toml rather than scanned. The allowlist admits exactly grapt-types; every other grapt- edge is refused, including one renamed behind an innocent workspace key, and an entry whose identity cannot be established is refused rather than assumed to be its own key."
+    }
+  ]
+}

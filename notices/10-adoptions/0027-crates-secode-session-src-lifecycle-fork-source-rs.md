@@ -1,0 +1,1 @@
+| `crates/secode-session/src/lifecycle/fork_source.rs` | `openai/codex`, `codex-rs/core/src/tools/handlers/multi_agents_v2/spawn.rs` (`fork_parent_spawn_call_id`) | `092d3acd6bec3e3a14bdc7e7a2810ab628ab759d` | **Modified**: resolve the parent call through bounded canonical manifests and copy only history before its assistant Step, using the existing Session fork owner. |

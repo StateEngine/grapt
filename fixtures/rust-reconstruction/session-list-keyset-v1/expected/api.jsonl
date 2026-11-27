@@ -1,0 +1,7 @@
+{"action":2,"outcome":"page","order":"ascending","ids":["ses_legacy_b","ses_legacy_a"]}
+{"action":6,"outcome":"page","order":"ascending","ids":["ses_tie_c","ses_tie_d"],"strictly_after":{"updated_ms":30000,"session_id":"ses_tie_b"}}
+{"action":7,"outcome":"page","order":"ascending","ids":["ses_tie_a","ses_tie_b"],"strictly_before":{"updated_ms":30000,"session_id":"ses_tie_c"}}
+{"action":8,"outcome":"page","order":"ascending","ids":["ses_scope_root"],"filters_compose":"and","subpath_affects_store":false}
+{"action":9,"outcome":"refused","error":"PageLimitExceeded","actual":129,"maximum":128}
+{"action":10,"outcome":"refused","error":"SearchLimitExceeded","actual":1025,"maximum":1024}
+{"action":11,"outcome":"refused","error":"ProjectionCorrupt","before_decode_allocation":true}

@@ -1,0 +1,11 @@
+{
+  "accepted": 10,
+  "absent": 2,
+  "refused": 5,
+  "routes": {
+    "anthropic": 1,
+    "codex": 1,
+    "compatible": 8,
+    "responses": 7
+  }
+}

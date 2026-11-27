@@ -1,0 +1,258 @@
+{
+  "purpose": "DOGFOOD-PERMISSION-1 successor evidence. DGP01-DGP06 preserve the admitted candidate inventory; DGPR01-DGPR14 resurrect the accepted review findings, including each of ETA-R2-01..05, and name the witness that must turn red.",
+  "run": "python crates/grapt-permission/mutations/run.py --prefix DGP or --prefix DGPR",
+  "prefixes": [
+    "DGP",
+    "DGPR"
+  ],
+  "isolation": "Each exact-once mutation runs in its own detached disposable worktree at the committed candidate. The calling worktree is verified clean and unchanged before and after the battery.",
+  "mutations": [
+    {
+      "id": "DGP01",
+      "law": "A request is visible only to its authenticated principal",
+      "file": "crates/grapt-permission/src/service/http.rs",
+      "test_target": "integration",
+      "test": "permission_http::wrong_principal_wrong_client_and_second_answer_are_refused",
+      "red": "wrong principal must be refused",
+      "old": "        if held_subject != owner.subject {\n            return Err(PermissionHttpError::WrongPrincipal(id.clone()));\n        }",
+      "new": "        let _ = held_subject;"
+    },
+    {
+      "id": "DGP02",
+      "law": "A request is visible only to the authenticated client that owns it",
+      "file": "crates/grapt-permission/src/service/http.rs",
+      "test_target": "integration",
+      "test": "permission_http::wrong_principal_wrong_client_and_second_answer_are_refused",
+      "red": "wrong client must be refused",
+      "old": "        if held_client != owner.client.as_str() {\n            return Err(PermissionHttpError::WrongClient(id.clone()));\n        }",
+      "new": "        let _ = held_client;"
+    },
+    {
+      "id": "DGP03",
+      "law": "The first terminal permission answer settles the request and a conflicting losing answer stays terminal",
+      "file": "crates/grapt-permission/src/service/http.rs",
+      "test_target": "integration",
+      "test": "permission_http::wrong_principal_wrong_client_and_second_answer_are_refused",
+      "red": "conflicting terminal reply stays already terminal",
+      "old": "            Status::Replied => {\n                return if exact_retry(&tx, &command)? {\n                    Ok(CasOutcome::Applied)\n                } else {\n                    Ok(CasOutcome::AlreadyTerminal)\n                };\n            }",
+      "new": "            Status::Replied => return Ok(CasOutcome::Applied),"
+    },
+    {
+      "id": "DGP04",
+      "law": "Reject settles open siblings for the same session, principal and client",
+      "file": "crates/grapt-permission/src/service/http.rs",
+      "test_target": "integration",
+      "test": "permission_http::wrong_principal_wrong_client_and_second_answer_are_refused",
+      "red": "the primary and suspended sibling settle, while the losing answer appends nothing",
+      "old": "        if command.reply == PermissionHttpReply::Reject {\n            cascade_reject(&tx, &held, &command, &mut mint_sibling)?;\n        }",
+      "new": "        let _ = &mut mint_sibling;"
+    },
+    {
+      "id": "DGP05",
+      "law": "The durable v2 reply event binds the authenticated principal",
+      "file": "crates/grapt-permission/src/service/http.rs",
+      "test_target": "integration",
+      "test": "permission_http::ask_list_and_reply_commit_typed_v2_attribution",
+      "red": "v2 reply attribution must preserve the authenticated principal",
+      "old": "        \"principal\": command.owner.subject, \"clientID\": command.owner.client.as_str(),",
+      "new": "        \"principal\": \"anonymous\", \"clientID\": command.owner.client.as_str(),"
+    },
+    {
+      "id": "DGP06",
+      "law": "Permission request detail is durable and reconnect list convergence does not depend on process memory",
+      "file": "crates/grapt-permission/src/service/http.rs",
+      "test_target": "integration",
+      "test": "permission_http::durable_permission_list_converges_after_process_state_is_recreated",
+      "red": "durable permission truth must survive process-state reconstruction",
+      "old": "             WHERE h.owner_subject = ?1 AND h.owner_client = ?2\n               AND (?3 IS NULL OR p.session_id = ?3)",
+      "new": "             WHERE 0 = 1 AND h.owner_subject = ?1 AND h.owner_client = ?2\n               AND (?3 IS NULL OR p.session_id = ?3)"
+    },
+    {
+      "id": "DGPR01",
+      "law": "Session and Always grants retain their saved resource patterns and are consulted at create time",
+      "file": "crates/grapt-permission/src/service/http.rs",
+      "test_target": "integration",
+      "test": "permission_http::session_and_always_grants_reuse_only_matching_saved_patterns",
+      "red": "matching Session scope must reuse authority",
+      "old": "        if configured_allow\n            || self.session_allows(session, action, resources)\n            || saved_rule_allows(store, project, action, resources)?\n        {",
+      "new": "        if configured_allow\n            || (resources.is_empty()\n                && (self.session_allows(session, action, resources)\n                    || saved_rule_allows(store, project, action, resources)?))\n        {"
+    },
+    {
+      "id": "DGPR02",
+      "law": "Reject cascade keyset-batches every pending and suspended sibling beyond the first page",
+      "file": "crates/grapt-permission/src/service/http.rs",
+      "test_target": "integration",
+      "test": "permission_http::reject_cascade_keyset_batches_every_open_sibling_beyond_one_page",
+      "red": "every pending and suspended sibling must settle",
+      "old": "        if siblings.len() < MAX_HTTP_PERMISSION_ROWS {\n            return Ok(());\n        }",
+      "new": "        return Ok(());"
+    },
+    {
+      "id": "DGPR03",
+      "law": "Permission get performs a direct live-row identity query and cannot inherit list page one",
+      "file": "crates/grapt-permission/src/service/http.rs",
+      "test_target": "integration",
+      "test": "permission_http::open_list_reports_truncation_and_get_does_not_inherit_its_page_limit",
+      "red": "get must query its identity directly instead of searching page one",
+      "old": "             WHERE p.id = ?1 AND p.session_id = ?2\n               AND h.owner_subject = ?3 AND h.owner_client = ?4",
+      "new": "             WHERE p.id = ?1 AND p.session_id = ?2\n               AND p.id IN (SELECT id FROM permission_request ORDER BY rowid DESC LIMIT 128)\n               AND h.owner_subject = ?3 AND h.owner_client = ?4"
+    },
+    {
+      "id": "DGPR04",
+      "law": "The production permission schema migration is transactional and an interruption rolls back every partial table",
+      "file": "crates/grapt-store/src/migrations.rs",
+      "package": "grapt-store",
+      "lib": true,
+      "test": "migrations::permission_http_migration_tests::interrupted_permission_http_schema_rolls_back_every_partial_table",
+      "red": "the named interruption must fire",
+      "old": "        interrupt_between_permission_http_steps()?;",
+      "new": "        let _ = interrupt_between_permission_http_steps();"
+    },
+    {
+      "id": "DGPR05",
+      "law": "Permission replied v2 replay strictly decodes the closed complete attribution tuple",
+      "file": "crates/grapt-permission/src/event.rs",
+      "lib": true,
+      "test": "event::tests::corrupt_v2_attribution_is_not_defaulted",
+      "red": "corrupt v2 source must refuse",
+      "old": "        \"direct-reply\" => PermissionReplySource::DirectReply,\n        other => {\n            return Err(PermissionEventError::OutsideVocabulary {\n                field: \"source\",\n                value: other.to_owned(),\n            })\n        }",
+      "new": "        \"direct-reply\" => PermissionReplySource::DirectReply,\n        other => {\n            let _ = other;\n            PermissionReplySource::DirectReply\n        }"
+    },
+    {
+      "id": "DGPR06",
+      "law": "An exact client retry reconciles to the settled outcome without appending again",
+      "file": "crates/grapt-permission/src/service/http.rs",
+      "test_target": "integration",
+      "test": "permission_http::ask_list_and_reply_commit_typed_v2_attribution",
+      "red": "an exact client retry must reconcile to the settled outcome",
+      "old": "                return if exact_retry(&tx, &command)? {",
+      "new": "                return if false && exact_retry(&tx, &command)? {"
+    },
+    {
+      "id": "DGPR07",
+      "law": "The open permission DTO cannot represent a terminal status or a suspension without its reason",
+      "file": "crates/grapt-api/src/u3a/vocabulary/permission.rs",
+      "package": "grapt-api",
+      "lib": true,
+      "test": "u3a::permission::tests::request_state_cannot_represent_impossible_lifecycle_pairs",
+      "red": "suspended state without reason must refuse",
+      "old": "        required suspended_reason: PermissionSuspendedReasonDto => \"suspendedReason\",",
+      "new": "        optional suspended_reason: PermissionSuspendedReasonDto => \"suspendedReason\","
+    },
+    {
+      "id": "DGPR08",
+      "law": "The global permission list carries its LocationQuery into product selection and never silently falls back for a foreign location",
+      "file": "crates/grapt-api/src/u3a/routes.rs",
+      "package": "grapt-product",
+      "features": [
+        "loopback-provider-testkit"
+      ],
+      "test_target": "dogfood_headless",
+      "test": "permission_residuals::permission_http_closes_location_session_status_and_agent_policy_residuals",
+      "red": "foreign location must not fall back to default",
+      "old": "query::permission_list(raw_query)",
+      "new": "query::permission_list(None)"
+    },
+    {
+      "id": "DGPR09",
+      "law": "Permission primary, rule and adjunct tables are created by the journaled production migration",
+      "file": "crates/grapt-store/src/migrations.rs",
+      "package": "grapt-store",
+      "lib": true,
+      "test": "migrations::permission_http_migration_tests::production_permission_migration_creates_primary_rule_and_adjunct_tables",
+      "red": "production migration must create permission_http_request",
+      "old": "        tx.execute_batch(PERMISSION_HTTP_ADJUNCT_SCHEMA)\n            .map_err(|error| error.to_string())",
+      "new": "        Ok(())"
+    },
+    {
+      "id": "DGPR10",
+      "law": "Session permission list refuses a missing session rather than returning an empty permission page",
+      "file": "crates/grapt-product/src/dogfood/permission.rs",
+      "package": "grapt-product",
+      "features": [
+        "loopback-provider-testkit"
+      ],
+      "test_target": "dogfood_headless",
+      "test": "permission_residuals::permission_http_closes_location_session_status_and_agent_policy_residuals",
+      "red": "permission list must distinguish a missing session from an empty list",
+      "old": "    if application.get_record(&session).is_err() {\n        return ready(Err(session_not_found(&session)));\n    }\n    ready(list_for(application, &principal, Some(&session)))",
+      "new": "    ready(list_for(application, &principal, Some(&session)))"
+    },
+    {
+      "id": "DGPR11",
+      "law": "Session permission get refuses a missing session before looking up a request identity",
+      "file": "crates/grapt-product/src/dogfood/permission.rs",
+      "package": "grapt-product",
+      "features": [
+        "loopback-provider-testkit"
+      ],
+      "test_target": "dogfood_headless",
+      "test": "permission_residuals::permission_http_closes_location_session_status_and_agent_policy_residuals",
+      "red": "permission get must distinguish a missing session from a missing request",
+      "old": "    if application.get_record(&session).is_err() {\n        return ready(Err(session_not_found(&session)));\n    }\n    let id = request_id.into_inner();\n    let owner = permission_owner(&principal);",
+      "new": "    let id = request_id.into_inner();\n    let owner = permission_owner(&principal);"
+    },
+    {
+      "id": "DGPR12",
+      "law": "Session permission reply refuses a missing session before minting or reconciling a decision",
+      "file": "crates/grapt-product/src/dogfood/permission.rs",
+      "package": "grapt-product",
+      "features": [
+        "loopback-provider-testkit"
+      ],
+      "test_target": "dogfood_headless",
+      "test": "permission_residuals::permission_http_closes_location_session_status_and_agent_policy_residuals",
+      "red": "permission reply must distinguish a missing session before decision lookup",
+      "old": "    let record = match application.get_record(&session) {\n        Ok(record) => record,\n        Err(_) => return ready(Err(session_not_found(&session))),\n    };\n    let id = request_id.into_inner();\n    let reply = match request.reply().get() {",
+      "new": "    let record = application.get_record(&session).ok();\n    let id = request_id.into_inner();\n    let reply = match request.reply().get() {",
+      "edits": [
+        {
+          "file": "crates/grapt-product/src/dogfood/permission.rs",
+          "old": "    let record = match application.get_record(&session) {\n        Ok(record) => record,\n        Err(_) => return ready(Err(session_not_found(&session))),\n    };\n    let id = request_id.into_inner();\n    let reply = match request.reply().get() {",
+          "new": "    let record = application.get_record(&session).ok();\n    let id = request_id.into_inner();\n    let reply = match request.reply().get() {"
+        },
+        {
+          "file": "crates/grapt-product/src/dogfood/permission.rs",
+          "old": "                reply,\n                project: Some(&record.project),",
+          "new": "                reply,\n                project: record.as_ref().map(|record| &record.project),"
+        }
+      ]
+    },
+    {
+      "id": "DGPR13",
+      "law": "The requested or session AgentId is evaluated against configured agent policy instead of being accepted and discarded",
+      "file": "crates/grapt-product/src/dogfood/permission.rs",
+      "package": "grapt-product",
+      "features": [
+        "loopback-provider-testkit"
+      ],
+      "test_target": "dogfood_headless",
+      "test": "permission_residuals::permission_http_closes_location_session_status_and_agent_policy_residuals",
+      "red": "configured agent policy must be evaluated rather than discarded",
+      "old": "    let configured_allow = configured_agent_allows(&agent, action);",
+      "new": "    let configured_allow = false;"
+    },
+    {
+      "id": "DGPR14",
+      "law": "The TUI preserves all four Once, Session, Always and Reject reply choices through typed wire encoding and its contract double",
+      "file": "crates/grapt-client/src/wire.rs",
+      "package": "grapt-client",
+      "lib": true,
+      "test": "double::tests::every_permission_reply_scope_round_trips_without_boolean_collapse",
+      "red": "the double must retain the exact reply scope",
+      "old": "        PermissionReplyChoice::Session => PermissionReplyDto::Session,",
+      "new": "        PermissionReplyChoice::Session => PermissionReplyDto::Once,"
+    },
+    {
+      "id": "DGPR15",
+      "law": "An Always reply is a canonical event fact whose project, action and saved resource patterns deterministically rebuild permission_http_rule in a new database",
+      "file": "crates/grapt-permission/src/service.rs",
+      "package": "grapt-permission",
+      "test_target": "integration",
+      "test": "permission_http::canonical_event_replay_rebuilds_every_http_coordinate_in_a_new_database",
+      "red": "fresh replay must restore saved rule authority",
+      "old": "                    project_always_rule(tx, &request, event.created_ms)?;",
+      "new": "                    let _ = (tx, &request, event.created_ms);"
+    }
+  ]
+}

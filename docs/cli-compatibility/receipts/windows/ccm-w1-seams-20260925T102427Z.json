@@ -1,0 +1,68 @@
+{
+  "schema": "secode.cls.observation-run.v1",
+  "label": "ccm-w1-seams",
+  "mode": "witness",
+  "witness": "compatibility::",
+  "history_bytes": null,
+  "root": "E:\\cli-matrix\\runs\\ccm-w1-seams-20260925T102427Z",
+  "platform": "win32",
+  "started_utc": "20260925T102427Z",
+  "bounds_s": {
+    "smoke": 60,
+    "child": 200,
+    "outer": 300
+  },
+  "smoke": {
+    "phase": "smoke",
+    "mode": "smoke",
+    "bound_s": 60,
+    "elapsed_s": 1.295,
+    "timed_out": false,
+    "harness_drained_at_s": null,
+    "exit_code": 0,
+    "stdout": {
+      "bytes": 166,
+      "tail": "\nrunning 1 test\ntest cli_server_loss::observe_cli_server_loss ... ok\n\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 35 filtered out; finished in 1.28s\n\n"
+    },
+    "stderr": {
+      "bytes": 0,
+      "tail": ""
+    },
+    "observation": {
+      "drain_started_ms": null,
+      "exit_code": 0,
+      "exit_ms": 155,
+      "exited_by_itself": true,
+      "history_bytes": null,
+      "mode": "smoke",
+      "platform": "windows",
+      "schema": "secode.cls.j01-observation.v1",
+      "session": "ses_03a79353a2e865e1c76cf90246b806cfx0",
+      "stderr": [],
+      "stdout_bytes": 3030,
+      "stdout_tail": "pe\":\"assistant\",\"id\":\"msg_03a79353a2e865e1c76cf90246b806cfx10\",\"time\":{\"created\":1790331868717.0,\"completed\":1790331868733.0},\"agent\":\"agt_live_headless1\",\"model\":{\"id\":\"gpt-live\",\"providerID\":\"openai\"},\"content\":[{\"type\":\"text\",\"text\":\"first answer through the CLI\",\"state\":{\"durableBytes\":28,\"durableCapture\":\"complete\",\"publicBoundBytes\":262144,\"publicProjection\":\"complete\"}}],\"finish\":\"stop\",\"observedUsage\":{\"inputTotal\":11,\"output\":4,\"total\":15}},{\"type\":\"user\",\"id\":\"msg_03a79353a2e865e1c76cf90246b806cfx2\",\"time\":{\"created\":1790331867935.0},\"text\":\"first task\"}],\"cursor\":{\"previous\":\"eyJpZCI6Im1zZ18wM2E3OTM1M2EyZTg2NWUxYzc2Y2Y5MDI0NmI4MDZjZngyNSIsIm9yZGVyIjoiZGVzYyIsImRpcmVjdGlvbiI6InByZXZpb3VzIn0\",\"next\":\"eyJpZCI6Im1zZ18wM2E3OTM1M2EyZTg2NWUxYzc2Y2Y5MDI0NmI4MDZjZngyIiwib3JkZXIiOiJkZXNjIiwiZGlyZWN0aW9uIjoibmV4dCJ9\"}}\n{\"schema\":\"secode.cli.run-receipt.v1\",\"session\":\"ses_03a79353a2e865e1c76cf90246b806cfx0\",\"prompted\":true,\"cancelled\":null,\"cancellation_outcome\":null,\"exit\":\"success\",\"pre_visible_attempts\":1}\n"
+    }
+  },
+  "measurement": {
+    "phase": "measurement",
+    "mode": "witness",
+    "bound_s": 200,
+    "elapsed_s": 0.129,
+    "timed_out": false,
+    "harness_drained_at_s": null,
+    "exit_code": 0,
+    "stdout": {
+      "bytes": 1019,
+      "tail": "\nrunning 11 tests\ntest compatibility::a_run_whose_execution_failed_exits_remote_with_its_reason ... ok\ntest compatibility::a_text_run_reports_pending_permissions_and_never_answers_them ... ok\ntest compatibility::a_text_run_writes_only_its_own_answer_to_stdout ... ok\ntest compatibility::every_typescript_surface_outside_the_contract_is_refused_by_name ... ok\ntest compatibility::run_takes_the_typescript_default_format_and_thinking ... ok\ntest compatibility::run_takes_the_typescript_message_words_and_defaults_to_a_new_session ... ok\ntest compatibility::run_takes_the_typescript_resume_forms ... ok\ntest compatibility::service_status_prints_stopped_when_no_service_is_registered ... ok\ntest compatibility::the_binary_answers_version_and_help ... ok\ntest compatibility::the_binary_refuses_a_typescript_command_with_its_reason_and_exit_usage ... ok\ntest compatibility::thinking_adds_the_reasoning_before_the_answer ... ok\n\ntest result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 17 filtered out; finished in 0.12s\n\n"
+    },
+    "stderr": {
+      "bytes": 0,
+      "tail": ""
+    },
+    "observation": null
+  },
+  "verdict": "MEASURED: witness PASSED",
+  "survivors": [],
+  "outer_elapsed_s": 1.65,
+  "outer_bound_met": true
+}

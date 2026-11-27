@@ -1,0 +1,174 @@
+{
+  "crate": "grapt-event",
+  "note": "Each mutation is one exact snippet replacement in one file, applied in an isolated detached worktree. Every declared witness must go RED for the mutation to count; the harness additionally refuses zero-run test filters, ambiguous or missing snippets, duplicate (witness, detail) evidence across mutations, and any change to the candidate tree. G20-G25 are F4B2a's plan-read record codec: coordinate totality (including the EffectiveGraphId model-replacement coordinate), trailing-byte, presence-tag, closed-integrity-label, ordered-slice-list and foreign-domain refusals. E01-E10 are R2b-1's session.step.failed.2 payload contract: the Ended-is-not-a-failure refusal at the constructor and its distinct decode reporting, the four fail-closed refusal categories that are separately load-bearing here (unknown field at every declared level, null versus missing, non-positive step, empty ambiguity evidence), the per-tag field set, the injective tag map, the RustNative provenance that routes the kind onto the RustSession envelope variant, and the principal level's own closed vocabulary. E03's witness reaches all four declared levels - root, reason, principal and effect - and asserts the exact `at` coordinate at each, so a refusal firing at the wrong level is distinguishable from the right one. E10 is a SEPARATE row rather than another surface of E03 because E03's snippet is the shared reject_unknown BODY, which cannot express a defect in the principal arm's own variant fallback: deleting the unknown-kind refusal there leaves the helper untouched and every other level still refusing. Rows that would only restate one of those through a second surface were not added: the round-trip grid, the v1/v2 cross-decode refusals and the no-diagnostic-field scan are carried by the same edits these rows already pin, and the compile-fail probe has no runnable mutant because widening the reason to a string does not compile.",
+  "mutations": [
+    {
+      "id": "M01",
+      "law": "The WriterEpoch is inside the v2 canonical bytes",
+      "file": "crates/grapt-event/src/envelope.rs",
+      "old": "        write_u64(&mut out, u64::from(self.epoch.value()));\n",
+      "new": "",
+      "witness": "the_writer_epoch_is_inside_the_canonical_bytes"
+    },
+    {
+      "id": "M04",
+      "law": "A known name at an unknown version fails closed, never nearest",
+      "file": "crates/grapt-event/src/kind.rs",
+      "old": "                            Err(KindError::UnknownVersion {",
+      "new": "                            EventKind::ALL.iter().copied().find(|k| k.name() == name).ok_or(KindError::UnknownVersion {",
+      "witness": "a_known_name_at_an_unknown_version_fails_closed_not_nearest"
+    },
+    {
+      "id": "M05",
+      "law": "v1 whole-part re-emission classifies as re-statements",
+      "file": "crates/grapt-event/src/legacy.rs",
+      "old": "    if record.kind() != EventKind::MessagePartUpdatedV1 {",
+      "new": "    if true || record.kind() != EventKind::MessagePartUpdatedV1 {",
+      "witness": "re_emissions_of_one_part_share_a_key_and_settlements_do_not"
+    },
+    {
+      "id": "M06",
+      "law": "Non-monotonic sequences refuse",
+      "file": "crates/grapt-event/src/legacy.rs",
+      "old": "            if record.seq() <= previous.seq() {",
+      "new": "            if false {",
+      "witness": "duplicate_and_decreasing_sequences_refuse"
+    },
+    {
+      "id": "M06B",
+      "law": "Gaps pass through exactly; nothing renumbers",
+      "file": "crates/grapt-event/src/legacy.rs",
+      "old": "        out.push(record);",
+      "new": "        {\n            let mut record = record;\n            record.seq = EventSeq::new(out.len() as u64);\n            out.push(record);\n        }",
+      "witness": "gaps_survive_decode_untouched_and_unrepaired"
+    },
+    {
+      "id": "M09",
+      "law": "The data byte bound is checked before materialization",
+      "file": "crates/grapt-event/src/legacy.rs",
+      "old": "    if data_raw.len() > limit.max_data_bytes() {",
+      "new": "    if false && data_raw.len() > limit.max_data_bytes() {",
+      "witness": "an_oversized_data_text_refuses_naming_only_the_configured_limit"
+    },
+    {
+      "id": "M13",
+      "law": "The read posture skips unknown kinds; collapsing it to replay is refused",
+      "file": "crates/grapt-event/src/legacy.rs",
+      "old": "        Err(LegacyDecodeError::Kind { id, error }) => match u64::try_from(seq) {",
+      "new": "        Err(LegacyDecodeError::Kind { id, error }) if false => match u64::try_from(seq) {",
+      "witness": "read_skips_an_unknown_kind_with_cursor_advancing_while_replay_rejects"
+    },
+    {
+      "id": "ML2",
+      "law": "String length framing is load-bearing for injectivity",
+      "file": "crates/grapt-event/src/envelope.rs",
+      "old": "fn write_str(out: &mut Vec<u8>, tag: u8, value: &str) {\n    out.push(tag);\n    out.extend_from_slice(&(value.len() as u64).to_be_bytes());\n    out.extend_from_slice(value.as_bytes());\n}",
+      "new": "fn write_str(out: &mut Vec<u8>, tag: u8, value: &str) {\n    out.push(tag);\n    out.extend_from_slice(value.as_bytes());\n}",
+      "witness": "adjacent_framed_values_collide_without_length_framing"
+    },
+    {
+      "id": "E01",
+      "law": "session.step.failed.2 cannot carry a SUCCESS terminal: Ended is refused by the checked constructor",
+      "file": "crates/grapt-event/src/session_step_failed.rs",
+      "old": "            StepTerminalReason::Ended { .. } => Err(FactError::NotAFailure),",
+      "new": "            StepTerminalReason::Ended { .. } => Ok(Self { step, reason }),",
+      "witness": "the_constructor_refuses_ended_as_a_failure"
+    },
+    {
+      "id": "E02",
+      "law": "A known-but-illegal reason is a CONSTRUCTOR refusal, not an unknown variant: version skew and an illegal write stay distinguishable",
+      "file": "crates/grapt-event/src/session_step_failed.rs",
+      "old": "        \"ended\" => StepTerminalReason::Ended {",
+      "new": "        \"ended-never-matched\" => StepTerminalReason::Ended {",
+      "witness": "decode_refuses_ended_as_a_constructor_refusal_not_an_unknown_variant"
+    },
+    {
+      "id": "E03",
+      "law": "Unknown fields fail closed at every level, so an unreviewed coordinate cannot ride a payload a decoder would otherwise ignore",
+      "file": "crates/grapt-event/src/session_step_failed.rs",
+      "old": "        if !known.contains(&field.as_str()) {\n            return Err(PayloadError::UnknownField {\n                at,\n                field: field.clone(),\n            });\n        }",
+      "new": "        if !known.contains(&field.as_str()) {\n            let _ = (at, field);\n        }",
+      "witness": "an_unknown_field_is_refused_at_every_level"
+    },
+    {
+      "id": "E04",
+      "law": "Missing and explicit null are DIFFERENT defects: a writer that never had the coordinate versus one that had it and erased it",
+      "file": "crates/grapt-event/src/session_step_failed.rs",
+      "old": "        Some(Value::Null) => Err(PayloadError::NullField {\n            at,\n            field: field.to_owned(),\n        }),",
+      "new": "        Some(Value::Null) => Err(PayloadError::MissingField {\n            at,\n            field: field.to_owned(),\n        }),",
+      "witness": "an_explicit_null_is_refused_and_is_not_a_missing_field"
+    },
+    {
+      "id": "E05",
+      "law": "A Step number is POSITIVE by type; zero is a wrong value, not a small one",
+      "file": "crates/grapt-event/src/session_step_failed.rs",
+      "old": "    StepNumber::new(narrowed).ok_or_else(invalid)",
+      "new": "    StepNumber::new(narrowed.max(1)).ok_or_else(invalid)",
+      "witness": "a_non_positive_or_oversized_step_is_refused"
+    },
+    {
+      "id": "E06",
+      "law": "The v2 kind is RustNative, so it rides only the RustSession envelope variant and Legacy refuses it with named provenance",
+      "file": "crates/grapt-event/src/kind.rs",
+      "old": "    SessionStepFailedV2 => (\"session.step.failed\", 2, RustNative),",
+      "new": "    SessionStepFailedV2 => (\"session.step.failed\", 2, Manifest),",
+      "witness": "the_v2_kind_rides_only_the_rust_session_variant"
+    },
+    {
+      "id": "E07",
+      "law": "Empty ambiguity evidence is a wrong VALUE, never silently substituted: absence cannot masquerade as evidence",
+      "file": "crates/grapt-event/src/session_step_failed.rs",
+      "old": "                evidence: AmbiguityEvidence::new(required_str(object, AT_EFFECT, \"evidence\")?)",
+      "new": "                evidence: AmbiguityEvidence::new(required_str(object, AT_EFFECT, \"evidence\")?)\n                    .or_else(|| AmbiguityEvidence::new(\"unspecified\"))",
+      "witness": "empty_ambiguity_evidence_is_refused_as_a_value_not_absence"
+    },
+    {
+      "id": "E08",
+      "law": "Each reason tag admits exactly its own field set, so a payload from another tag is refused rather than ignored",
+      "file": "crates/grapt-event/src/session_step_failed.rs",
+      "old": "        StepTerminalReason::Interrupted { .. } => &[\"kind\", \"by\"],",
+      "new": "        StepTerminalReason::Interrupted { .. } => &[\"kind\", \"by\", \"class\"],",
+      "witness": "a_reason_payload_from_the_wrong_tag_is_refused"
+    },
+    {
+      "id": "E09",
+      "law": "The tag map is INJECTIVE: two distinct terminal reasons never encode to the same durable bytes",
+      "file": "crates/grapt-event/src/session_step_failed.rs",
+      "old": "        InterruptionSource::ManagedShutdown => \"managed-shutdown\",",
+      "new": "        InterruptionSource::ManagedShutdown => \"user\",",
+      "witness": "no_two_reasons_share_an_encoding"
+    },
+    {
+      "id": "E10",
+      "law": "The authority principal is a closed vocabulary at its OWN level: an unrecognised principal kind is refused there, never resolved to the payload-free System arm, so a durable refusal cannot silently name the wrong authority",
+      "file": "crates/grapt-event/src/session_step_failed.rs",
+      "old": "        other => {\n            return Err(PayloadError::UnknownVariant {\n                at: AT_PRINCIPAL,\n                field: \"kind\".to_owned(),\n                value: other.to_owned(),\n            })\n        }",
+      "new": "        _ => (AuthorityPrincipal::System, &[\"kind\"]),",
+      "witness": "an_unknown_principal_kind_is_refused_by_its_own_closed_vocabulary"
+    },
+    {
+      "id": "SE02",
+      "law": "Each provider completion disposition has its OWN durable spelling: Truncated is stored as truncated and never collapsed into a completion claim, because provider `length` is never ordinary idle",
+      "file": "crates/grapt-event/src/session_step_ended.rs",
+      "old": "        ProviderCompletionDisposition::Truncated => \"truncated\",\n",
+      "new": "        ProviderCompletionDisposition::Truncated => \"asserted-complete\",\n",
+      "witness": "truncated_is_not_stored_as_a_completion_claim"
+    },
+    {
+      "id": "SE03",
+      "law": "An unknown field in a durable payload fails closed rather than being dropped: an unrecognised coordinate means bytes written by a contract this build has not been reviewed against",
+      "file": "crates/grapt-event/src/session_step_ended.rs",
+      "old": "        if !known.contains(&field.as_str()) {\n            return Err(PayloadError::UnknownField {\n                at,\n                field: field.clone(),\n            });\n        }\n",
+      "new": "        if false && !known.contains(&field.as_str()) {\n            return Err(PayloadError::UnknownField {\n                at,\n                field: field.clone(),\n            });\n        }\n",
+      "witness": "an_unknown_field_is_refused_rather_than_dropped"
+    },
+    {
+      "id": "SE04",
+      "law": "An explicit null is a distinct defect from an absent field: a writer that had the coordinate and erased it is not a writer that never had it",
+      "file": "crates/grapt-event/src/session_step_ended.rs",
+      "old": "        Some(Value::Null) => Err(PayloadError::NullField {\n            at,\n            field: field.to_owned(),\n        }),\n",
+      "new": "        Some(Value::Null) => Err(PayloadError::MissingField {\n            at,\n            field: field.to_owned(),\n        }),\n",
+      "witness": "absence_null_and_wrong_type_are_distinguished"
+    }
+  ]
+}

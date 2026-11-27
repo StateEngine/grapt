@@ -1,0 +1,1 @@
+| Native command completion before handle eviction | `openai/codex`, Apache-2.0, commit `c465563aa9626d99420062135b187d299f904f81`, `codex-rs/core/src/unified_exec/async_watcher.rs` | Exit-before-prune ordering adapted into the existing Grapt session event owner; OS observations are retained independently of tool-call settlement. |

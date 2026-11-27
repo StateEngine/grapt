@@ -1,0 +1,66 @@
+{
+  "model_calls": 0,
+  "held_out_executed": 0,
+  "rows": [
+    {
+      "task": "B01",
+      "status": "completed",
+      "exit": 0
+    },
+    {
+      "task": "B02",
+      "status": "completed",
+      "exit": 0
+    },
+    {
+      "task": "M01",
+      "status": "completed",
+      "exit": 0
+    },
+    {
+      "task": "M02",
+      "status": "completed",
+      "exit": 0
+    },
+    {
+      "task": "M03",
+      "status": "completed",
+      "exit": 0
+    },
+    {
+      "task": "D01",
+      "status": "completed",
+      "exit": 0
+    },
+    {
+      "task": "D02",
+      "status": "completed",
+      "exit": 0
+    },
+    {
+      "task": "D03",
+      "status": "completed",
+      "exit": 0
+    },
+    {
+      "task": "R01",
+      "status": "completed",
+      "exit": 0
+    },
+    {
+      "task": "R02",
+      "status": "completed",
+      "exit": 0
+    },
+    {
+      "task": "C01",
+      "status": "completed",
+      "exit": 0
+    },
+    {
+      "task": "C02",
+      "status": "completed",
+      "exit": 0
+    }
+  ]
+}

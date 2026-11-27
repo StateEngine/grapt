@@ -1,0 +1,29 @@
+nextest-version = "0.9.143"
+
+[profile.gate]
+retries = 0
+fail-fast = false
+# Keep the shipped sibling CLI used by Product/TUI journeys in the archive.
+archive.include = [
+    { path = "debug/grapt", relative-to = "target", on-missing = "ignore" },
+    { path = "debug/grapt-server", relative-to = "target", on-missing = "ignore" },
+    { path = "x86_64-pc-windows-msvc/debug/grapt.exe", relative-to = "target", on-missing = "ignore" },
+    { path = "x86_64-pc-windows-msvc/debug/grapt-server.exe", relative-to = "target", on-missing = "ignore" },
+]
+
+[profile.gate.junit]
+path = "junit.xml"
+report-skipped = "all"
+
+# Flaky quarantine (shrink-only; the landing owner alone adds or removes entries).
+# Each entry quarantines one test for at most seven days and must parse
+# or the gate refuses to run (enforced by test_flaky_quarantine):
+#
+# # flaky-quarantine: owner=<seat> scorecard=<item> expiry=<YYYY-MM-DD>
+# [[profile.gate.overrides]]
+# filter = 'test(=<full test path>)'
+# retries = 1
+#
+# A quarantined test fails the gate only when both attempts fail; every
+# test that passed only on retry is marked '# nextest flaky: <classname>::<name>'
+# in the gate log.

@@ -1,0 +1,11 @@
+error[E0277]: the trait bound `AcceptedConnection: Clone` is not satisfied
+  --> tests/probes/03_accepted_connection_not_clone.rs:24:22
+   |
+24 |     requires_clone::<AcceptedConnection>();
+   |                      ^^^^^^^^^^^^^^^^^^ the trait `Clone` is not implemented for `AcceptedConnection`
+   |
+note: required by a bound in `requires_clone`
+  --> tests/probes/03_accepted_connection_not_clone.rs:21:22
+   |
+21 | fn requires_clone<T: Clone>() {}
+   |                      ^^^^^ required by this bound in `requires_clone`

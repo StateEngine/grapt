@@ -1,0 +1,1 @@
+| Current-request-first compaction checkpoint | `openai/codex`, `codex-rs/prompts/templates/compact/prompt.md` at `f752c97f7d0be0cbef5cece327f52a16ad6fb1c6` (Apache-2.0); adapted concise continuation guidance into SE's request, authorization, freshness and retrieval template. |

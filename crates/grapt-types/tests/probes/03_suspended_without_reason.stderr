@@ -1,0 +1,26 @@
+error[E0308]: mismatched types
+  --> tests/probes/03_suspended_without_reason.rs:13:49
+   |
+13 |     let bare: BlockerState<PermissionBlocker> = BlockerState::Suspended;
+   |               -------------------------------   ^^^^^^^^^^^^^^^^^^^^^^^ expected `BlockerState<PermissionBlocker>`, found enum constructor
+   |               |
+   |               expected due to this
+   |
+   = note:          expected enum `BlockerState<PermissionBlocker>`
+           found enum constructor `fn(<_ as BlockerFamily>::Reason) -> BlockerState<_> {BlockerState::<_>::Suspended}`
+help: use parentheses to construct this tuple variant
+   |
+13 |     let bare: BlockerState<PermissionBlocker> = BlockerState::Suspended(/* value */);
+   |                                                                        +++++++++++++
+
+error[E0271]: type mismatch resolving `<PermissionBlocker as BlockerFamily>::Reason == PermissionReply`
+  --> tests/probes/03_suspended_without_reason.rs:17:19
+   |
+17 |     takes_blocker(BlockerState::Suspended(PermissionReply::Once));
+   |                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ expected `PermissionReply`, found `PermissionSuspensionReason`
+
+error[E0271]: type mismatch resolving `<PermissionBlocker as BlockerFamily>::Reply == PermissionSuspensionReason`
+  --> tests/probes/03_suspended_without_reason.rs:20:19
+   |
+20 |     takes_blocker(BlockerState::Settled(PermissionSuspensionReason::Shutdown));
+   |                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ expected `PermissionSuspensionReason`, found `PermissionReply`

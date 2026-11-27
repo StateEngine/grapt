@@ -1,0 +1,1 @@
+{"schema":"secode.price-policy.v1","version":"fixture-v1","models":[{"provider":"fixture","model":"deterministic","output_basis":"includes-reasoning","usd_per_million_fresh_input":1,"usd_per_million_cache_read":0.1,"usd_per_million_cache_write":2,"usd_per_million_output":3}]}

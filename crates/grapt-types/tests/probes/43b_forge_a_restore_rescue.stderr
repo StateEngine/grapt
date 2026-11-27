@@ -1,0 +1,19 @@
+error[E0599]: no associated function or constant named `captured` found for struct `RestoreRescue` in the current scope
+  --> tests/probes/43b_forge_a_restore_rescue.rs:23:20
+   |
+23 |     RestoreRescue::captured(plan, anchor)
+   |                    ^^^^^^^^ associated function or constant not found in `RestoreRescue`
+   |
+note: if you're trying to build a new `RestoreRescue` consider using one of the following associated functions:
+      RestoreRescue::captured_at_provider_boundary
+      RestoreRescue::waived_as_unsupported
+  --> src/checkpoint/restore_plan.rs
+   |
+   | /     pub fn captured_at_provider_boundary(
+   | |         plan: &SettledRestorePlan,
+   | |         anchor: &RecoveryAnchor,
+   | |     ) -> Option<Self> {
+   | |_____________________^
+...
+   |       pub fn waived_as_unsupported(plan: &SettledRestorePlan) -> Option<Self> {
+   |       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

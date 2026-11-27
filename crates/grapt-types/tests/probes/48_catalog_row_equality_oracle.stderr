@@ -1,0 +1,13 @@
+error[E0369]: binary operation `==` cannot be applied to type `ModelCatalogRecord`
+  --> tests/probes/48_catalog_row_equality_oracle.rs:31:46
+   |
+31 |     let _guessed_right = row("premium-tier") == row("economy-tier");
+   |                          ------------------- ^^ ------------------- ModelCatalogRecord
+   |                          |
+   |                          ModelCatalogRecord
+   |
+note: `ModelCatalogRecord` does not implement `PartialEq`
+  --> src/model/catalog.rs
+   |
+   | pub struct ModelCatalogRecord {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `ModelCatalogRecord` is defined in another crate

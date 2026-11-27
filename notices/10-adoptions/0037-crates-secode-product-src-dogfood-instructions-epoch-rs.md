@@ -1,0 +1,1 @@
+| `crates/secode-product/src/dogfood/instructions/epoch.rs` | OpenAI Codex, `codex-rs/core/src/context/world_state/agents_md.rs` | `bb64b894fd67158be0f874872e6d7bfe717e7368` | **Modified:** source replacement/removal notices use existing typed instruction chronology instead of matching text. |

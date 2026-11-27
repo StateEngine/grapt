@@ -1,0 +1,1 @@
+| openai/codex | `codex-rs/tui/src/chatwidget/slash_dispatch.rs` at `83086188ae0614bd882818ff1aa23f3194962012` | Apache-2.0 | Trim and validate an explicit Session name before invoking the existing rename operation; adapted to the closed CLI grammar and 100-character Grapt title contract. License and notice retained in `licenses/openai-codex/`. |

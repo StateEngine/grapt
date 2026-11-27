@@ -1,0 +1,1 @@
+| `crates/secode-client/src/links.rs` | `openai/codex`, `codex-rs/tui/src/terminal_hyperlinks.rs`, `terminal_hyperlinks/source.rs` | `092d3acd6bec3e3a14bdc7e7a2810ab628ab759d` | Modified: bounded HTTP(S) destinations and text spans, existing cell wrapping, terminal-only OSC 8 emission and redacted link diagnostics. |

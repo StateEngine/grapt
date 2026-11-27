@@ -1,0 +1,68 @@
+[graph]
+all-features = true
+
+[advisories]
+# Unmaintained with no fixed release: 2025-0141 is pulled in by syntect,
+# 2026-0543 (chrono) by mxc-sdk through the sandbox.
+ignore = ["RUSTSEC-2025-0141", "RUSTSEC-2026-0543"]
+
+[licenses]
+allow = [
+    "MIT", "Apache-2.0", "BSD-2-Clause", "BSD-3-Clause", "ISC", "Zlib",
+    "Unicode-3.0", "Unicode-DFS-2016",
+    "MIT-0", # Approved license exception.
+]
+
+# CA certificate data only.
+[[licenses.exceptions]]
+name = "webpki-root-certs"
+version = "=1.0.10"
+allow = ["CDLA-Permissive-2.0"]
+
+# Approved mention-search dependencies.
+[[licenses.exceptions]]
+name = "nucleo"
+version = "=0.5.0"
+allow = ["MPL-2.0"]
+
+[[licenses.exceptions]]
+name = "nucleo-matcher"
+version = "=0.3.1"
+allow = ["MPL-2.0"]
+
+# . Clipboard backend used by arboard; exceptions are limited to these locked versions.
+[[licenses.exceptions]]
+name = "clipboard-win"
+version = "=5.4.2"
+allow = ["BSL-1.0"]
+
+[[licenses.exceptions]]
+name = "error-code"
+version = "=3.3.2"
+allow = ["BSL-1.0"]
+
+# Safe Windows pipe peer identity.
+[[licenses.exceptions]]
+name = "recvmsg"
+version = "=1.0.0"
+allow = ["0BSD"]
+
+[[licenses.exceptions]]
+name = "doctest-file"
+version = "=1.1.1"
+allow = ["0BSD"]
+
+# Native skills filesystem watcher.
+[[licenses.exceptions]]
+name = "notify"
+version = "=8.2.0"
+allow = ["CC0-1.0"]
+
+[bans]
+multiple-versions = "warn"
+wildcards = "allow"
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]

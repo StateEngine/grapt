@@ -1,0 +1,2043 @@
+{
+  "purpose": "F3A + F3B1a + F3B1b + F3B2 + F3B3 + F3B4a + F3B4b + F3B4c + F4B1b + F4B2 + F4B2a, joined at F5. Each entry names one load-bearing behaviour, the exact source edit that removes it, and the witness that must turn red once it is gone. A witness that stays green under its own mutation attributes nothing.",
+  "run": "python crates/grapt-store/mutations/run.py",
+  "isolation": "Every mutation is applied inside its own disposable git worktree checked out at the exact candidate commit. No mutant is ever written into the calling worktree, so a restore step cannot silently leave a stale build behind.",
+  "scope_note": "S01-S08 are F3A's durable-decode consolidation. B01-B18 are F3B1a: aggregate identity widening, store-owned writer election, the fenced append and the no-new-v1 gate. C01-C22 are F3B1b (C13 withdrawn, see withdrawn_claims): the governed-write authorizer, the per-statement lift, the GovernedTransaction chokepoint and the structural zero-survivor gates. P01-P20 are F3B2: the authoritative projection watermark, its three key dimensions, the never-leading read, catch-up from durable truth, and the bounded advisory notice. Two F3B2 laws are deliberately NOT in this set and are accounted for in F3B2_RESIDUALS.md: the rollback of a watermark on projector failure (carried by transaction atomicity, which no single edit removes) and commit-before-notify itself (carried by the type, attributed by compile-fail probes 02 and 03). K01-K06 are F3B3: the campaign append path, its mandatory authoritative projection, the applicability call site, transition-identity uniqueness, envelope-digest reconciliation and the behind-watermark catch-up fold. Laws the F3B3 lane could not attribute to a single edit are in F3B3_RESIDUALS.md rather than given a fabricated row. W01-W04 are F3B4a plus DOGFOOD-1's typed-suffix resurrection closure: the writer-owner identity that must be unique over TIME, the election arm that consumes it, the mint that CONSUMES the injected identity token through both store seams, and the production token alphabet consumed by typed durable identities. N01-N13 are F4B1b: the durable session.compaction.ended.2 fact, typed outcome recovery, and the consumer-owned rebuildable window cache whose corruption-refusal and lag-never-lead laws are enforced on READ because the cache tables are deliberately outside the governed set. J01-J03 are the F4B2 integration base itself. G01-G14 are F4B2a: the bounded family-scoped campaign-transition page read (scope, order, cap, zero-limit refusal, exclusive cursor, index-column agreement), the durable plan_read_receipt table (exact-retry-only reconciliation, per-dimension column/bytes agreement, corrupt-row page failure, governed membership, ensure_schema chaining, open-time shape verification, and the R1-closure public page-cap enforcement row G14). R01-R04 are F3B4b: explicit foreign-key initialization proven independently of rusqlite's default, and the dead-owner inspection - that it allocates no sequence, and its two opposite classifier collapses. F3B4b's Retained control arm deliberately has NO row because B07 already pins that exact line and edit; F3B4B_RESIDUALS.md item 5 records B07 as its inherited carrier. M01-M15 are F3B4c: the forced event/event_sequence table rebuild and the three statement orders it depends on, verbatim payload carry-forward, LegacyUnfenced retention, target index shape and its verification at every open, the between-migrations quarantine marker and the open that refuses it, the injected migration-time authority, and the family-scoped Session reads. The behind-watermark campaign catch-up gets NO new row: K06 already pins that exact branch, and its unchanged edit now reds both the inherited white-box probe and F3B4c's new public end-to-end witness - a second row would record one law twice. At F5 those lineages are no longer absent: F3B4b's R01-R04 and F3B4c's M01-M15 join this set here, which is what makes this the 125-row union rather than either parent's set. X01-X16 are R3a: the durable seat mailbox - the expected-recipient refusal, exact-retry-only reconciliation and its conflicting-reuse refusal, the two supersession scope refusals, idempotent source acknowledgement, the consumed and superseded exclusions from an actionable page, the exclusive cursor, both page bounds, monotonic admission positions, the column/bytes agreement and trailing-byte refusals of the strict decoder, the governed lift naming the mailbox's own table, the table's governed membership, and the cross-recipient acknowledgement refusal. X11 and X14 each carry their own witness with a NAMED panic: both first reported through `?`, whose Err leaves the harness no diagnostic, so their evidence was byte-identical and Guard 5 refused the pair rather than recording one law twice. Laws R3a could not attribute to a single edit are in R3A_RESIDUALS.md rather than given a fabricated row. Six inherited rows (C06-C09, P18, G11) were RE-PINNED, never re-scoped or deleted: mailbox_message grew GovernedTable::ALL from six entries to seven, which moved the exact snippet all six anchor on. Their mutations are unchanged. SC26-SC31 are the R4 session-list/keyset R1 HOLD closure, appended after SC25 rather than repurposing any existing row: the binary-collation batch continuation and its import postcondition (H1), the open-time refusal that will not manufacture an empty projection over populated legacy rows (H2), the request path that carries no whole-projection scan (H4), and the two corpus rows that pin execution-versus-deserialization and the exact ratified law-pack pin (H3). SC30 and SC31 deliberately mutate FIXTURE bytes rather than source: their law is that the corpus is executed and its pin is exact, and only a declared-expectation edit can attribute that. SC32 closes review HOLD-A: the ensure_schema ORDERING introduced by the H2 correction was load-bearing but unwitnessed, because the only inputs that can observe it pair a pre-fencing fact log with a POPULATED seven-column legacy session table. R2C5A1 covers PS01-PS47 with PS25/PS26/PS27/PS39/PS44/PS46 retired as tombstones. The live set and the tombstones together are contiguous 1-47 with no gaps: no id has been deleted, renumbered or repurposed. Recovery enumeration is SETTLED-INCLUSIVE: a death after the terminal but before the reclaim leaves a settled row that is still owed work, so excluding settled rows is what made that death invisible. An earlier note said PS01-PS41 and described the scan as excluding settled rows; both were stale once PS42 and the settled-inclusive cursor landed, and the PS01-PS46 revision was stale once PS47 closed H3's use half.",
+  "mutations": [
+    {
+      "id": "S01",
+      "law": "The store decodes through the accepted CLOSED vocabulary, so an unmodelled durable name cannot pass",
+      "file": "crates/grapt-store/src/decode.rs",
+      "test": "decode::tests::the_open_name_shapes_the_old_parse_admitted_are_now_refused",
+      "old": "    let record = grapt_event::decode_for_replay(\n        id,\n        aggregate_id,\n        seq,\n        created_ms,\n        kind_raw,\n        data_raw,\n        STORE_DATA_LIMIT,\n    )?;",
+      "new": "    let record = grapt_event::decode_for_replay(\n        id,\n        aggregate_id,\n        seq,\n        created_ms,\n        if kind_raw.starts_with(\"session.\") || kind_raw.starts_with(\"permission.\") || kind_raw.starts_with(\"form.\") { kind_raw } else { \"session.tool.success.1\" },\n        data_raw,\n        STORE_DATA_LIMIT,\n    )?;"
+    },
+    {
+      "id": "S02",
+      "law": "A known durable name at an unknown version is refused, never resolved to a nearby version",
+      "file": "crates/grapt-store/src/decode.rs",
+      "test": "decode::tests::a_known_name_at_an_unknown_version_is_refused_not_resolved",
+      "old": "        kind_raw,\n        data_raw,\n        STORE_DATA_LIMIT,",
+      "new": "        &kind_raw.rsplit_once('.').map(|(n, _)| format!(\"{n}.1\")).unwrap_or_else(|| kind_raw.to_owned()),\n        data_raw,\n        STORE_DATA_LIMIT,"
+    },
+    {
+      "id": "S03",
+      "law": "The measured pre-parse byte bound is applied by the store, not merely available",
+      "file": "crates/grapt-store/src/decode.rs",
+      "test": "decode::tests::the_store_applies_the_measured_byte_bound",
+      "old": "        data_raw,\n        STORE_DATA_LIMIT,\n    )?;",
+      "new": "        data_raw,\n        LegacyDataLimit::new(usize::MAX).unwrap_or(STORE_DATA_LIMIT),\n    )?;"
+    },
+    {
+      "id": "S04",
+      "law": "A legal durable kind still decodes — the tightening did not cost a real row",
+      "file": "crates/grapt-store/src/decode.rs",
+      "test": "decode::tests::a_real_durable_kind_still_decodes",
+      "old": "        kind: record.kind(),",
+      "new": "        kind: grapt_event::EventKind::SessionCreatedV1,"
+    },
+    {
+      "id": "S05",
+      "law": "A negative durable sequence is a typed refusal, never coerced",
+      "file": "crates/grapt-store/src/decode.rs",
+      "test": "decode::tests::a_negative_sequence_is_refused",
+      "old": "        seq,\n        created_ms,\n        kind_raw,",
+      "new": "        seq.max(0),\n        created_ms,\n        kind_raw,"
+    },
+    {
+      "id": "S08",
+      "law": "The idempotency/divergence pre-check routes the stored row through the closed decoder BEFORE comparing, so a row the replay path refuses can never settle as Idempotent",
+      "file": "crates/grapt-store/src/write/event_log.rs",
+      "test": "write::tests::a_stored_row_the_replay_path_refuses_cannot_settle_as_idempotent",
+      "mutation_note": "Removes ONLY the kind-level closure: a refused kind falls back to a legal one while the negative-sequence, oversized and unparseable refusals still fire through the second call. The witness can therefore go red for the named reason and no other.",
+      "old": "            let stored = decode_row(\n                input.id.as_str(),\n                agg.as_str(),\n                seq,\n                created,\n                &stored_type,\n                &stored_data,\n            )?;",
+      "new": "            let stored = match decode_row(\n                input.id.as_str(),\n                agg.as_str(),\n                seq,\n                created,\n                &stored_type,\n                &stored_data,\n            ) {\n                Ok(decoded) => decoded,\n                Err(_) => decode_row(\n                    input.id.as_str(),\n                    agg.as_str(),\n                    seq,\n                    created,\n                    \"session.input.admitted.1\",\n                    &stored_data,\n                )?,\n            };"
+    },
+    {
+      "id": "B01",
+      "law": "A stale writer is refused at append: the fence is consulted, not merely available",
+      "file": "crates/grapt-store/src/write/event_log.rs",
+      "test": "write::tests::a_stale_writer_is_refused_before_any_sequence_is_consumed",
+      "old": "        crate::election::fence(tx, &input.aggregate, input.writer.epoch)?;",
+      "new": "        let _ = input.writer.epoch();"
+    },
+    {
+      "id": "B02",
+      "law": "The fence decides BEFORE the stored row is read, so a writer with no authority over the aggregate is told it is stale rather than handed a diagnostic about that row",
+      "file": "crates/grapt-store/src/write/event_log.rs",
+      "test": "write::tests::a_stale_writer_is_refused_before_the_stored_row_is_read",
+      "old": "        crate::election::fence(tx, &input.aggregate, input.writer.epoch)?;",
+      "new": "        {\n            let probe: Option<(String, i64, i64, String, String)> = tx\n                .query_row(\n                    \"SELECT aggregate_id, seq, created, type, data FROM event WHERE id = ?1\",\n                    [input.id.as_str()],\n                    |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)),\n                )\n                .ok();\n            if let Some((agg, seq, created, stored_type, stored_data)) = probe {\n                decode_row(\n                    input.id.as_str(),\n                    agg.as_str(),\n                    seq,\n                    created,\n                    &stored_type,\n                    &stored_data,\n                )?;\n            }\n        }\n        crate::election::fence(tx, &input.aggregate, input.writer.epoch)?;"
+    },
+    {
+      "id": "B03",
+      "law": "The epoch comparison is EXACT equality, so a fabricated future epoch is refused too",
+      "file": "crates/grapt-store/src/election.rs",
+      "test": "election::tests::a_fabricated_future_epoch_is_refused_too",
+      "old": "    if submitted != elected {",
+      "new": "    if submitted < elected {"
+    },
+    {
+      "id": "B04",
+      "law": "The epoch comparison refuses a LOST owner, not only a fabricated one",
+      "file": "crates/grapt-store/src/election.rs",
+      "test": "election::tests::a_stale_owner_is_fenced_after_transfer",
+      "old": "    if submitted != elected {",
+      "new": "    if submitted > elected {"
+    },
+    {
+      "id": "B05",
+      "law": "An aggregate with no election refuses every epoch; an unknown writer is never defaulted to the submitted one",
+      "file": "crates/grapt-store/src/election.rs",
+      "test": "election::tests::an_unelected_aggregate_refuses_every_epoch",
+      "old": "    let Some((_, elected)) = current(tx, aggregate)? else {\n        return Err(ElectionError::UnknownWriter {\n            family: family_of(aggregate),\n            aggregate: identity_of(aggregate).to_owned(),\n        });\n    };",
+      "new": "    let elected = match current(tx, aggregate)? {\n        Some((_, elected)) => elected,\n        None => submitted,\n    };"
+    },
+    {
+      "id": "B06",
+      "law": "Ownership transfer advances the epoch by exactly one",
+      "file": "crates/grapt-store/src/election.rs",
+      "test": "election::tests::ownership_transfer_advances_the_epoch_by_exactly_one",
+      "old": "            let epoch = previous\n                .next()\n                .ok_or_else(|| ElectionError::EpochExhausted {",
+      "new": "            let epoch = Some(previous)\n                .ok_or_else(|| ElectionError::EpochExhausted {"
+    },
+    {
+      "id": "B07",
+      "law": "Re-election by the incumbent RETAINS the epoch; advancing there would fence the incumbent's own in-flight writes",
+      "file": "crates/grapt-store/src/election.rs",
+      "test": "election::tests::re_election_by_the_incumbent_does_not_advance_the_epoch",
+      "old": "        Some((incumbent, epoch)) if &incumbent == owner => Election::Retained { epoch },",
+      "new": "        Some((incumbent, epoch)) if &incumbent == owner => Election::Transferred {\n            epoch: epoch.next().unwrap_or(epoch),\n            previous: epoch,\n        },"
+    },
+    {
+      "id": "B08",
+      "law": "A second connection opened for an EXISTING owner keeps that identity, so one writer cannot fence itself by opening another handle",
+      "file": "crates/grapt-store/src/write/open.rs",
+      "test": "write::tests::two_connections_of_one_owner_do_not_fence_each_other",
+      "old": "        store.owner = owner.clone();",
+      "new": "        let _ = owner;"
+    },
+    {
+      "id": "B09",
+      "law": "The no-new-v1 gate is enforced by the database, so an unfenced row cannot enter through a statement that never touched the append path",
+      "file": "crates/grapt-store/src/write/schema.rs",
+      "test": "write::tests::a_new_unfenced_row_is_refused_by_the_database",
+      "old": "            \"CREATE TRIGGER IF NOT EXISTS event_refuses_new_unfenced_write\n             BEFORE INSERT ON event\n             WHEN NEW.writer_epoch IS NULL\n             BEGIN\n                 SELECT RAISE(ABORT, 'no new v1 write: a new event row must carry its elected writer epoch');\n             END;\n",
+      "new": "            \"\n"
+    },
+    {
+      "id": "B10",
+      "law": "The committed row records the epoch it was actually written under, not a constant",
+      "file": "crates/grapt-store/src/write/event_log.rs",
+      "test": "write::tests::the_committed_row_carries_its_elected_epoch",
+      "old": "                data_text,\n                epoch_db\n            ],",
+      "new": "                data_text,\n                7i64\n            ],"
+    },
+    {
+      "id": "B11",
+      "law": "The writer epoch is part of replay identity, so the same event id under a different epoch diverges instead of reconciling",
+      "file": "crates/grapt-store/src/write/event_log.rs",
+      "test": "write::tests::a_replay_under_a_different_epoch_diverges",
+      "old": "                && stored_epoch == Some(epoch_db)\n",
+      "new": ""
+    },
+    {
+      "id": "B12",
+      "law": "The sequence cursor is keyed by family AND identity, so two aggregates whose identity strings collide do not share one cursor",
+      "file": "crates/grapt-store/src/write.rs",
+      "test": "write::tests::the_store_key_is_family_scoped",
+      "repin_note": "Re-pinned by F3B4b. The bare SELECT line this row used to pin became AMBIGUOUS (3 matches) the moment read_sequence_cursor and its test-side ruler stored_cursor were added: both contain the same SQL text, and the manifest matches SUBSTRINGS, so a more deeply indented copy still contains the 8-space-prefixed pin. The snippet now includes allocate_sequence's preceding `let next_seq` line, which is unique to the read-and-increment path this row has always been about. The MUTATION is unchanged - the family predicate is still what gets dropped - and the witness and its law are untouched. Re-pinned rather than deleted, per the runner's own preflight guidance.",
+      "old": "    let next_seq: u64 = match tx.query_row(\n        \"SELECT seq FROM event_sequence WHERE aggregate_family = ?1 AND aggregate_id = ?2\",",
+      "new": "    let next_seq: u64 = match tx.query_row(\n        \"SELECT seq FROM event_sequence WHERE aggregate_id = ?2\","
+    },
+    {
+      "id": "B14",
+      "law": "A store that was never elected holds no token; the absent epoch is a typed refusal, never a default",
+      "file": "crates/grapt-store/src/write/model.rs",
+      "test": "write::tests::an_unelected_store_cannot_obtain_a_fencing_token",
+      "old": "        match self.0.get(aggregate) {\n            Some(&epoch) => Ok(FencedWriter { epoch }),",
+      "new": "        match self.0.get(aggregate).copied().or(Some(WriterEpoch::FIRST)) {\n            Some(epoch) => Ok(FencedWriter { epoch }),"
+    },
+    {
+      "id": "B15",
+      "law": "Append never elects on a caller's behalf; a writer that took ownership on its way past the fence could never be stale",
+      "file": "crates/grapt-store/src/write/event_log.rs",
+      "test": "write::tests::an_unelected_aggregate_refuses_a_fabricated_token",
+      "old": "        crate::election::fence(tx, &input.aggregate, input.writer.epoch)?;",
+      "new": "        if crate::election::current(tx, &input.aggregate)?.is_none() {\n            crate::election::elect(tx, tx.gate(), &input.aggregate, &crate::election::WriterOwnerId::mint(&crate::ids::OsRandomIds::seed()?))?;\n        }\n        crate::election::fence(tx, &input.aggregate, input.writer.epoch)?;",
+      "repin_note": "Re-pinned by F3B4a: `WriterOwnerId::mint` now takes an injected IdAuthority, so the previous zero-argument call no longer compiled and this entry scored a COMPILE KILL instead of firing its witness. Re-pinned rather than deleted — a mutation that stops compiling silently retires the law it was attributing."
+    },
+    {
+      "id": "B16",
+      "law": "A stored epoch outside the valid range is a typed refusal, never coerced to a usable value",
+      "file": "crates/grapt-store/src/election.rs",
+      "test": "election::tests::a_corrupt_stored_epoch_refuses_rather_than_coercing",
+      "old": "    u32::try_from(stored)\n        .ok()\n        .and_then(WriterEpoch::new)",
+      "new": "    u32::try_from(stored)\n        .ok()\n        .and_then(|value| WriterEpoch::new(value).or(Some(WriterEpoch::FIRST)))"
+    },
+    {
+      "id": "B17",
+      "law": "The COLUMN CHECK is what refuses a pre-fencing database. The unique index and the trigger also name the fencing columns, so the shape is verified before either is built and the witness asserts which refusal fired -- otherwise this law would score green on another mechanism's error",
+      "file": "crates/grapt-store/src/write/schema.rs",
+      "test": "write::tests::open_refuses_a_pre_fencing_event_table",
+      "old": "        Self::verify_columns(\n            conn,\n            \"event_sequence\",\n            &[\"aggregate_family\", \"aggregate_id\", \"seq\"],\n        )?;\n        Self::verify_columns(\n            conn,\n            \"aggregate_writer\",\n            &[\"aggregate_family\", \"aggregate_id\", \"owner_id\", \"epoch\"],\n        )?;\n        Self::verify_columns(\n            conn,\n            \"projection_watermark\",\n            &[\"projection\", \"aggregate_family\", \"aggregate_id\", \"seq\"],\n        )?;\n        Self::verify_columns(\n            conn,\n            \"event\",\n            &[\n                \"id\",\n                \"aggregate_family\",\n                \"aggregate_id\",\n                \"seq\",\n                \"created\",\n                \"type\",\n                \"data\",\n                \"writer_epoch\",\n                \"envelope_bytes\",\n                \"campaign_transition_id\",\n            ],\n        )?;",
+      "new": "        Self::verify_columns(\n            conn,\n            \"event_sequence\",\n            &[\"aggregate_id\", \"seq\"],\n        )?;\n        Self::verify_columns(\n            conn,\n            \"aggregate_writer\",\n            &[\"aggregate_family\", \"aggregate_id\", \"owner_id\", \"epoch\"],\n        )?;\n        Self::verify_columns(\n            conn,\n            \"projection_watermark\",\n            &[\"projection\", \"aggregate_family\", \"aggregate_id\", \"seq\"],\n        )?;\n        Self::verify_columns(\n            conn,\n            \"event\",\n            &[\"id\", \"aggregate_id\", \"seq\", \"created\", \"type\"],\n        )?;",
+      "repin_note": "Re-pinned by F3B3. The `event` required-column list gained `envelope_bytes` and `campaign_transition_id`, which rotted the original snippet. The mutation still strips the fencing coordinates from BOTH the event_sequence AND the event checks, because `ensure_schema` verifies event_sequence FIRST: weakening only that one hands first refusal to the `event` check, which emits the SAME 'missing column aggregate_family' message the witness asserts, and the witness would stay GREEN on another site's error. Same fencing-coordinate law, same red, updated text."
+    },
+    {
+      "id": "B18",
+      "law": "The ELECTION row is keyed by family AND identity, so a campaign whose identity string collides with a session's reads no elected epoch of its own aggregate's neighbour",
+      "file": "crates/grapt-store/src/election.rs",
+      "test": "election::tests::the_election_row_is_family_scoped",
+      "mutation_note": "B12 removes the family predicate from the sequence CURSOR's read; this removes it from the ELECTION row's read. One law, two carriers: with the cursor's predicate intact B12's witness stays green while a campaign's FIRST election silently becomes a transfer off a same-named session's row, so each carrier needs its own witness.",
+      "old": "            \"SELECT owner_id, epoch FROM aggregate_writer\n             WHERE aggregate_family = ?1 AND aggregate_id = ?2\",",
+      "new": "            \"SELECT owner_id, epoch FROM aggregate_writer\n             WHERE aggregate_id = ?2\","
+    },
+    {
+      "id": "C01",
+      "law": "The governed-write denial is INSTALLED on the store's connection, not merely defined",
+      "file": "crates/grapt-store/src/write/store.rs",
+      "test": "the_fact_log_refuses_a_consumer_insert",
+      "test_target": "governed_writes",
+      "old": "    pub(super) fn guarded(mut conn: Connection, ids: &dyn IdAuthority) -> Result<Self, WriteError> {\n        let gate = WriteGate::new();\n        gate.install(&mut conn)?;",
+      "new": "    pub(super) fn guarded(conn: Connection, ids: &dyn IdAuthority) -> Result<Self, WriteError> {\n        let gate = WriteGate::new();"
+    },
+    {
+      "id": "C02",
+      "law": "A refused governed write is an ERROR, never a silent skip",
+      "file": "crates/grapt-store/src/governed.rs",
+      "test": "the_fact_log_refuses_a_consumer_delete",
+      "test_target": "governed_writes",
+      "mutation_note": "SQLITE_IGNORE makes the statement succeed while doing nothing, so a caller cannot tell a forbidden write from a completed one. Asserting only that the row is unchanged would score this GREEN; the witness asserts the refusal itself.",
+      "old": "        Some(lifted) if lifted == governed => Authorization::Allow,\n        _ => Authorization::Deny,",
+      "new": "        Some(lifted) if lifted == governed => Authorization::Allow,\n        _ => Authorization::Ignore,"
+    },
+    {
+      "id": "C03",
+      "law": "INSERT is one of the three governed verbs",
+      "file": "crates/grapt-store/src/governed.rs",
+      "test": "the_sequence_cursor_refuses_a_consumer_insert",
+      "test_target": "governed_writes",
+      "old": "        AuthAction::Insert { table_name } => table_name,\n",
+      "new": ""
+    },
+    {
+      "id": "C04",
+      "law": "UPDATE is one of the three governed verbs - this is what closes F3B1a residual 2, unfencing a committed row",
+      "file": "crates/grapt-store/src/governed.rs",
+      "test": "the_fact_log_refuses_a_consumer_update",
+      "test_target": "governed_writes",
+      "old": "        AuthAction::Update { table_name, .. } => table_name,\n",
+      "new": ""
+    },
+    {
+      "id": "C05",
+      "law": "DELETE is one of the three governed verbs",
+      "file": "crates/grapt-store/src/governed.rs",
+      "test": "the_sequence_cursor_refuses_a_consumer_delete",
+      "test_target": "governed_writes",
+      "old": "        AuthAction::Delete { table_name } => table_name,\n",
+      "new": ""
+    },
+    {
+      "id": "C06",
+      "law": "`event` is a governed table",
+      "file": "crates/grapt-store/src/governed.rs",
+      "test": "the_raw_read_seam_cannot_write_a_governed_table",
+      "test_target": "governed_writes",
+      "mutation_note": "The stand-in keeps the array's arity so the edit is a governance change, not a type change. Re-pinned by R3a: the governed set grew 6 -> 7 when mailbox_message joined it, which moved this exact snippet. The mutation itself is unchanged.",
+      "old": "    pub(crate) const ALL: [GovernedTable; 9] = [\n        GovernedTable::Event,\n        GovernedTable::EventSequence,\n        GovernedTable::AggregateWriter,\n        GovernedTable::EngineEpoch,\n        GovernedTable::ProjectionWatermark,\n        GovernedTable::PlanReadReceipt,\n        GovernedTable::MailboxMessage,\n        GovernedTable::AttemptReceipt,\n        GovernedTable::AttemptReceiptQuarantine,\n    ];",
+      "new": "    pub(crate) const ALL: [GovernedTable; 9] = [\n        GovernedTable::EventSequence,\n        GovernedTable::EventSequence,\n        GovernedTable::AggregateWriter,\n        GovernedTable::EngineEpoch,\n        GovernedTable::ProjectionWatermark,\n        GovernedTable::PlanReadReceipt,\n        GovernedTable::MailboxMessage,\n        GovernedTable::AttemptReceipt,\n        GovernedTable::AttemptReceiptQuarantine,\n    ];"
+    },
+    {
+      "id": "C07",
+      "law": "`event_sequence` is a governed table",
+      "file": "crates/grapt-store/src/governed.rs",
+      "test": "the_sequence_cursor_refuses_a_consumer_update",
+      "test_target": "governed_writes",
+      "old": "    pub(crate) const ALL: [GovernedTable; 9] = [\n        GovernedTable::Event,\n        GovernedTable::EventSequence,\n        GovernedTable::AggregateWriter,\n        GovernedTable::EngineEpoch,\n        GovernedTable::ProjectionWatermark,\n        GovernedTable::PlanReadReceipt,\n        GovernedTable::MailboxMessage,\n        GovernedTable::AttemptReceipt,\n        GovernedTable::AttemptReceiptQuarantine,\n    ];",
+      "new": "    pub(crate) const ALL: [GovernedTable; 9] = [\n        GovernedTable::Event,\n        GovernedTable::Event,\n        GovernedTable::AggregateWriter,\n        GovernedTable::EngineEpoch,\n        GovernedTable::ProjectionWatermark,\n        GovernedTable::PlanReadReceipt,\n        GovernedTable::MailboxMessage,\n        GovernedTable::AttemptReceipt,\n        GovernedTable::AttemptReceiptQuarantine,\n    ];",
+      "mutation_note": "Re-pinned by R3a: the governed set grew 6 -> 7 when mailbox_message joined it, which moved this exact snippet. The mutation itself is unchanged."
+    },
+    {
+      "id": "C08",
+      "law": "`aggregate_writer` is a governed table",
+      "file": "crates/grapt-store/src/governed.rs",
+      "test": "the_election_row_refuses_a_consumer_update",
+      "test_target": "governed_writes",
+      "old": "    pub(crate) const ALL: [GovernedTable; 9] = [\n        GovernedTable::Event,\n        GovernedTable::EventSequence,\n        GovernedTable::AggregateWriter,\n        GovernedTable::EngineEpoch,\n        GovernedTable::ProjectionWatermark,\n        GovernedTable::PlanReadReceipt,\n        GovernedTable::MailboxMessage,\n        GovernedTable::AttemptReceipt,\n        GovernedTable::AttemptReceiptQuarantine,\n    ];",
+      "new": "    pub(crate) const ALL: [GovernedTable; 9] = [\n        GovernedTable::Event,\n        GovernedTable::EventSequence,\n        GovernedTable::EventSequence,\n        GovernedTable::EngineEpoch,\n        GovernedTable::ProjectionWatermark,\n        GovernedTable::PlanReadReceipt,\n        GovernedTable::MailboxMessage,\n        GovernedTable::AttemptReceipt,\n        GovernedTable::AttemptReceiptQuarantine,\n    ];",
+      "mutation_note": "Re-pinned by R3a: the governed set grew 6 -> 7 when mailbox_message joined it, which moved this exact snippet. The mutation itself is unchanged."
+    },
+    {
+      "id": "C09",
+      "law": "`engine_epoch` is a governed table",
+      "file": "crates/grapt-store/src/governed.rs",
+      "test": "the_engine_epoch_stamp_refuses_a_consumer_update",
+      "test_target": "governed_writes",
+      "old": "    pub(crate) const ALL: [GovernedTable; 9] = [\n        GovernedTable::Event,\n        GovernedTable::EventSequence,\n        GovernedTable::AggregateWriter,\n        GovernedTable::EngineEpoch,\n        GovernedTable::ProjectionWatermark,\n        GovernedTable::PlanReadReceipt,\n        GovernedTable::MailboxMessage,\n        GovernedTable::AttemptReceipt,\n        GovernedTable::AttemptReceiptQuarantine,\n    ];",
+      "new": "    pub(crate) const ALL: [GovernedTable; 9] = [\n        GovernedTable::Event,\n        GovernedTable::EventSequence,\n        GovernedTable::AggregateWriter,\n        GovernedTable::AggregateWriter,\n        GovernedTable::ProjectionWatermark,\n        GovernedTable::PlanReadReceipt,\n        GovernedTable::MailboxMessage,\n        GovernedTable::AttemptReceipt,\n        GovernedTable::AttemptReceiptQuarantine,\n    ];",
+      "mutation_note": "Re-pinned by R3a: the governed set grew 6 -> 7 when mailbox_message joined it, which moved this exact snippet. The mutation itself is unchanged."
+    },
+    {
+      "id": "C10",
+      "law": "A lift opens ONE named table, not governed writes in general",
+      "file": "crates/grapt-store/src/governed.rs",
+      "test": "governed::tests::a_lift_names_one_table_and_leaves_the_others_denied",
+      "old": "        Some(lifted) if lifted == governed => Authorization::Allow,\n        _ => Authorization::Deny,",
+      "new": "        Some(_) => Authorization::Allow,\n        _ => Authorization::Deny,"
+    },
+    {
+      "id": "C11",
+      "law": "The lift is lowered when its guard drops, so a completed store write leaves no open window",
+      "file": "crates/grapt-store/src/governed.rs",
+      "test": "the_store_lowers_its_lift_before_returning_from_append",
+      "test_target": "governed_writes",
+      "old": "    fn drop(&mut self) {\n        self.gate.store(DENIED, Ordering::SeqCst);\n    }",
+      "new": "    fn drop(&mut self) {}"
+    },
+    {
+      "id": "C12",
+      "law": "The lift is released by an RAII guard, so the ERROR path releases it too - the path a hand-rolled raise/lower pair skips",
+      "file": "crates/grapt-store/src/governed.rs",
+      "test": "governed::tests::the_lift_is_lowered_when_the_statement_fails",
+      "mutation_note": "The hand-rolled pair is the realistic regression, and it is the ONLY shape that separates this from C11: an earlier attempt kept the guard and dropped it after a successful statement, which left this witness GREEN because Rust drops a local on the `?` path anyway. C11 removes the guard's Drop body and reddens the SUCCESS-path witness; this removes the guard from the error path and leaves C11's witness green.",
+      "old": "        let _lift = self.lift(table);\n        conn.execute(sql, params)",
+      "new": "        self.0.store(table.code(), Ordering::SeqCst);\n        let affected = conn.execute(sql, params)?;\n        self.0.store(DENIED, Ordering::SeqCst);\n        Ok(affected)"
+    },
+    {
+      "id": "C14",
+      "law": "The gate is per store instance, so a second gate cannot lift the installed denial",
+      "file": "crates/grapt-store/src/governed.rs",
+      "test": "governed::tests::a_second_gate_cannot_lift_the_installed_denial",
+      "mutation_note": "A process-global gate is the realistic simplification. It reads as harmless because the type is still crate-private, but it makes ANY gate able to raise the one the authorizer captured.",
+      "old": "    pub(crate) fn new() -> Self {\n        WriteGate(Arc::new(AtomicU8::new(DENIED)))\n    }",
+      "new": "    pub(crate) fn new() -> Self {\n        static SHARED: std::sync::OnceLock<Arc<AtomicU8>> = std::sync::OnceLock::new();\n        WriteGate(Arc::clone(SHARED.get_or_init(|| Arc::new(AtomicU8::new(DENIED)))))\n    }"
+    },
+    {
+      "id": "C15",
+      "law": "An unrecognised gate value lifts nothing - the denial fails closed",
+      "file": "crates/grapt-store/src/governed.rs",
+      "test": "governed::tests::an_unrecognised_gate_value_denies",
+      "old": "    fn from_code(code: u8) -> Option<Self> {\n        GovernedTable::ALL\n            .into_iter()\n            .find(|table| table.code() == code)\n    }",
+      "new": "    fn from_code(code: u8) -> Option<Self> {\n        GovernedTable::ALL\n            .into_iter()\n            .find(|table| table.code() == code)\n            .or(Some(GovernedTable::Event))\n    }"
+    },
+    {
+      "id": "C16",
+      "law": "Projectors run with the denial ON: the append lifts per statement, never across the foreign code it invokes",
+      "file": "crates/grapt-store/src/write/event_log.rs",
+      "test": "a_projector_runs_with_the_denial_on",
+      "test_target": "governed_writes",
+      "mutation_note": "This is the exact regression the per-statement lift exists to prevent - one lift held across the projector loop, which reads like a harmless hoist.",
+      "old": "        for projector in projectors.iter_mut() {",
+      "new": "        let _leaked = tx.gate().lift(GovernedTable::Event);\n        for projector in projectors.iter_mut() {"
+    },
+    {
+      "id": "C17",
+      "law": "The structural scan inspects CODE lines; a wholly-commented mention is prose",
+      "file": "crates/grapt-store/tests/write_chokepoint.rs",
+      "test": "the_scan_catches_every_bypass_form",
+      "test_target": "write_chokepoint",
+      "old": "        .filter(|(_, line)| line.contains(needle) && !line.trim_start().starts_with(\"//\"))",
+      "new": "        .filter(|(_, line)| line.contains(needle) && line.trim_start().starts_with(\"//\"))"
+    },
+    {
+      "id": "C18",
+      "law": "The structural walk descends the whole workspace; a walk that found nothing would report every crate clean",
+      "file": "crates/grapt-store/tests/write_chokepoint.rs",
+      "test": "the_scan_reaches_the_crates_it_claims_to",
+      "test_target": "write_chokepoint",
+      "old": "            found.extend(rust_sources(&path));",
+      "new": "            let _ = &path;"
+    },
+    {
+      "id": "C19",
+      "law": "The removed raw accessor has zero survivors ANYWHERE, including a consumer crate the store does not compile",
+      "file": "crates/grapt-inbox/src/admission.rs",
+      "test": "the_removed_raw_accessor_has_zero_survivors",
+      "test_target": "write_chokepoint",
+      "mutation_note": "The edited file is in another crate. That works because the gate reads sources from disk rather than from a compiled artifact, which is exactly why a structural gate can cover crates `cargo test -p grapt-store` never builds.",
+      "old": "        let aggregate = AggregateId::Session(request.session.clone());\n        let tx = self.store.governed_transaction()?;",
+      "new": "        let aggregate = AggregateId::Session(request.session.clone());\n        let tx = self.store.connection_mut().transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;"
+    },
+    {
+      "id": "C20",
+      "law": "The per-crate call-site count is EXACT, so a call site leaving the chokepoint cannot pass as a smaller footprint",
+      "file": "crates/grapt-instruction/src/service.rs",
+      "test": "every_measured_call_site_moved_to_the_chokepoint",
+      "test_target": "write_chokepoint",
+      "old": "    pub fn ensure_tables(store: &mut EventStore) -> Result<(), InstructionError> {\n        let tx = store.governed_transaction()?;",
+      "new": "    pub fn ensure_tables(store: &mut EventStore) -> Result<(), InstructionError> {\n        let tx = store.connection().unchecked_transaction()?;"
+    },
+    {
+      "id": "C21",
+      "law": "No crate but grapt-store opens a transaction, in ANY of rusqlite's three forms",
+      "file": "crates/grapt-shell/src/service.rs",
+      "test": "only_the_store_may_open_a_transaction",
+      "test_target": "write_chokepoint",
+      "mutation_note": "ADDS a raw opener rather than replacing a governed one, so the call-site count is untouched and this entry is attributed to the opener gate alone rather than to C20's counting gate.",
+      "old": "    pub fn store(&self) -> &EventStore {\n        self.store.borrow()\n    }",
+      "new": "    pub fn store(&self) -> &EventStore {\n        let _ = self.store.borrow().connection().unchecked_transaction();\n        self.store.borrow()\n    }"
+    },
+    {
+      "id": "C22",
+      "law": "The chokepoint's transaction is IMMEDIATE: the write lock is taken at BEGIN, not left to 29 call sites to remember",
+      "file": "crates/grapt-store/src/governed.rs",
+      "test": "the_governed_transaction_takes_the_write_lock_at_begin",
+      "test_target": "governed_writes",
+      "old": "        let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;",
+      "new": "        let tx = conn.transaction_with_behavior(TransactionBehavior::Deferred)?;"
+    },
+    {
+      "id": "P01",
+      "law": "Every authoritative projection's watermark advances in the SAME transaction as the fact and its projected rows",
+      "file": "crates/grapt-store/src/write/event_log.rs",
+      "test": "every_projector_advances_its_own_watermark_with_the_fact",
+      "test_target": "projection_watermark",
+      "old": "            crate::projection::advance(tx, projection, &input.aggregate, next_seq)?;",
+      "new": "            let _unadvanced = (projection, next_seq);"
+    },
+    {
+      "id": "P02",
+      "law": "The watermark key is scoped by PROJECTION: one projection's position is never read as another's",
+      "file": "crates/grapt-store/src/projection.rs",
+      "test": "projection::tests::the_watermark_is_scoped_by_projection",
+      "old": "WHERE projection = ?1 AND aggregate_family = ?2 AND aggregate_id = ?3",
+      "new": "WHERE (projection = ?1 OR 1 = 1) AND aggregate_family = ?2 AND aggregate_id = ?3"
+    },
+    {
+      "id": "P03",
+      "law": "The watermark key is scoped by aggregate IDENTITY: one aggregate's position is never read as a sibling's",
+      "file": "crates/grapt-store/src/projection.rs",
+      "test": "projection::tests::the_watermark_is_scoped_by_aggregate_identity",
+      "old": "AND aggregate_id = ?3",
+      "new": "AND (aggregate_id = ?3 OR 1 = 1)"
+    },
+    {
+      "id": "P04",
+      "law": "The watermark key is scoped by aggregate FAMILY: a campaign whose identity string equals a session's is a different aggregate",
+      "file": "crates/grapt-store/src/projection.rs",
+      "test": "projection::tests::the_watermark_is_scoped_by_aggregate_family",
+      "old": "aggregate_family = ?2 AND",
+      "new": "(aggregate_family = ?2 OR 1 = 1) AND"
+    },
+    {
+      "id": "P05",
+      "law": "An advance must be strictly forward, so a duplicate projection of one sequence is refused rather than silently repeated",
+      "file": "crates/grapt-store/src/projection.rs",
+      "test": "projection::tests::an_advance_must_be_strictly_greater_than_the_stored_position",
+      "old": "        if seq <= stored {",
+      "new": "        if false {"
+    },
+    {
+      "id": "P06",
+      "law": "A projection with no identity cannot key a watermark; every unnamed projection would otherwise share one row",
+      "file": "crates/grapt-store/src/projection.rs",
+      "test": "projection::tests::an_unnamed_projection_cannot_key_a_watermark",
+      "old": "    if projection.as_str().trim().is_empty() {",
+      "new": "    if false {"
+    },
+    {
+      "id": "P07",
+      "law": "A watermark over an aggregate with NO durable facts leads its input and is refused",
+      "file": "crates/grapt-store/src/projection.rs",
+      "test": "projection::tests::a_watermark_past_the_durable_head_refuses_rather_than_reading_as_lag",
+      "old": "            None => true,\n            Some(head) => mark > head,",
+      "new": "            None => false,\n            Some(head) => mark > head,"
+    },
+    {
+      "id": "P08",
+      "law": "A projection level with its head is caught up, not leading: the lead check is strict",
+      "file": "crates/grapt-store/src/projection.rs",
+      "test": "projection::tests::a_caught_up_watermark_is_not_mistaken_for_a_leading_one",
+      "old": "            Some(head) => mark > head,",
+      "new": "            Some(head) => mark >= head,"
+    },
+    {
+      "id": "P09",
+      "law": "A negative stored watermark is corruption and refuses, never coerced into a position",
+      "file": "crates/grapt-store/src/projection.rs",
+      "test": "projection::tests::a_corrupt_stored_position_refuses_rather_than_coercing",
+      "old": "            |r| r.get::<_, i64>(0),",
+      "new": "            |r| r.get::<_, i64>(0).map(|value| value.max(0)),"
+    },
+    {
+      "id": "P10",
+      "law": "An idempotent replay names no second notice: the fact became observable once",
+      "file": "crates/grapt-store/src/write/event_log.rs",
+      "test": "an_exact_retry_advances_no_watermark_and_names_no_second_notice",
+      "test_target": "projection_watermark",
+      "old": "                return Ok(Appended::Idempotent { seq });",
+      "new": "                tx.push_notice(DurableNotice::new(\n                    input.id.clone(),\n                    input.aggregate.clone(),\n                    seq,\n                    stored.kind,\n                    input.writer.epoch,\n                ));\n                return Ok(Appended::Idempotent { seq });"
+    },
+    {
+      "id": "P11",
+      "law": "A notice names the exact coordinate of the fact that was written, not a neighbouring one",
+      "file": "crates/grapt-store/src/write/event_log.rs",
+      "test": "a_notice_names_exactly_the_fact_that_was_written",
+      "test_target": "projection_watermark",
+      "old": "            next_seq,\n            event.kind,\n            input.writer.epoch,\n        ));",
+      "new": "            next_seq + 1,\n            event.kind,\n            input.writer.epoch,\n        ));"
+    },
+    {
+      "id": "P12",
+      "law": "A FAILED commit publishes nothing: the persistence failure is typed and cannot be logged and ignored",
+      "file": "crates/grapt-store/src/governed.rs",
+      "test": "a_failed_commit_publishes_nothing_and_leaves_nothing_durable",
+      "test_target": "projection_watermark",
+      "old": "        tx.commit()?;\n        Ok(pending.into_committed())",
+      "new": "        let _ = tx.commit();\n        Ok(pending.into_committed())"
+    },
+    {
+      "id": "P13",
+      "law": "Notices are released only after the transaction really committed, so a notice never names a fact a foreign connection cannot read",
+      "file": "crates/grapt-store/src/governed.rs",
+      "test": "a_published_notice_names_a_fact_a_foreign_connection_can_already_read",
+      "test_target": "projection_watermark",
+      "old": "        let pending = notices.into_inner();\n        tx.commit()?;",
+      "new": "        let pending = notices.into_inner();\n        drop(tx);"
+    },
+    {
+      "id": "P14",
+      "law": "Catch-up folds only what the watermark has NOT covered, so a rebuild never re-projects a row it already has",
+      "file": "crates/grapt-store/src/write/event_log.rs",
+      "test": "a_projection_may_lag_and_is_rebuilt_from_durable_truth",
+      "test_target": "projection_watermark",
+      "old": "AND seq > ?3",
+      "new": "AND seq >= ?3"
+    },
+    {
+      "id": "P15",
+      "law": "Catch-up names nothing: re-projecting an already-durable fact makes nothing newly observable",
+      "file": "crates/grapt-store/src/write/event_log.rs",
+      "test": "a_projection_may_lag_and_is_rebuilt_from_durable_truth",
+      "test_target": "projection_watermark",
+      "old": "            crate::projection::advance(&tx, projection, aggregate, seq)?;\n            watermark = Some(seq);",
+      "new": "            crate::projection::advance(&tx, projection, aggregate, seq)?;\n            tx.push_notice(DurableNotice::new(\n                event.id.clone(),\n                aggregate.clone(),\n                seq,\n                event.kind,\n                grapt_types::WriterEpoch::FIRST,\n            ));\n            watermark = Some(seq);"
+    },
+    {
+      "id": "P16",
+      "law": "The advisory notice buffer is bounded; a transaction that outruns it drops notices rather than growing",
+      "file": "crates/grapt-store/src/notify.rs",
+      "test": "the_bounded_notice_buffer_never_costs_a_durable_fact",
+      "test_target": "projection_watermark",
+      "old": "        if self.notices.len() >= MAX_PENDING_NOTICES {",
+      "new": "        if false {"
+    },
+    {
+      "id": "P17",
+      "law": "A lossy publication tells the subscriber it was lossy, so a gap is never read as continuity",
+      "file": "crates/grapt-store/src/notify.rs",
+      "test": "the_bounded_notice_buffer_never_costs_a_durable_fact",
+      "test_target": "projection_watermark",
+      "old": "        if self.dropped > 0 {",
+      "new": "        if false {"
+    },
+    {
+      "id": "P18",
+      "law": "`projection_watermark` is a GOVERNED table: a consumer cannot move a projection's durable position",
+      "file": "crates/grapt-store/src/governed.rs",
+      "test": "the_projection_watermark_refuses_a_consumer_write",
+      "test_target": "governed_writes",
+      "old": "    pub(crate) const ALL: [GovernedTable; 9] = [\n        GovernedTable::Event,\n        GovernedTable::EventSequence,\n        GovernedTable::AggregateWriter,\n        GovernedTable::EngineEpoch,\n        GovernedTable::ProjectionWatermark,\n        GovernedTable::PlanReadReceipt,\n        GovernedTable::MailboxMessage,\n        GovernedTable::AttemptReceipt,\n        GovernedTable::AttemptReceiptQuarantine,\n    ];",
+      "new": "    pub(crate) const ALL: [GovernedTable; 9] = [\n        GovernedTable::Event,\n        GovernedTable::EventSequence,\n        GovernedTable::AggregateWriter,\n        GovernedTable::EngineEpoch,\n        GovernedTable::EngineEpoch,\n        GovernedTable::PlanReadReceipt,\n        GovernedTable::MailboxMessage,\n        GovernedTable::AttemptReceipt,\n        GovernedTable::AttemptReceiptQuarantine,\n    ];",
+      "mutation_note": "Re-pinned by R3a: the governed set grew 6 -> 7 when mailbox_message joined it, which moved this exact snippet. The mutation itself is unchanged."
+    },
+    {
+      "id": "P19",
+      "law": "An incompatible preexisting `projection_watermark` refuses the open; CREATE IF NOT EXISTS would accept any shape",
+      "file": "crates/grapt-store/src/write/schema.rs",
+      "test": "write::tests::open_refuses_an_incompatible_preexisting_watermark_table",
+      "old": "        Self::verify_columns(\n            conn,\n            \"projection_watermark\",\n            &[\"projection\", \"aggregate_family\", \"aggregate_id\", \"seq\"],\n        )?;\n",
+      "new": ""
+    },
+    {
+      "id": "P20",
+      "law": "Recovery consults the lead check: a leading watermark refuses rather than selecting no rows and reading as caught up",
+      "file": "crates/grapt-store/src/write/event_log.rs",
+      "test": "write::tests::catch_up_refuses_a_leading_watermark_instead_of_reporting_it_caught_up",
+      "old": "        let from = crate::projection::status(&tx, projection, aggregate)?.watermark();",
+      "new": "        let from = crate::projection::read(&tx, projection, aggregate)?;"
+    },
+    {
+      "id": "N01",
+      "law": "The durable compaction fact is written as the RUST-NATIVE v2 kind; v1 is the frozen oracle payload and this fact is not it",
+      "file": "crates/grapt-store/src/compaction.rs",
+      "test": "the_durable_row_is_the_v2_fact_and_round_trips_to_an_equal_descriptor",
+      "test_target": "compaction_fact",
+      "old": "    let version = match EventVersion::new(2) {",
+      "new": "    let version = match EventVersion::new(1) {"
+    },
+    {
+      "id": "N02",
+      "law": "A typed compaction failure is returned as the exact variant submitted, never coerced onto a shared failure",
+      "file": "crates/grapt-store/src/compaction.rs",
+      "test": "every_typed_compaction_outcome_survives_as_itself",
+      "test_target": "compaction_fact",
+      "old": "        CompactionAttempt::Failed(failure) => return Ok(CompactionOutcome::Refused { failure }),",
+      "new": "        CompactionAttempt::Failed(_failure) => return Ok(CompactionOutcome::Refused { failure: ContextFailure::CompactionFailed }),"
+    },
+    {
+      "id": "N03",
+      "law": "A cache rebuild CLEARS what it finds before folding, so a re-fold replaces the cache instead of meeting its own previous row",
+      "file": "crates/grapt-store/src/compaction.rs",
+      "test": "a_rebuild_over_an_existing_cache_replaces_it_rather_than_colliding",
+      "test_target": "compaction_fact",
+      "old": "    tx.execute(\n        \"DELETE FROM compaction_window_cache\n         WHERE aggregate_family = ?1 AND aggregate_id = ?2\",\n        rusqlite::params![family, identity],\n    )?;",
+      "new": "    // the clearing step this mutation removes"
+    },
+    {
+      "id": "N04",
+      "law": "The LAST descriptor in sequence order is the current window; an earlier one does not win",
+      "file": "crates/grapt-store/src/compaction.rs",
+      "test": "the_cache_rebuilds_from_the_event_log_alone",
+      "test_target": "compaction_fact",
+      "old": "            current = Some((\n                descriptor.id().clone(),\n                descriptor.target_window().clone(),\n                descriptor.target_epoch(),\n                seq,\n            ));",
+      "new": "            if current.is_none() {\n                current = Some((\n                    descriptor.id().clone(),\n                    descriptor.target_window().clone(),\n                    descriptor.target_epoch(),\n                    seq,\n                ));\n            }"
+    },
+    {
+      "id": "N05",
+      "law": "A cache watermark PAST the aggregate's durable head is refused on read; the store cannot write that state, so the read is where it is policed",
+      "file": "crates/grapt-store/src/compaction.rs",
+      "test": "compaction::tests::a_cache_watermark_past_the_durable_head_is_refused",
+      "old": "            Some(head_value) => mark > head_value,",
+      "new": "            Some(head_value) => {\n                let _ = head_value;\n                false\n            }"
+    },
+    {
+      "id": "N06",
+      "law": "The lead boundary is STRICTLY greater: a watermark equal to the head is caught up, not a lead",
+      "file": "crates/grapt-store/src/compaction.rs",
+      "test": "compaction::tests::a_cache_watermark_equal_to_the_durable_head_is_not_a_lead",
+      "old": "            Some(head_value) => mark > head_value,",
+      "new": "            Some(head_value) => mark >= head_value,"
+    },
+    {
+      "id": "N07",
+      "law": "Any watermark over an aggregate with NO events is a lead, not a lag with an absent head",
+      "file": "crates/grapt-store/src/compaction.rs",
+      "test": "compaction::tests::a_watermark_over_an_empty_aggregate_is_a_lead",
+      "old": "            None => true,",
+      "new": "            None => false,"
+    },
+    {
+      "id": "N08",
+      "law": "A corrupt cached compaction id is REFUSED, never coerced into absence a caller would read as no window",
+      "file": "crates/grapt-store/src/compaction.rs",
+      "test": "compaction::tests::a_cache_row_with_an_empty_compaction_id_is_refused",
+      "old": "    let compaction = CompactionId::new(&compaction_raw)\n        .ok_or_else(|| corrupt(\"the cached compaction id is empty\".to_owned()))?;",
+      "new": "    let Some(compaction) = CompactionId::new(&compaction_raw) else {\n        return Ok(None);\n    };"
+    },
+    {
+      "id": "N09",
+      "law": "A negative cached epoch is refused rather than wrapped into an enormous epoch that compares as newer than every real one",
+      "file": "crates/grapt-store/src/compaction.rs",
+      "test": "compaction::tests::a_cache_row_with_a_negative_epoch_is_refused",
+      "old": "    let epoch = u64::try_from(epoch_db)\n        .map_err(|_| corrupt(format!(\"the cached target epoch {epoch_db} is negative\")))?;",
+      "new": "    let epoch = epoch_db as u64;"
+    },
+    {
+      "id": "N10",
+      "law": "A stored v2 row whose payload is not a descriptor REFUSES the fold; skipping it would rebuild the cache from whichever rows happened to parse",
+      "file": "crates/grapt-store/src/compaction.rs",
+      "test": "compaction::tests::a_corrupt_stored_payload_refuses_the_fold",
+      "old": "            let descriptor = session_compaction::decode(&value)\n                .map_err(|source| CompactionError::CorruptPayload { seq, source })?;",
+      "new": "            let Ok(descriptor) = session_compaction::decode(&value) else {\n                continue;\n            };"
+    },
+    {
+      "id": "N11",
+      "law": "The fork cap decides what a child may reconstruct; a parent fact after the boundary never enters the child",
+      "file": "crates/grapt-store/src/compaction.rs",
+      "test": "a_fork_before_a_compaction_reconstructs_only_pre_compaction_history",
+      "test_target": "compaction_fact",
+      "old": "        if cap.admits(EventSeq::new(seq)) {",
+      "new": "        if true {"
+    },
+    {
+      "id": "N12",
+      "law": "The fold matches the EXACT v2 versioned type, so the frozen v1 payload is never offered to the v2 decoder",
+      "file": "crates/grapt-store/src/compaction.rs",
+      "test": "a_legacy_v1_compaction_is_counted_but_never_folded_into_a_window",
+      "test_target": "compaction_fact",
+      "old": "        if versioned_type == COMPACTION_ENDED_V2 {",
+      "new": "        if versioned_type.starts_with(COMPACTION_ENDED) {"
+    },
+    {
+      "id": "N13",
+      "law": "The cache watermark records how far the fold has SEEN, not where it last found a compaction",
+      "file": "crates/grapt-store/src/compaction.rs",
+      "test": "the_cache_watermark_tracks_the_whole_log_not_only_compaction_rows",
+      "test_target": "compaction_fact",
+      "old": "        watermark = Some(seq);",
+      "new": "        // the whole-log watermark advance this mutation removes"
+    },
+    {
+      "id": "K03",
+      "law": "Transition identity is unique within its campaign: the partial unique index refuses a second event recording one transition, and it is the SOLE carrier for that law",
+      "file": "crates/grapt-store/src/write/schema.rs",
+      "test": "one_transition_identity_cannot_be_recorded_by_two_events",
+      "test_target": "campaign_append",
+      "old": "             CREATE UNIQUE INDEX IF NOT EXISTS event_campaign_transition_idx",
+      "new": "             CREATE INDEX IF NOT EXISTS event_campaign_transition_idx"
+    },
+    {
+      "id": "W01",
+      "law": "The writer-owner instance token is drawn from OS randomness, so it is unique over TIME and not merely among concurrently live processes",
+      "file": "crates/grapt-store/src/ids.rs",
+      "test": "ids::tests::two_independently_seeded_adapters_do_not_share_an_instance_token",
+      "old": "        #[allow(clippy::disallowed_methods)]\n        getrandom::fill(&mut bytes)?;",
+      "new": "        #[allow(clippy::disallowed_methods)]\n        getrandom::fill(&mut bytes)?;\n        bytes = [0u8; 16];",
+      "observed_red": "assertion `left != right` failed: two seeded adapters share an instance token, so a restarted process could reproduce a dead instance's writer identity -- left and right both \"00000000000000000000000000000000\"",
+      "collateral_note": "This mutation also reddens the W02 test, but on its PRECONDITION assert (the two identities are equal) rather than on the election arm, plus two pre-existing tests that depend on two instances being two owners. Distinct evidence from W02 is therefore the reason both entries exist; see attribution_note."
+    },
+    {
+      "id": "W02",
+      "law": "A restarted process at a reused pid is an ownership TRANSFER with an epoch advance, never a Retained re-election by the incumbent",
+      "file": "crates/grapt-store/src/election.rs",
+      "test": "election::tests::a_restarted_process_at_a_reused_pid_transfers_ownership_instead_of_retaining_it",
+      "old": "        Some((incumbent, epoch)) if &incumbent == owner => Election::Retained { epoch },",
+      "new": "        Some((incumbent, epoch))\n            if incumbent\n                .as_str()\n                .split('-')\n                .take(2)\n                .eq(owner.as_str().split('-').take(2)) =>\n        {\n            Election::Retained { epoch }\n        }",
+      "observed_red": "assertion `left == right` failed: the restarted process RETAINED the dead owner's epoch instead of transferring; every write the lost owner still holds is unfenced -- left: Retained { epoch: WriterEpoch(1) }, right: Transferred { epoch: WriterEpoch(2), previous: WriterEpoch(1) }"
+    },
+    {
+      "id": "W03",
+      "law": "WriterOwnerId::mint CONSUMES the injected IdAuthority token; the identity is not re-derived from a process-global counter",
+      "file": "crates/grapt-store/src/election.rs",
+      "test": "write::tests::both_store_seams_carry_the_injected_identity_token_into_the_owner",
+      "old": "    pub(crate) fn mint(ids: &dyn IdAuthority) -> Self {\n        WriterOwnerId(format!(\n            \"store-{}-{}\",\n            std::process::id(),\n            ids.mint().as_str()\n        ))\n    }",
+      "new": "    pub(crate) fn mint(_ids: &dyn IdAuthority) -> Self {\n        static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);\n        let ordinal = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);\n        WriterOwnerId(format!(\"store-{}-{ordinal}\", std::process::id()))\n    }",
+      "observed_red": "open_with_ids did not consume the injected token: owner store-44320-0 carries no witness-token-alpha",
+      "quiet_resurrection_note": "This is the mutant review found surviving F3B4a R1. It is QUIET: W01 still passes because it exercises OsRandomIds directly, and W02 still passes because two owners minted in one process still differ by the restored ordinal, so the election still Transfers. Both of those greens are CORRECT for their own laws — neither claims the link. Only a witness driving the store's public injection seams and naming the injected token can fail here, which is why W03 targets both open_with_ids and open_in_memory_with_ids rather than adding another assertion to W01/W02."
+    },
+    {
+      "id": "W04",
+      "law": "The production IdAuthority suffix stays inside the typed durable-identity alphabet consumed by EventId, MessageId and SessionId",
+      "file": "crates/grapt-store/src/ids.rs",
+      "test": "ids::tests::production_tokens_are_valid_typed_identity_suffixes",
+      "old": "        IdToken::new(format!(\"{}x{ordinal}\", self.instance)).unwrap_or_else(|| self.seeded.clone())",
+      "new": "        IdToken::new(format!(\"{}-{ordinal}\", self.instance)).unwrap_or_else(|| self.seeded.clone())",
+      "observed_red": "production IdToken suffix was rejected by EventId"
+    },
+    {
+      "id": "G11",
+      "law": "plan_read_receipt is a governed table: durable plan-read operational truth cannot be written by a consumer statement",
+      "file": "crates/grapt-store/src/governed.rs",
+      "test": "the_plan_read_table_refuses_a_consumer_write",
+      "test_target": "governed_writes",
+      "old": "    pub(crate) const ALL: [GovernedTable; 9] = [\n        GovernedTable::Event,\n        GovernedTable::EventSequence,\n        GovernedTable::AggregateWriter,\n        GovernedTable::EngineEpoch,\n        GovernedTable::ProjectionWatermark,\n        GovernedTable::PlanReadReceipt,\n        GovernedTable::MailboxMessage,\n        GovernedTable::AttemptReceipt,\n        GovernedTable::AttemptReceiptQuarantine,\n    ];",
+      "new": "    pub(crate) const ALL: [GovernedTable; 9] = [\n        GovernedTable::Event,\n        GovernedTable::EventSequence,\n        GovernedTable::AggregateWriter,\n        GovernedTable::EngineEpoch,\n        GovernedTable::ProjectionWatermark,\n        GovernedTable::ProjectionWatermark,\n        GovernedTable::MailboxMessage,\n        GovernedTable::AttemptReceipt,\n        GovernedTable::AttemptReceiptQuarantine,\n    ];",
+      "mutation_note": "Re-pinned by R3a: the governed set grew 6 -> 7 when mailbox_message joined it, which moved this exact snippet. The mutation itself is unchanged."
+    },
+    {
+      "id": "G13",
+      "law": "The plan-read table's shape is verified at open: CREATE IF NOT EXISTS honours a wrong-shaped namesake silently",
+      "file": "crates/grapt-store/src/write/schema.rs",
+      "test": "write::tests::open_refuses_a_wrong_shaped_plan_read_table",
+      "old": "        Self::verify_columns(\n            conn,\n            \"plan_read_receipt\",\n            &[\"receipt_id\", \"campaign_id\", \"recorded\", \"record_bytes\"],\n        )?;\n",
+      "new": ""
+    },
+    {
+      "id": "R01",
+      "law": "The store's own foreign-key initializer EXISTS: it re-enables and verifies PRAGMA foreign_keys on a connection whose driver default was explicitly turned off first, so the event -> event_sequence constraint does not rest on rusqlite's default",
+      "file": "crates/grapt-store/src/write/open.rs",
+      "test": "write::tests::the_store_enables_foreign_keys_on_a_connection_whose_default_was_off",
+      "old": "        Self::enforce_foreign_keys(&conn)?;\n",
+      "new": "        // R01: the store no longer enables foreign keys for itself.\n",
+      "observed_red": "assertion `left == right` failed: the store's own initializer must re-enable foreign-key enforcement",
+      "attribution_note": "ATTRIBUTES: only that the initializer exists and does its job. The witness defeats the driver default with an explicit PRAGMA foreign_keys = OFF and asserts that numerically BEFORE handing the connection to open_prepared; without that precondition it would pass with this entry's edit applied, because rusqlite enables foreign keys by default - it would be witnessing the dependency rather than this crate. Its last arm inverts the scope: with enforcement switched back off the identical orphan row is ACCEPTED, so the 787 refusal is attributable to the foreign key and not to anything else about the row. DOES NOT ATTRIBUTE: the PLACEMENT of the call, or the funnel. Moving Self::enforce_foreign_keys to AFTER epoch::stamp_and_prepare returns leaves this witness GREEN, because stamp_and_prepare commits before returning and enforcement is on by the time the witness looks. The actual inert placement is INSIDE stamp_and_prepare's open transaction, where the pragma is a documented no-op - measured, it reads back 0 both inside that transaction and after it commits. That both public open paths reach the initializer through open_prepared is likewise carried by there being one function, not by any test. Both are structure-carried and unwitnessed; see F3B4B_RESIDUALS.md items 9 and 10. An earlier version of this note asserted the placement was load-bearing on a 'one line lower' inference that ignored the commit; that claim is withdrawn."
+    },
+    {
+      "id": "R02",
+      "law": "A diagnostic inspection allocates nothing: the lost-writer pass READS the sequence cursor and never advances it",
+      "file": "crates/grapt-store/src/write/event_log.rs",
+      "test": "write::tests::inspecting_a_lost_writer_consumes_no_sequence_number",
+      "old": "        let cursor = read_sequence_cursor(&tx, family, identity)?;\n",
+      "new": "        let cursor = Some(allocate_sequence(&tx, family, identity)?);\n",
+      "observed_red": "assertion `left == right` failed: a diagnostic inspection must allocate nothing: the cursor moved from Some(5) to Some(6), and that sequence number is now lost to the aggregate forever",
+      "attribution_note": "The edit is the realistic reuse mistake rather than an invented defect: allocate_sequence already contains this exact SELECT and differs only by writing the incremented value back, so reaching for it here is the obvious shortcut. It does not restate K02, which covers the CAMPAIGN APPEND path through grapt_event::campaign::apply at its call site; neither edit reaches the other's witness. The witness measures the cursor with a raw SELECT of its own rather than through read_sequence_cursor, so a mutation inside the store's read path cannot also move the ruler. inspect_lost_writer COMMITS rather than rolling back for this reason: a rollback would discard the mutant's write and hide the regression."
+    },
+    {
+      "id": "R03",
+      "law": "An aggregate whose cursor and durable head agree is reported Settled; a healthy aggregate is never reported as needing reconciliation",
+      "file": "crates/grapt-store/src/election.rs",
+      "test": "write::tests::an_aggregate_whose_cursor_matches_its_head_is_settled",
+      "old": "        (Some(cursor), Some(head_seq)) if cursor == head_seq => LostWriterState::Settled {\n            epoch,\n            head: Some(head_seq),\n        },\n",
+      "new": "        (Some(cursor), Some(head_seq)) if cursor == head_seq => {\n            LostWriterState::ReconciliationRequired {\n                epoch,\n                cursor: Some(cursor),\n                head: Some(head_seq),\n            }\n        }\n",
+      "observed_red": "an aggregate whose last append committed is Settled, not ReconciliationRequired { epoch: WriterEpoch(1), cursor: Some(0), head: Some(0) }",
+      "attribution_note": "The inverse-scope partner of R04, and a real failure direction rather than symmetry for its own sake: a classifier that demanded reconciliation for a consistent database would push an operator to quarantine or re-drive healthy work. the coordinator substituted this law for the originally specified Retained-collapsed-to-Transferred edit after that turned out to be byte-identical to row B07 - same line, same edit. The Retained control assertion is kept in the runtime grid with B07 recorded as its inherited carrier; see F3B4B_RESIDUALS.md item 5."
+    },
+    {
+      "id": "R04",
+      "law": "An allocated sequence with no durable event behind it requires reconciliation and is never reported as settled",
+      "file": "crates/grapt-store/src/election.rs",
+      "test": "write::tests::an_allocated_sequence_with_no_durable_event_requires_reconciliation",
+      "old": "        _ => LostWriterState::ReconciliationRequired {\n            epoch,\n            cursor,\n            head,\n        },\n",
+      "new": "        _ => LostWriterState::Settled { epoch, head },\n",
+      "observed_red": "a cursor with no durable event behind it must require reconciliation, got Settled { epoch: WriterEpoch(1), head: None }",
+      "attribution_note": "The state under test is not reachable through the append path, which writes the cursor and the event in one transaction, so the witness stages it through crate::write::hostile_rows using the store's own WriteGate - no public escape and no cargo feature. This is the direction that matters most operationally: reporting an interrupted writer's aggregate as settled would leave a sequence number allocated whose event never became durable, with nothing left to notice it."
+    },
+    {
+      "id": "M01",
+      "law": "The child's rows are copied out BEFORE the old parent is dropped: with foreign keys on, DROP TABLE event_sequence performs an implicit DELETE that CASCADES into event, so dropping first silently migrates an empty log",
+      "file": "crates/grapt-store/src/migrations.rs",
+      "test": "every_row_leaves_the_old_table_before_the_old_parent_is_dropped",
+      "test_target": "production_migration",
+      "old": "        // 3. CHILD, BEFORE THE OLD PARENT IS DROPPED. Payload columns are\n        //    copied verbatim: no re-encode, no re-hash, no normalisation.\n        tx.execute_batch(&format!(\n            \"INSERT INTO event_rebuilt\n                 (id, aggregate_family, aggregate_id, seq, created, type,\n                  data, writer_epoch, envelope_bytes, campaign_transition_id)\n             SELECT id, {}, aggregate_id, seq, created, type,\n                    data, {}, {}, {}\n             FROM event\",\n            source.family_expr(),\n            column_or_null(source.writer_epoch, \"writer_epoch\"),\n            column_or_null(source.envelope_bytes, \"envelope_bytes\"),\n            column_or_null(source.campaign_transition_id, \"campaign_transition_id\"),\n        ))\n        .map_err(|e| e.to_string())?;\n\n        interrupt_between_rebuild_steps()?;\n\n        // 4. Only now may the old tables go.\n        tx.execute_batch(\n            \"DROP TABLE event;\n             DROP TABLE event_sequence;\n             ALTER TABLE event_sequence_rebuilt RENAME TO event_sequence;\n             ALTER TABLE event_rebuilt RENAME TO event;\",\n        )\n        .map_err(|e| e.to_string())?;\n\n",
+      "new": "        // M01: the old parent is dropped BEFORE the child is copied out.\n        tx.execute_batch(\"DROP TABLE event_sequence\")\n            .map_err(|e| e.to_string())?;\n        // 3. CHILD, BEFORE THE OLD PARENT IS DROPPED. Payload columns are\n        //    copied verbatim: no re-encode, no re-hash, no normalisation.\n        tx.execute_batch(&format!(\n            \"INSERT INTO event_rebuilt\n                 (id, aggregate_family, aggregate_id, seq, created, type,\n                  data, writer_epoch, envelope_bytes, campaign_transition_id)\n             SELECT id, {}, aggregate_id, seq, created, type,\n                    data, {}, {}, {}\n             FROM event\",\n            source.family_expr(),\n            column_or_null(source.writer_epoch, \"writer_epoch\"),\n            column_or_null(source.envelope_bytes, \"envelope_bytes\"),\n            column_or_null(source.campaign_transition_id, \"campaign_transition_id\"),\n        ))\n        .map_err(|e| e.to_string())?;\n\n        interrupt_between_rebuild_steps()?;\n\n        tx.execute_batch(\n            \"DROP TABLE event;\n             ALTER TABLE event_sequence_rebuilt RENAME TO event_sequence;\n             ALTER TABLE event_rebuilt RENAME TO event;\",\n        )\n        .map_err(|e| e.to_string())?;\n\n",
+      "attribution_note": "The silent-loss class, and the ONLY ordering here whose violation raises no error. Measured on a real SQLite before the code was written: two rows in, zero rows out, COMMITTED, no diagnostic. SCOPE INVERSION, also measured: with PRAGMA foreign_keys=OFF the identical statement order preserves both rows, so the loss is attributable to the CASCADE and not to the ordering as such. REJECTED ALTERNATIVE: swapping the two DROP statements in step 4 (parent before child) is NOT a loss in a copy-first rebuild, because the rows are already in event_rebuilt by then - it reds nothing, and a row claiming it would have been a witness that passes for the wrong reason. EVIDENCE SEPARATION: M01 is witnessed by a COUNT and M05 by a byte comparison. Pointed at one shared witness they reddened the same assertion with the same message, and the runner's duplicate-evidence guard scored them as one law witnessed twice - measured, not anticipated."
+    },
+    {
+      "id": "M02",
+      "law": "TypeScript-era aggregates are back-filled to the session family",
+      "file": "crates/grapt-store/src/migrations.rs",
+      "test": "migrates_a_typescript_era_database_and_a_real_store_opens_it",
+      "test_target": "production_migration",
+      "old": "pub(crate) const LEGACY_FAMILY: &str = \"session\";",
+      "new": "pub(crate) const LEGACY_FAMILY: &str = \"legacy\";",
+      "attribution_note": "The literal is a single named constant precisely so ONE edit changes both copy statements together. Spelling it twice would make a wrong value fail as a foreign-key mismatch between the two rebuilt tables - a loud refusal for the wrong reason, instead of the silent misfiling this law is about."
+    },
+    {
+      "id": "M03",
+      "law": "The parent's cursor rows are copied before the child's events, because the rebuilt event resolves a composite foreign key into the rebuilt event_sequence",
+      "file": "crates/grapt-store/src/migrations.rs",
+      "test": "migrates_a_typescript_era_database_and_a_real_store_opens_it",
+      "test_target": "production_migration",
+      "old": "        // 2. PARENT FIRST. The rebuilt child's composite foreign key resolves\n        //    against these rows, so copying the child first fails loudly.\n        tx.execute_batch(&format!(\n            \"INSERT INTO event_sequence_rebuilt (aggregate_family, aggregate_id, seq, owner_id)\n             SELECT {}, aggregate_id, seq, owner_id FROM event_sequence\",\n            parent.family_expr()\n        ))\n        .map_err(|e| e.to_string())?;\n\n        // 3. CHILD, BEFORE THE OLD PARENT IS DROPPED. Payload columns are\n        //    copied verbatim: no re-encode, no re-hash, no normalisation.\n        tx.execute_batch(&format!(\n            \"INSERT INTO event_rebuilt\n                 (id, aggregate_family, aggregate_id, seq, created, type,\n                  data, writer_epoch, envelope_bytes, campaign_transition_id)\n             SELECT id, {}, aggregate_id, seq, created, type,\n                    data, {}, {}, {}\n             FROM event\",\n            source.family_expr(),\n            column_or_null(source.writer_epoch, \"writer_epoch\"),\n            column_or_null(source.envelope_bytes, \"envelope_bytes\"),\n            column_or_null(source.campaign_transition_id, \"campaign_transition_id\"),\n        ))\n        .map_err(|e| e.to_string())?;\n\n",
+      "new": "        // 3. CHILD, BEFORE THE OLD PARENT IS DROPPED. Payload columns are\n        //    copied verbatim: no re-encode, no re-hash, no normalisation.\n        tx.execute_batch(&format!(\n            \"INSERT INTO event_rebuilt\n                 (id, aggregate_family, aggregate_id, seq, created, type,\n                  data, writer_epoch, envelope_bytes, campaign_transition_id)\n             SELECT id, {}, aggregate_id, seq, created, type,\n                    data, {}, {}, {}\n             FROM event\",\n            source.family_expr(),\n            column_or_null(source.writer_epoch, \"writer_epoch\"),\n            column_or_null(source.envelope_bytes, \"envelope_bytes\"),\n            column_or_null(source.campaign_transition_id, \"campaign_transition_id\"),\n        ))\n        .map_err(|e| e.to_string())?;\n\n        // 2. PARENT FIRST. The rebuilt child's composite foreign key resolves\n        //    against these rows, so copying the child first fails loudly.\n        tx.execute_batch(&format!(\n            \"INSERT INTO event_sequence_rebuilt (aggregate_family, aggregate_id, seq, owner_id)\n             SELECT {}, aggregate_id, seq, owner_id FROM event_sequence\",\n            parent.family_expr()\n        ))\n        .map_err(|e| e.to_string())?;\n\n",
+      "attribution_note": "Unlike M01 this ordering fails LOUDLY - FOREIGN KEY constraint failed - which is exactly why the two are separate rows rather than one 'statement order matters' claim: one is caught by the database and one is caught only by counting rows afterwards."
+    },
+    {
+      "id": "M04",
+      "law": "Imported rows stay LegacyUnfenced: the migration never mints a writer epoch for history it did not write",
+      "file": "crates/grapt-store/src/migrations.rs",
+      "test": "migrates_a_typescript_era_database_and_a_real_store_opens_it",
+      "test_target": "production_migration",
+      "old": "            column_or_null(source.writer_epoch, \"writer_epoch\"),",
+      "new": "            \"1\",",
+      "attribution_note": "A migrated row carrying an epoch would claim a Rust writer had fenced history that predates Rust ownership, and would make the no-new-v1 trigger's law retroactively false for rows it never guarded."
+    },
+    {
+      "id": "M05",
+      "law": "Legacy payloads are copied VERBATIM: no re-encode, no re-hash, no normalisation, because imported v1 events retain their original canonical bytes and hashes",
+      "file": "crates/grapt-store/src/migrations.rs",
+      "test": "legacy_payload_bytes_and_sequence_gaps_survive_the_rebuild",
+      "test_target": "production_migration",
+      "old": "                    data, {}, {}, {}",
+      "new": "                    json(data), {}, {}, {}",
+      "attribution_note": "json() is the realistic form of this defect - a migration that 'tidies' its payloads. The fixture carries a row whose JSON has insignificant whitespace ({ \"note\" : 1 }) so a re-encode is observable at all; without that the mutation would be invisible and the row would attribute nothing."
+    },
+    {
+      "id": "M06",
+      "law": "The no-new-v1 trigger is created AFTER the data move: every imported row carries a NULL writer_epoch, which is exactly the INSERT the trigger aborts",
+      "file": "crates/grapt-store/src/migrations.rs",
+      "test": "migrates_a_typescript_era_database_and_a_real_store_opens_it",
+      "test_target": "production_migration",
+      "old": "    FOREIGN KEY (aggregate_family, aggregate_id)\n        REFERENCES event_sequence_rebuilt (aggregate_family, aggregate_id) ON DELETE CASCADE\n);\";",
+      "new": "    FOREIGN KEY (aggregate_family, aggregate_id)\n        REFERENCES event_sequence_rebuilt (aggregate_family, aggregate_id) ON DELETE CASCADE\n);\nCREATE TRIGGER event_refuses_new_unfenced_write\n    BEFORE INSERT ON event_rebuilt\n    WHEN NEW.writer_epoch IS NULL\n    BEGIN\n        SELECT RAISE(ABORT, 'no new v1 write: a new event row must carry its elected writer epoch');\n    END;\";",
+      "attribution_note": "Expressed as 'the trigger already existed when the rows arrived' rather than as a statement swap, because that is the shape the defect actually takes: a rebuild that creates the complete target shape up front and then tries to import into it."
+    },
+    {
+      "id": "M07",
+      "law": "The rebuilt indexes carry the aggregate_family column, so the surviving UNIQUE index enforces family-scoped uniqueness rather than the TypeScript era's family-blind law",
+      "file": "crates/grapt-store/src/migrations.rs",
+      "test": "the_rebuild_destroys_the_family_blind_indexes_and_recreates_the_target_shapes",
+      "test_target": "production_migration",
+      "old": "const REBUILT_INDEXES: &str = \"CREATE UNIQUE INDEX event_aggregate_seq_idx\n    ON event (aggregate_family, aggregate_id, seq);",
+      "new": "const REBUILT_INDEXES: &str = \"CREATE UNIQUE INDEX event_aggregate_seq_idx\n    ON event (aggregate_id, seq);",
+      "attribution_note": "Dropping the table drops its indexes, so the rebuild is what frees these names; this row covers the other half - that what gets recreated is the TARGET shape and not the old one again."
+    },
+    {
+      "id": "M08",
+      "law": "Every open verifies index COLUMN SHAPE, because CREATE ... INDEX IF NOT EXISTS silently honours a same-named index over the wrong columns and PRAGMA table_info cannot see an index at all",
+      "file": "crates/grapt-store/src/write/open.rs",
+      "test": "an_open_refuses_a_same_named_index_over_the_wrong_columns",
+      "test_target": "production_migration",
+      "old": "        Self::verify_index_shapes(&conn)?;",
+      "new": "        // M08: the open no longer checks what the index actually indexes.",
+      "attribution_note": "This closes a latent defect at the accepted base, not one this lane introduced: on any database where the TypeScript-era indexes survived, both CREATE statements no-op and the store runs on a family-blind UNIQUE index while verify_columns and the four-arm probe both pass."
+    },
+    {
+      "id": "M09",
+      "law": "A migration that commits while work remains leaves the quarantine marker behind, in its own transaction",
+      "file": "crates/grapt-store/src/migration.rs",
+      "test": "migration::tests::a_cut_between_migrations_quarantines_the_database_and_the_next_open_refuses",
+      "old": "            crate::quarantine::enter(&tx, &remaining, &backup.id, clock.now().as_millis())?;",
+      "new": "            let _ = &remaining;",
+      "attribution_note": "Without the marker a half-migrated database is indistinguishable from a current one: its shape is whatever the completed migrations left, which verify_columns and the target-shape probe can be satisfied by."
+    },
+    {
+      "id": "M10",
+      "law": "A run that completes clears the marker, in the same transaction as its last migration",
+      "file": "crates/grapt-store/src/migration.rs",
+      "test": "migration::tests::a_completed_run_leaves_no_marker_and_the_database_opens",
+      "old": "            crate::quarantine::leave(&tx)?;",
+      "new": "            // M10: the completed run never clears its own marker.",
+      "attribution_note": "The inverse of M09 and a real failure direction rather than symmetry: a marker that is never cleared quarantines a database that is actually current, which refuses every subsequent open. M09 and M10 red different tests with different assertions, which is the test this project applies before claiming two attributions."
+    },
+    {
+      "id": "M11",
+      "law": "EventStore::open REFUSES a quarantined database, before the stamp/schema transaction",
+      "file": "crates/grapt-store/src/write/open.rs",
+      "test": "migration::tests::a_cut_between_migrations_quarantines_the_database_and_the_next_open_refuses",
+      "old": "        Self::refuse_a_quarantined_database(&conn)?;",
+      "new": "        // M11: an interrupted migration no longer refuses the open.",
+      "attribution_note": "M09 removes the evidence; this removes the check that reads it. Under M09 the same test reds on the marker assertion; under M11 the marker assertion passes and it reds on the open, so the two records name different assertions."
+    },
+    {
+      "id": "M12",
+      "law": "The durable migration journal timestamp comes from the injected ClockAuthority, not from SQL's ambient strftime('%s','now')",
+      "file": "crates/grapt-store/src/migration.rs",
+      "test": "the_run_is_idempotent_and_journals_all_migrations_from_the_injected_clock",
+      "test_target": "production_migration",
+      "old": "            \"INSERT INTO rust_migration (id, time_completed) VALUES (?1, ?2)\",\n            rusqlite::params![migration.id().as_str(), clock.now().as_millis()],",
+      "new": "            \"INSERT INTO rust_migration (id, time_completed) VALUES (?1, strftime('%s','now') * 1000)\",\n            rusqlite::params![migration.id().as_str()],",
+      "attribution_note": "The mutation is the exact statement this lane replaced. Row-11 confines ambient time to named adapters, and clippy::disallowed_methods enforces it for RUST call paths only - an ambient clock spelled in SQL text is invisible to that gate, which is why this needs a witness rather than a lint.",
+      "repin_note": "REPOINTED, never re-scoped. This lane's own R1 commit 6eae5ec renamed the witness from `both_migrations` to `all_migrations` when it added a third production migration, and left this row pointing at the old name. The governed battery reported it as NO TEST RAN, so the injected-clock journal law went unjudged for the whole R1 candidate. The mutation is unchanged; only the anchor moved."
+    },
+    {
+      "id": "M13",
+      "law": "SessionStore::exists answers only from the SESSION family; a campaign-family row sharing the identity cannot make a Session exist",
+      "file": "crates/grapt-session/src/store.rs",
+      "package": "grapt-session",
+      "test": "a_campaign_row_sharing_a_session_identity_and_kind_cannot_answer_for_that_session",
+      "test_target": "cross_family_identity",
+      "old": "                \"SELECT 1 FROM event\n                 WHERE aggregate_family = ?1 AND aggregate_id = ?2 AND type = ?3 LIMIT 1\",",
+      "new": "                \"SELECT 1 FROM event\n                 WHERE ?1 IS NOT NULL AND aggregate_id = ?2 AND type = ?3 LIMIT 1\",",
+      "attribution_note": "The mutation keeps the parameter bound so the edit is exactly the removal of the FAMILY predicate and nothing else. The witness's adversary carries the session kind string on a campaign row, which the event_family_shape CHECK permits because that constraint governs payload columns and says nothing about `type` - so the type predicate, which separates the families today only because every campaign row the store writes carries an agent_campaign.* kind, stops discriminating. RUNNER: this entry runs under `cargo test -p grapt-session`; see the new optional `package` key. Under `-p grapt-store` this file is not compiled at all and the witness would have stayed green as a BROKEN WITNESS."
+    },
+    {
+      "id": "M14",
+      "law": "SessionStore::placement answers only from the SESSION family; a campaign-family row sharing the identity yields Unknown, never a placement or a decode error",
+      "file": "crates/grapt-session/src/store.rs",
+      "package": "grapt-session",
+      "test": "a_campaign_row_sharing_a_session_identity_and_kind_cannot_answer_for_that_session",
+      "test_target": "cross_family_identity",
+      "old": "                \"SELECT data FROM event\n                 WHERE aggregate_family = ?1 AND aggregate_id = ?2 AND type = ?3\n                 ORDER BY seq LIMIT 1\",",
+      "new": "                \"SELECT data FROM event\n                 WHERE ?1 IS NOT NULL AND aggregate_id = ?2 AND type = ?3\n                 ORDER BY seq LIMIT 1\",",
+      "attribution_note": "Distinct from M13 at a distinct site: this read selects `data`, which is NULL by CHECK on a campaign row, so without the family predicate the failure is a column-type error reported as a store failure rather than the truthful Unknown. The same witness reds at a different assertion than M13's, which is what keeps the two records separate."
+    },
+    {
+      "id": "M15",
+      "law": "The rebuild PRESERVES an aggregate_family it finds instead of refiling every row as a session",
+      "file": "crates/grapt-store/src/migrations.rs",
+      "test": "the_rebuild_preserves_a_family_it_finds_rather_than_refiling_it",
+      "test_target": "production_migration",
+      "old": "    fn family_expr(self) -> String {\n        if self.family {\n            \"aggregate_family\".to_owned()\n        } else {\n            format!(\"'{LEGACY_FAMILY}'\")\n        }\n    }",
+      "new": "    fn family_expr(self) -> String {\n        format!(\"'{LEGACY_FAMILY}'\")\n    }",
+      "attribution_note": "The complement of M02: M02 proves the back-fill happens when there is no family to keep, this proves it does NOT happen when there is. Refiling a campaign row as a session violates event_family_shape on the migration's own output, so the failure is loud - but it is a different law at a different arm of the same branch."
+    },
+    {
+      "id": "X01",
+      "law": "An admission takes the expected recipient SEPARATELY and refuses a record addressed elsewhere",
+      "file": "crates/grapt-store/src/mailbox.rs",
+      "test": "a_record_addressed_elsewhere_is_refused_and_writes_nothing",
+      "test_target": "mailbox",
+      "old": "    if message.recipient() != expected {\n        return Err(WriteError::MailboxWrongRecipient {\n            message: message.id().as_str().to_owned(),\n            expected: expected.as_str().to_owned(),\n            found: message.recipient().as_str().to_owned(),\n        });\n    }\n",
+      "new": ""
+    },
+    {
+      "id": "X02",
+      "law": "An exact retry reconciles ONLY byte-identical canonical data; conflicting reuse of a message id refuses",
+      "file": "crates/grapt-store/src/mailbox.rs",
+      "test": "an_exact_retry_reconciles_to_the_original_position_and_a_conflict_refuses",
+      "test_target": "mailbox",
+      "old": "        if stored.record_bytes == bytes {",
+      "new": "        if true {"
+    },
+    {
+      "id": "X03",
+      "law": "An explicit supersedes edge must name a message that EXISTS",
+      "file": "crates/grapt-store/src/mailbox.rs",
+      "test": "a_supersedes_edge_must_name_an_existing_same_recipient_message",
+      "test_target": "mailbox",
+      "old": "        let Some(target_row) = read_row(tx, target.as_str())? else {\n            return Err(WriteError::MailboxSupersedesMissing {\n                message: id.to_owned(),\n                target: target.as_str().to_owned(),\n            });\n        };",
+      "new": "        let Some(target_row) = read_row(tx, target.as_str())? else {\n            return Ok(MailboxAdmitted::Admitted { seq });\n        };"
+    },
+    {
+      "id": "X04",
+      "law": "A supersedes edge may only reach a message belonging to the SAME recipient",
+      "file": "crates/grapt-store/src/mailbox.rs",
+      "test": "a_supersedes_edge_must_name_an_existing_same_recipient_message",
+      "test_target": "mailbox",
+      "mutation_note": "Distinct from X03: X03 removes the existence refusal and X04 leaves it in place while removing the recipient-scope refusal. Each reddens its own named assertion in the same witness.",
+      "old": "        if target_row.recipient != expected.as_str() {",
+      "new": "        if false {"
+    },
+    {
+      "id": "X05",
+      "law": "A source acknowledgement is idempotent: a retried acknowledgement reconciles rather than writing again",
+      "file": "crates/grapt-store/src/mailbox.rs",
+      "test": "a_source_acknowledgement_requires_the_admission_and_is_idempotent",
+      "test_target": "mailbox",
+      "old": "    if acknowledged != 0 {\n        return Ok(MailboxAcknowledged::AlreadyAcknowledged);\n    }\n",
+      "new": ""
+    },
+    {
+      "id": "X06",
+      "law": "A locally consumed message is excluded from actionable pages",
+      "file": "crates/grapt-store/src/mailbox.rs",
+      "test": "a_consumed_message_is_excluded_but_reconciles_by_exact_id",
+      "test_target": "mailbox",
+      "old": "           AND m.consumed = 0\n",
+      "new": ""
+    },
+    {
+      "id": "X07",
+      "law": "A superseded message is excluded from actionable pages",
+      "file": "crates/grapt-store/src/mailbox.rs",
+      "test": "a_superseded_message_is_no_longer_actionable",
+      "test_target": "mailbox",
+      "old": "           AND NOT EXISTS (\n                SELECT 1 FROM mailbox_message s\n                WHERE s.recipient = m.recipient AND s.supersedes = m.message_id\n           )\n",
+      "new": ""
+    },
+    {
+      "id": "X08",
+      "law": "The page cursor is EXCLUSIVE: a message already returned is never returned again",
+      "file": "crates/grapt-store/src/mailbox.rs",
+      "test": "the_page_cursor_is_exclusive_and_ascending",
+      "test_target": "mailbox",
+      "old": "           AND m.admission_seq > ?2",
+      "new": "           AND m.admission_seq >= ?2"
+    },
+    {
+      "id": "X09",
+      "law": "A page returns at most MAX_MAILBOX_PAGE_MESSAGES rows however many the caller asks for",
+      "file": "crates/grapt-store/src/mailbox.rs",
+      "test": "the_page_is_capped_at_sixty_four_messages",
+      "test_target": "mailbox",
+      "old": "    let limit = limit.min(MAX_MAILBOX_PAGE_MESSAGES);",
+      "new": "    let limit = limit;"
+    },
+    {
+      "id": "X10",
+      "law": "A page stops at MAX_MAILBOX_PAGE_BYTES of decoded bodies",
+      "file": "crates/grapt-store/src/mailbox.rs",
+      "test": "the_page_is_capped_at_two_hundred_fifty_six_kibibytes_of_decoded_bodies",
+      "test_target": "mailbox",
+      "old": "        if next_bytes > MAX_MAILBOX_PAGE_BYTES && !messages.is_empty() {",
+      "new": "        if false {"
+    },
+    {
+      "id": "X11",
+      "law": "Each admission takes a position strictly past the recipient's highest, so positions are monotonic and never reused",
+      "file": "crates/grapt-store/src/mailbox.rs",
+      "test": "two_admissions_take_distinct_ascending_positions",
+      "test_target": "mailbox",
+      "mutation_note": "The UNIQUE (recipient, admission_seq) index is what turns the collapsed sequence into a refusal, which is why the witness reddens on the SECOND admission rather than the first. It has its OWN witness because the shared one reported through `?`, and an Err-returning witness leaves no captured diagnostic - which made this row's evidence identical to X14's.",
+      "old": "        Some(value) => u64::try_from(value)\n            .ok()\n            .and_then(MailboxAdmissionSeq::new)\n            .ok_or_else(|| WriteError::MailboxCorruptSequence {\n                recipient: recipient.as_str().to_owned(),\n                value,\n            })?\n            .next()",
+      "new": "        Some(value) => u64::try_from(value)\n            .ok()\n            .and_then(MailboxAdmissionSeq::new)\n            .ok_or_else(|| WriteError::MailboxCorruptSequence {\n                recipient: recipient.as_str().to_owned(),\n                value,\n            })?\n            .next()\n            .and_then(|_| MailboxAdmissionSeq::new(1))"
+    },
+    {
+      "id": "X12",
+      "law": "A stored row whose indexed KIND column disagrees with its decoded bytes refuses the page",
+      "file": "crates/grapt-store/src/mailbox.rs",
+      "test": "a_hostile_row_refuses_the_page_rather_than_vanishing_from_it",
+      "test_target": "mailbox",
+      "old": "    if message.kind().as_str() != stored.kind {\n        return Err(undecodable(format!(\n            \"stored bytes decode to kind {:?}, not the row's kind column {:?}\",\n            message.kind().as_str(),\n            stored.kind\n        )));\n    }\n",
+      "new": ""
+    },
+    {
+      "id": "X13",
+      "law": "A record with bytes appended after it is refused, never decoded as the record it claims to be",
+      "file": "crates/grapt-store/src/mailbox.rs",
+      "test": "a_hostile_row_refuses_the_page_rather_than_vanishing_from_it",
+      "test_target": "mailbox",
+      "mutation_note": "Distinct from X12: X12 removes a column/bytes agreement check and X13 removes the decoder's trailing-byte refusal. The witness stages both corruptions and each edit reddens its own named assertion.",
+      "old": "        if self.at == self.bytes.len() {\n            Ok(())\n        } else {",
+      "new": "        if true {\n            Ok(())\n        } else {"
+    },
+    {
+      "id": "X14",
+      "law": "The mailbox INSERT runs through the governed lift for its OWN table",
+      "file": "crates/grapt-store/src/mailbox.rs",
+      "test": "the_mailbox_insert_takes_the_governed_lift_for_its_own_table",
+      "test_target": "mailbox",
+      "mutation_note": "Lifting a DIFFERENT governed table leaves the mailbox denial in place, so the store's own insert is refused by its own authorizer. That is the shape a lift naming 'governed writes' instead of one table would hide. Its own witness, with a named panic: sharing X11's witness produced byte-identical 'failed without a captured diagnostic' evidence and the harness refused it.",
+      "old": "    tx.gate().execute(\n        tx,\n        GovernedTable::MailboxMessage,\n        \"INSERT INTO mailbox_message",
+      "new": "    tx.gate().execute(\n        tx,\n        GovernedTable::Event,\n        \"INSERT INTO mailbox_message"
+    },
+    {
+      "id": "X15",
+      "law": "mailbox_message is a governed table: a consumer statement cannot write it",
+      "file": "crates/grapt-store/src/governed.rs",
+      "test": "a_consumer_cannot_write_the_mailbox_table",
+      "test_target": "mailbox",
+      "mutation_note": "The stand-in keeps the array's arity so the edit is a governance change, not a type change - the same shape C06-C09 use.",
+      "old": "        GovernedTable::MailboxMessage,\n        GovernedTable::AttemptReceipt,\n        GovernedTable::AttemptReceiptQuarantine,\n    ];",
+      "new": "        GovernedTable::PlanReadReceipt,\n        GovernedTable::AttemptReceipt,\n        GovernedTable::AttemptReceiptQuarantine,\n    ];"
+    },
+    {
+      "id": "X16",
+      "law": "Acknowledging or consuming another seat's message refuses",
+      "file": "crates/grapt-store/src/mailbox.rs",
+      "test": "acknowledging_another_seats_message_refuses",
+      "test_target": "mailbox",
+      "old": "    if stored.recipient != expected.as_str() {",
+      "new": "    if false {"
+    },
+    {
+      "id": "Y01",
+      "law": "SeatRecipientId admits at most 256 UTF-8 bytes",
+      "file": "crates/grapt-types/src/mailbox.rs",
+      "package": "grapt-types",
+      "test": "mailbox::tests::a_seat_recipient_at_its_bound_is_exact_and_one_byte_over_refuses",
+      "old": "pub const MAX_SEAT_RECIPIENT_ID_BYTES: usize = 256;",
+      "new": "pub const MAX_SEAT_RECIPIENT_ID_BYTES: usize = 257;"
+    },
+    {
+      "id": "Y02",
+      "law": "MailboxMessageId admits at most 256 UTF-8 bytes",
+      "file": "crates/grapt-types/src/mailbox.rs",
+      "package": "grapt-types",
+      "test": "mailbox::tests::a_message_id_at_its_bound_is_exact_and_one_byte_over_refuses",
+      "old": "pub const MAX_MAILBOX_MESSAGE_ID_BYTES: usize = 256;",
+      "new": "pub const MAX_MAILBOX_MESSAGE_ID_BYTES: usize = 257;"
+    },
+    {
+      "id": "Y03",
+      "law": "Mailbox identity bounds count UTF-8 bytes rather than Unicode scalar values",
+      "file": "crates/grapt-types/src/mailbox.rs",
+      "package": "grapt-types",
+      "test": "mailbox::tests::mailbox_identity_bounds_count_utf8_bytes_not_characters",
+      "old": "                let bytes = raw.len();\n                if bytes > $max {",
+      "new": "                let bytes = raw.chars().count();\n                if bytes > $max {"
+    },
+    {
+      "id": "Y04",
+      "law": "An over-bound mailbox identity is refused rather than truncated into a value",
+      "file": "crates/grapt-types/src/mailbox.rs",
+      "package": "grapt-types",
+      "test": "mailbox::tests::an_over_bound_identity_is_never_truncated_into_a_value",
+      "old": "                if bytes > $max {\n                    return Err(MailboxIdentityError::TooLarge { bytes, max: $max });\n                }",
+      "new": "                if bytes > $max {\n                    return Ok(Self(\n                        raw.as_bytes()[..$max].iter().map(|byte| char::from(*byte)).collect(),\n                    ));\n                }"
+    },
+    {
+      "id": "Y05",
+      "law": "The source-compatible Option constructor delegates to typed bounded construction",
+      "file": "crates/grapt-types/src/mailbox.rs",
+      "package": "grapt-types",
+      "test": "mailbox::tests::compatibility_constructors_cannot_bypass_the_typed_bound",
+      "old": "                Self::try_new(raw).ok()",
+      "new": "                let raw = raw.into();\n                if raw.is_empty() { None } else { Some(Self(raw)) }"
+    },
+    {
+      "id": "Y06",
+      "law": "Strict stored-row decode reports the over-bound field and exact bytes/max instead of hiding or mislabelling it",
+      "file": "crates/grapt-store/src/mailbox.rs",
+      "test": "existing_rows_over_an_identity_bound_refuse_with_field_bytes_and_max",
+      "test_target": "mailbox",
+      "old": "        MailboxIdentityError::TooLarge { bytes, max } => format!(\n            \"{field} is {bytes} UTF-8 bytes, above the {max}-byte bound; \\\n             the stored row is refused, never truncated\"\n        ),",
+      "new": "        MailboxIdentityError::TooLarge { .. } => format!(\"{field} is empty\"),"
+    },
+    {
+      "id": "Y07",
+      "law": "Empty mailbox identities refuse through the typed Empty variant",
+      "file": "crates/grapt-types/src/mailbox.rs",
+      "package": "grapt-types",
+      "test": "mailbox::tests::identities_are_non_empty_and_nominally_distinct",
+      "old": "                if raw.is_empty() {\n                    return Err(MailboxIdentityError::Empty);\n                }",
+      "new": ""
+    },
+    {
+      "id": "SC01",
+      "law": "session.created recency comes from injected info.time.updated, never the event envelope time",
+      "file": "crates/grapt-session/src/list/projection.rs",
+      "package": "grapt-session",
+      "test": "sc01_creation_uses_injected_info_updated",
+      "test_target": "session_list_projection",
+      "old": "            directory,\n            title,\n            updated,\n            event.canonical_hash",
+      "new": "            directory,\n            title,\n            event.created_ms,\n            event.canonical_hash"
+    },
+    {
+      "id": "SC02",
+      "law": "usage and step activity preserve session-list recency",
+      "file": "crates/grapt-session/src/list/projection.rs",
+      "package": "grapt-session",
+      "test": "sc02_activity_preserves_recency",
+      "test_target": "session_list_projection",
+      "old": "            (\"session.usage.recorded\", 1) => Ok(()),",
+      "new": "            (\"session.usage.recorded\", 1) => update_time_and_title(tx, event, None),"
+    },
+    {
+      "id": "SC03",
+      "law": "legacy import preserves immutable shipped updated provenance instead of rebuilding from events",
+      "file": "crates/grapt-store/src/session_list/migration.rs",
+      "test": "sc03_legacy_baseline_is_not_rebuilt_from_events",
+      "test_target": "session_list_migration",
+      "old": "                rusqlite::params![row.id, row.updated_ms, LEGACY_SOURCE, digest, cutover_seq],",
+      "new": "                rusqlite::params![row.id, cutover_seq, LEGACY_SOURCE, digest, cutover_seq],"
+    },
+    {
+      "id": "SC04",
+      "law": "equal-time keysets retain the binary SessionId tie-break in their anchor predicate",
+      "file": "crates/grapt-session/src/list/query.rs",
+      "package": "grapt-session",
+      "test": "sc04_session_id_tie_break_is_load_bearing",
+      "test_target": "session_list_keyset",
+      "old": "                   OR (updated_ms = {time} AND session_id COLLATE BINARY {comparison} {id}))",
+      "new": "                   OR 0)"
+    },
+    {
+      "id": "SC05",
+      "law": "keyset anchor comparisons are strict and never repeat the anchor",
+      "file": "crates/grapt-session/src/list/query.rs",
+      "package": "grapt-session",
+      "test": "sc05_anchor_comparisons_are_strict",
+      "test_target": "session_list_keyset",
+      "old": "            SessionListOrder::Ascending => \">\",",
+      "new": "            SessionListOrder::Ascending => \">=\","
+    },
+    {
+      "id": "SC06",
+      "law": "timestamp and binary SessionId are ordered in the same requested direction",
+      "file": "crates/grapt-session/src/list/query.rs",
+      "package": "grapt-session",
+      "test": "sc06_timestamp_and_id_share_one_direction",
+      "test_target": "session_list_keyset",
+      "old": "            \" ORDER BY updated_ms {order_sql}, session_id COLLATE BINARY {order_sql} LIMIT {limit}\"",
+      "new": "            \" ORDER BY updated_ms {order_sql}, session_id COLLATE BINARY DESC LIMIT {limit}\""
+    },
+    {
+      "id": "SC07",
+      "law": "previous pagination inverts the physical SQL order",
+      "file": "crates/grapt-session/src/list/query.rs",
+      "package": "grapt-session",
+      "test": "sc07_previous_inverts_physical_order",
+      "test_target": "session_list_keyset",
+      "old": "            (SessionListOrder::Descending, SessionListDirection::Next)\n            | (SessionListOrder::Ascending, SessionListDirection::Previous) => {\n                SessionListOrder::Descending\n            }",
+      "new": "            (SessionListOrder::Descending, SessionListDirection::Next)\n            | (SessionListOrder::Ascending, SessionListDirection::Previous) => {\n                SessionListOrder::Ascending\n            }"
+    },
+    {
+      "id": "SC08",
+      "law": "previous pagination reverses physical rows back into requested order",
+      "file": "crates/grapt-session/src/list/query.rs",
+      "package": "grapt-session",
+      "test": "sc08_previous_reverses_physical_results",
+      "test_target": "session_list_keyset",
+      "old": "        if criteria.direction == SessionListDirection::Previous {\n            items.reverse();\n        }",
+      "new": "        if criteria.direction == SessionListDirection::Next {\n            items.reverse();\n        }"
+    },
+    {
+      "id": "SC09",
+      "law": "previous pagination derives its anchor predicate from the inverted physical direction",
+      "file": "crates/grapt-session/src/list/query.rs",
+      "package": "grapt-session",
+      "test": "sc09_previous_uses_its_own_anchor_predicate",
+      "test_target": "session_list_keyset",
+      "old": "        let comparison = match physical {",
+      "new": "        let comparison = match criteria.order {"
+    },
+    {
+      "id": "SC10",
+      "law": "scope, workspace, search and parent filters compose as conjunctions",
+      "file": "crates/grapt-session/src/list/query.rs",
+      "package": "grapt-session",
+      "test": "sc10_filters_compose_as_conjunctions",
+      "test_target": "session_list_keyset",
+      "old": "            sql.push_str(&format!(\" AND instr(title, {parameter}) > 0\"));",
+      "new": "            sql.push_str(&format!(\" OR instr(title, {parameter}) > 0\"));"
+    },
+    {
+      "id": "SC11",
+      "law": "root-parent filtering remains distinct from Any",
+      "file": "crates/grapt-session/src/list/query.rs",
+      "package": "grapt-session",
+      "test": "sc11_root_is_not_any_parent",
+      "test_target": "session_list_keyset",
+      "old": "            ParentFilter::Root => sql.push_str(\" AND parent_id IS NULL\"),",
+      "new": "            ParentFilter::Root => {}"
+    },
+    {
+      "id": "SC12",
+      "law": "presentation-only subpath never becomes a store predicate",
+      "file": "crates/grapt-session/src/list/request.rs",
+      "package": "grapt-session",
+      "test": "sc12_subpath_is_absent_from_store_criteria",
+      "test_target": "session_list_keyset",
+      "old": "        let _ = compatibility_subpath;\n        Self::Project(project)",
+      "new": "        compatibility_subpath.and_then(ProjectId::new).map_or(Self::Project(project), Self::Project)"
+    },
+    {
+      "id": "SC13",
+      "law": "directory matching uses the canonical directory owned by LocationRef",
+      "file": "crates/grapt-session/src/list/query.rs",
+      "package": "grapt-session",
+      "test": "sc13_directory_uses_canonical_location_ownership",
+      "test_target": "session_list_keyset",
+      "old": "                let parameter = push(SqlValue::Text(location.directory().to_owned()));",
+      "new": "                let parameter = push(SqlValue::Text(location.canonical_id().as_str().to_owned()));"
+    },
+    {
+      "id": "SC14",
+      "law": "the requested row bound is enforced by SQL LIMIT before materialization",
+      "file": "crates/grapt-session/src/list/query.rs",
+      "package": "grapt-session",
+      "test": "sc14_sql_limit_is_structural",
+      "test_target": "session_list_keyset",
+      "old": "            \" ORDER BY updated_ms {order_sql}, session_id COLLATE BINARY {order_sql} LIMIT {limit}\"",
+      "new": "            \" ORDER BY updated_ms {order_sql}, session_id COLLATE BINARY {order_sql}\""
+    },
+    {
+      "id": "SC15",
+      "law": "each list statement installs its injected deterministic SQLite VM-step budget",
+      "file": "crates/grapt-session/src/list/query.rs",
+      "package": "grapt-session",
+      "test": "sc15_vm_progress_guard_is_load_bearing",
+      "test_target": "session_list_keyset",
+      "old": "            .read_budget(criteria.limits.sqlite_vm_steps)",
+      "new": "            .read_budget(SqliteVmBudget::production())"
+    },
+    {
+      "id": "SC16",
+      "law": "stored text bounds are detected in SQLite before Rust String decode allocation",
+      "file": "crates/grapt-session/src/list/query.rs",
+      "package": "grapt-session",
+      "test": "sc16_text_bounds_fire_before_decode_allocation",
+      "test_target": "session_list_keyset",
+      "old": "            if oversized != 0 {",
+      "new": "            if oversized == 0 {"
+    },
+    {
+      "id": "SC17",
+      "law": "a page request above 128 is refused rather than silently clamped",
+      "file": "crates/grapt-session/src/list/request.rs",
+      "package": "grapt-session",
+      "test": "sc17_oversize_page_is_refused_not_clamped",
+      "test_target": "session_list_keyset",
+      "old": "        if page_size.get() > limits.page_rows.get() {",
+      "new": "        if page_size.get() < limits.page_rows.get() {"
+    },
+    {
+      "id": "SC18",
+      "law": "migration journal and schema settle in the same transaction",
+      "file": "crates/grapt-store/src/migration.rs",
+      "test": "sc18_migration_journal_settles_with_schema",
+      "test_target": "session_list_migration",
+      "old": "        tx.execute(\n            \"INSERT INTO rust_migration (id, time_completed) VALUES (?1, ?2)\",\n            rusqlite::params![migration.id().as_str(), clock.now().as_millis()],\n        )?;",
+      "new": "        let _ = (migration.id(), clock.now());"
+    },
+    {
+      "id": "SC19",
+      "law": "an altered backup is integrity-verified before its receipt can authorize migration",
+      "file": "crates/grapt-store/src/migration.rs",
+      "test": "migration::tests::sc19_altered_backup_is_refused_by_verification",
+      "old": "    let ok: String = backup.query_row(\"PRAGMA integrity_check\", [], |row| row.get(0))?;\n    if ok != \"ok\" {\n        return Err(MigrationError::BackupIntegrity(ok));\n    }\n    drop(backup);",
+      "new": "    drop(backup);"
+    },
+    {
+      "id": "SC20",
+      "law": "read-only preflight scans every legacy row and never skips corrupt input",
+      "file": "crates/grapt-store/src/session_list/migration.rs",
+      "test": "sc20_corrupt_source_is_not_skipped",
+      "test_target": "session_list_migration",
+      "old": "    scan_legacy(conn, |_| Ok(())).map(|_| ())",
+      "new": "    Ok(())"
+    },
+    {
+      "id": "SC21",
+      "law": "a session-list projection row and its authoritative watermark settle as one append outcome",
+      "file": "crates/grapt-session/src/list/projection.rs",
+      "package": "grapt-session",
+      "test": "sc21_projection_row_and_watermark_settle_together",
+      "test_target": "session_list_projection",
+      "old": "        Self::project_event(tx, event)",
+      "new": "        Ok(())"
+    },
+    {
+      "id": "SC22",
+      "law": "open verifies every required composite keyset index",
+      "file": "crates/grapt-store/src/session_list/schema.rs",
+      "package": "grapt-session",
+      "test": "sc22_required_composite_indexes_are_verified",
+      "test_target": "session_list_keyset",
+      "old": "        (\n            \"session_list_updated_key_idx\",\n            &[\"updated_ms\", \"session_id\"][..],\n        ),",
+      "new": ""
+    },
+    {
+      "id": "SC23",
+      "law": "the publishable notice carrier cannot be forged before a successful commit",
+      "file": "crates/grapt-store/src/notify.rs",
+      "test": "the_stores_type_level_laws_reject_their_counterexamples",
+      "test_target": "compile_fail",
+      "old": "pub struct CommittedNotices {\n    notices: Vec<DurableNotice>,\n    dropped: u32,",
+      "new": "pub struct CommittedNotices {\n    pub notices: Vec<DurableNotice>,\n    pub dropped: u32,"
+    },
+    {
+      "id": "SC24",
+      "law": "session-list rows are keyed by the same stable projection identity as their watermark",
+      "file": "crates/grapt-session/src/list/projection.rs",
+      "package": "grapt-session",
+      "test": "sc24_projection_identity_keys_the_matching_watermark",
+      "test_target": "session_list_projection",
+      "old": "        SESSION_LIST_PROJECTION",
+      "new": "        ProjectionId::new(\"session-list-wrong-watermark\")"
+    },
+    {
+      "id": "SC25",
+      "law": "the compile-fail gate proves a SQLite transaction cannot be held across async suspension",
+      "file": "crates/grapt-store/tests/probes/01_governed_transaction_across_await.rs",
+      "test": "the_stores_type_level_laws_reject_their_counterexamples",
+      "test_target": "compile_fail",
+      "old": "        let guard = a_guard();\n        suspend().await;\n        drop(guard);",
+      "new": "        let guard = a_guard();\n        drop(guard);\n        suspend().await;"
+    },
+    {
+      "id": "D01",
+      "law": "The Step-failure seam writes the accepted session.step.failed name, never a success or compatibility name",
+      "file": "crates/grapt-store/src/step_failed.rs",
+      "test": "the_failure_uses_the_exact_v2_kind_payload_and_caller_coordinates",
+      "test_target": "step_failed_fact",
+      "old": "const STEP_FAILED: &str = \"session.step.failed\";",
+      "new": "const STEP_FAILED: &str = \"session.step.ended\";"
+    },
+    {
+      "id": "D02",
+      "law": "The store seam persists the Rust-native v2 fact and never writes the frozen v1 compatibility version",
+      "file": "crates/grapt-store/src/step_failed.rs",
+      "test": "the_failure_uses_the_exact_v2_kind_payload_and_caller_coordinates",
+      "test_target": "step_failed_fact",
+      "old": "    let version = match EventVersion::new(2) {",
+      "new": "    let version = match EventVersion::new(1) {"
+    },
+    {
+      "id": "D03",
+      "law": "The store seam uses the accepted R2b-1 encoder for the caller's exact positive StepNumber and typed terminal reason",
+      "file": "crates/grapt-store/src/step_failed.rs",
+      "test": "the_failure_uses_the_exact_v2_kind_payload_and_caller_coordinates",
+      "test_target": "step_failed_fact",
+      "old": "    let payload = session_step_failed::encode(fact);",
+      "new": "    let payload = serde_json::json!({\"step\": fact.step().value(), \"reason\": {\"kind\": \"durability-failure\"}});"
+    },
+    {
+      "id": "D04",
+      "law": "created_ms is caller-supplied and forwarded unchanged; the terminal seam never substitutes a later reading",
+      "file": "crates/grapt-store/src/step_failed.rs",
+      "test": "the_failure_uses_the_exact_v2_kind_payload_and_caller_coordinates",
+      "test_target": "step_failed_fact",
+      "old": "    let version = match EventVersion::new(2) {\n        Some(version) => version,\n        None => unreachable!(\"2 is a non-zero version\"),\n    };\n\n    crate::EventStore::append_within(\n        tx,\n        AppendInput {\n            id,\n            aggregate,\n            writer,\n            kind_name: STEP_FAILED,\n            version,\n            created_ms,\n            data: &payload,\n        },\n        projectors,\n    )",
+      "new": "    let version = match EventVersion::new(2) {\n        Some(version) => version,\n        None => unreachable!(\"2 is a non-zero version\"),\n    };\n\n    crate::EventStore::append_within(\n        tx,\n        AppendInput {\n            id,\n            aggregate,\n            writer,\n            kind_name: STEP_FAILED,\n            version,\n            created_ms: created_ms.saturating_add(1),\n            data: &payload,\n        },\n        projectors,\n    )"
+    },
+    {
+      "id": "D05",
+      "law": "The Step-failure seam forwards every caller projector so its rows and authoritative watermark settle atomically with the fact",
+      "file": "crates/grapt-store/src/step_failed.rs",
+      "test": "the_step_failure_runs_its_projector_and_watermark_in_the_same_transaction",
+      "test_target": "step_failed_fact",
+      "old": "    let version = match EventVersion::new(2) {\n        Some(version) => version,\n        None => unreachable!(\"2 is a non-zero version\"),\n    };\n\n    crate::EventStore::append_within(\n        tx,\n        AppendInput {\n            id,\n            aggregate,\n            writer,\n            kind_name: STEP_FAILED,\n            version,\n            created_ms,\n            data: &payload,\n        },\n        projectors,\n    )",
+      "new": "    let version = match EventVersion::new(2) {\n        Some(version) => version,\n        None => unreachable!(\"2 is a non-zero version\"),\n    };\n\n    crate::EventStore::append_within(\n        tx,\n        AppendInput {\n            id,\n            aggregate,\n            writer,\n            kind_name: STEP_FAILED,\n            version,\n            created_ms,\n            data: &payload,\n        },\n        &mut [] as &mut [&mut dyn Projector],\n    )"
+    },
+    {
+      "id": "SC26",
+      "law": "the bounded legacy import's batch continuation uses the SAME explicit binary total order as its ordering, so a source whose declared collation differs cannot lose a row at the batch boundary",
+      "file": "crates/grapt-store/src/session_list/migration.rs",
+      "test": "a_bounded_import_preserves_every_row_when_source_collation_is_nocase",
+      "test_target": "session_list_closure",
+      "old": "WHERE (?1 IS NULL OR id > ?1 COLLATE BINARY)",
+      "new": "WHERE (?1 IS NULL OR id > ?1)",
+      "observed_red": "0 passed / 1 failed: source 513, projection 512 - the exact loss the cold review reproduced against dadf4802"
+    },
+    {
+      "id": "SC27",
+      "law": "a bounded import verifies its projected row count AND domain digest against the read-only preflight before committing, so a partial import is an honest atomic failure rather than a successful migration over missing data",
+      "file": "crates/grapt-store/src/session_list/migration.rs",
+      "test": "session_list::tests::a_short_projection_fails_the_import_postcondition",
+      "old": "    if projected_rows != expected_rows || projected_digest != expected_digest {",
+      "new": "    if projected_rows != expected_rows && projected_digest != expected_digest {",
+      "attribution_note": "The conjunction mutant reds BOTH halves independently: the short-projection witness has an equal digest and unequal count, the content-divergent witness has an equal count and unequal digest. Neither half can carry the other's record.",
+      "observed_red": "2 passed / 2 failed in the lib suite"
+    },
+    {
+      "id": "SC28",
+      "law": "a production open refuses to create an empty-rust-store projection beside a populated legacy session source; an absent projection is never served as an empty page",
+      "file": "crates/grapt-store/src/session_list/schema.rs",
+      "test": "a_production_open_refuses_to_manufacture_an_empty_projection_beside_legacy_rows",
+      "test_target": "session_list_closure",
+      "old": "    if legacy_source_is_populated(tx)? {",
+      "new": "    if false {",
+      "observed_red": "0 passed / 1 failed: open manufactured the empty projection, the second defect the cold review reproduced"
+    },
+    {
+      "id": "SC29",
+      "law": "no whole-projection integrity scan runs on the list request path; every SQLite read one request performs is under its one declared VM-step bound",
+      "file": "crates/grapt-session/src/list/query.rs",
+      "test": "a_hostile_large_clean_projection_is_bounded_and_costs_no_whole_table_scan",
+      "test_target": "session_list_keyset",
+      "old": "        verify_schema_shape(self.conn).map_err(map_schema)?;",
+      "new": "        grapt_store::session_list::verify_schema(self.conn).map_err(map_schema)?;",
+      "attribution_note": "Putting the whole-table scan back on the request path makes a bounded page over a large CLEAN projection exhaust its budget - a clean projection is the expensive case because the scan's WHERE matches no healthy row and therefore reads all of them.",
+      "observed_red": "0 passed / 1 failed with Error: QueryBudgetExceeded on the arm that must be served",
+      "package": "grapt-session"
+    },
+    {
+      "id": "SC30",
+      "law": "the acceptance corpus is EXECUTED against the implementation and its produced surfaces compared, not merely deserialized",
+      "file": "fixtures/rust-reconstruction/session-list-keyset-v1/expected/api.jsonl",
+      "test": "every_action_executes_against_the_implementation_and_matches_the_declared_outputs",
+      "test_target": "session_list_acceptance_corpus",
+      "package": "grapt-session",
+      "old": "{\"action\":2,\"outcome\":\"page\",\"order\":\"ascending\",\"ids\":[\"ses_legacy_b\",\"ses_legacy_a\"]}",
+      "new": "{\"action\":2,\"outcome\":\"page\",\"order\":\"ascending\",\"ids\":[\"ses_legacy_a\",\"ses_legacy_b\"]}",
+      "attribution_note": "The mutation edits the DECLARED expectation, not the implementation. A corpus that only deserialized its own files would stay green; this reds because the declared page order is compared against the order the implementation actually served.",
+      "observed_red": "0 passed / 1 failed: assertion `left == right` failed: page ids for action 2"
+    },
+    {
+      "id": "SC31",
+      "law": "the corpus manifest carries the EXACT current ratified law-pack pin, compared against fixtures/rust-reconstruction/law-pack.json rather than merely being well-shaped",
+      "file": "fixtures/rust-reconstruction/session-list-keyset-v1/manifest.json",
+      "test": "the_corpus_manifest_validates_against_the_ratified_schema",
+      "test_target": "session_list_acceptance_corpus",
+      "package": "grapt-session",
+      "old": "626333034f4760faf2fd2769e1a797d2ebbad5187e0bd787d33b99bf32a47865",
+      "new": "0000000000000000000000000000000000000000000000000000000000000000",
+      "attribution_note": "The ratified schema can only require 64 hex characters, so a drifted digest is schema-VALID. This row pins the separate law that the digest must be the current ratified one.",
+      "observed_red": "0 passed / 1 failed: the nine ordered law sources or their digests drifted from the ratified pin"
+    },
+    {
+      "id": "SC32",
+      "law": "the fact log proves its own shape BEFORE the session-list projection guard is consulted, so a pre-fencing or alien fact-log table beside a populated legacy source is refused by the column check that owns it",
+      "file": "crates/grapt-store/src/write/schema.rs",
+      "test": "the_fact_log_column_check_refuses_before_the_session_list_guard_on_a_paired_source",
+      "test_target": "session_list_closure",
+      "old": "        Self::verify_columns(\n            conn,\n            \"event_sequence\",\n            &[\"aggregate_family\", \"aggregate_id\", \"seq\"],\n        )?;",
+      "new": "        crate::session_list::ensure_schema(conn)?;\n        Self::verify_columns(\n            conn,\n            \"event_sequence\",\n            &[\"aggregate_family\", \"aggregate_id\", \"seq\"],\n        )?;",
+      "attribution_note": "The mutation places the session-list guard ahead of the fact-log column checks - the exact ordering the H2 correction moved it out of. It ADDS the earlier call rather than relocating it, because the earlier call refuses first and the later one is then unreachable, which is precisely the defect: every fact-log column check is recorded as enforced while never being reached. Only a PAIRED source can see this. The two inherited open-refusal witnesses build a one-column zero-row `session` stub, which the narrow H2 guard admits at BOTH boundaries, so they stay GREEN under this mutant - measured 4 passed / 0 failed. The closure review found exactly this and the row exists because of it.",
+      "observed_red": "0 passed / 1 failed: 'the fact-log COLUMN check must be what refuses, got sqlite: session-list projection is absent beside a legacy session source'"
+    },
+    {
+      "id": "PS01",
+      "law": "The attempt-receipt table is CHAINED into ensure_schema, so a database cannot be Rust-owned while missing the place its process-loss evidence lands",
+      "file": "crates/grapt-store/src/write/schema.rs",
+      "test": "attempt_receipt::tests::a_receipt_round_trips_through_its_columns_and_its_bytes",
+      "old": "        crate::attempt_receipt::ensure_schema(conn)?;",
+      "new": "        // MUTANT: the schema chain call removed"
+    },
+    {
+      "id": "PS02",
+      "law": "Open-time COLUMN verification refuses a wrong-shaped attempt_receipt namesake and NAMES the missing column",
+      "file": "crates/grapt-store/src/write/schema.rs",
+      "test": "write::tests::open_refuses_a_wrong_shaped_attempt_receipt_table",
+      "old": "                \"attempt_id\",\n                \"session_id\",\n                \"step\",\n                \"ordinal\",\n                \"writer_epoch\",\n                \"terminal_event_id\",\n                \"terminal_created_ms\",\n                \"reserved_ms\",\n                \"request_sent_ms\",\n                \"settled_ms\",\n                \"record_bytes\",\n            ],\n        )?;\n        Self::verify_columns(",
+      "new": "                \"attempt_id\",\n                \"step\",\n                \"ordinal\",\n                \"writer_epoch\",\n                \"terminal_event_id\",\n                \"terminal_created_ms\",\n                \"reserved_ms\",\n                \"request_sent_ms\",\n                \"settled_ms\",\n                \"record_bytes\",\n            ],\n        )?;\n        Self::verify_columns("
+    },
+    {
+      "id": "PS03",
+      "law": "H3: the RECOVERY index's exact column order is verified at every open; a same-named namesake in any other shape would be honoured silently",
+      "file": "crates/grapt-store/src/write/schema.rs",
+      "test": "write::tests::open_refuses_a_same_named_recovery_index_over_the_wrong_columns",
+      "old": "            &[\"session_id\", \"attempt_id\"],\n            false,\n        ),\n    ];",
+      "new": "            &[\"settled_ms\", \"session_id\", \"attempt_id\"],\n            false,\n        ),\n    ];",
+      "repin_note": "Re-pinned AND re-stated. H3 renamed the index and changed its columns, so both the anchor and the law's wording moved. The law itself -- a required index's shape is verified at open rather than assumed from its name -- is unchanged. Scope: this row witnesses the VERIFICATION half only, and that is now a division of labour rather than a gap. The USE half is PS47, which resurrects the old index consistently across both files so the shape check passes and only the EXPLAIN-plan witness objects. The earlier wording said the two-file mutation was not expressible as a manifest row and recorded it as a hand experiment in the receipt; the runner now carries a multi-edit shape, so it is a row."
+    },
+    {
+      "id": "PS04",
+      "law": "attempt_receipt is a GOVERNED table: the authorizer matches its real name, so a consumer statement cannot forge, settle or erase process-loss evidence",
+      "file": "crates/grapt-store/src/governed.rs",
+      "test": "the_attempt_receipt_table_refuses_a_consumer_write",
+      "test_target": "governed_writes",
+      "old": "            GovernedTable::AttemptReceipt => \"attempt_receipt\",",
+      "new": "            GovernedTable::AttemptReceipt => \"attempt_receipt_ungoverned\","
+    },
+    {
+      "id": "PS05",
+      "law": "The injected whole-record byte ceiling is APPLIED at reserve, not merely accepted",
+      "file": "crates/grapt-store/src/attempt_receipt.rs",
+      "test": "attempt_receipt::tests::an_oversize_record_refuses_at_reserve_before_any_row_exists",
+      "old": "    if bytes.len() > input.ceiling.as_bytes() {",
+      "new": "    if bytes.len() > usize::MAX {"
+    },
+    {
+      "id": "PS06",
+      "law": "Reserve reconciles ONLY byte-identical canonical data; a different record under a used attempt id refuses instead of being absorbed as an idempotent retry",
+      "file": "crates/grapt-store/src/attempt_receipt.rs",
+      "test": "attempt_receipt::tests::an_exact_reserve_retry_reconciles_and_a_conflicting_one_refuses",
+      "old": "        if stored.record_bytes == bytes {",
+      "new": "        if true {"
+    },
+    {
+      "id": "PS07",
+      "law": "A marker CONFLICT writes nothing: A0's outcome decides, and the held instant survives in the row as well as in the type",
+      "file": "crates/grapt-store/src/attempt_receipt.rs",
+      "test": "attempt_receipt::tests::an_exact_permit_retry_is_idempotent_and_a_different_instant_conflicts",
+      "old": "        MarkerOutcome::ExactRetry | MarkerOutcome::Conflict { .. } => return Ok(outcome),",
+      "new": "        MarkerOutcome::ExactRetry => return Ok(outcome),\n        MarkerOutcome::Conflict { .. } => {}"
+    },
+    {
+      "id": "PS08",
+      "law": "A marker write is fenced against the writer ELECTION, so an owner that lost the aggregate cannot keep describing its own receipt",
+      "file": "crates/grapt-store/src/attempt_receipt.rs",
+      "test": "a_marker_is_fenced_against_the_election_and_against_the_row",
+      "test_target": "attempt_receipt_crash_cuts",
+      "old": "    fence_against_election(tx, record.receipt.session(), writer)?;\n    let writer_epoch = writer.epoch();",
+      "new": "    let writer_epoch = writer.epoch();"
+    },
+    {
+      "id": "PS09",
+      "law": "A marker write is ALSO fenced against the row's own reserve epoch: the current owner may not describe an earlier epoch's call",
+      "file": "crates/grapt-store/src/attempt_receipt.rs",
+      "test": "a_marker_is_fenced_against_the_election_and_against_the_row",
+      "test_target": "attempt_receipt_crash_cuts",
+      "old": "    if record.writer_epoch != writer_epoch {\n        return Err(WriteError::ReceiptStaleEpoch {\n            attempt: attempt.as_str().to_owned(),\n            held: record.writer_epoch.value(),\n            offered: writer_epoch.value(),\n        });\n    }\n    Ok((stored, record))",
+      "new": "    Ok((stored, record))"
+    },
+    {
+      "id": "PS10",
+      "law": "A RESERVE is fenced against the election: a lost owner is never admitted to make an external call",
+      "file": "crates/grapt-store/src/attempt_receipt.rs",
+      "test": "a_lost_owner_may_not_reserve_an_attempt",
+      "test_target": "attempt_receipt_crash_cuts",
+      "old": "    fence_against_election(tx, record.receipt.session(), input.writer)?;",
+      "new": "    // MUTANT: the reserve is no longer fenced against the election"
+    },
+    {
+      "id": "PS11",
+      "law": "An UNSETTLED receipt is never deleted: it is the only evidence an external call may still be outstanding",
+      "file": "crates/grapt-store/src/attempt_receipt/lifecycle.rs",
+      "test": "attempt_receipt::tests::an_unsettled_receipt_refuses_deletion",
+      "old": "    if record.receipt.settled_at().is_none() {",
+      "new": "    if false {"
+    },
+    {
+      "id": "PS12",
+      "law": "A reclaim requires the terminal Step fact to be READ BACK inside the deleting transaction",
+      "file": "crates/grapt-store/src/attempt_receipt/lifecycle.rs",
+      "test": "attempt_receipt::tests::a_reclaim_refuses_when_the_named_terminal_is_absent",
+      "old": "    // The read-back, on THIS transaction. Its result is the delete's\n    // precondition; there is no route to the database from here that is not\n    // this transaction.\n    prove_terminal_within(tx, &record)?;",
+      "new": "    // MUTANT: the terminal read-back precondition removed"
+    },
+    {
+      "id": "PS13",
+      "law": "The terminal read-back binds the receipt's own SESSION, so another session's terminal cannot authorise this deletion",
+      "file": "crates/grapt-store/src/attempt_receipt/lifecycle.rs",
+      "test": "attempt_receipt::tests::a_terminal_from_another_session_cannot_prove_this_receipt",
+      "old": "    if aggregate != record.receipt.session().as_str() {",
+      "new": "    if false {"
+    },
+    {
+      "id": "PS14",
+      "law": "The terminal read-back binds the receipt's own STEP, so another Step's terminal cannot authorise this deletion",
+      "file": "crates/grapt-store/src/attempt_receipt/lifecycle.rs",
+      "test": "attempt_receipt::tests::a_terminal_for_another_step_cannot_prove_this_receipt",
+      "old": "    if step != record.receipt.step() {",
+      "new": "    if false {"
+    },
+    {
+      "id": "PS15",
+      "law": "The terminal read-back binds the durable KIND, so an ordinary session event cannot authorise a deletion",
+      "file": "crates/grapt-store/src/attempt_receipt/lifecycle.rs",
+      "test": "attempt_receipt::tests::an_event_that_is_not_a_step_terminal_cannot_prove_this_receipt",
+      "old": "            other => {\n                return Err(unproven(format!(\n                    \"{other:?} is not a durable Step terminal fact\"\n                )))\n            }",
+      "new": "            _other => |value| {\n                grapt_event::session_step_failed::decode(value)\n                    .map(|fact| fact.step())\n                    .map_err(|error| error.to_string())\n            }"
+    },
+    {
+      "id": "PS16",
+      "law": "An already-absent receipt is typed IDEMPOTENCE, so a reclaim pass that crashed after its delete committed can re-run",
+      "file": "crates/grapt-store/src/attempt_receipt/lifecycle.rs",
+      "test": "attempt_receipt::tests::reclaiming_an_absent_receipt_is_idempotent",
+      "old": "        None => return Ok(AttemptReceiptReclaimed::AlreadyAbsent),",
+      "new": "        None => {\n            return Err(WriteError::ReceiptNotReserved {\n                attempt: attempt.as_str().to_owned(),\n            })\n        }"
+    },
+    {
+      "id": "PS17",
+      "law": "The writer_epoch COLUMN is checked against the decoded bytes — the column that exists only because the record carries the epoch",
+      "file": "crates/grapt-store/src/attempt_receipt.rs",
+      "test": "attempt_receipt::tests::every_indexed_column_is_checked_against_the_decoded_bytes",
+      "old": "    if i64::from(record.writer_epoch.value()) != stored.writer_epoch {",
+      "new": "    if false {"
+    },
+    {
+      "id": "PS18",
+      "law": "The request-sent MARKER column is checked against the decoded bytes, so a column and its bytes cannot disagree about the ambiguity window",
+      "file": "crates/grapt-store/src/attempt_receipt.rs",
+      "test": "attempt_receipt::tests::every_indexed_column_is_checked_against_the_decoded_bytes",
+      "old": "    if receipt.request_sent_at().map(Timestamp::as_millis) != stored.request_sent_ms {",
+      "new": "    if false {"
+    },
+    {
+      "id": "PS19",
+      "law": "The strict decoder refuses a marker flagged ABSENT that carries a value, so two byte strings cannot decode to one record",
+      "file": "crates/grapt-store/src/attempt_receipt/record.rs",
+      "test": "attempt_receipt::tests::the_strict_decoder_refuses_every_malformed_record",
+      "old": "            0 if value == 0 => Ok(None),\n            0 => Err(format!(\n                \"{name} is marked absent but carries the value {value}\"\n            )),",
+      "new": "            0 => Ok(None),"
+    },
+    {
+      "id": "PS20",
+      "law": "The strict decoder refuses TRAILING bytes: a record with something appended is not the record it claims to be",
+      "file": "crates/grapt-store/src/attempt_receipt/record.rs",
+      "test": "attempt_receipt::tests::the_strict_decoder_refuses_every_malformed_record",
+      "old": "        if self.at == self.bytes.len() {",
+      "new": "        if true {"
+    },
+    {
+      "id": "PS21",
+      "law": "Marker instants that run backwards are refused on read, which only a foreign writer or corruption can produce",
+      "file": "crates/grapt-store/src/attempt_receipt.rs",
+      "test": "attempt_receipt::tests::markers_that_run_backwards_are_refused",
+      "old": "    verify_marker_order(&record)?;\n    Ok(record)",
+      "new": "    Ok(record)"
+    },
+    {
+      "id": "PS22",
+      "law": "Both optional markers are FIXED WIDTH, which is what makes the reserve-time ceiling budget every later marker write structurally",
+      "file": "crates/grapt-store/src/attempt_receipt/record.rs",
+      "test": "attempt_receipt::tests::encoded_len_is_marker_invariant",
+      "old": "            out.push(0);\n            out.extend_from_slice(&0i64.to_be_bytes());",
+      "new": "            out.push(0);"
+    },
+    {
+      "id": "PS23",
+      "law": "The send permit updates the COLUMN and the BYTES in one statement, so it cannot commit a row that disagrees with itself",
+      "file": "crates/grapt-store/src/attempt_receipt.rs",
+      "test": "attempt_receipt::tests::a_receipt_round_trips_through_its_columns_and_its_bytes",
+      "old": "        \"UPDATE attempt_receipt SET request_sent_ms = ?2, record_bytes = ?3\n           WHERE attempt_id = ?1\",",
+      "new": "        \"UPDATE attempt_receipt SET request_sent_ms = ?2\n           WHERE attempt_id = ?1 AND ?3 IS NOT NULL\","
+    },
+    {
+      "id": "PS24",
+      "law": "The recovery cursor refuses an oversize row from its DECLARED size, before the blob is materialized",
+      "file": "crates/grapt-store/src/attempt_receipt/lifecycle.rs",
+      "test": "attempt_receipt::tests::an_oversize_row_is_refused_from_its_declared_size_without_being_fetched",
+      "old": "    if declared > ceiling.as_bytes() {",
+      "new": "    if false {"
+    },
+    {
+      "id": "PS28",
+      "law": "A row the decoder cannot read is reported as UNDECODABLE quarantine work, not as some other reason",
+      "file": "crates/grapt-store/src/attempt_receipt/lifecycle.rs",
+      "test": "attempt_receipt::tests::a_corrupt_row_is_reported_as_untrustworthy_not_skipped",
+      "old": "            declared_bytes: declared,\n            reason: QuarantineReason::Undecodable,\n        },",
+      "new": "            declared_bytes: declared,\n            reason: QuarantineReason::OverCeiling,\n        },"
+    },
+    {
+      "id": "PS29",
+      "law": "The Step's exact terminal coordinates are PERSISTED in the record, so a fresh process can prove or reproduce the terminal it never saw",
+      "file": "crates/grapt-store/src/attempt_receipt/record.rs",
+      "test": "attempt_receipt::tests::every_indexed_column_is_checked_against_the_decoded_bytes",
+      "old": "    push_field(&mut out, terminal.event.as_str().as_bytes());",
+      "new": "    push_field(&mut out, \"\".as_bytes());"
+    },
+    {
+      "id": "PS30",
+      "law": "The persisted terminal INSTANT is part of the record too, so a column and its bytes cannot disagree about which terminal this receipt settles into",
+      "file": "crates/grapt-store/src/attempt_receipt/record.rs",
+      "test": "attempt_receipt::tests::every_indexed_column_is_checked_against_the_decoded_bytes",
+      "old": "    out.extend_from_slice(&terminal.created_ms.to_be_bytes());",
+      "new": "    out.extend_from_slice(&0i64.to_be_bytes());"
+    },
+    {
+      "id": "PS31",
+      "law": "Settlement APPENDS the exact terminal; a settled marker never becomes durable without one",
+      "file": "crates/grapt-store/src/attempt_receipt/lifecycle.rs",
+      "test": "attempt_receipt::tests::settlement_appends_the_exact_terminal_and_fills_settled_together",
+      "old": "    crate::step_failed::record(\n        tx,\n        record.receipt.session(),\n        &record.terminal.event,\n        current,\n        record.terminal.created_ms,\n        &fact,\n        projectors,\n    )?;",
+      "new": "    // MUTANT: the terminal append removed, leaving a standalone settled marker"
+    },
+    {
+      "id": "PS32",
+      "law": "Settlement reuses the RESERVED terminal identity rather than minting a replacement, so a restart cannot produce a second terminal",
+      "file": "crates/grapt-store/src/attempt_receipt/lifecycle.rs",
+      "test": "attempt_receipt::tests::settlement_appends_the_exact_terminal_and_fills_settled_together",
+      "old": "        &record.terminal.event,\n        current,\n        record.terminal.created_ms,",
+      "new": "        &match \"evt_0000000fresh\".parse() {\n            Ok(fresh) => fresh,\n            Err(_) => record.terminal.event.clone(),\n        },\n        current,\n        record.terminal.created_ms,"
+    },
+    {
+      "id": "PS33",
+      "law": "Settlement fills the settled marker in the SAME transaction as the terminal, so neither is durable alone",
+      "file": "crates/grapt-store/src/attempt_receipt/lifecycle.rs",
+      "test": "attempt_receipt::tests::a_receipt_round_trips_through_its_columns_and_its_bytes",
+      "old": "    write_settled_marker(tx, &record, settled_at)?;\n    Ok(AttemptSettlement::Settled)",
+      "new": "    Ok(AttemptSettlement::Settled)"
+    },
+    {
+      "id": "PS34",
+      "law": "An already-settled receipt must PROVE its exact terminal before reporting idempotence, so a settled-without-terminal row cannot pass as complete",
+      "file": "crates/grapt-store/src/attempt_receipt/lifecycle.rs",
+      "test": "attempt_receipt::tests::a_settled_row_without_its_terminal_refuses",
+      "old": "    if record.receipt.settled_at().is_some() {\n        prove_terminal_within(tx, &record)?;",
+      "new": "    if record.receipt.settled_at().is_some() {"
+    },
+    {
+      "id": "PS35",
+      "law": "Recovery settlement is fenced against the ELECTION, so a lost owner cannot settle work it no longer owns",
+      "file": "crates/grapt-store/src/attempt_receipt/lifecycle.rs",
+      "test": "a_lost_owner_may_not_settle_an_attempt",
+      "test_target": "attempt_receipt_crash_cuts",
+      "old": "    // The store's own election fence. No self-election on the write path.\n    fence_against_election(tx, record.receipt.session(), current)?;",
+      "new": "    // MUTANT: the settlement election fence removed"
+    },
+    {
+      "id": "PS36",
+      "law": "A receipt reserved under an epoch NEWER than the current election is corruption, not lineage",
+      "file": "crates/grapt-store/src/attempt_receipt/lifecycle.rs",
+      "test": "attempt_receipt::tests::a_receipt_reserved_under_a_future_epoch_refuses_settlement",
+      "old": "    if record.writer_epoch > current.epoch() {",
+      "new": "    if false {"
+    },
+    {
+      "id": "PS37",
+      "law": "The recovery cursor refuses a row beyond the caller's remaining byte budget WITHOUT fetching it, and without moving the cursor",
+      "file": "crates/grapt-store/src/attempt_receipt/lifecycle.rs",
+      "test": "attempt_receipt::tests::a_row_beyond_the_remaining_budget_does_not_move_the_cursor",
+      "old": "    if declared > remaining_bytes {",
+      "new": "    if false {"
+    },
+    {
+      "id": "PS38",
+      "law": "The recovery scan enumerates SETTLED rows too, so a receipt whose reclaim never ran is still discoverable",
+      "file": "crates/grapt-store/src/attempt_receipt/lifecycle.rs",
+      "test": "attempt_receipt::tests::the_recovery_cursor_returns_one_row_at_a_time_and_includes_settled_leaks",
+      "old": "               FROM attempt_receipt\n              WHERE session_id = ?1 AND attempt_id > ?2",
+      "new": "               FROM attempt_receipt\n              WHERE settled_ms IS NULL AND session_id = ?1 AND attempt_id > ?2",
+      "repin_note": "Re-pinned, not re-scoped. H2 folded the size admission and the blob read into ONE statement, so the WHERE clause this row mutates moved into it. The law -- recovery enumerates settled rows too -- is unchanged."
+    },
+    {
+      "id": "PS40",
+      "law": "A CONFLICTING quarantine record refuses loudly rather than overwriting the first durable report of a corruption",
+      "file": "crates/grapt-store/src/attempt_receipt.rs",
+      "test": "attempt_receipt::tests::quarantine_is_idempotent_and_a_conflict_refuses",
+      "old": "        if identical == 0 {",
+      "new": "        if false {"
+    },
+    {
+      "id": "PS41",
+      "law": "The quarantine carries the exact raw record, so the corrupt bytes stay independently auditable",
+      "file": "crates/grapt-store/src/attempt_receipt.rs",
+      "test": "attempt_receipt::tests::quarantine_moves_the_row_and_preserves_the_raw_record",
+      "old": "const QUARANTINE_CARRIED: &str = \"attempt_id, session_id, step, ordinal, writer_epoch,\n     terminal_event_id, terminal_created_ms, reserved_ms, request_sent_ms,\n     settled_ms, record_bytes\";",
+      "new": "const QUARANTINE_CARRIED: &str = \"attempt_id, session_id, step, ordinal, writer_epoch,\n     terminal_event_id, terminal_created_ms, reserved_ms, request_sent_ms,\n     settled_ms, x'00' AS record_bytes\";"
+    },
+    {
+      "id": "PS42",
+      "law": "The persisted terminal INSTANT is a read-back binding: a lone event id is not the coordinate the receipt reserved",
+      "file": "crates/grapt-store/src/attempt_receipt/lifecycle.rs",
+      "test": "attempt_receipt::tests::a_terminal_at_a_different_instant_cannot_prove_this_receipt",
+      "old": "    if created != record.terminal.created_ms {",
+      "new": "    if false {"
+    },
+    {
+      "id": "PS43",
+      "law": "H1: a quarantine retry compares the reason even once the source row is gone",
+      "file": "crates/grapt-store/src/attempt_receipt.rs",
+      "test": "attempt_receipt::tests::a_retry_after_the_source_is_absent_still_compares_the_reason",
+      "old": "                if held != reason.as_str() {",
+      "new": "                if false {",
+      "note": "Restores the fault review found: with the live row gone -- the state a COMPLETED move leaves -- the branch returned AlreadyQuarantined for any offered reason. PS40 could not see it because that test re-stages a live row before every retry."
+    },
+    {
+      "id": "PS45",
+      "law": "H2: the bounded read yields the record it just admitted",
+      "file": "crates/grapt-store/src/attempt_receipt/lifecycle.rs",
+      "test": "attempt_receipt::tests::the_recovery_cursor_returns_one_row_at_a_time_and_includes_settled_leaks",
+      "old": "\n                    CASE WHEN length(record_bytes) <= ?3 THEN record_bytes ELSE NULL END",
+      "new": "\n                    CASE WHEN length(record_bytes) <= 0 THEN record_bytes ELSE NULL END",
+      "note": "Breaks the single statement's blob arm while leaving both Rust bound checks intact, so a row that passed both admissions comes back with no record. Anchored with its leading newline: the EXPLAIN QUERY PLAN witness quotes the same SQL at deeper indentation, and without the newline the anchor matched BOTH."
+    },
+    {
+      "id": "PS47",
+      "law": "H3: the recovery index must SERVE the corrected scan. A shape check proves the index is what was declared, never that the declaration matches the query.",
+      "test": "attempt_receipt::tests::the_recovery_scan_uses_its_index_rather_than_scanning",
+      "edits": [
+        {
+          "file": "crates/grapt-store/src/attempt_receipt.rs",
+          "old": "            ON attempt_receipt (session_id, attempt_id);",
+          "new": "            ON attempt_receipt (settled_ms, session_id, attempt_id);"
+        },
+        {
+          "file": "crates/grapt-store/src/write/schema.rs",
+          "old": "            &[\"session_id\", \"attempt_id\"],\n            false,\n        ),\n    ];",
+          "new": "            &[\"settled_ms\", \"session_id\", \"attempt_id\"],\n            false,\n        ),\n    ];"
+        }
+      ],
+      "mutation_note": "The RESURRECTION mutant: it puts the pre-H3 (settled_ms, session_id, attempt_id) index back CONSISTENTLY, in the CREATE and in the required-shape table together. That consistency is the whole point. Mutating either file alone is already covered and lands somewhere else -- PS03 mutates only the declaration, so the open-time shape check refuses and the run never reaches the question of whether the index serves anything. With both edits the crate compiles, the shape check PASSES, and the only thing left to notice is EXPLAIN QUERY PLAN: the corrected scan never constrains settled_ms, so SQLite falls back to sqlite_autoindex_attempt_receipt_1 and the declared index serves the scan not at all. That is exactly the state H3 found in production and exactly what the shape check could not see.",
+      "attribution_note": "RED for the intended reason is checked by the assertion that fires, not by the exit code: the plan-names-its-index assertion is the one that must fail, and it quotes the plan it actually got. PS03 keeps the verification half and this row keeps the use half; they share no evidence because they fail in different tests with different messages.",
+      "shape_note": "The first manifest row to carry `edits` rather than one file/old/new triple. The previous receipt recorded this two-file mutation as a hand experiment in prose, which proves a measurement was taken but leaves nothing that re-runs. Every property the single-edit shape had is enforced per edit: each anchor exactly once, each path resolved inside the disposable worktree, no two edits naming one file, and all-or-nothing application."
+    },
+    {
+      "id": "LB01",
+      "law": "The terminal proof DISPATCHES the success contract, so a real session.step.ended.2 can prove its own receipt",
+      "file": "crates/grapt-store/src/attempt_receipt/lifecycle.rs",
+      "test": "attempt_receipt::tests::a_receipt_is_proven_and_reclaimed_by_its_success_terminal",
+      "old": "            STEP_ENDED_TERMINAL => |value| {\n                grapt_event::session_step_ended::decode(value)\n                    .map(|fact| fact.step())\n                    .map_err(|error| error.to_string())\n            },",
+      "new": "            // MUTANT: the success terminal dispatch arm removed"
+    },
+    {
+      "id": "LB02",
+      "law": "The KIND selects the codec, so a success-named terminal carrying a failure payload cannot be read by the failure decoder and authorise a deletion",
+      "file": "crates/grapt-store/src/attempt_receipt/lifecycle.rs",
+      "test": "attempt_receipt::tests::a_success_terminal_carrying_a_failure_payload_refuses",
+      "old": "                grapt_event::session_step_ended::decode(value)",
+      "new": "                grapt_event::session_step_failed::decode(value)"
+    },
+    {
+      "id": "LB03",
+      "law": "The roster binds the exact (name, version) pair, so the frozen oracle's session.step.ended.1 is not this contract and cannot prove a receipt",
+      "file": "crates/grapt-store/src/attempt_receipt/lifecycle.rs",
+      "test": "attempt_receipt::tests::the_oracle_v1_success_name_is_not_a_durable_step_terminal",
+      "old": "const STEP_ENDED_TERMINAL: &str = \"session.step.ended.2\";",
+      "new": "const STEP_ENDED_TERMINAL: &str = \"session.step.ended.1\";"
+    },
+    {
+      "id": "LB04",
+      "law": "The dispatch is exact in BOTH directions: a failure-named terminal carrying a success payload is not read by the success decoder",
+      "file": "crates/grapt-store/src/attempt_receipt/lifecycle.rs",
+      "test": "attempt_receipt::tests::a_failure_terminal_carrying_a_success_payload_refuses",
+      "old": "                grapt_event::session_step_failed::decode(value)",
+      "new": "                grapt_event::session_step_ended::decode(value)"
+    },
+    {
+      "id": "LTS01",
+      "law": "Ordinary settlement proves the receipt's exact terminal identity before it writes the trusted marker or erases the receipt",
+      "file": "crates/grapt-store/src/attempt_receipt/lifecycle.rs",
+      "test": "attempt_receipt::tests::ordinary_settlement_refuses_a_missing_terminal_before_the_marker",
+      "old": "    prove_terminal_within(tx, &record)?;\n    write_settled_marker(tx, &record, settled_at)?;",
+      "new": "    write_settled_marker(tx, &record, settled_at)?;",
+      "mutation_note": "One guard, one consequence: deleting only terminal read-back lets the missing-terminal fixture reach marker-plus-delete and return success. The witness reds on the lost ReceiptTerminalUnproven route, so it attributes the terminal proof rather than a compound exact-once story."
+    },
+    {
+      "id": "LTS02",
+      "law": "Ordinary settlement fences the offered writer against the live aggregate election; agreement with the receipt's older reserve epoch is not current authority",
+      "file": "crates/grapt-store/src/attempt_receipt/lifecycle.rs",
+      "test": "attempt_receipt::tests::a_lost_writer_cannot_settle_an_ordinary_terminal",
+      "old": "    let Some(stored) = read_row(tx, attempt.as_str())? else {\n        return Ok(AttemptReceiptReclaimed::AlreadyAbsent);\n    };\n    let record = decode_row(&stored, ceiling)?;\n    fence_against_election(tx, record.receipt.session(), writer)?;",
+      "new": "    let Some(stored) = read_row(tx, attempt.as_str())? else {\n        return Ok(AttemptReceiptReclaimed::AlreadyAbsent);\n    };\n    let record = decode_row(&stored, ceiling)?;",
+      "mutation_note": "The two-owner witness reserves and appends under epoch 1, transfers the aggregate to epoch 2, then offers the lost owner's epoch-1 token. Deleting only the election fence leaves the row-lineage check satisfied because token and receipt both carry epoch 1; the call wrongly settles instead of routing to ElectionError::StaleWriter."
+    },
+    {
+      "id": "IAB01",
+      "law": "READY is earned only by a bounded SQLite integrity verdict of ok",
+      "file": "crates/grapt-store/src/migration.rs",
+      "test": "migration::readiness_tests::a_bounded_integrity_failure_is_never_ready",
+      "old": "        Ok(Some(result)) if result == \"ok\" => Ok(()),",
+      "new": "        Ok(Some(_)) => Ok(()),"
+    },
+    {
+      "id": "IAB02",
+      "law": "A missing database remains ABSENT and is never manufactured or collapsed into another state",
+      "file": "crates/grapt-store/src/migration.rs",
+      "test": "migration::readiness_tests::absent_and_unreadable_paths_never_create_or_repair",
+      "old": "            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {\n                return StoreReadiness::Absent;\n            }",
+      "new": "            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {\n                return StoreReadiness::Unreadable(Unreadable::Metadata(error));\n            }"
+    },
+    {
+      "id": "IAB03",
+      "law": "A non-file path is UNREADABLE rather than silently treated as missing database state",
+      "file": "crates/grapt-store/src/migration.rs",
+      "test": "migration::readiness_tests::absent_and_unreadable_paths_never_create_or_repair",
+      "old": "        Ok(_) => return StoreReadiness::Unreadable(Unreadable::NotAFile),",
+      "new": "        Ok(_) => return StoreReadiness::Absent,"
+    },
+    {
+      "id": "IAB04",
+      "law": "MIGRATION_NEEDED comes from the production set's own read-only pending plan",
+      "file": "crates/grapt-store/src/migration.rs",
+      "test": "migration::readiness_tests::migration_needed_names_the_plan_and_does_not_write",
+      "old": "        let pending = match super::plan_read_only(connection, migrations.as_slice().as_slice()) {\n            Ok(pending) => pending,\n            Err(error) => {\n                return StoreReadiness::QuarantinedOrCorrupt(Obstruction::Migration(error))\n            }\n        };",
+      "new": "        let _ = migrations;\n        let pending = Vec::new();"
+    },
+    {
+      "id": "IAB05",
+      "law": "An unfinished migration run is quarantined before the readiness caller sees READY",
+      "file": "crates/grapt-store/src/migration.rs",
+      "test": "migration::readiness_tests::a_quarantine_marker_refuses_before_migration_planning",
+      "old": "            Ok(Some(quarantine)) => {\n                return StoreReadiness::QuarantinedOrCorrupt(Obstruction::Quarantine(quarantine));\n            }",
+      "new": "            Ok(Some(_)) => {}"
+    },
+    {
+      "id": "IAB06",
+      "law": "The readiness store opens SQLite READ_ONLY; a writable-open resurrection must fail its absence witness",
+      "file": "crates/grapt-store/src/log.rs",
+      "test": "migration::readiness_tests::absent_and_unreadable_paths_never_create_or_repair",
+      "old": "        let conn = Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_ONLY)?;",
+      "new": "        let conn = Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_CREATE)?;"
+    }
+  ],
+  "c4_2_boundary_correction": "Recorded in-tree by ruling R1. The F3 release initially required F3 to author AND execute the whole C4.2 row; that was over-broad and was corrected. The frozen C4 plan assigns F3 transition identity, stale-state refusal and replay, and assigns R2 account/attempt/spend. So F3 owns the scenario/harness shape plus the duplicate-transition/different-evidence and canonical-queue mutations and the F3 crash/replay cuts expressible over opaque receipts. The other four plan mutations — execute-before-reserve, charge the reservation, reuse attempt identity, backfill missing spend — and the unused-reserve/fallback/charge semantics remain explicit R2-owned residuals. F3 must NOT claim the full C4.2 row closed. None of this is in F3A; it is recorded here so the boundary survives message history.",
+  "guard_disclosure": "This runner carries all five of the guards review named: exactly-one-snippet, ambiguous-snippet refusal, zero-tests-ran refusal, duplicate (witness, detail) refusal, and a candidate-unchanged re-verification. This sentence used to say FOUR of five and then enumerate five; the count was wrong, not the list. It also used to say the runner does NOT carry F1B's whole-manifest SHA pin, so editing this file could not itself redden a gate. That was true when it was written and is now false: run.py carries MANIFEST_SHA256, checks it over LF-normalised bytes before any mutation runs, and fails closed on a mismatch, alongside a frozen live PS id set and a live-plus-tombstone contiguity check. Editing this file without re-stamping that digest in the same commit now reddens the gate. Two edits in one row are also refused by RESOLVED path rather than by spelling, and a part-way write is rolled back on every target it could have damaged including the one whose own write raised. Disclosed rather than implied. F3B4c added ONE optional key: `package`, defaulting to `grapt-store`, so every inherited entry runs the exact command it always did. It exists because M13/M14 mutate `crates/grapt-session/src/store.rs`, which `cargo test -p grapt-store` never compiles - under the old runner that mutation would not have been built and its witness would have been scored GREEN -- BROKEN WITNESS rather than run. No guard was weakened, removed or re-anchored.",
+  "ordering_note": "Inside one transaction, 'refused before the sequence was allocated' and 'refused after' leave the same durable trace, because the rollback erases either one. No mutation here claims to separate them by counting rows. B02 witnesses the ordering through the one consequence that survives: WHICH refusal the caller receives when the stored row is also undecodable.",
+  "uncovered_by_design": "Three F3B1b witnesses carry no manifest row on purpose. `a_consumers_own_table_is_untouched_by_the_denial` and `election_and_append_still_reach_the_database_through_the_chokepoint` are negative controls: their job is to fail if the denial became total, which no single edit that WEAKENS the chokepoint can cause. `a_failed_append_lowers_its_lift_too` is the integration-level restatement of C12 and would redden under C12's own edit, so giving it a row would record one law twice.",
+  "cross_crate_note": "C19, C20 and C21 edit files in grapt-inbox, grapt-instruction and grapt-shell while their witnesses run under `cargo test -p grapt-store`. That is deliberate and it is sound: the structural gate reads sources from disk, so it covers crates this package's test command never compiles. It also means those three entries prove the GATE, not those crates' behaviour - the behaviour of all six consumer crates is covered by their own suites, which run in the workspace gate.",
+  "withdrawn_claims": "C13 claimed that the authorizer's case-INSENSITIVE table comparison is load-bearing. It is not, and the harness is what proved it: with `eq_ignore_ascii_case` replaced by `==`, `an_uppercase_statement_names_the_same_governed_table` stayed GREEN. The measured reason is that SQLite hands the authorizer the name as the SCHEMA declares it rather than as the statement spells it, so an exact comparison already matches `DELETE FROM EVENT`. The comparison is kept as defence in depth and `GovernedTable::from_name` says so; no row here claims it, because a witness that stays green under its own mutation attributes nothing.",
+  "grid_attribution_note": "C03-C09 form a (4 governed tables x 3 verbs) grid, and their edits overlap by design: removing a verb reddens that verb across every table, and ungoverning a table reddens every verb on that table. Each row names ONE cell as its witness, and the SHAPE of what goes red is what tells the two kinds of edit apart. Measured at 7d9567f in disposable worktrees rather than argued: with C04's edit (UPDATE arm removed) the_fact_log_refuses_a_consumer_update is RED and ..._insert / ..._delete are GREEN while the_election_row_refuses_a_consumer_update is RED - a column. With C06's edit (event ungoverned) all three event cells are RED and the_election_row_refuses_a_consumer_update is GREEN - a row. Neither signature can be produced by the other kind of edit.",
+  "c11_c12_attribution_note": "C11 and C12 are NOT symmetric, and the asymmetry is the finding. Measured at 7d9567f: C11's edit (Drop body emptied) reddens BOTH the_store_lowers_its_lift_before_returning_from_append and governed::tests::the_lift_is_lowered_when_the_statement_fails, because the guard is the release on every path. C12's edit (the RAII guard replaced by a hand-rolled raise/lower pair) reddens only the error-path witness and leaves the success-path witness GREEN. So C12's witness catches a regression C11's cannot see - the shape that releases correctly on success and leaks on failure - and the two rows are recorded with that relationship stated rather than as an independent pair.",
+  "w_attribution_note": "W01 and W02 are two entries for what could be mistaken for one law, and the distinction is the reason both are kept. W01 removes the UNIQUENESS of the identity and is caught by the identity witness. W02 leaves the identity unique and instead makes the election arm ignore the part that distinguishes it, so it is caught by the CONSEQUENCE witness on its Transferred assertion. Each entry's recorded observed_red names a different assertion with a different message, which is the test this project applies before claiming two attributions. W03 covers a third, separate law: that mint CONSUMES the injected token at all. R1 shipped without it, and review proved the gap by staging a mint that ignores its argument and watching W01 and W02 both stay green. A single entry would have left the election arm itself unattributed: W01 alone reddens the consequence test only on its precondition assert, which proves the identities collided, not that the wrong election arm was selected.",
+  "w_uncovered_note": "Two F3B4a laws deliberately have NO mutation entry. (1) RNG failure becomes a typed store-open error rather than a panic: the only producer of InstanceSeedError::Entropy is the `?` on getrandom::fill, and forcing the OS to refuse entropy is not reachable from a source edit, so any entry would be staged theatre. Its carriers are the type (WriteError::InstanceSeed is `#[from]`, so a panic could not typecheck into it) and the crate's unwrap_used/expect_used deny. (2) The disallowed-methods entry for getrandom::fill: its carrier is clippy.toml, not Rust source, and its witness is the excluded negative fixture crate run as its own gate command. The mutation runner edits source files inside a worktree and does not run that command, so a manifest row would not actually exercise it.",
+  "f4b1b_carrier_note": "Four F4B1b laws carry NO mutation row, and each is recorded here with its reason rather than given a row that would attribute nothing. (1) 'one atomic descriptor, never a marker plus a copy': record() issues exactly one append and CompactionDescriptor holds RetainedHistory by reference, so there is no line to weaken - the law is a shape the module cannot express, and a_settled_compaction_commits_exactly_one_durable_fact asserts it structurally. (2) 'a failed compaction appends nothing': the Failed arm returns before a descriptor exists, so no single edit makes it append; N02 mutates that same arm and proves the VARIANT law instead. (3) 'the fact lands on the descriptor's own session': the aggregate is derived from source_session and there is no parameter to point elsewhere. (4) 'the cache rows and the cache watermark commit together': carried by transaction atomicity, exactly as F3B2_RESIDUALS.md records for the authoritative watermark - moving a line inside one transaction is unobservable when the whole transaction is discarded either way.",
+  "f4b1b_lead_grid_note": "N05, N06 and N07 are three cells of one lead check and their edits overlap by design, in the same way C03-C09 overlap. N05 disables the head-present comparison, N06 loosens its boundary to >=, and N07 flips the empty-aggregate arm. Each row names ONE witness and the SHAPE of what reddens tells them apart: N05 and N06 leave the empty-aggregate witness green, N07 leaves both head-present witnesses green, and only N06 reddens the caught-up boundary witness while leaving the past-the-head one green.",
+  "f4b1b_prefix_note": "F4B1b's rows are N01-N13. They were authored as M01-M13 and renamed after the mutation-prefix fence reserved R01-R04 for F3B4b and M01+ for F3B4c. The fence also said a lane may retain a prefix it had already authored, which collides with the prohibition in exactly this case; the rename follows the fence's stated purpose - avoiding the certain shared-manifest collision at the F4B2 join - because retaining M would have produced that collision rather than prevented it. N is unused by this manifest's S/B/C/P rows and is not reserved by K (F3B3), W (F3B4a), R (F3B4b) or M (F3B4c). Only the ids and the prose naming them changed: every law, file, test, old and new is byte-identical to the set that ran 80/80 RED.",
+  "j_note": "J01-J03 are the F4B2 join's own rows, and the join owns exactly three because exactly three laws first become stateable here. J01 is F3B3I's deferred campaign-election composition carrier. J02 is the campaign refusal arm that Rust's exhaustiveness forced when F4B1b's third EnvelopeKind variant met F3B3I's two-arm match. J03 is the decode_canonical provenance dispatch that closes a round trip broken by composition alone. A fourth candidate law - that the Rust-native compaction fact obeys the SESSION side of F3B3's family-shape CHECK - is witnessed by the_compaction_row_obeys_the_session_side_of_the_family_shape_check and deliberately carries NO row: its subject is the ABSENCE of a change across inherited carriers, and the CHECK, the append path and the encoder each already own their own witnesses.",
+  "f4a_residual_note": "mutations/f4a is NOT run at this join and was NOT re-anchored, weakened or bypassed. Its Guard 2a is a PATH-level check over the whole candidate..HEAD delta and its Guard 6 is a CRATE-level coverage check over base..HEAD; neither compares file bytes, so no byte-identical subset can satisfy them and the harness exits 1 with zero mutations at any join commit. The accepted 59/59 RED evidence at f6aec92c stands as inherited compatibility evidence. Separately measured and labelled as such: all 59 f4a rows still anchor EXACTLY ONCE in this join's bytes (zero rot). That is anchor validity ONLY - it proves no snippet moved, and it does NOT prove those rows still red for their own reasons at these bytes. They were not re-earned here.",
+  "f4b2a_residual_note": "F4B2a honest residuals. (1) Refusal sequence/projection neutrality is STRUCTURE-CARRIED: the plan-read path contains no statement naming event_sequence or projection_watermark, so no single edit could red a neutrality witness; the positive assertion rides inside a_conflicting_receipt_id_reuse_refuses_typed without a fabricated row. (2) The EffectiveGraphId currentness comparison lives in grapt-types, which carries no mutation manifest (as for all twelve previously accepted coordinates); its red evidence is the reverted-fix run recorded in the delivery receipt plus the four re-verified sealing probes. (3) PlanReadClaimDto/ReadBoundary/ReadClaimMismatch in grapt-schema are deliberately NOT extended with the effective-graph coordinate: the clarification authorizes only the receipt types' construction/currentness surface; the wire-claim coordinate is downstream. (4) The movement, model-replacement and committed-revert PRODUCERS remain absent (decode-only kinds, zero constructions tree-wide); F4B2a proves coordinate-level invalidation only, per rulings 1-3.",
+  "r2b2_carrier_note": "R2b-2 adds D01-D05 only. Stable caller EventId, same-owner idempotence, new-epoch divergence, pre-commit rollback, commit-before-notify and projector atomicity all run through the accepted append_within carriers and are not assigned duplicate rows. The function has no id or clock authority, so terminal-time minting/reading has no mutation target. Session is the aggregate and absent from the payload, so aggregate/payload disagreement is structurally unnameable. Mailbox survival through the production event-table rebuild is a composition witness over accepted tables and migration code; deleting its assertion would mutate evidence, while dropping the table would invent production behavior, so it carries no fabricated row.",
+  "r2c5a1_carrier_note": "Carrier-only R2C5A1 laws with NO row, because no single edit removes them. (1) The reclaim's and the settlement's transaction ATOMICITY - that a rolled-back settlement leaves neither the terminal nor the settled marker - is carried by the transaction itself and asserted unmutated by attempt_receipt::tests::a_rolled_back_settlement_leaves_neither_the_terminal_nor_the_marker. (2) The DELETE statement's own 'AND settled_ms IS NOT NULL' clause is defence in depth behind the typed refusal PS11 attributes; removing it alone changes no observable, exactly like the case-insensitive authorizer comparison the C-rows record the same way. (3) The receipt's and the quarantine's survival of the forced event/event_sequence rebuild is a COMPOSITION witness over accepted migration code and FK-free tables, carried unmutated by production_migration::a_migrated_database_still_serves_operational_rows_and_compaction_cache. (4) The ORDER of the send permit against the external call is the runtime's to enforce and is not expressible in this crate at all - this lane owns the durable permit and its conservative meaning, lane I owns the crash fixture that proves the ordering end to end.",
+  "l4b2s_carrier_note": "The ordinary-settlement DELETE predicate `AND settled_ms IS NOT NULL` is structural defence in depth, not an independently observable LTS row. The seam writes `settled_ms` immediately before the DELETE in the same caller-owned transaction, so removing only the predicate cannot change a reachable result. LTS01 instead deletes only the observable terminal-proof guard; LTS02 independently deletes only the live-election fence.",
+  "tombstones": [
+    {
+      "id": "PS25",
+      "retired_law": "The scan is bounded by the injected PAGE, which bounds rows returned and cursor granularity",
+      "retired_file": "crates/grapt-store/src/attempt_receipt.rs",
+      "retired_test": "attempt_receipt::tests::the_unsettled_scan_is_scoped_ordered_bounded_and_cursor_exclusive",
+      "reason": "R2C5I ruling 6 replaced the Vec page with a one-row cursor carrying a remaining-byte budget, and moved the row bounds to lane B. This crate no longer names ReconciliationPage at all, so there is no edit that could remove the law.",
+      "superseded_by": "PS37 (the injected remaining-byte budget, which is the bound that actually bounds memory); row bounds now owned by lane B"
+    },
+    {
+      "id": "PS26",
+      "retired_law": "The scan is bounded by the injected PASS CEILING, which bounds rows examined before the pass yields",
+      "retired_file": "crates/grapt-store/src/attempt_receipt.rs",
+      "retired_test": "attempt_receipt::tests::the_pass_ceiling_bounds_rows_examined",
+      "reason": "Same correction: the per-pass row ceiling is now B's cumulative budget. This crate no longer names ReconciliationCeiling, so the law has no site here to mutate.",
+      "superseded_by": "PS37, and lane B's cumulative per-pass budget"
+    },
+    {
+      "id": "PS27",
+      "retired_law": "The scan excludes SETTLED rows: a settled receipt is not lost, and offering one as reconciliation work would invite a second terminal",
+      "retired_file": "crates/grapt-store/src/attempt_receipt.rs",
+      "retired_test": "attempt_receipt::tests::the_unsettled_scan_is_scoped_ordered_bounded_and_cursor_exclusive",
+      "reason": "R2C5I ruling 4 REVERSED this law. The scan's exclusion of settled rows was the defect that made an after-terminal, before-reclaim leak invisible; enumeration now includes settled rows deliberately, so pinning the exclusion would pin a defect.",
+      "superseded_by": "PS38 (settled rows are ENUMERATED so a leak is discoverable)"
+    },
+    {
+      "id": "PS39",
+      "retired_law": "The quarantine VERIFIES its copy before the source row is removed, so a failed transfer never destroys the evidence",
+      "retired_file": "crates/grapt-store/src/attempt_receipt.rs",
+      "retired_test": "attempt_receipt::tests::quarantine_moves_the_row_and_preserves_the_raw_record",
+      "reason": "INSERT ... SELECT cannot produce a divergent copy - SQLite performs the transfer itself - so the post-transfer verification has NO reachable counterexample and no single edit can make one. It is defence in depth over a faithful copy, kept because it costs nothing, and recorded here rather than given a row that would stay green. Same handling as the case-insensitive authorizer comparison the C-rows record.",
+      "superseded_by": "none; the transfer's atomicity is carried by the single governed transaction and asserted unmutated by attempt_receipt::tests::quarantine_moves_the_row_and_preserves_the_raw_record"
+    },
+    {
+      "id": "PS44",
+      "retired_law": "H1: an internally inconsistent held quarantine row is not a satisfied retry",
+      "retired_file": "crates/grapt-store/src/attempt_receipt.rs",
+      "retired_test": "attempt_receipt::tests::a_retry_after_the_source_is_absent_still_compares_the_reason",
+      "reason": "The check is real and stays in the code, but it has no reachable single-threaded counterexample. Production writes a quarantine row only via INSERT ... SELECT with declared_bytes = length(record_bytes), so a held row whose declared_bytes disagrees with its blob cannot be produced through any API this lane exposes. Manufacturing one needs a hostile-row facility for attempt_receipt_quarantine, which this lane does not have and which is a wider surface than the check justifies. Scored GREEN against the battery rather than being forced: a mutation nothing can observe witnesses nothing.",
+      "superseded_by": "PS43, which carries the reachable half of H1's comparison -- the offered reason -- and does turn red. The byte half is disclosed as defence in depth in the lane residuals."
+    },
+    {
+      "id": "PS46",
+      "retired_law": "H2: the remaining-byte budget bounds the SQL admission, not only the Rust check",
+      "retired_file": "crates/grapt-store/src/attempt_receipt.rs",
+      "retired_test": "attempt_receipt::tests::a_row_beyond_the_remaining_budget_does_not_move_the_cursor",
+      "reason": "Redundant with the Rust bound single-threaded. `declared > remaining_bytes` returns BudgetExhausted before the blob is used at all, so removing the budget from the SQL statement changes no observable behaviour in a one-threaded test. The SQL bound is load-bearing only for the CONCURRENT case H2 exists to close -- a writer growing the row between admission and materialization -- and this harness runs no concurrent writer. Recorded rather than forced red somewhere it does not belong.",
+      "superseded_by": "PS45, which witnesses that the ONE bounded statement must yield the record it admitted. H2's structural property -- one statement rather than two -- is argued from the source and disclosed, not mutated."
+    },
+    {
+      "id": "S06",
+      "retired_law": "The dependency gate parses structurally, so no legal TOML shape hides an upward dependency",
+      "retired_file": "grapt-store per-crate dependency_direction test, deleted",
+      "retired_test": "the_gate_catches_every_bypass_form",
+      "reason": "The per-crate dependency gate this row mutated was replaced by the workspace crate-graph law (crates/grapt-types/tests/crate_graph.rs), which reads Cargo's own resolution, so no manifest spelling can hide an edge and the bypass parsing this row targeted no longer exists.",
+      "superseded_by": "crates/grapt-types/tests/crate_graph.rs (workspace_dependencies_match_the_reviewed_graph)"
+    },
+    {
+      "id": "S07",
+      "retired_law": "The dependency gate resolves a package alias to the real crate name",
+      "retired_file": "grapt-store per-crate dependency_direction test, deleted",
+      "retired_test": "the_gate_catches_every_bypass_form",
+      "reason": "The per-crate dependency gate this row mutated was replaced by the workspace crate-graph law (crates/grapt-types/tests/crate_graph.rs), which reads Cargo's own resolution, so no manifest spelling can hide an edge and the bypass parsing this row targeted no longer exists.",
+      "superseded_by": "crates/grapt-types/tests/crate_graph.rs (workspace_dependencies_match_the_reviewed_graph)"
+    }
+  ],
+  "r2c5a1_retired_rows": "PS25, PS26 and PS27 are RETIRED, not re-anchored, because the laws they pinned no longer exist after the R2C5I composition correction. PS25 and PS26 pinned the injected ReconciliationPage and ReconciliationCeiling row bounds, which moved to lane B when ruling 6 replaced the Vec page with a one-row cursor carrying a remaining-byte budget; this crate no longer names either type. PS27 pinned the scan's EXCLUSION of settled rows, which ruling 4 reversed into a deliberate INCLUSION so an after-terminal, before-reclaim leak is discoverable at all. Re-anchoring any of the three to a nearby line would have recorded a law this lane no longer holds. Their replacements are PS37 (the byte budget, which is the bound that actually bounds memory) and PS38 (settled-row enumeration).",
+  "r2c5a1_repin_note": "SEVEN inherited rows were RE-PINNED, never re-scoped or deleted: C06-C09, P18 and G11 anchor the whole GovernedTable::ALL array, and X15 anchors its tail. Admitting attempt_receipt and attempt_receipt_quarantine grew that array from seven entries to nine, which moved every one of those anchors. Each mutation is UNCHANGED in meaning - it still replaces exactly one entry with a duplicate of another so that one table loses its distinct membership - and X15 still removes mailbox_message from the set. This is the same class R3a recorded when mailbox_message grew the array from six to seven; growing a set rots every snippet that pins it.",
+  "h1_h5_note": "PS43-PS46 close review R1 HOLD items H1 and H2; H3 is closed by PS03 and PS47 together, PS03 on the index's declared SHAPE and PS47 on whether that declaration serves the query at all. Fresh ids only; no id was deleted, renumbered or repurposed and the six tombstones are untouched. H4 is closed in run.py by a frozen live-id set and a manifest digest; H5 in the module prose. PS44 and PS46 were retired as tombstones after the battery scored them GREEN: each names a check that exists in the code but has no observable single-threaded counterexample. Neither was forced red and neither id is reused.",
+  "r2c5a1_multi_edit_note": "PS47 is the first row whose mutation spans two files, and the runner shape it needed is deliberately narrow. A row carries EITHER file/old/new or an `edits` list; the one-element list means exactly what the triple always meant, so none of the 192 rows written before it changed behaviour. The set is applied atomically -- every anchor resolved and checked before any file is written, no two edits naming one file so each `exactly once` is measured against pristine bytes, every path resolved inside the disposable worktree so a manifest row can never edit the calling repository, and a part-way write restored with no test run. The duplicate-evidence guard now normalises the PID out of its key: Rust prints `thread '...' (12345) panicked`, so two rows whose evidence was otherwise byte-identical could never collide and the guard passed while witnessing one law twice. That normalisation was done by hand over the previous run's log; it is in the runner now.",
+  "r4_session_keyset_repin_note": "At the R4 session-keyset join onto canonical d04e2d96, C06-C09, P18, G11 and X15 were re-pinned from the seven-table GovernedTable::ALL shape to the canonical nine-table shape. Each mutation still removes only its named inherited table; AttemptReceipt and AttemptReceiptQuarantine remain governed in every replacement. No law, witness, id or observed-red attribution changed."
+}

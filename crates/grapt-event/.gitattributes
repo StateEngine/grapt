@@ -1,0 +1,6 @@
+# The trybuild .stderr files are byte-sensitive: a CRLF checkout on a fresh
+# machine would redden the probe comparison with no content change. Pinned at
+# the crate root, one level above the enumerated directory, so the rule's own
+# presence never perturbs a strictly-enumerated listing.
+tests/probes/** text eol=lf
+tests/fixtures/** text eol=lf

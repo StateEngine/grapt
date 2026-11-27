@@ -1,0 +1,40 @@
+{
+  "schema": "secode.release.build.v1",
+  "source_commit": "1111111111111111111111111111111111111111",
+  "target": "x86_64-unknown-linux-gnu",
+  "tree_dirty": false,
+  "profile": "debug",
+  "commands": [
+    {
+      "produces": [
+        "secode-server",
+        "secode",
+        "secode-engined",
+        "secode-migrate",
+        "secode-tui"
+      ]
+    }
+  ],
+  "outputs": {
+    "secode-server": {
+      "bytes": 139,
+      "sha256": "4a6ca13d53fac130c4f2a639ddb75249a996e58376ca30ec58e64909f7cec9e6"
+    },
+    "secode": {
+      "bytes": 139,
+      "sha256": "4a6ca13d53fac130c4f2a639ddb75249a996e58376ca30ec58e64909f7cec9e6"
+    },
+    "secode-engined": {
+      "bytes": 139,
+      "sha256": "4a6ca13d53fac130c4f2a639ddb75249a996e58376ca30ec58e64909f7cec9e6"
+    },
+    "secode-migrate": {
+      "bytes": 139,
+      "sha256": "4a6ca13d53fac130c4f2a639ddb75249a996e58376ca30ec58e64909f7cec9e6"
+    },
+    "secode-tui": {
+      "bytes": 139,
+      "sha256": "4a6ca13d53fac130c4f2a639ddb75249a996e58376ca30ec58e64909f7cec9e6"
+    }
+  }
+}

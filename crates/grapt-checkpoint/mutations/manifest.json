@@ -1,0 +1,167 @@
+{
+  "schema": "grapt.checkpoint.mutations.v1",
+  "prefix": "WCP",
+  "package": "grapt-checkpoint",
+  "mutations": [
+    {
+      "id": "WCP01",
+      "law": "Capture refuses an anchor when HEAD changes during the provider operation; the explicit comparison and sealed anchor constructor are independent guards.",
+      "file": "crates/grapt-checkpoint/src/engine.rs",
+      "patches": [
+        {
+          "old": "        if before.baseline() != after.baseline() {\n",
+          "new": "        if false && before.baseline() != after.baseline() {\n"
+        },
+        {
+          "old": "                match anchor_from_capture(anchor_id, reference, &before, &after, lanes, fidelity) {\n",
+          "new": "                match anchor_from_capture(anchor_id, reference, &before, &before, lanes, fidelity) {\n"
+        }
+      ],
+      "witness": "tests::capture::a_head_change_after_provider_capture_refuses_the_anchor"
+    },
+    {
+      "id": "WCP02",
+      "law": "Capture refuses an anchor when the worktree identity changes during the provider operation.",
+      "file": "crates/grapt-checkpoint/src/engine.rs",
+      "old": "        if before.worktree() != after.worktree() {\n",
+      "new": "        if false && before.worktree() != after.worktree() {\n",
+      "witness": "tests::capture::a_worktree_identity_change_after_capture_refuses_the_anchor"
+    },
+    {
+      "id": "WCP03",
+      "law": "A restore plan binds the independently observed VCS baseline.",
+      "file": "crates/grapt-checkpoint/src/engine.rs",
+      "old": "        push_unique(\n            &mut preconditions,\n            RestorePrecondition::VcsBaseline {\n                baseline: observation.baseline().clone(),\n            },\n        );\n",
+      "new": "",
+      "witness": "tests::restore::stale_plan_and_changed_vcs_baseline_are_pre_effect_refusals"
+    },
+    {
+      "id": "WCP04",
+      "law": "The checkpoint provider cannot self-assert the independent VCS precondition.",
+      "file": "crates/grapt-checkpoint/src/engine.rs",
+      "old": "        satisfied.retain(|precondition| {\n            !matches!(precondition, RestorePrecondition::VcsBaseline { .. })\n        });\n",
+      "new": "",
+      "witness": "tests::restore::provider_cannot_self_assert_the_independent_vcs_precondition"
+    },
+    {
+      "id": "WCP05",
+      "law": "Restore authority must name the exact capability derived from the settled plan before rescue or apply.",
+      "file": "crates/grapt-checkpoint/src/engine.rs",
+      "old": "        if &capability != plan.required_capability() {\n",
+      "new": "        if false && &capability != plan.required_capability() {\n",
+      "witness": "tests::restore::wrong_authority_is_refused_before_rescue_or_destructive_effect"
+    },
+    {
+      "id": "WCP06",
+      "law": "Only an exact provider capture proves pre-write rescue coverage.",
+      "file": "crates/grapt-checkpoint/src/engine.rs",
+      "old": "                    CheckpointCaptureOutcome::Captured { anchor, .. }\n                        if anchor.fidelity().is_exact() =>\n",
+      "new": "                    CheckpointCaptureOutcome::Captured { anchor, .. } =>\n",
+      "witness": "tests::restore::degraded_rescue_is_not_proven_rescue_coverage"
+    },
+    {
+      "id": "WCP07",
+      "law": "A durable applying record makes a second application of the same operation refuse.",
+      "file": "crates/grapt-checkpoint/src/engine.rs",
+      "old": "        if self.journal.begin(&record)? == BeginDisposition::AlreadyExists {\n",
+      "new": "        let begin = self.journal.begin(&record)?;\n        if false && begin == BeginDisposition::AlreadyExists {\n",
+      "witness": "tests::restore::exact_plan_authority_rescue_apply_and_duplicate_refusal_are_one_path"
+    },
+    {
+      "id": "WCP08",
+      "law": "An interruption unresolved after one inspect and reconcile is quarantined, never asserted applied.",
+      "file": "crates/grapt-checkpoint/src/engine.rs",
+      "old": "        ProviderOperationState::Applied(_)\n        | ProviderOperationState::Ambiguous\n        | ProviderOperationState::Missing => ReconciledState::Quarantined,\n",
+      "new": "        ProviderOperationState::Applied(_) => ReconciledState::Quarantined,\n        ProviderOperationState::Ambiguous | ProviderOperationState::Missing => {\n            ReconciledState::Applied\n        }\n",
+      "witness": "tests::restore::unresolved_interruption_is_quarantined_after_one_inspect_and_reconcile"
+    },
+    {
+      "id": "WCP09",
+      "law": "Applied requires a provider receipt for the exact operation and exact settled consequences.",
+      "file": "crates/grapt-checkpoint/src/engine.rs",
+      "old": "            ProviderApplyOutcome::Applied(receipt)\n                if receipt.operation() == &expected_operation\n                    && receipt.consequences() == &expected_consequences =>\n",
+      "new": "            ProviderApplyOutcome::Applied(receipt)\n                if receipt.operation() == &expected_operation =>\n",
+      "witness": "tests::restore::mismatched_provider_receipt_is_quarantined_not_applied"
+    },
+    {
+      "id": "WCP10",
+      "law": "A hashed journal path cannot substitute a durable record for another operation.",
+      "file": "crates/grapt-checkpoint/src/journal.rs",
+      "old": "        if applying.operation != operation {\n            return Err(JournalError::Corrupt);\n        }\n",
+      "new": "",
+      "witness": "tests::journal::journal_path_cannot_substitute_another_operation_record"
+    },
+    {
+      "id": "WCP11",
+      "law": "Checkpoint engine diagnostics redact the external provider and its payload state.",
+      "file": "crates/grapt-checkpoint/src/engine.rs",
+      "old": "            .field(\"provider\", &\"<external checkpoint provider>\")\n",
+      "new": "            .field(\"provider\", &self.provider)\n",
+      "witness": "tests::capture::stable_capture_resolve_inspect_and_fork_cross_the_provider_boundary"
+    },
+    {
+      "id": "WCP12",
+      "law": "Provider precondition evidence is bounded before it reaches admission.",
+      "file": "crates/grapt-checkpoint/src/model.rs",
+      "old": "        if satisfied.len() > MAX_RESTORE_PRECONDITIONS {\n",
+      "new": "        if satisfied.len() > usize::MAX {\n",
+      "witness": "tests::restore::provider_precondition_observation_is_bounded_before_admission"
+    },
+    {
+      "id": "WCP13",
+      "law": "A provider that cannot capture an exact rescue checkpoint cannot plan a destructive restore.",
+      "file": "crates/grapt-checkpoint/src/engine.rs",
+      "old": "        if contract.rescue_support() != RescueSupport::Supported {\n            return Err(CheckpointError::RescueUnsupported);\n        }\n",
+      "new": "",
+      "witness": "tests::restore::provider_without_rescue_support_cannot_plan_a_destructive_restore"
+    },
+    {
+      "id": "WCP14",
+      "law": "Journal reads remain hard limited when bytes grow after the initial metadata observation.",
+      "file": "crates/grapt-checkpoint/src/journal.rs",
+      "patches": [
+        {
+          "old": "        .take((MAX_JOURNAL_BYTES + 1) as u64)\n",
+          "new": "        .take(u64::MAX)\n"
+        },
+        {
+          "old": "    if raw.len() > MAX_JOURNAL_BYTES {\n",
+          "new": "    if false && raw.len() > MAX_JOURNAL_BYTES {\n"
+        }
+      ],
+      "witness": "tests::journal::a_growing_journal_is_hard_limited_and_rechecked"
+    },
+    {
+      "id": "WCP15",
+      "law": "Begin is not admitted until the new journal directory entry crosses the platform durability boundary.",
+      "file": "crates/grapt-checkpoint/src/journal.rs",
+      "old": "        self.durability.sync_parent(&self.root)?;\n",
+      "new": "",
+      "witness": "tests::journal::parent_directory_sync_is_part_of_begin_before_effect_admission"
+    },
+    {
+      "id": "WCP16",
+      "law": "One OS-backed journal owner excludes competing apply and settlement actors across instances and processes.",
+      "file": "crates/grapt-checkpoint/src/journal.rs",
+      "old": "        owner.try_lock().map_err(|error| match error {\n            std::fs::TryLockError::WouldBlock => JournalError::Busy,\n            std::fs::TryLockError::Error(_) => JournalError::Unavailable,\n        })?;\n",
+      "new": "",
+      "witness": "tests::journal::one_durable_owner_excludes_competing_settlement"
+    },
+    {
+      "id": "WCP17",
+      "law": "The Applying record is written and synced before process loss can release journal ownership.",
+      "file": "crates/grapt-checkpoint/src/journal.rs",
+      "old": "        file.write_all(&bytes)\n            .map_err(|_| JournalError::Unavailable)?;\n",
+      "new": "        file.write_all(&[])\n            .map_err(|_| JournalError::Unavailable)?;\n",
+      "witness": "tests::journal::applying_record_survives_process_crash_and_releases_owner"
+    },
+    {
+      "id": "WCP18",
+      "law": "The journal owner opens only an already provisioned ordinary directory whose durability belongs to the product installation boundary.",
+      "file": "crates/grapt-checkpoint/src/journal.rs",
+      "old": "        let metadata = match fs::symlink_metadata(&root) {\n            Ok(metadata) => metadata,\n            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {\n                return Err(JournalError::RootNotProvisioned);\n            }\n            Err(_) => return Err(JournalError::Unavailable),\n        };\n        if !metadata.is_dir() || metadata.file_type().is_symlink() {\n            return Err(JournalError::RootNotProvisioned);\n        }\n",
+      "new": "        fs::create_dir_all(&root).map_err(|_| JournalError::Unavailable)?;\n",
+      "witness": "tests::journal::journal_root_must_be_preprovisioned_before_the_owner_opens"
+    }
+  ]
+}

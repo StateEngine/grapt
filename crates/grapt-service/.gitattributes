@@ -1,0 +1,34 @@
+# This repository runs with `core.autocrlf=true` and has no repository-root
+# `.gitattributes`, so a fresh worktree otherwise receives CRLF and changes
+# every byte this crate's gates read. Five sibling crates already carry this
+# file — `grapt-api`, `-event`, `-policy`, `-provider` and `-schema` — and
+# `grapt-api`'s own header records what its absence cost there: a fresh
+# default-config clone reported 107 passed / 1 failed against 108 / 0 on an LF
+# one, same commit, same toolchain, same machine.
+#
+# `grapt-service` had none. R4D-2C is the first lane in this crate whose gates
+# are byte-exact rather than line-oriented, so it is the first lane the gap
+# could actually redden:
+#
+#   * `tests/probes/*.stderr` is byte-compared by trybuild and would redden on
+#     a CRLF checkout with no content change at all;
+#   * `tests/controller_corpus.rs` compares the corpus surfaces it PRODUCES
+#     against the committed bytes exactly, so a CRLF checkout would fail the
+#     replay for a reason that has nothing to do with the model.
+#
+# Both defences are here on purpose, and neither is sufficient alone. This
+# attribute pins what the gates read; the corpus reader is independently
+# newline-agnostic so the gates do not DEPEND on it. A checkout contract that is
+# the sole defence fails silently the first time somebody clones with a
+# different configuration — and a normalising reader alone would leave the
+# byte-compared `.stderr` exposed, because trybuild does its own comparison and
+# never consults this crate's readers.
+#
+# Verified before landing: every one of the 45 tracked files under this crate
+# and this lane's corpus already holds LF in the index, so these rules pin the
+# CHECKOUT and change no stored content.
+src/** text eol=lf
+tests/** text eol=lf
+mutations/** text eol=lf
+*.toml text eol=lf
+*.md text eol=lf

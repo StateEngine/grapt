@@ -1,0 +1,41 @@
+{
+  "$schema": "../oracle-receipt-manifest.schema.json",
+  "schema_version": 1,
+  "id": "cache-usage-product-v1",
+  "title": "PC2 authoritative prefix and usage product closure",
+  "law_conformance": {
+    "basis": "ratified-law-pack",
+    "oracle_status": "not-implemented-in-frozen-typescript-engine",
+    "note": "The corpus executes the ratified prefix-identity and usage-accounting laws without provider I/O."
+  },
+  "scope": {
+    "preserves": [
+      "Prefix eligibility is derived from exact keyed identity and is not provider cache-hit evidence.",
+      "A verified hit needs supported routing, reusable prefix, and a positive provider-reported cache-read leaf.",
+      "Contribution order, adapter, protocol, policy, and key rotation are executed as exact keyed-receipt invalidations.",
+      "Missing, observed zero, positive, corrupt, billed, estimated, and unavailable remain distinct.",
+      "Every scorecard counter uses checked arithmetic under injected attempt and profile bounds, and every refusal leaves byte-identical state."
+    ],
+    "intentionally_excludes": [
+      "Billable provider requests.",
+      "Wall-clock benchmark timing; the remote performance receipt owns elapsed and peak-memory measurement."
+    ]
+  },
+  "determinism": {
+    "clock": "No clock is read.",
+    "identifiers": "All identities are authored bounded fixture values.",
+    "network": "No network access or provider call occurs.",
+    "filesystem": "The test reads this bounded corpus without writing it."
+  },
+  "paths": { "actions": "actions.jsonl" },
+  "record_contracts": {
+    "actions": "One bounded JSON object per line drives the real product scorecard and names its exact classification."
+  },
+  "evidence": [
+    {
+      "path": "crates/grapt-product/src/cache_accounting.rs",
+      "test": "cache_accounting::tests::language_neutral_acceptance_corpus_executes_every_truth_class",
+      "claim": "Every corpus row is executed through the production scorecard; corrupt rows refuse without changing accumulated state."
+    }
+  ]
+}

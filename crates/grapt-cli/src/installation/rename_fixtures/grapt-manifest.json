@@ -1,0 +1,86 @@
+{
+  "schema": "secode.release.package.v1",
+  "target": "x86_64-unknown-linux-gnu",
+  "profile": "debug",
+  "engine_version": "1111111111111111111111111111111111111111",
+  "binaries": {
+    "grapt-server": {
+      "sha256": "4a6ca13d53fac130c4f2a639ddb75249a996e58376ca30ec58e64909f7cec9e6",
+      "bytes": 139,
+      "source_commit": "1111111111111111111111111111111111111111",
+      "profile": "debug",
+      "target": "x86_64-unknown-linux-gnu",
+      "build_receipt": "build.json",
+      "build_receipt_sha256": "2d21ec545a14a13b036f39cf102c0dbe4bf78973c31c5ac569f7fb7a30eeaf50"
+    },
+    "grapt": {
+      "sha256": "4a6ca13d53fac130c4f2a639ddb75249a996e58376ca30ec58e64909f7cec9e6",
+      "bytes": 139,
+      "source_commit": "1111111111111111111111111111111111111111",
+      "profile": "debug",
+      "target": "x86_64-unknown-linux-gnu",
+      "build_receipt": "build.json",
+      "build_receipt_sha256": "2d21ec545a14a13b036f39cf102c0dbe4bf78973c31c5ac569f7fb7a30eeaf50"
+    },
+    "grapt-engined": {
+      "sha256": "4a6ca13d53fac130c4f2a639ddb75249a996e58376ca30ec58e64909f7cec9e6",
+      "bytes": 139,
+      "source_commit": "1111111111111111111111111111111111111111",
+      "profile": "debug",
+      "target": "x86_64-unknown-linux-gnu",
+      "build_receipt": "build.json",
+      "build_receipt_sha256": "2d21ec545a14a13b036f39cf102c0dbe4bf78973c31c5ac569f7fb7a30eeaf50"
+    },
+    "grapt-migrate": {
+      "sha256": "4a6ca13d53fac130c4f2a639ddb75249a996e58376ca30ec58e64909f7cec9e6",
+      "bytes": 139,
+      "source_commit": "1111111111111111111111111111111111111111",
+      "profile": "debug",
+      "target": "x86_64-unknown-linux-gnu",
+      "build_receipt": "build.json",
+      "build_receipt_sha256": "2d21ec545a14a13b036f39cf102c0dbe4bf78973c31c5ac569f7fb7a30eeaf50"
+    },
+    "grapt-tui": {
+      "sha256": "4a6ca13d53fac130c4f2a639ddb75249a996e58376ca30ec58e64909f7cec9e6",
+      "bytes": 139,
+      "source_commit": "1111111111111111111111111111111111111111",
+      "profile": "debug",
+      "target": "x86_64-unknown-linux-gnu",
+      "build_receipt": "build.json",
+      "build_receipt_sha256": "2d21ec545a14a13b036f39cf102c0dbe4bf78973c31c5ac569f7fb7a30eeaf50"
+    }
+  },
+  "signing": {
+    "grapt-server": {
+      "signed": false,
+      "reason": "synthetic unsigned test"
+    },
+    "grapt": {
+      "signed": false,
+      "reason": "synthetic unsigned test"
+    },
+    "grapt-engined": {
+      "signed": false,
+      "reason": "synthetic unsigned test"
+    },
+    "grapt-migrate": {
+      "signed": false,
+      "reason": "synthetic unsigned test"
+    },
+    "grapt-tui": {
+      "signed": false,
+      "reason": "synthetic unsigned test"
+    }
+  },
+  "publisher": null,
+  "entry_points": [
+    "grapt-server",
+    "grapt",
+    "grapt-engined",
+    "grapt-migrate",
+    "grapt-tui"
+  ],
+  "plugin_runtime": {
+    "status": "not-included"
+  }
+}

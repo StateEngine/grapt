@@ -1,0 +1,14 @@
+error[E0308]: mismatched types
+  --> tests/probes/no_unfenced_envelope.rs:28:9
+   |
+24 |     let _ = EventEnvelopeV2::new(
+   |             -------------------- arguments to this function are incorrect
+...
+28 |         EventFencing::LegacyUnfenced,
+   |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^ expected `WriterEpoch`, found `EventFencing`
+   |
+note: associated function defined here
+  --> src/envelope.rs
+   |
+   |     pub fn new(
+   |            ^^^

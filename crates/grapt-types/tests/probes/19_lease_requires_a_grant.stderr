@@ -1,0 +1,22 @@
+error[E0599]: no associated function or constant named `new` found for struct `AuthorityLease` in the current scope
+  --> tests/probes/19_lease_requires_a_grant.rs:18:35
+   |
+18 |     let _by_new = AuthorityLease::new(capability.clone(), GrantScope::Once);
+   |                                   ^^^ associated function or constant not found in `AuthorityLease`
+   |
+note: if you're trying to build a new `AuthorityLease`, consider using `AuthorityLease::once_from_live` which returns `Option<AuthorityLease>`
+  --> src/capability.rs
+   |
+   |     pub fn once_from_live(decision: crate::authority::LivePermissionDecision) -> Option<Self> {
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error[E0624]: associated function `mint` is private
+  --> tests/probes/19_lease_requires_a_grant.rs:19:36
+   |
+19 |     let _by_mint = AuthorityLease::mint(capability, GrantScope::Once);
+   |                                    ^^^^ private associated function
+   |
+  ::: src/capability.rs
+   |
+   |     pub(crate) fn mint(capability: CapabilityId, scope: GrantScope) -> Self {
+   |     ----------------------------------------------------------------------- private associated function defined here

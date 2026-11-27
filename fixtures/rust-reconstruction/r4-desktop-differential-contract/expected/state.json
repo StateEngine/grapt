@@ -1,0 +1,188 @@
+{
+  "actions": 31,
+  "admitted_by_matrix": {
+    "differential": 1,
+    "long-session": 1,
+    "restart": 2,
+    "sleep-resume": 2
+  },
+  "admitted_plans": 6,
+  "confirmations": 1,
+  "confirmed": [
+    {
+      "ordinal": 23,
+      "outcome": "still-the-recorded-owner",
+      "scenario": "confirmed-the-recorded-owner-still-describes-the-observed-service"
+    }
+  ],
+  "ordered_refusals": [
+    {
+      "label": "unattributed",
+      "message": "the probe answered but named no owner: a health answer proves liveness, not which engine served it",
+      "ordinal": 6,
+      "scenario": "refused-a-health-only-probe-names-no-owner"
+    },
+    {
+      "label": "same-owner-on-both-sides",
+      "message": "both sides of the differential name the same owner: this is one engine measured twice, not a comparison",
+      "ordinal": 7,
+      "scenario": "refused-both-sides-name-the-same-owner"
+    },
+    {
+      "label": "same-selection-on-both-sides",
+      "message": "both sides of the differential name the same engine selection: a differential compares two different engines",
+      "ordinal": 8,
+      "scenario": "refused-both-sides-name-the-same-engine"
+    },
+    {
+      "label": "matrix-subset-incomplete",
+      "message": "the differential matrix declares a subset missing [SessionList]: a matrix measured below its minimum subset claims parity it did not measure",
+      "ordinal": 9,
+      "scenario": "refused-the-differential-subset-omits-the-listing"
+    },
+    {
+      "label": "operation-declared-twice",
+      "message": "the differential matrix declares v2.health.get twice: one operation cannot stand in for another",
+      "ordinal": 10,
+      "scenario": "refused-one-operation-declared-twice"
+    },
+    {
+      "label": "subset-declared-for-another-matrix",
+      "message": "a subset declared for the sleep-resume matrix cannot be planned as restart: a matrix must be measured by its own subset",
+      "ordinal": 11,
+      "scenario": "refused-a-resume-subset-planned-as-a-restart"
+    },
+    {
+      "label": "matrix-evidence-mismatch",
+      "message": "restart evidence cannot support a differential plan: each matrix carries its own evidence",
+      "ordinal": 12,
+      "scenario": "refused-restart-evidence-offered-to-a-differential-plan"
+    },
+    {
+      "label": "bound-not-reported-by-host",
+      "message": "the bound max_request_head_bytes was asserted-by-driver rather than reported by the host receipt: a differential records the engine's bounds, it does not state them",
+      "ordinal": 13,
+      "scenario": "refused-a-bound-the-driver-asserted-itself"
+    },
+    {
+      "label": "bound-set-incomplete",
+      "message": "the host bound recording is missing [MaxHeaders, ShutdownDrainAllowance]: an unrecorded bound is a gap, not a default",
+      "ordinal": 14,
+      "scenario": "refused-the-bound-recording-omits-two-fields"
+    },
+    {
+      "label": "bound-recorded-twice",
+      "message": "the bound max_connections was recorded twice: one reading cannot stand in for another",
+      "ordinal": 15,
+      "scenario": "refused-one-bound-recorded-twice-while-the-count-still-reaches-eight"
+    },
+    {
+      "label": "bound-rendering-empty",
+      "message": "the bound max_connections was recorded with an empty rendering: an empty value records nothing while looking like a reading",
+      "ordinal": 16,
+      "scenario": "refused-a-bound-recorded-with-an-empty-rendering"
+    },
+    {
+      "label": "restart-kept-the-instance-identity",
+      "message": "the observed instance identity is unchanged across the boundary: an engine that kept its ServiceInstanceId did not restart",
+      "ordinal": 17,
+      "scenario": "refused-a-restart-claim-whose-instance-identity-did-not-change"
+    },
+    {
+      "label": "restart-changed-the-slot",
+      "message": "the observed slot changed across the boundary: a different registration slot is a different service, not a restart",
+      "ordinal": 18,
+      "scenario": "refused-a-restart-claim-that-crossed-two-slots"
+    },
+    {
+      "label": "resume-reused-the-recorded-receipt",
+      "message": "resume reused the recorded receipt: crossing a sleep boundary must re-admit from a fresh probe, not assume the recorded attachment survived",
+      "ordinal": 19,
+      "scenario": "refused-a-resume-that-reused-the-recorded-receipt"
+    },
+    {
+      "label": "long-session-reads-unbounded",
+      "message": "the long-session matrix declared zero maximum reads: `long` is stated in counts and bytes, and an unbounded count is not a bound",
+      "ordinal": 20,
+      "scenario": "refused-a-long-session-with-an-unbounded-read-count"
+    },
+    {
+      "label": "long-session-bytes-unbounded",
+      "message": "the long-session matrix declared zero maximum bytes: `long` is stated in counts and bytes, and an unbounded budget is not a bound",
+      "ordinal": 21,
+      "scenario": "refused-a-long-session-with-an-unbounded-byte-budget"
+    },
+    {
+      "label": "leaves-selector-attached",
+      "message": "the plan leaves the selector attached: a differential run must return the desktop to its retained engine, never strand it on one it was borrowing",
+      "ordinal": 22,
+      "scenario": "refused-a-plan-that-leaves-the-desktop-on-the-borrowed-engine"
+    },
+    {
+      "label": "not-the-recorded-owner",
+      "message": "the observed owner is not the owner this selection recorded: the recorded attachment is stale and must be re-admitted, not reused",
+      "ordinal": 24,
+      "scenario": "refused-a-different-instance-that-inherited-the-pid-and-endpoint"
+    },
+    {
+      "label": "restart-changed-the-environment",
+      "message": "the observed environment receipt changed across the boundary: an owner differing in environment is a replacement on the same slot, not a restart",
+      "ordinal": 25,
+      "scenario": "refused-a-restart-claim-across-two-environment-receipts"
+    },
+    {
+      "label": "matrix-evidence-names-another-engine",
+      "message": "the matrix evidence does not describe one engine this plan admitted: a restart or resume of some other service is not evidence about either engine under comparison",
+      "ordinal": 26,
+      "scenario": "refused-restart-evidence-for-a-third-unrelated-service"
+    },
+    {
+      "label": "matrix-evidence-names-another-engine",
+      "message": "the matrix evidence does not describe one engine this plan admitted: a restart or resume of some other service is not evidence about either engine under comparison",
+      "ordinal": 27,
+      "scenario": "refused-resume-evidence-for-a-third-unrelated-service"
+    },
+    {
+      "label": "matrix-evidence-names-another-engine",
+      "message": "the matrix evidence does not describe one engine this plan admitted: a restart or resume of some other service is not evidence about either engine under comparison",
+      "ordinal": 28,
+      "scenario": "refused-resume-evidence-split-across-the-two-admitted-engines"
+    },
+    {
+      "label": "resume-contradicts-the-admitted-pairing",
+      "message": "the resume evidence attributes an admitted owner receipt to an engine it was not admitted as: two halves agreeing on the wrong engine agree about nothing that matters",
+      "ordinal": 29,
+      "scenario": "refused-resume-evidence-attributing-an-admitted-owner-to-the-wrong-engine"
+    },
+    {
+      "label": "resume-contradicts-the-admitted-pairing",
+      "message": "the resume evidence attributes an admitted owner receipt to an engine it was not admitted as: two halves agreeing on the wrong engine agree about nothing that matters",
+      "ordinal": 30,
+      "scenario": "refused-resume-evidence-whose-second-half-contradicts-the-admitted-pairing"
+    }
+  ],
+  "refusal_labels": [
+    "bound-not-reported-by-host",
+    "bound-recorded-twice",
+    "bound-rendering-empty",
+    "bound-set-incomplete",
+    "leaves-selector-attached",
+    "long-session-bytes-unbounded",
+    "long-session-reads-unbounded",
+    "matrix-evidence-mismatch",
+    "matrix-evidence-names-another-engine",
+    "matrix-subset-incomplete",
+    "not-the-recorded-owner",
+    "operation-declared-twice",
+    "restart-changed-the-environment",
+    "restart-changed-the-slot",
+    "restart-kept-the-instance-identity",
+    "resume-contradicts-the-admitted-pairing",
+    "resume-reused-the-recorded-receipt",
+    "same-owner-on-both-sides",
+    "same-selection-on-both-sides",
+    "subset-declared-for-another-matrix",
+    "unattributed"
+  ],
+  "refusals": 24
+}

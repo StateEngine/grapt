@@ -1,0 +1,21 @@
+error[E0624]: method `family` is private
+  --> tests/probes/45_manual_family_comparison.rs:65:70
+   |
+65 |     let _may_cross = parent.provider() == child.provider() && parent.family() == child.family();
+   |                                                                      ^^^^^^ private method
+   |
+  ::: src/model/reference.rs
+   |
+   |     pub(crate) fn family(&self) -> &ModelFamilyId {
+   |     --------------------------------------------- private method defined here
+
+error[E0624]: method `family` is private
+  --> tests/probes/45_manual_family_comparison.rs:65:88
+   |
+65 |     let _may_cross = parent.provider() == child.provider() && parent.family() == child.family();
+   |                                                                                        ^^^^^^ private method
+   |
+  ::: src/model/reference.rs
+   |
+   |     pub(crate) fn family(&self) -> &ModelFamilyId {
+   |     --------------------------------------------- private method defined here

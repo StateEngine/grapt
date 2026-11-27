@@ -1,0 +1,135 @@
+name: Hosted platform
+
+on:
+  workflow_call:
+    inputs:
+      os:
+        required: true
+        type: string
+      platform:
+        required: true
+        type: string
+      packages:
+        required: true
+        type: string
+      nightly:
+        required: true
+        type: boolean
+      fixture-sha256:
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+env:
+  CARGO_BUILD_JOBS: '2'
+  CARGO_INCREMENTAL: '0'
+  CARGO_PROFILE_DEV_DEBUG: '0'
+  CARGO_PROFILE_TEST_DEBUG: '0'
+  CARGO_TARGET_DIR: ${{ github.workspace }}/target
+  PYTHONDONTWRITEBYTECODE: '1'
+  CI_PACKAGES: ${{ inputs.packages }}
+  CI_NIGHTLY: ${{ inputs.nightly }}
+  CI_FIXTURE_SHA256: ${{ inputs.fixture-sha256 }}
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  archive:
+    if: ${{ github.event.pull_request == null || github.event.pull_request.head.repo.full_name == github.repository }}
+    runs-on: ${{ inputs.os }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: ./.github/actions/hosted-rust
+        id: tools
+      - uses: Swatinem/rust-cache@e9d7b9f1e587218970671bac74e5511ed9506e6a # v2
+        with:
+          shared-key: hosted-v2-archive-acceptance-${{ inputs.platform }}
+          key: ${{ steps.tools.outputs.feature-key }}
+      - run: python scripts/ci/run.py archive --platform '${{ inputs.platform }}'
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: tests-${{ inputs.platform }}
+          path: |
+            tests.tar.zst
+            ci-results/
+          retention-days: 1
+          compression-level: 0
+          if-no-files-found: error
+
+  test:
+    needs: archive
+    if: ${{ !cancelled() && needs.archive.result == 'success' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2]
+    runs-on: ${{ inputs.os }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: ./.github/actions/hosted-rust
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          name: tests-${{ inputs.platform }}
+      - run: python scripts/ci/run.py test --platform '${{ inputs.platform }}' --shard '${{ matrix.shard }}'
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        if: ${{ always() }}
+        with:
+          name: results-${{ inputs.platform }}-${{ matrix.shard }}
+          path: |
+            target/nextest/gate/junit.xml
+            ci-results/
+          retention-days: 3
+          if-no-files-found: error
+
+  doctest:
+    if: ${{ github.event.pull_request == null || github.event.pull_request.head.repo.full_name == github.repository }}
+    runs-on: ${{ inputs.os }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: ./.github/actions/hosted-rust
+        id: tools
+      - uses: Swatinem/rust-cache@e9d7b9f1e587218970671bac74e5511ed9506e6a # v2
+        with:
+          shared-key: hosted-v2-doctest-acceptance-and-ordinary-${{ inputs.platform }}
+          key: ${{ steps.tools.outputs.feature-key }}
+      - run: python scripts/ci/run.py doctest --platform '${{ inputs.platform }}'
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        if: ${{ always() }}
+        with:
+          name: doctest-results-${{ inputs.platform }}
+          path: ci-results/
+          retention-days: 3
+          if-no-files-found: error
+
+  # Refuse an unexpected skip as well as a failure or cancellation. The
+  # caller's aggregate requires every platform call, including this verifier.
+  verify-platform:
+    if: ${{ always() && (github.event.pull_request == null || github.event.pull_request.head.repo.full_name == github.repository) }}
+    needs: [archive, test, doctest]
+    runs-on: [self-hosted, "${{ github.event_name == 'pull_request_target' && 'grapt-precheck' || 'grapt-landing' }}"]
+    timeout-minutes: 2
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - env:
+          RESULTS: ${{ toJSON(needs) }}
+        run: python3 scripts/ci/check.py --platform

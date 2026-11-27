@@ -1,0 +1,11 @@
+error[E0423]: cannot initialize a tuple struct which contains private fields
+  --> tests/probes/56_author_a_catalog_generation.rs:13:21
+   |
+13 |     let _authored = CatalogGeneration(7);
+   |                     ^^^^^^^^^^^^^^^^^
+   |
+note: constructor is not visible here due to private fields
+  --> src/model/issuance.rs
+   |
+   | pub struct CatalogGeneration(u64);
+   |                              ^^^ private field

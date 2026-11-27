@@ -1,0 +1,11 @@
+# The mutation gate digests `mutations/manifest.json` and trybuild compares
+# `tests/probes/*.stderr` textually. Both are only evidence on the machine that
+# wrote them unless the checkout is pinned: this repository runs with
+# `core.autocrlf=true` and no repository-root `.gitattributes`, so a fresh
+# worktree would otherwise receive CRLF and change every byte the gates read.
+#
+# Declared at the crate root rather than inside either directory, because the
+# gates enumerate those directories and an unlisted extra file there is itself
+# a failure.
+mutations/** text eol=lf
+tests/probes/** text eol=lf

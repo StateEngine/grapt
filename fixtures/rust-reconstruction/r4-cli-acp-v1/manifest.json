@@ -1,0 +1,82 @@
+{
+  "$schema": "../oracle-receipt-manifest.schema.json",
+  "schema_version": 1,
+  "id": "r4-cli-acp-v1",
+  "title": "R4 typed bounded CLI, noninteractive, and ACP executable contract",
+  "law_conformance": {
+    "basis": "ratified-law-pack",
+    "oracle_status": "not-implemented-in-frozen-typescript-engine",
+    "note": "R4 reconstructs the ratified Rust client boundary; the frozen TypeScript engine is not advanced."
+  },
+  "law_pack": {
+    "revision": 9,
+    "sources": [
+      {"path":"specs/secode-rust-reconstruction-r1-2026-08-07.md","sha256":"626333034f4760faf2fd2769e1a797d2ebbad5187e0bd787d33b99bf32a47865"},
+      {"path":"docs/reports/SECODE_RUST_RECONSTRUCTION_DISPOSITION_2026-08-07.md","sha256":"cca761d01667451dbac9bda6a8c6424ce6c25313fdc4457882f41fc10b2a70fc"},
+      {"path":"docs/reports/SECODE_RUST_FOUNDATIONAL_TYPES_AND_LIFECYCLES_2026-08-07.md","sha256":"31d4ae9af4229939225374efb9c721e752bc0fc163615e3f188acebed051b032"},
+      {"path":"docs/reports/SECODE_RUST_PROVIDER_STREAM_RUNTIME_CONTRACT_2026-08-08.md","sha256":"6c202f89e1e8bdc1de7304f22539ba043a4032f90376434841718f9b5624cdf6"},
+      {"path":"fixtures/rust-reconstruction/README.md","sha256":"26ebe50177d2d7ba0436c646f477e3dd220cd8f1acffdfe1f4c5f1205e760c3a"},
+      {"path":"specs/secode-rust-agency-continuity-amendment-r1-2026-08-08.md","sha256":"97c14bd84ac1c742721865b66259d718bb4125b50fa429976ad4467e1c15c581"},
+      {"path":"docs/reports/SECODE_CODEX_HARNESS_SURVEY_DISPOSITION_2026-08-08.md","sha256":"548b5e4a6383d963a4d96231cf14f3786ac43cdfbad8902bd21c47b5f8d9390c"},
+      {"path":"docs/reports/SECODE_SURVEY_DELTA_DISPOSITION_2026-08-08.md","sha256":"c25d65352aac7f8275adfc9284c83274f98b134d9e3b0ce1dffc22d9886faac3"},
+      {"path":"specs/secode-rust-campaign-mode-amendment-r1-2026-08-08.md","sha256":"775a3485b707232c991a557856cdb6778a5ce2a9220111dad18fcdeacda1ae2d"}
+    ],
+    "matrix": {"path":"docs/reports/SECODE_RUST_RATIFIED_ARCHITECTURE_SUPERSESSION_MATRIX_2026-08-08.md","sha256":"9301ccee905750352cbd904a63c6909bc5a2b87982bacec3ca29e7ec1c89af9b"}
+  },
+  "scope": {
+    "preserves": [
+      "typed versioned grapt-api DTO client only",
+      "spawned-child-bound attributed service discovery",
+      "text JSON and JSONL output contracts",
+      "bounded stdin stdout stderr SSE and ACP dimensions",
+      "pre-visible idempotent retry only",
+      "durable relist convergence after advisory live events",
+      "server-authoritative SIGINT SIGTERM and ACP cancellation",
+      "stable exit-class mapping"
+    ],
+    "intentionally_excludes": [
+      "TypeScript mutation",
+      "direct Core runtime or database access",
+      "service election mutation",
+      "provider-shaped canonical events",
+      "unbounded channels or buffers",
+      "hidden retry of prompt admission"
+    ]
+  },
+  "determinism": {
+    "clock": "No wall-clock identity or deadline is read; finite transport and launch scheduling use monotonic Tokio allowances.",
+    "identifiers": "All project and session identities cross the client boundary as grapt-types values and grapt-api WireId wrappers.",
+    "network": "Production remote mode is HTTPS-only; test loopback is feature-gated and production discovery requires attributed identity.",
+    "filesystem": "Credential and registration reads are bounded, regular-file-only, and discovery re-reads exact registration bytes after attribution."
+  },
+  "paths": {
+    "actions": "actions.jsonl",
+    "expected": {
+      "durable": "expected/durable.jsonl",
+      "state": "expected/state.json",
+      "waivers": "expected/waivers.json"
+    }
+  },
+  "record_contracts": {
+    "actions": "One executable public-seam operation per R4 CLI/ACP case.",
+    "durable": "One closed expected authoritative outcome for every action case.",
+    "state": "The exact sorted case set and count derived from actions and durable rows."
+  },
+  "evidence": [
+    {
+      "path": "crates/grapt-cli/tests/public_seams.rs",
+      "test": "acceptance_corpus_executes_public_operations",
+      "claim": "Every corpus operation is dispatched through the binary, executor, Runner, ApiClient, loopback server, child-owner, and bounded-output public seams."
+    },
+    {
+      "path": "crates/grapt-cli/tests/public_seams.rs",
+      "test": "acp_admission_precedes_effect_and_failed_effect_does_not_commit",
+      "claim": "Request counts prove validate/effect/commit ordering and no state advance after remote failure."
+    },
+    {
+      "path": "crates/grapt-cli/tests/public_seams.rs",
+      "test": "runner_refuses_advisory_gap_without_emitting_advisory_truth",
+      "claim": "The real Runner refuses convergence defects and emits only authoritative durable data."
+    }
+  ]
+}

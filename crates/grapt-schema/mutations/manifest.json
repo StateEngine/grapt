@@ -1,0 +1,129 @@
+{
+  "purpose": "Each entry names one load-bearing behaviour, the exact source edit that removes it, and the witness that must turn red once it is gone. A witness that stays green under its own mutation attributes nothing.",
+  "run": "python crates/grapt-schema/mutations/gate.py",
+  "f1_integration_note": "F1 integration re-pointed the campaign descriptors at the same laws in the concretely bound source: the DTOs no longer carry a CampaignIdentities type parameter, approval-term comparison moved into ContentVerifiedCampaignPlan::check_approved_terms, and the integrity vocabulary is now the foundational PlanReadIntegrity. Only the anchors moved; no law was dropped, renamed or weakened. Laws introduced by the integration itself and NOT yet covered here are recorded in the delivery receipt.",
+  "mutations": [
+    {
+      "id": "M01",
+      "law": "Nullable separates a missing field from an explicit null",
+      "file": "src/presence.rs",
+      "target": "test",
+      "test_target": "strict_boundary",
+      "test": "a_derived_container_still_separates_a_missing_nullable_from_an_explicit_null",
+      "old": "deserializer.deserialize_newtype_struct(CATEGORY_NEWTYPE, AcceptNullField(PhantomData))\n    }\n}\n\nimpl<T> Serialize for Nullable<T>",
+      "new": "deserializer.deserialize_option(NullableVisitor(PhantomData))\n    }\n}\n\nimpl<T> Serialize for Nullable<T>"
+    },
+    {
+      "id": "M02",
+      "law": "Required reports a missing field at its own path",
+      "file": "src/presence.rs",
+      "target": "test",
+      "test_target": "strict_boundary",
+      "test": "a_derived_container_reports_a_missing_required_field_at_its_own_path",
+      "old": "deserializer\n            .deserialize_newtype_struct(CATEGORY_NEWTYPE, RejectNullField(PhantomData))\n            .map(Self)",
+      "new": "deserializer\n            .deserialize_option(RejectNullVisitor(PhantomData))\n            .map(Self)"
+    },
+    {
+      "id": "M03",
+      "law": "An absent field is omitted, never serialized as null",
+      "file": "src/presence.rs",
+      "target": "test",
+      "test_target": "strict_boundary",
+      "test": "serializing_an_absent_field_fails_loudly_instead_of_emitting_null",
+      "old": "None => Err(S::Error::custom(ABSENT_MUST_BE_OMITTED)),",
+      "new": "None => serializer.serialize_none(),"
+    },
+    {
+      "id": "M04",
+      "law": "An opted-in path segment is truncated to its advertised budget",
+      "file": "src/decode.rs",
+      "target": "test",
+      "test_target": "strict_boundary",
+      "test": "an_opted_in_segment_is_truncated_to_its_advertised_budget",
+      "old": "    if segment.chars().count() <= max_segment_chars {",
+      "new": "    if true {"
+    },
+    {
+      "id": "M05",
+      "law": "The advertised total path bound includes its ellipsis",
+      "file": "src/decode.rs",
+      "target": "test",
+      "test_target": "strict_boundary",
+      "test": "a_rendered_path_stays_within_its_advertised_total_bound",
+      "old": "    let kept = MAX_PATH_CHARS.saturating_sub(TRUNCATION_MARKER.chars().count());",
+      "new": "    let kept = MAX_PATH_CHARS;"
+    },
+    {
+      "id": "M61",
+      "law": "The default policy redacts a document-derived map key",
+      "file": "src/decode.rs",
+      "target": "test",
+      "test_target": "strict_boundary",
+      "test": "the_default_boundary_never_echoes_a_document_derived_key",
+      "old": "            Segment::Map { key } => {\n                rendered.push('.');\n                rendered.push_str(&bound_segment(key, policy));\n            }",
+      "new": "            Segment::Map { key } => {\n                rendered.push('.');\n                rendered.push_str(key);\n            }"
+    },
+    {
+      "id": "M62",
+      "law": "The default policy redacts a document-derived enum variant",
+      "file": "src/decode.rs",
+      "target": "test",
+      "test_target": "strict_boundary",
+      "test": "the_default_boundary_never_echoes_a_document_derived_enum_variant",
+      "old": "            Segment::Enum { variant } => {\n                rendered.push('.');\n                rendered.push_str(&bound_segment(variant, policy));\n            }",
+      "new": "            Segment::Enum { variant } => {\n                rendered.push('.');\n                rendered.push_str(variant);\n            }"
+    },
+    {
+      "id": "M63",
+      "law": "A boundary that names no policy redacts rather than reveals",
+      "file": "src/decode.rs",
+      "target": "test",
+      "test_target": "strict_boundary",
+      "test": "revealing_a_named_segment_requires_an_explicit_opt_in",
+      "old": "            named_segments: NamedSegmentPolicy::Redact,",
+      "new": "            named_segments: NamedSegmentPolicy::Reveal { max_chars: 64 },"
+    },
+    {
+      "id": "M64",
+      "law": "A zero reveal budget resolves to redaction, not an unbounded reveal",
+      "file": "src/decode.rs",
+      "target": "test",
+      "test_target": "strict_boundary",
+      "test": "a_zero_reveal_budget_resolves_to_redaction",
+      "old": "        self.named_segments = if max_chars == 0 {\n            NamedSegmentPolicy::Redact\n        } else {",
+      "new": "        self.named_segments = if false {\n            NamedSegmentPolicy::Redact\n        } else {"
+    },
+    {
+      "id": "M65",
+      "law": "No public surface reports a position inside the rejected input",
+      "file": "src/decode.rs",
+      "target": "test",
+      "test_target": "strict_boundary",
+      "test": "no_public_surface_reports_a_position_in_the_rejected_input",
+      "old": "    DecodeError { kind, path }\n}",
+      "new": "    DecodeError {\n        kind,\n        path: format!(\"{path} (line {}, column {})\", error.line(), error.column()),\n    }\n}"
+    },
+    {
+      "id": "M66",
+      "law": "An oversized input does not report its own observed length",
+      "file": "src/decode.rs",
+      "target": "test",
+      "test_target": "strict_boundary",
+      "test": "an_oversized_input_does_not_report_its_own_length",
+      "old": "            kind: DecodeErrorKind::InputTooLarge {\n                limit: limits.max_input_bytes,\n            },\n            path: \"$\".to_owned(),",
+      "new": "            kind: DecodeErrorKind::InputTooLarge {\n                limit: limits.max_input_bytes,\n            },\n            path: format!(\"${}\", input.len()),"
+    },
+    {
+      "id": "M67",
+      "law": "The schema-derived missing-field name survives redaction",
+      "file": "src/decode.rs",
+      "target": "test",
+      "test_target": "strict_boundary",
+      "test": "required_rejects_both_missing_and_explicit_null",
+      "old": "    if let Some(field) = missing_field(&error) {\n        path.push('.');\n        path.push_str(&field);",
+      "new": "    if let Some(field) = missing_field(&error) {\n        path.push_str(\"\");\n        path.push_str(&field[..0]);"
+    }
+  ],
+  "manifest_note": "target names a closed shape, never argv: the runner builds the cargo command itself so no manifest value can reach cargo as an option. This whole file is pinned by CANONICAL_MANIFEST_SHA256 in run.py, so editing it requires re-pinning that digest deliberately.",
+  "f1_authority_join_note": "M23-M33 cover the corrected authority join: artifact verification against raw bytes (M23), the derived graph digest and its set/seq canonicalization (M24, M25), terms-digest coverage and coupling (M26, M27), the human answering request (M28), domain separation (M29), canonical framing (M30), the campaign policy version (M31) and the two verified-coordinate comparisons that replaced self-comparison (M32, M33). M34-M49 cover the b89d7fe HOLD corrections. M34-M36 pin the graph digest to graph semantics ONLY: reintroducing a non-graph coordinate reddens the covers-only-the-graph witness, and dropping edges or acceptance leaves reddens the per-coordinate witness. M37-M42 pin the structural duplicate refusal in all six set-shaped declarations, M42 specifically at nesting depth, because the canonical encoder does not deduplicate and a duplicate reaching it would give two identical declarations different approved digests. M43 splits the decision nonce out of M28: one witness over both answering coordinates stays green while either comparison alone is deleted. M44-M46 became reachable only with the private binding seam - a ReceiptView is not an authority, so the verifier's receipt half and the sealed receipt's final word can now be driven without minting anything. M47-M48 pin the wire projection, M47 against the specific defect of recomputing the terms digest from the request beside it, which on an agreeing receipt is indistinguishable from reading it. M49 is the reorder mutant for M23: it moves the parse ahead of the digest check, which M23 alone could not detect because both orders refuse a false claim about parseable bytes. STILL DELIBERATELY ABSENT, and owed by the minting lane: binding::view_of itself, and the proof-pairing check in ApprovedCampaignPlan::assemble. Both take a sealed CampaignApprovalReceipt that no test in this crate can mint, so any mutation of them would stay green and attribute nothing. The view_of half is covered instead by grapt-types' a_minted_receipt_reports_each_part_on_its_own_accessor, which pins all NINETEEN accessors view_of reads, one field at a time. That count was EIGHTEEN when this note first claimed 'every accessor', and the missing one was principal() - the approving identity, and the only coordinate carried by the ratification rather than by the caller-supplied parts. authorizes() compares eleven coordinates and principal is not among them, so nothing backstopped it: an accessor returning the wrong arm would have been copied faithfully into the view and lowered faithfully into the persisted approval with nothing red, while this note said the hole was closed. The claim is now a number so that it can be checked. Adding a cargo test feature or a public fake authority to reach the rest is forbidden and would be a worse defect than the missing row. M50-M60 cover the cold-review HOLD on 75b3f37b. M50 and M51 pin the sequence and map element COUNTS, which the approved count-framing deviation was conditioned on being mutation-witnessed and which no descriptor had named: M50 is witnessed by a nesting collision, M51 by the frozen-format byte pin's empty-map assertion. M52 pins the ORDER a decision's options are offered in, whose downgrade from sequence to set reads as a formatting choice. M53-M55 pin the Set family the earlier set missed entirely: the element count, the RETAINED per-element byte length, and the sort. The element length is redundant for injectivity - no pair of values collides without it - so no collision witness can isolate it and the byte pin is its only possible attribution; the counts are pinned on EMPTY composites so that no child framing can be doing the work, which is also what keeps M53 and M54 separately attributable. M56-M58 pin the three human coordinates of the wire projection against a DIVERGENT view: on any valid receipt the authority's client, request and nonce coincide with the untrusted request beside them, so only a view that disagrees can tell a lowering that read the authority from one that read the request. M59 and M60 pin the Verification arm's revision and a node's own identity; a match arm is kept apart from its siblings by the discriminant, so an arm-crossing witness proves nothing inside any one arm. ACKNOWLEDGED LIVENESS RESIDUAL, recorded and deliberately not redesigned: inside the private binding module, view_of could swap the two same-typed PolicyVersion fields and no witness here would separate them, because reaching view_of needs a sealed receipt this crate cannot mint. Closing it would require a cfg(test) authority, an additive cargo feature or a public mint - each a larger defect than the gap - so it stays named rather than bought."
+}

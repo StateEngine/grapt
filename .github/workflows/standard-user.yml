@@ -1,0 +1,83 @@
+name: Standard-user Windows cases
+
+on:
+  workflow_dispatch:
+    inputs:
+      manifest:
+        description: Committed case manifest path (native-cases/<name>.json pins LF)
+        type: string
+        required: true
+      sha256:
+        description: SHA-256 of the committed manifest bytes
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: standard-user-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  cases:
+    if: ${{ startsWith(github.ref, 'refs/heads/ci/') }}
+    runs-on: windows-2025
+    timeout-minutes: 45
+    env:
+      CARGO_BUILD_JOBS: '2'
+      CARGO_INCREMENTAL: '0'
+      CARGO_PROFILE_DEV_DEBUG: '0'
+      CARGO_PROFILE_TEST_DEBUG: '0'
+      RUST_TEST_THREADS: '1'
+      PYTHONDONTWRITEBYTECODE: '1'
+      CASE_MANIFEST: ${{ inputs.manifest }}
+      CASE_MANIFEST_SHA256: ${{ inputs.sha256 }}
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+      - name: Verify the committed manifest and prepare the build directory
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          if ($env:CASE_MANIFEST_SHA256 -notmatch '^[a-fA-F0-9]{64}$') {
+              throw 'The expected manifest SHA-256 must contain 64 hexadecimal characters'
+          }
+          $tracked = & git --literal-pathspecs ls-files --error-unmatch -- $env:CASE_MANIFEST
+          if ($LASTEXITCODE -ne 0) { throw 'The case manifest must be committed in this checkout' }
+          $manifest = Join-Path $env:GITHUB_WORKSPACE $env:CASE_MANIFEST
+          $actual = (Get-FileHash -LiteralPath $manifest -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($actual -cne $env:CASE_MANIFEST_SHA256.ToLowerInvariant()) {
+              throw 'The case manifest differs from the expected SHA-256; use the committed LF bytes'
+          }
+          New-Item -ItemType Directory -Force (Join-Path $env:RUNNER_TEMP 'hosted-results') | Out-Null
+          git rev-parse HEAD > (Join-Path $env:RUNNER_TEMP 'hosted-results/source.txt')
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          "CARGO_TARGET_DIR=$(Join-Path $env:RUNNER_TEMP 'credential-target')" >> $env:GITHUB_ENV
+          rustup show active-toolchain
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Check the case and cleanup adapter
+        shell: pwsh
+        run: python -m unittest discover -s scripts/ci -p test_hosted_cases.py -v
+      - name: Run the selected compiled cases as a verified standard user
+        id: selected_cases
+        timeout-minutes: 40
+        shell: pwsh
+        run: |
+          $manifest = Join-Path $env:GITHUB_WORKSPACE $env:CASE_MANIFEST
+          ./scripts/ci/windows_hosted.ps1 -CredentialValidation -CaseManifest $manifest
+      - name: Retain summary and JUnit from complete or partial verdicts
+        if: always()
+        shell: pwsh
+        env:
+          CREDENTIAL_PHASE_OUTCOME: ${{ steps.selected_cases.outcome }}
+        run: python scripts/ci/hosted_cases.py credential-report --output "$env:RUNNER_TEMP/hosted-results" --phase-outcome "$env:CREDENTIAL_PHASE_OUTCOME"
+      - name: Retain exact verdicts and identity controls
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: standard-user-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/hosted-results
+          if-no-files-found: error
+          retention-days: 3

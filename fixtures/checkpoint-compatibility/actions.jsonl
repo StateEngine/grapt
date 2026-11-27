@@ -1,0 +1,8 @@
+{"op":"write","seq":1,"value":"before"}
+{"op":"capture","seq":2,"operation":"capture-manual"}
+{"op":"mutate","seq":3,"value":"after"}
+{"op":"plan","seq":4,"operation":"restore-manual","expected_writes":1,"expected_deletes":0,"expected_bytes":6}
+{"op":"apply","seq":5,"expected":"ambiguous"}
+{"op":"restart","seq":6}
+{"op":"recover","seq":7,"operation":"restore-manual","expected":"applied"}
+{"op":"read","seq":8,"expected":"before"}

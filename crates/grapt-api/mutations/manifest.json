@@ -1,0 +1,392 @@
+{
+  "purpose": "R4H-A transport trust boundary evidence. QA01-QA35 pin the sealed principal's server-owned resolution, the DTO-never-selects law and its resurrection, refuse-before-effect, provenance refusal of an authored client identity, equality-based directory and lease currency, every positive bound, deterministic route composition ahead of axum's panicking registration, the decode-before-parse ordering, both no-echo rendering carriers, absence of a public secret-equality oracle, truthful refusal reasons including whole-segment route-parameter occupancy and every clause of the total segment scan that separates occupancy from brace syntax, and the corpus validator's three fail-closed guards. Each entry names one load-bearing behaviour, the exact source edit that removes it, and the witness that must turn red once it is gone.",
+  "run": "python crates/grapt-api/mutations/run.py",
+  "prefix": "QA",
+  "prefix_note": "QA is absent as a WHOLE TOKEN from every manifest at base 364c23d0 — a fail-closed census walking the whole tree found 10 manifests, 447 rows (441 conforming whole tokens plus 6 non-conforming), and no QA. It does collide under a PREFIX-OF comparison with both Q (12 rows, grapt-runtime) and A (22 rows, grapt-artifact), which is exactly the two-directional shape DG documented for D and G. That is survivable only because whole-token comparison is load-bearing rather than a formality: this runner and the landed runners all use re.fullmatch(rf'{prefix}[0-9]+'), so --prefix Q never selects a QA row and --prefix A never selects one either. test_prefix_selection in this directory witnesses both directions rather than asserting them.",
+  "isolation": "Every mutation is applied inside its own disposable git worktree checked out at the exact candidate commit. No mutant is ever written into the calling worktree, so there is no restore step that could leave a stale build behind.",
+  "scope_note": "Two laws in this crate are deliberately NOT carried by an ordinary runtime mutation row, and R4HA_RESIDUALS.md records both. (1) The POSITIVE authorization path is unreachable from any witness A can write: a SeatCapabilityProof borrows a real grapt-types CapabilityGrant, whose only route is from_live(&LivePermissionDecision), and that mint is pub(crate) inside grapt-types — no crate in this workspace can mint one. That is ruling R4HA-04 working as written (production A authenticates and refuses; an allow needs a proof from the later composition seam), so the allow arm and the two proof-mismatch branches in authorize() belong to the composition lane's evidence, not this one's. (2) The structural seals — no public mint for the principal or the verified subject, the non-clone lease, the ratified non-conversion to AuthorityPrincipal, the identity-free DTO, the consumed builder, and the absence of public equality on Redacted — are witnessed by tests/compile_fail.rs. QA30 deliberately resurrects only the equality derive and expects that compile-fail tier itself to turn red; privacy-removal mutations still stop the crate compiling and therefore cannot be scored by this runner as ordinary survivors.",
+  "mutations": [
+    {
+      "id": "QA01",
+      "law": "The recipient is resolved server-side from the VERIFIED SUBJECT, never from anything the caller supplied",
+      "package": "grapt-api",
+      "file": "crates/grapt-api/src/directory.rs",
+      "test": "witness::a_verified_subject_resolves_server_side_and_mints_the_sealed_principal",
+      "old": "        let mapping = self.mappings.get(verified.subject()).ok_or_else(|| {",
+      "new": "        let mapping = self.mappings.values().next_back().ok_or_else(|| {"
+    },
+    {
+      "id": "QA02",
+      "law": "A DTO-supplied recipient that disagrees with the derived one is refused rather than ignored",
+      "package": "grapt-api",
+      "file": "crates/grapt-api/src/authorization.rs",
+      "test": "witness::a_dto_recipient_never_selects_the_principal",
+      "old": "    if let Some(named) = request.dto_recipient() {\n        if named != principal.recipient() {\n            return AuthorizationDecision::Refused(ApiRefusal::RecipientDisagreement {\n                observed: Redacted::new(named.as_str().to_owned()),\n            });\n        }\n    }",
+      "new": "    if let Some(named) = request.dto_recipient() {\n        let _ = named;\n    }"
+    },
+    {
+      "id": "QA03",
+      "law": "RESURRECTION: the DTO recipient becomes authoritative because the comparison no longer reaches the server-derived one",
+      "package": "grapt-api",
+      "file": "crates/grapt-api/src/authorization.rs",
+      "test": "witness::a_disagreeing_dto_recipient_is_refused_before_the_application_call",
+      "old": "        if named != principal.recipient() {",
+      "new": "        if named != named {"
+    },
+    {
+      "id": "QA04",
+      "law": "Refuse before effect: a refused request performs ZERO application invocations",
+      "package": "grapt-api",
+      "file": "crates/grapt-api/src/authorization.rs",
+      "test": "witness::a_disagreeing_dto_recipient_is_refused_before_the_application_call",
+      "old": "    let decision = authorize(directory, principal, request, proof);\n    if decision.is_allowed() {\n        application.invoke(request);\n    }\n    decision",
+      "new": "    application.invoke(request);\n    authorize(directory, principal, request, proof)"
+    },
+    {
+      "id": "QA05",
+      "law": "A caller-authored AuthenticatedClientId is refused for PROVENANCE, ahead of and distinctly from the generic credential refusal",
+      "package": "grapt-api",
+      "file": "crates/grapt-api/src/auth.rs",
+      "test": "witness::a_caller_authored_client_identity_is_refused_for_provenance",
+      "old": "        if let Some(claimed) = &presented.claimed_client {\n            return Err(ApiRefusal::ClientIdentityNotIssuedHere {\n                observed: Redacted::new(claimed.as_str().to_owned()),\n            });\n        }",
+      "new": "        if let Some(claimed) = &presented.claimed_client {\n            let _ = claimed;\n        }"
+    },
+    {
+      "id": "QA06",
+      "law": "An unauthenticated request never reaches the application service",
+      "package": "grapt-api",
+      "file": "crates/grapt-api/src/authorization.rs",
+      "test": "witness::an_unauthenticated_request_never_reaches_the_application",
+      "old": "    let principal = boundary.authenticate(presented)?;",
+      "new": "    application.invoke(request);\n    let principal = boundary.authenticate(presented)?;"
+    },
+    {
+      "id": "QA07",
+      "law": "Absence of a capability proof is a refusal, never a default allow",
+      "package": "grapt-api",
+      "file": "crates/grapt-api/src/authorization.rs",
+      "test": "witness::an_authentic_principal_is_still_refused_without_a_capability_proof",
+      "old": "    let Some(proof) = proof else {\n        return AuthorizationDecision::Refused(ApiRefusal::NoCapabilityProof);\n    };",
+      "new": "    let Some(proof) = proof else {\n        return AuthorizationDecision::Allowed;\n    };"
+    },
+    {
+      "id": "QA08",
+      "law": "Directory generation currency is compared for EQUALITY, so a principal minted under a superseded generation is inert",
+      "package": "grapt-api",
+      "file": "crates/grapt-api/src/directory.rs",
+      "test": "witness::a_principal_minted_under_a_superseded_generation_authorizes_nothing",
+      "old": "        principal.generation() == self.generation",
+      "new": "        principal.generation() <= self.generation"
+    },
+    {
+      "id": "QA09",
+      "law": "Revocation ADVANCES the directory generation, which is what makes an already minted principal notice it",
+      "package": "grapt-api",
+      "file": "crates/grapt-api/src/directory.rs",
+      "test": "witness::revoking_a_mapping_advances_the_directory_generation",
+      "old": "        self.generation = self.generation.next();\n        Ok(())",
+      "new": "        Ok(())"
+    },
+    {
+      "id": "QA10",
+      "law": "Configuration beyond max_principal_mappings is refused WHOLE, leaving no partial directory",
+      "package": "grapt-api",
+      "file": "crates/grapt-api/src/directory.rs",
+      "test": "witness::an_oversized_directory_configuration_is_refused_whole",
+      "old": "        if entries.len() > max.value() {\n            return Err(ApiRefusal::DirectoryBoundExceeded { max: max.value() });\n        }",
+      "new": "        let _ = max;"
+    },
+    {
+      "id": "QA11",
+      "law": "One verified subject maps to exactly one recipient, so a duplicate subject is refused at configuration",
+      "package": "grapt-api",
+      "file": "crates/grapt-api/src/directory.rs",
+      "test": "witness::a_duplicate_verified_subject_is_refused_at_configuration",
+      "old": "            if !seen.insert(entry.subject()) {\n                return Err(ApiRefusal::DuplicateSubject {\n                    observed: Redacted::new(entry.subject().as_str().to_owned()),\n                });\n            }",
+      "new": "            let _ = seen.insert(entry.subject());"
+    },
+    {
+      "id": "QA12",
+      "law": "Each acquisition of a recipient stamps a NEW lease generation",
+      "package": "grapt-api",
+      "file": "crates/grapt-api/src/takeover.rs",
+      "test": "witness::a_second_acquisition_stamps_a_new_lease_generation",
+      "old": "                let generation = prior.next();",
+      "new": "                let generation = prior;"
+    },
+    {
+      "id": "QA13",
+      "law": "Lease currency is EQUALITY, so a displaced lease can never claim current ownership",
+      "package": "grapt-api",
+      "file": "crates/grapt-api/src/takeover.rs",
+      "test": "witness::a_displaced_lease_is_not_current",
+      "old": "        self.live.get(lease.recipient()).copied() == Some(lease.generation())",
+      "new": "        self.live.get(lease.recipient()).is_some()"
+    },
+    {
+      "id": "QA14",
+      "law": "An acquisition that displaces a prior holder SIGNALS the displacement, naming the generation that lost the seat",
+      "package": "grapt-api",
+      "file": "crates/grapt-api/src/takeover.rs",
+      "test": "witness::an_acquisition_that_displaces_reports_the_prior_generation",
+      "old": "                    displaced: Some(Displacement {\n                        displaced_generation: prior,\n                    }),",
+      "new": "                    displaced: None,"
+    },
+    {
+      "id": "QA15",
+      "law": "A new distinct recipient is refused when the registry is at max_takeover_slots",
+      "package": "grapt-api",
+      "file": "crates/grapt-api/src/takeover.rs",
+      "test": "witness::a_new_recipient_is_refused_when_the_registry_is_full",
+      "old": "                if self.live.len() >= self.max.value() {\n                    return Err(ApiRefusal::TakeoverBoundExceeded {\n                        max: self.max.value(),\n                    });\n                }",
+      "new": "                let _ = self.max;"
+    },
+    {
+      "id": "QA16",
+      "law": "A same-recipient handoff replaces an already counted key, so a takeover storm cannot grow the slot set",
+      "package": "grapt-api",
+      "file": "crates/grapt-api/src/takeover.rs",
+      "test": "witness::a_same_recipient_takeover_does_not_grow_the_slot_set",
+      "old": "        match self.live.get(&recipient).copied() {",
+      "new": "        match None::<LeaseGeneration> {"
+    },
+    {
+      "id": "QA17",
+      "law": "Registration past max_router_modules is refused",
+      "package": "grapt-api",
+      "file": "crates/grapt-api/src/router.rs",
+      "test": "registration_past_the_module_capacity_is_refused",
+      "old": "        if self.keys.len() >= self.max.value() {\n            return Err(ApiRefusal::RouterBoundExceeded {\n                max: self.max.value(),\n            });\n        }",
+      "new": "        let _ = self.max;",
+      "test_target": "router_contract"
+    },
+    {
+      "id": "QA18",
+      "law": "A duplicate (method, path) registration is refused before it can reach the panicking call",
+      "package": "grapt-api",
+      "file": "crates/grapt-api/src/router.rs",
+      "test": "a_duplicate_route_registration_is_refused",
+      "old": "        if self.keys.contains(&key) {\n            return Err(ApiRefusal::DuplicateRoute {\n                observed: Redacted::new(key.label()),\n            });\n        }",
+      "new": "",
+      "test_target": "router_contract"
+    },
+    {
+      "id": "QA19",
+      "law": "A conflicting route pattern is refused before it can reach the panicking call",
+      "package": "grapt-api",
+      "file": "crates/grapt-api/src/router.rs",
+      "test": "a_conflicting_route_registration_is_refused",
+      "old": "        if self\n            .signatures\n            .iter()\n            .any(|(m, sig, raw)| *m == method && sig == &signature.1 && raw != &signature.2)\n        {\n            return Err(ApiRefusal::ConflictingRoute {\n                observed: Redacted::new(key.label()),\n            });\n        }",
+      "new": "",
+      "test_target": "router_contract"
+    },
+    {
+      "id": "QA20",
+      "law": "The admitted path grammar refuses the v0.7 capture forms axum panics on",
+      "package": "grapt-api",
+      "file": "crates/grapt-api/src/router.rs",
+      "test": "a_path_axum_would_panic_on_is_refused_before_registration",
+      "old": "            if segment.starts_with(':') {\n                return Err(malformed(Defect::LegacyColonCapture));\n            }\n            if segment.starts_with('*') {\n                return Err(malformed(Defect::LegacyStarCapture));\n            }",
+      "new": "",
+      "test_target": "router_contract"
+    },
+    {
+      "id": "QA21",
+      "law": "The composed route set is order-deterministic, so two registration orders produce one canonical set",
+      "package": "grapt-api",
+      "file": "crates/grapt-api/src/router.rs",
+      "test": "two_registration_orders_compose_the_same_route_set",
+      "old": "        labels.sort();\n        labels",
+      "new": "        labels",
+      "test_target": "router_contract"
+    },
+    {
+      "id": "QA22",
+      "law": "max_request_dto_bytes is checked BEFORE parsing, so a hostile payload is never fully materialized",
+      "package": "grapt-api",
+      "file": "crates/grapt-api/src/dto.rs",
+      "test": "an_oversized_body_is_refused_before_it_is_parsed",
+      "old": "    if raw.len() > bound.value() {\n        return Err(ApiRefusal::DtoTooLarge {\n            max: bound.value(),\n            observed: Redacted::new(raw.len()),\n        });\n    }\n    // Its own variant. R1 finding H3: this used to refuse with\n    // `RecipientMalformed`, which rendered a sentence about seat recipients for\n    // a body that simply was not UTF-8.\n    let body = core::str::from_utf8(raw).map_err(|_| ApiRefusal::BodyNotUtf8)?;",
+      "new": "    // Its own variant. R1 finding H3: this used to refuse with\n    // `RecipientMalformed`, which rendered a sentence about seat recipients for\n    // a body that simply was not UTF-8.\n    let body = core::str::from_utf8(raw).map_err(|_| ApiRefusal::BodyNotUtf8)?;\n    if raw.len() > bound.value() {\n        return Err(ApiRefusal::DtoTooLarge {\n            max: bound.value(),\n            observed: Redacted::new(raw.len()),\n        });\n    }",
+      "test_target": "dto_error_contract"
+    },
+    {
+      "id": "QA23",
+      "law": "A refusal never renders the observation it carries. This row guards the Redacted DEBUG impl reached by ApiRefusal; PresentedCredential is a separate raw-secret carrier guarded by QA29",
+      "package": "grapt-api",
+      "file": "crates/grapt-api/src/error.rs",
+      "test": "witness::a_refusal_never_renders_what_it_observed",
+      "old": "impl<T> fmt::Debug for Redacted<T> {\n    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {\n        f.write_str(\"<redacted>\")\n    }\n}",
+      "new": "impl<T: fmt::Debug> fmt::Debug for Redacted<T> {\n    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {\n        self.0.fmt(f)\n    }\n}"
+    },
+    {
+      "id": "QA24",
+      "law": "Each subject is issued its OWN client identity, so two subjects never collapse onto one",
+      "package": "grapt-api",
+      "file": "crates/grapt-api/src/directory.rs",
+      "test": "witness::one_subject_is_issued_exactly_one_client_identity",
+      "old": "        for entry in entries {\n            let client = AuthenticatedClientId::new(authorities.mint().as_str())\n                .ok_or(ApiRefusal::ClientIdentityUnavailable)?;",
+      "new": "        let shared = AuthenticatedClientId::new(authorities.mint().as_str())\n            .ok_or(ApiRefusal::ClientIdentityUnavailable)?;\n        for entry in entries {\n            let client = shared.clone();"
+    },
+    {
+      "id": "QA25",
+      "law": "Two DISTINCT subjects may map to one recipient: R4HA-03 permits it, so an over-strict directory is a defect too",
+      "package": "grapt-api",
+      "file": "crates/grapt-api/src/directory.rs",
+      "test": "witness::two_subjects_may_map_to_one_recipient",
+      "old": "        let mut seen: BTreeSet<&SubjectId> = BTreeSet::new();\n        for entry in &entries {",
+      "new": "        let mut seen: BTreeSet<&SubjectId> = BTreeSet::new();\n        let mut seen_recipients: BTreeSet<&SeatRecipientId> = BTreeSet::new();\n        for entry in &entries {\n            if !seen_recipients.insert(entry.recipient()) {\n                return Err(ApiRefusal::DuplicateSubject {\n                    observed: Redacted::new(entry.recipient().as_str().to_owned()),\n                });\n            }"
+    },
+    {
+      "id": "QA26",
+      "law": "The corpus contract identity is PINNED, so a fabricated contract id is refused rather than accepted as a non-empty string",
+      "package": "grapt-api",
+      "file": "crates/grapt-api/tests/acceptance_corpus.rs",
+      "test": "a_fabricated_contract_identity_is_refused",
+      "old": "    if manifest.get(\"contract\").and_then(Value::as_str) != Some(CONTRACT) {",
+      "new": "    if manifest\n        .get(\"contract\")\n        .and_then(Value::as_str)\n        .is_none_or(str::is_empty)\n    {",
+      "test_target": "acceptance_corpus"
+    },
+    {
+      "id": "QA27",
+      "law": "The corpus scenario set is closed in BOTH directions, so an extra row is refused as loudly as a missing one",
+      "package": "grapt-api",
+      "file": "crates/grapt-api/tests/acceptance_corpus.rs",
+      "test": "a_corrupted_scenario_set_is_refused",
+      "old": "    if declared.len() != ADMITTED.len() {\n        problems.push(format!(\n            \"the corpus declares {} scenarios, but exactly {} are admitted\",\n            declared.len(),\n            ADMITTED.len()\n        ));\n    }",
+      "new": "",
+      "test_target": "acceptance_corpus"
+    },
+    {
+      "id": "QA28",
+      "law": "Scenario ownership is resolved by walking #[test] attributes, never by substring, so a prefix of a real test name is refused",
+      "package": "grapt-api",
+      "file": "crates/grapt-api/tests/acceptance_corpus.rs",
+      "test": "a_scenario_owned_by_nothing_real_is_refused",
+      "old": "        if !test_functions(source).contains(&scenario.test) {",
+      "new": "        if !source.contains(scenario.test.as_str()) {",
+      "test_target": "acceptance_corpus"
+    },
+    {
+      "id": "QA29",
+      "law": "The raw PresentedCredential holder redacts both credential material and caller-authored claimed-client text in Debug output",
+      "package": "grapt-api",
+      "file": "crates/grapt-api/src/auth.rs",
+      "test": "witness::a_presented_credential_never_renders_its_material",
+      "old": "            .field(\"material\", &\"<redacted>\")",
+      "new": "            .field(\"material\", &self.material)"
+    },
+    {
+      "id": "QA30",
+      "law": "RESURRECTION: Redacted has no PartialEq/Eq implementation, so a refusal holder cannot confirm offline guesses of hidden material",
+      "package": "grapt-api",
+      "file": "crates/grapt-api/src/error.rs",
+      "test": "transport_boundary_seals_are_rejected_by_the_compiler",
+      "old": "#[derive(Clone)]\npub struct Redacted<T>(T);",
+      "new": "#[derive(Clone, PartialEq, Eq)]\npub struct Redacted<T>(T);",
+      "test_target": "compile_fail"
+    },
+    {
+      "id": "QA31",
+      "law": "Every malformed route refusal names the exact grammar rule rather than collapsing into a conflict or generic malformed sentence",
+      "package": "grapt-api",
+      "file": "crates/grapt-api/src/router.rs",
+      "test": "every_malformed_route_names_the_exact_rule_it_broke",
+      "old": "        let malformed = |defect: crate::error::RoutePathDefect| ApiRefusal::RouteMalformed {\n            defect,\n            observed: Redacted::new(raw.clone()),\n        };",
+      "new": "        let malformed = |_defect: crate::error::RoutePathDefect| ApiRefusal::RouteMalformed {\n            defect: crate::error::RoutePathDefect::Empty,\n            observed: Redacted::new(raw.clone()),\n        };",
+      "test_target": "router_contract"
+    },
+    {
+      "id": "QA32",
+      "law": "A non-UTF-8 request body is refused as BodyNotUtf8, never as a recipient, policy, or route defect",
+      "package": "grapt-api",
+      "file": "crates/grapt-api/src/dto.rs",
+      "test": "malformed_body_subject_and_policy_name_their_own_laws",
+      "old": "    let body = core::str::from_utf8(raw).map_err(|_| ApiRefusal::BodyNotUtf8)?;",
+      "new": "    let body = core::str::from_utf8(raw).map_err(|_| ApiRefusal::PolicyVersionMalformed)?;",
+      "test_target": "dto_error_contract"
+    },
+    {
+      "id": "QA33",
+      "law": "A malformed authentication subject names the subject's own bound rather than the seat-recipient bound",
+      "package": "grapt-api",
+      "file": "crates/grapt-api/src/auth.rs",
+      "test": "malformed_body_subject_and_policy_name_their_own_laws",
+      "old": "            return Err(ApiRefusal::SubjectMalformed {\n                max: MAX_SUBJECT_ID_BYTES,\n                observed: Redacted::new(raw),\n            });",
+      "new": "            return Err(ApiRefusal::RecipientMalformed {\n                observed: Redacted::new(raw),\n            });",
+      "test_target": "dto_error_contract"
+    },
+    {
+      "id": "QA34",
+      "law": "An empty authentication policy version names the policy-version rule rather than an unrelated refusal",
+      "package": "grapt-api",
+      "file": "crates/grapt-api/src/auth.rs",
+      "test": "malformed_body_subject_and_policy_name_their_own_laws",
+      "old": "            return Err(ApiRefusal::PolicyVersionMalformed);",
+      "new": "            return Err(ApiRefusal::NoCapabilityProof);",
+      "test_target": "dto_error_contract"
+    },
+    {
+      "id": "QA35",
+      "law": "A balanced valid route placeholder surrounded by static text on both sides is an occupancy defect, never malformed syntax or an unrelated duplicate-name refusal",
+      "package": "grapt-api",
+      "file": "crates/grapt-api/src/router.rs",
+      "test": "parameter_occupancy_and_syntax_name_their_own_laws",
+      "old": "                SegmentShape::PartialParameters => {\n                    return Err(malformed(Defect::PartialSegmentParameter))\n                }",
+      "new": "                SegmentShape::PartialParameters => {\n                    return Err(malformed(Defect::DuplicateParameterName))\n                }",
+      "test_target": "router_contract",
+      "reanchor_note": "R4 re-anchor, forced. QA35's R3 anchor was the `} else { if segment.contains(...)` static-branch call site, and the R4 correction deletes that branch: one total segment scan replaces the two-branch entry gate, so the anchored bytes no longer exist. The law, the witness and the observable are unchanged — a balanced valid placeholder sharing its segment is still reported as DuplicateParameterName instead of PartialSegmentParameter. The failure detail moves from /seats/a{id}c to /seats/x-{id} because one clause now answers every occupancy case and x-{id} is the first the witness asserts."
+    },
+    {
+      "id": "QA36",
+      "law": "More than one balanced valid placeholder in one segment is an OCCUPANCY defect; the count of placeholders is what makes a whole-segment parameter whole",
+      "package": "grapt-api",
+      "file": "crates/grapt-api/src/router.rs",
+      "test": "several_balanced_placeholders_in_one_segment_are_an_occupancy_defect",
+      "old": "        (1, Some((name, catch_all))) if !has_static => {",
+      "new": "        (_, Some((name, catch_all))) if !has_static => {",
+      "test_target": "router_contract"
+    },
+    {
+      "id": "QA37",
+      "law": "A `}` that closes no open placeholder is malformed SYNTAX -- one clause for both a stray close before any placeholder and one after a complete placeholder, because they break one rule",
+      "package": "grapt-api",
+      "file": "crates/grapt-api/src/router.rs",
+      "test": "a_brace_that_closes_nothing_is_malformed_syntax",
+      "old": "            ('}', None) => return SegmentShape::Malformed,",
+      "new": "            ('}', None) => has_static = true,",
+      "test_target": "router_contract",
+      "scope_note": "The R3 HOLD asked for one row each for its G1 (stray `}` in a prefix) and G3 (stray `}` in a suffix) guards. The total scan has exactly one clause for both, so they get one row: this mutation was rendered against the whole grammar matrix and falsely reclassifies a}b{id}c, a{id}b}c and a{id}c} together, and admits aid}c outright. A second row on the same clause would be one law counted twice."
+    },
+    {
+      "id": "QA38",
+      "law": "A `{` that never closes is malformed SYNTAX, including when it opens after a complete placeholder -- the case a first-brace-pair reading cannot see",
+      "package": "grapt-api",
+      "file": "crates/grapt-api/src/router.rs",
+      "test": "a_brace_that_never_closes_is_malformed_syntax",
+      "old": "    if open.is_some() {\n        return SegmentShape::Malformed;\n    }",
+      "new": "    let _ = open;",
+      "test_target": "router_contract"
+    },
+    {
+      "id": "QA39",
+      "law": "Static text anywhere in the segment is what stops a placeholder occupying the whole of it, so the static observation is load-bearing rather than bookkeeping",
+      "package": "grapt-api",
+      "file": "crates/grapt-api/src/router.rs",
+      "test": "parameter_occupancy_and_syntax_name_their_own_laws",
+      "old": "            (_, None) => has_static = true,",
+      "new": "            (_, None) => {}",
+      "test_target": "router_contract"
+    },
+    {
+      "id": "QA40",
+      "law": "A placeholder name must be a non-empty ASCII identifier, and that predicate is also the carrier for nesting: an inner `{` lands inside the candidate name",
+      "package": "grapt-api",
+      "file": "crates/grapt-api/src/router.rs",
+      "test": "a_placeholder_name_must_be_an_ascii_identifier",
+      "old": "                if !is_parameter_name(name) {\n                    return SegmentShape::Malformed;\n                }",
+      "new": "                let _ = is_parameter_name(name);",
+      "test_target": "router_contract"
+    }
+  ]
+}

@@ -1,0 +1,4 @@
+{"ordinal":1,"action":"rehearse","expected":"ready-for-handoff"}
+{"ordinal":2,"action":"resume","expected":"ready-for-handoff"}
+{"ordinal":3,"action":"restore","expected":"rollback-restored"}
+{"ordinal":4,"action":"backup-absent","expected":"refused-backup-absent"}

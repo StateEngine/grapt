@@ -1,0 +1,197 @@
+{
+  "lane": "TUI-1",
+  "prefix": "TUI",
+  "crate": "grapt-client",
+  "inventories": {
+    "TUI": {
+      "rows": 12
+    }
+  },
+  "mutations": [
+    {
+      "id": "TUI01",
+      "package": "grapt-client",
+      "test_target": "lib",
+      "test": "client::tests::a_pump_at_its_budget_leaves_the_boundary_frame_queued_rather_than_dropping_it",
+      "edits": [
+        {
+          "file": "crates/grapt-client/src/client.rs",
+          "old": "            if applied >= self.bounds.max_pending_events {\n                break;\n            }\n            match self.connection.poll_frame()? {",
+          "new": "            match self.connection.poll_frame()? {"
+        },
+        {
+          "file": "crates/grapt-client/src/client.rs",
+          "old": "                    applied = applied.saturating_add(1);\n                    if self.absorb(&payload, &mut tool_progress)? {",
+          "new": "                    applied = applied.saturating_add(1);\n                    if applied > self.bounds.max_pending_events {\n                        break;\n                    }\n                    if self.absorb(&payload, &mut tool_progress)? {"
+        }
+      ],
+      "red": "no frame was consumed-and-dropped at the budget boundary: observed ",
+      "why": "Restores consume-then-check: the frame that trips the bound has already been removed from the connection and is silently dropped. A continuation test would still pass, which is why the witness counts frames rather than observing a later one."
+    },
+    {
+      "id": "TUI02",
+      "package": "grapt-client",
+      "test_target": "lib",
+      "test": "client::tests::a_truncated_durable_page_leaves_the_client_reconciling_rather_than_live",
+      "edits": [
+        {
+          "file": "crates/grapt-client/src/client.rs",
+          "old": "        if page.complete && page.unreadable == 0 {\n            self.cursor.adopt_baseline(session, 0);\n        } else {\n            self.diagnostics.degraded_reconciliations =\n                self.diagnostics.degraded_reconciliations.saturating_add(1);\n            self.cursor\n                .durable_incomplete(!page.complete, page.unreadable);\n        }",
+          "new": "        self.cursor.adopt_baseline(session, 0);"
+        }
+      ],
+      "red": "a truncated page must NOT earn liveness",
+      "why": "Adopts a durable baseline from a page the contract cursor says is truncated, so the client advertises a complete transcript it holds only a prefix of."
+    },
+    {
+      "id": "TUI04",
+      "package": "grapt-client",
+      "test_target": "lib",
+      "test": "client::tests::an_oversized_response_is_refused_at_transport_ingress",
+      "edits": [
+        {
+          "file": "crates/grapt-client/src/client.rs",
+          "old": "        if response.body.len() > self.bounds.max_response_bytes {\n            return Err(ClientError::Transport(TransportError::ResponseTooLarge {\n                bound: self.bounds.max_response_bytes,\n            }));\n        }\n",
+          "new": ""
+        }
+      ],
+      "red": "an oversized response must be refused at ingress, got ",
+      "why": "Removes the response byte bound from the one client ingress. This is the bound that was previously enforced on only one of two paths."
+    },
+    {
+      "id": "TUI05",
+      "package": "grapt-client",
+      "test_target": "lib",
+      "test": "client::tests::the_producers_pending_queue_is_bounded_and_says_what_it_refused",
+      "edits": [
+        {
+          "file": "crates/grapt-client/src/double.rs",
+          "old": "        if self.pending.len() >= self.bounds.max_pending_events {\n            // Refuse VISIBLY. A producer that silently dropped would leave the\n            // client short with nothing anywhere saying so.\n            self.dropped_frames = self.dropped_frames.saturating_add(1);\n            return;\n        }\n",
+          "new": ""
+        }
+      ],
+      "red": "the queue never exceeded its bound",
+      "why": "Removes the producer queue bound. Bounding a pump iteration bounds the CONSUMER; the producer then grows without limit while every client counter reads healthy."
+    },
+    {
+      "id": "TUI06",
+      "package": "grapt-client",
+      "test_target": "lib",
+      "test": "client::tests::the_producers_durable_log_is_bounded_exactly_and_says_what_it_evicted",
+      "edits": [
+        {
+          "file": "crates/grapt-client/src/double.rs",
+          "old": "        while entry.log.len() > max {\n            entry.log.remove(0);\n            entry.dropped_log_entries = entry.dropped_log_entries.saturating_add(1);\n        }\n",
+          "new": "        let _ = max;\n"
+        }
+      ],
+      "red": "the log never exceeds its bound",
+      "why": "Restores the unconditional `entry.log.push` review named: the durable log grows forever at an ownership point no consumer bound can reach. `let _ = max;` keeps the mutant compiling on its own law rather than reddening on an unused variable."
+    },
+    {
+      "id": "TUI07",
+      "package": "grapt-client",
+      "test_target": "typed_identity",
+      "test": "there_is_exactly_one_route_from_a_typed_identity_to_text",
+      "edits": [
+        {
+          "file": "crates/grapt-client/src/client.rs",
+          "old": "/// One outstanding permission ask, as the client sees it.",
+          "new": "impl SessionSummary {\n    /// The identity as text.\n    pub fn id_text(&self) -> String {\n        self.id.as_inner().as_str().to_owned()\n    }\n}\n\n/// One outstanding permission ask, as the client sees it."
+        }
+      ],
+      "red": "reaches through `as_inner` to a raw identity",
+      "why": "THE FLATTEN MUTANT. Additive rather than substitutive on purpose: replacing a typed field with a String simply fails to compile, which witnesses the type system rather than the gate. This adds the accessor a future author actually writes when they want the id as a string, it compiles cleanly, and it reaches the raw identity through `as_inner` rather than the admitted `Spelled` seam."
+    },
+    {
+      "id": "TUI08",
+      "package": "grapt-client",
+      "test_target": "typed_identity",
+      "test": "no_production_source_accepts_an_identity_by_prefix",
+      "edits": [
+        {
+          "file": "crates/grapt-client/src/contract.rs",
+          "old": "            Some(raw) => Some(\n                crate::wire::session_id(raw)\n                    .map_err(|_| ContractError::SessionIdInvalid { id: raw.to_owned() })?,\n            ),",
+          "new": "            Some(raw) => Some(match crate::wire::session_id(raw) {\n                Ok(id) => id,\n                Err(_) if raw.starts_with(\"ses\") => {\n                    crate::wire::session_id(\"ses_000000000000\").map_err(|_| {\n                        ContractError::SessionIdInvalid {\n                            id: raw.to_owned(),\n                        }\n                    })?\n                }\n                Err(_) => {\n                    return Err(ContractError::SessionIdInvalid {\n                        id: raw.to_owned(),\n                    })\n                }\n            }),"
+        }
+      ],
+      "red": "identity is decided by parsing through",
+      "why": "THE PREFIX MUTANT. Restores `starts_with(\"ses\")` acceptance beside the parse, which is what the reviewed candidate did and what its positive test asserted. It compiles and passes every behavioural test that does not name `sesABC`, which is precisely why an absence gate is needed as well as a witness."
+    },
+    {
+      "id": "TUI09",
+      "package": "grapt-client",
+      "test_target": "single_ingress",
+      "test": "exactly_one_function_calls_the_connection",
+      "edits": [
+        {
+          "file": "crates/grapt-client/src/client.rs",
+          "old": "        let bytes = self.ingest(\n            operation,\n            session,\n            request,\n            body.map(|value| value.to_string().into_bytes()),\n        )?;",
+          "new": "        let mut wire = WireRequest::new(operation, session, request)?;\n        if let Some(body) = body {\n            wire = wire.with_body(body.to_string().into_bytes());\n        }\n        let response = self.connection.call(&wire)?;\n        if !response.is_success() {\n            return Err(ClientError::Status {\n                operation: operation.operation_id(),\n                status: response.status,\n            });\n        }\n        let bytes = response.body;"
+        }
+      ],
+      "red": "There must be exactly ONE",
+      "why": "Recreates the exact defect: a SECOND path to the connection that decodes an unbounded body. It compiles, every behavioural test stays green, and only the structural gate catches it — which is the whole reason that gate exists."
+    },
+    {
+      "id": "TUI10",
+      "package": "grapt-client",
+      "test_target": "typed_identity",
+      "test": "there_is_exactly_one_route_from_a_typed_identity_to_text",
+      "edits": [
+        {
+          "file": "crates/grapt-client/src/client.rs",
+          "old": "/// One outstanding permission ask, as the client sees it.",
+          "new": "impl SessionSummary {\n    /// The identity as text.\n    pub fn id_text(&self) -> String {\n        self.id.clone().into_inner().as_str().to_owned()\n    }\n}\n\n/// One outstanding permission ask, as the client sees it."
+        }
+      ],
+      "red": "reaches through `into_inner` to a raw identity",
+      "why": "THE ESCAPE THE FIRST FIX LEFT OPEN. Review found it on candidate de0051c: the gate banned `as_inner`, the spelling it had been shown, while `WireId` declares `into_inner` three lines away in the same impl block and derives Clone. This row is the same shape as TUI07 through the SIBLING accessor, and it went green under the previous gate while the whole 191-test suite stayed green with it."
+    },
+    {
+      "id": "TUI11",
+      "package": "grapt-client",
+      "test_target": "typed_identity",
+      "test": "there_is_exactly_one_route_from_a_typed_identity_to_text",
+      "edits": [
+        {
+          "file": "crates/grapt-api/src/u3a/codec.rs",
+          "old": "impl<T> WireId<T> {\n    pub fn as_inner(&self) -> &T {\n        &self.0\n    }",
+          "new": "impl<T> WireId<T> {\n    pub fn peek_inner(&self) -> &T {\n        &self.0\n    }\n\n    pub fn as_inner(&self) -> &T {\n        &self.0\n    }"
+        }
+      ],
+      "red": "`WireId`'s public surface changed",
+      "why": "PROVES THE DERIVED CENSUS IS LOAD-BEARING, not decoration. A hardcoded ban-list would be silent about a THIRD accessor; this gate reads the producer and refuses when its surface changes. Without this row the census could be wrong, or absent, and nothing would say so — which is exactly how `into_inner` survived."
+    },
+    {
+      "id": "TUI12",
+      "package": "grapt-types",
+      "test_target": "direct_include_format",
+      "test": "cases::an_ignored_runtime_artifact_cannot_move_the_inventory",
+      "edits": [
+        {
+          "file": "crates/grapt-types/tests/direct_include_format.rs",
+          "old": "            let relative = normalized_relative(root, &entry.path())?;\n            if is_ignored(&relative, &ignored) {\n                add_bounded(&mut ignored_skipped, 1, MAX_ENTRIES, \"ignored entries\")?;\n                continue;\n            }\n            add_bounded(&mut entries, 1, MAX_ENTRIES, \"entries\")?;",
+          "new": "            add_bounded(&mut entries, 1, MAX_ENTRIES, \"entries\")?;"
+        }
+      ],
+      "red": "an ignored runtime artifact moved `directories`",
+      "why": "Removes the ignored-artifact policy that closes review H1, restoring the state in which running the TUI Python unit suite flipped the workspace inventory gate from pass to fail with HEAD and every tracked byte unchanged. The witness must redden here, or the policy is a comment with a test-shaped wrapper."
+    },
+    {
+      "id": "TUI13",
+      "package": "grapt-types",
+      "test_target": "direct_include_format",
+      "test": "cases::both_pipe_caps_are_in_the_declared_bound_inventory",
+      "edits": [
+        {
+          "file": "crates/grapt-types/tests/direct_include_format/capture.rs",
+          "old": "    let mut bytes = Vec::new();\n    reader\n        .take(take)\n        .read_to_end(&mut bytes)\n        .map_err(|error| format!(\"pipe read failed: {error}\"))?;",
+          "new": "    let mut bytes = Vec::new();\n    let mut reader = reader;\n    let _ = take;\n    reader\n        .read_to_end(&mut bytes)\n        .map_err(|error| format!(\"pipe read failed: {error}\"))?;"
+        }
+      ],
+      "red": "the bound is enforced AFTER the read rather than during it",
+      "why": "Bypasses the acquisition-time cap by reading the producer to end and leaving the length comparison in place. Every overflow REFUSAL still fires, which is why this row targets the allocation assertion rather than an error variant: a post-allocation check and an acquisition bound are indistinguishable by their refusals and differ only in how much was allocated to produce one. ORDER-INDEPENDENT: the target witness drives an in-memory reader and touches no child process, filesystem state or test ordering."
+    }
+  ]
+}

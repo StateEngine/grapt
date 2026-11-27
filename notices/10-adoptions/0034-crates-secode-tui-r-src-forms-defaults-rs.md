@@ -1,0 +1,1 @@
+| `crates/grapt-tui-forms/src/defaults.rs` | `openai/codex`, `codex-rs/tui/src/bottom_pane/mcp_server_elicitation.rs` | `bb64b894fd67158be0f874872e6d7bfe717e7368` | **Modified by Grapt:** seed bounded typed default drafts once, preserve edits during refresh, and keep settlement explicit. Apache-2.0, Copyright 2025 OpenAI; license and NOTICE retained in `licenses/openai-codex/`. |

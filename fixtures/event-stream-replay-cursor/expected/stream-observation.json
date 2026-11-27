@@ -1,0 +1,14 @@
+{
+  "slow_subscriber": {
+    "presented_frames": ["evt_initial"],
+    "queued_but_discarded_on_overflow": ["evt_first", "evt_second"],
+    "terminal": "SubscriberOverflow, sticky typed refusal",
+    "missed": ["evt_third", "evt_missed_a", "evt_missed_b"]
+  },
+  "reconnected_subscriber": {
+    "presented_frames": ["evt_initial", "evt_late"],
+    "terminal": "close",
+    "missed": ["evt_first", "evt_second", "evt_third", "evt_missed_a", "evt_missed_b"]
+  },
+  "assertion": "No presented frame on any stream carries a lost marker. Delivery into the bounded queue is not presentation: overflow discards the queue, absence has no queue, and reconnection replays nothing. Recovery is the durable cursor contract (J02/J03)."
+}

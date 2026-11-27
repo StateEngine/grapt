@@ -1,0 +1,299 @@
+{
+  "purpose": "R4H-L evidence for `grapt-location`. QL01-QL09 each name one load-bearing behaviour of the bind boundary, the exact source edit that removes it, and the witness that must turn red once it is gone. QL10-QL15 do the same for the acceptance corpus itself: cold review R1 turned three corpus corruptions green against a validator that was not fail-closed, so each of those classes - contract identity, schema version, executable-owner binding, declared target, terminal-bind outcome and refusal classification - now carries a row that corrupts the fixture and must turn the corpus owner red. A witness that stays green under its own mutation attributes nothing. QL16-QL21 close the R1 CLOSURE survivor: nested bind-plan and receipt-observation payloads are typed by shape, by value and against the other records of their own scenario, with wrong-host, wrong-port, zero-port, plan-side and mismatched-record controls. QL23-QL24 witness the R4H-H accept seam: the admitted connection reports the observed local address and never confuses it with the peer. QL25 witnesses the dependency-direction gate against the REAL manifest using grapt-types, which exists at this base; the deferred grapt-api form would compile-kill instead of scoring.",
+  "run": "python crates/grapt-location/mutations/run.py",
+  "prefix": "QL",
+  "isolation": "Every mutation is applied inside its own disposable git worktree checked out at the exact candidate commit. No mutant is ever written into the calling worktree, so there is no restore step that could leave a stale build behind.",
+  "scope_note": "The two trybuild probes carry no QL row on purpose. `Fixed(NonZeroU16)` and the absent `Clone` on `BoundListener` are compile-time seams: removing either does not produce a program that compiles and fails a test, it produces a program in which the probe compiles. Those laws are witnessed by requiredness in tests/compile_fail.rs, and inventing a mutation row for them would be a duplicate receipt for evidence the harness cannot actually score. QL01 and QL02 are separated deliberately: QL01 makes the receipt echo the request, which only an ephemeral plan can detect, while QL02 turns the ephemeral intent into the oracle's 4096 search base, which only a second concurrent bind can detect. Neither witness covers the other.",
+  "mutations": [
+    {
+      "id": "QL01",
+      "law": "A bind receipt records the address the operating system actually assigned, never the address that was requested",
+      "package": "grapt-location",
+      "file": "crates/grapt-location/src/listener.rs",
+      "test": "an_ephemeral_bind_observes_a_real_port_and_keeps_the_ephemeral_intent",
+      "test_target": "listener_contract",
+      "old": "    fn new(plan: &ListenerBindPlan, observed: SocketAddr) -> Self {\n        Self {\n            requested_host: plan.host().clone(),\n            requested_port: plan.port(),\n            observed,\n        }\n    }",
+      "new": "    fn new(plan: &ListenerBindPlan, observed: SocketAddr) -> Self {\n        Self {\n            requested_host: plan.host().clone(),\n            requested_port: plan.port(),\n            observed: SocketAddr::new(observed.ip(), plan.port().requested()),\n        }\n    }"
+    },
+    {
+      "id": "QL02",
+      "law": "BindPort::Ephemeral asks the operating system for port zero, and is never lowered to a fixed sentinel or the oracle's 4096 search base",
+      "package": "grapt-location",
+      "file": "crates/grapt-location/src/config.rs",
+      "test": "two_ephemeral_binds_receive_two_different_ports",
+      "test_target": "listener_contract",
+      "old": "    pub fn requested(self) -> u16 {\n        match self {\n            BindPort::Ephemeral => 0,\n            BindPort::Fixed(port) => port.get(),\n        }\n    }",
+      "new": "    pub fn requested(self) -> u16 {\n        match self {\n            BindPort::Ephemeral => 4096,\n            BindPort::Fixed(port) => port.get(),\n        }\n    }"
+    },
+    {
+      "id": "QL03",
+      "law": "An address-in-use refusal is classified from io::ErrorKind and reaches the caller as its own typed variant",
+      "package": "grapt-location",
+      "file": "crates/grapt-location/src/listener.rs",
+      "test": "a_held_port_is_refused_as_address_in_use_and_its_owner_is_undamaged",
+      "test_target": "listener_contract",
+      "old": "        io::ErrorKind::AddrInUse => BindError::AddressInUse { address },\n",
+      "new": ""
+    },
+    {
+      "id": "QL04",
+      "law": "The positive bind-attempt bound stops the loop while candidates remain, and says so rather than reporting the last candidate's failure",
+      "package": "grapt-location",
+      "file": "crates/grapt-location/src/listener.rs",
+      "test": "the_attempt_bound_stops_before_the_candidate_list_is_exhausted",
+      "test_target": "listener_contract",
+      "old": "            if attempted == limit {",
+      "new": "            if attempted == usize::MAX {"
+    },
+    {
+      "id": "QL05",
+      "law": "A resolution above its bound is refused at construction, so no over-long candidate list can exist and no bind is attempted from one",
+      "package": "grapt-location",
+      "file": "crates/grapt-location/src/config.rs",
+      "test": "a_resolution_over_its_bound_is_refused_before_any_bind_is_attempted",
+      "test_target": "listener_contract",
+      "old": "        if addresses.len() > limit.get() {\n            return Err(ResolveError::TooManyAddresses {\n                produced: addresses.len(),\n                limit: limit.get(),\n            });\n        }",
+      "new": "        let _ = limit;"
+    },
+    {
+      "id": "QL06",
+      "law": "The production resolver states its capability gap for every hostname and never falls back to an address it invented",
+      "package": "grapt-location",
+      "file": "crates/grapt-location/src/config.rs",
+      "test": "the_production_binder_refuses_a_hostname_plan_with_a_typed_gap",
+      "test_target": "listener_contract",
+      "old": "        Box::pin(async {\n            Err(ResolveError::AdapterUnavailable {\n                reason: AdapterUnavailableReason::NoProductionDnsAdapter,\n            })\n        })",
+      "new": "        Box::pin(async move {\n            ResolvedAddresses::new(vec![IpAddr::V4(std::net::Ipv4Addr::LOCALHOST)], _limit)\n        })"
+    },
+    {
+      "id": "QL07",
+      "law": "The explicit close path actually releases the socket, so the port is free afterwards",
+      "package": "grapt-location",
+      "file": "crates/grapt-location/src/listener.rs",
+      "test": "an_explicit_close_releases_the_port",
+      "test_target": "listener_contract",
+      "old": "    pub fn close(mut self) -> ClosedListener {\n        drop(self.listener.take());",
+      "new": "    pub fn close(mut self) -> ClosedListener {\n        std::mem::forget(self.listener.take());"
+    },
+    {
+      "id": "QL08",
+      "law": "The Drop backstop releases the socket of an owner that was never closed explicitly",
+      "package": "grapt-location",
+      "file": "crates/grapt-location/src/listener.rs",
+      "test": "dropping_the_owner_releases_the_port",
+      "test_target": "listener_contract",
+      "old": "        // must be observed is placed here.\n        drop(self.listener.take());",
+      "new": "        // must be observed is placed here.\n        std::mem::forget(self.listener.take());"
+    },
+    {
+      "id": "QL09",
+      "law": "A literal-address plan reaches no resolver, so binding loopback acquires no dependency on name resolution being installed or reachable",
+      "package": "grapt-location",
+      "file": "crates/grapt-location/src/listener.rs",
+      "test": "a_literal_address_plan_reaches_no_resolver_at_all",
+      "test_target": "listener_contract",
+      "old": "            BindHost::Ip(address) => Ok(ResolvedAddresses::new(vec![*address], limit)?),",
+      "new": "            BindHost::Ip(address) => {\n                if let Ok(probe) = crate::config::BindHostName::new(\"localhost\") {\n                    let _ = self.resolver.resolve(&probe, limit).await;\n                }\n                Ok(ResolvedAddresses::new(vec![*address], limit)?)\n            }"
+    },
+    {
+      "id": "QL10",
+      "law": "The corpus manifest declares the exact admitted contract, not merely some nonempty string",
+      "package": "grapt-location",
+      "file": "fixtures/rust-reconstruction/r4-host-auth-foundation/manifest.json",
+      "test": "the_corpus_is_structurally_valid_and_every_scenario_is_executably_owned",
+      "test_target": "acceptance_corpus",
+      "old": "\"contract\": \"grapt-location-acceptance-corpus/v1\"",
+      "new": "\"contract\": \"fabricated-corpus-contract/v999\""
+    },
+    {
+      "id": "QL11",
+      "law": "The corpus manifest declares the exact admitted schema version as a number",
+      "package": "grapt-location",
+      "file": "fixtures/rust-reconstruction/r4-host-auth-foundation/manifest.json",
+      "test": "the_corpus_is_structurally_valid_and_every_scenario_is_executably_owned",
+      "test_target": "acceptance_corpus",
+      "old": "\"schema_version\": 1,",
+      "new": "\"schema_version\": 999,"
+    },
+    {
+      "id": "QL12",
+      "law": "A scenario is owned by its admitted test function, never by an ordinary helper",
+      "package": "grapt-location",
+      "file": "fixtures/rust-reconstruction/r4-host-auth-foundation/manifest.json",
+      "test": "the_corpus_is_structurally_valid_and_every_scenario_is_executably_owned",
+      "test_target": "acceptance_corpus",
+      "old": "\"test\": \"a_fixed_loopback_bind_receives_exactly_the_port_it_asked_for\"",
+      "new": "\"test\": \"repo_root\""
+    },
+    {
+      "id": "QL13",
+      "law": "A scenario names the one integration-test target that owns this corpus, never a fabricated target",
+      "package": "grapt-location",
+      "file": "fixtures/rust-reconstruction/r4-host-auth-foundation/manifest.json",
+      "test": "the_corpus_is_structurally_valid_and_every_scenario_is_executably_owned",
+      "test_target": "acceptance_corpus",
+      "old": "\"test_target\": \"listener_contract\",\n        \"test\": \"a_fixed_loopback_bind_receives_exactly_the_port_it_asked_for\"",
+      "new": "\"test_target\": \"fabricated_target_that_does_not_exist\",\n        \"test\": \"a_fixed_loopback_bind_receives_exactly_the_port_it_asked_for\""
+    },
+    {
+      "id": "QL14",
+      "law": "A scenario terminal bind states the outcome its claim requires; a success scenario may not claim refusal",
+      "package": "grapt-location",
+      "file": "fixtures/rust-reconstruction/r4-host-auth-foundation/actions.jsonl",
+      "test": "the_corpus_is_structurally_valid_and_every_scenario_is_executably_owned",
+      "test_target": "acceptance_corpus",
+      "old": "\"attempt_bound\": 4}, \"expect\": {\"acquired\": true}}\n{\"ordinal\": 4",
+      "new": "\"attempt_bound\": 4}, \"expect\": {\"acquired\": false}}\n{\"ordinal\": 4"
+    },
+    {
+      "id": "QL15",
+      "law": "A refusal record carries the classification its scenario claim requires",
+      "package": "grapt-location",
+      "file": "fixtures/rust-reconstruction/r4-host-auth-foundation/actions.jsonl",
+      "test": "the_corpus_is_structurally_valid_and_every_scenario_is_executably_owned",
+      "test_target": "acceptance_corpus",
+      "old": "\"classification\": \"address-in-use\"",
+      "new": "\"classification\": \"port-unavailable\""
+    },
+    {
+      "id": "QL16",
+      "law": "An observation reports the host its own scenario actually planned to bind",
+      "package": "grapt-location",
+      "file": "fixtures/rust-reconstruction/r4-host-auth-foundation/actions.jsonl",
+      "test": "the_corpus_is_structurally_valid_and_every_scenario_is_executably_owned",
+      "test_target": "acceptance_corpus",
+      "old": "\"requested_host\": {\"literal\": \"127.0.0.1\"}",
+      "new": "\"requested_host\": {\"literal\": \"203.0.113.9\"}"
+    },
+    {
+      "id": "QL17",
+      "law": "An observation reports the requested-port intent its own terminal bind planned",
+      "package": "grapt-location",
+      "file": "fixtures/rust-reconstruction/r4-host-auth-foundation/actions.jsonl",
+      "test": "the_corpus_is_structurally_valid_and_every_scenario_is_executably_owned",
+      "test_target": "acceptance_corpus",
+      "old": "\"requested_port\": {\"fixed\": \"<port observed at ordinal 1>\"}",
+      "new": "\"requested_port\": \"ephemeral\""
+    },
+    {
+      "id": "QL18",
+      "law": "An observed address names the bound host and never port zero",
+      "package": "grapt-location",
+      "file": "fixtures/rust-reconstruction/r4-host-auth-foundation/actions.jsonl",
+      "test": "the_corpus_is_structurally_valid_and_every_scenario_is_executably_owned",
+      "test_target": "acceptance_corpus",
+      "old": "\"observed_address\": \"127.0.0.1:<port observed at ordinal 1>\"",
+      "new": "\"observed_address\": \"203.0.113.9:0\""
+    },
+    {
+      "id": "QL19",
+      "law": "Every bind plan in a scenario names the host that scenario is admitted to bind",
+      "package": "grapt-location",
+      "file": "fixtures/rust-reconstruction/r4-host-auth-foundation/actions.jsonl",
+      "test": "the_corpus_is_structurally_valid_and_every_scenario_is_executably_owned",
+      "test_target": "acceptance_corpus",
+      "old": "\"kind\": \"listener.bind\", \"plan\": {\"host\": {\"literal\": \"127.0.0.1\"}, \"port\": {\"fixed\": \"<port observed at ordinal 1>\"}",
+      "new": "\"kind\": \"listener.bind\", \"plan\": {\"host\": {\"literal\": \"203.0.113.9\"}, \"port\": {\"fixed\": \"<port observed at ordinal 1>\"}"
+    },
+    {
+      "id": "QL20",
+      "law": "An acquired ephemeral port is never zero",
+      "package": "grapt-location",
+      "file": "fixtures/rust-reconstruction/r4-host-auth-foundation/actions.jsonl",
+      "test": "the_corpus_is_structurally_valid_and_every_scenario_is_executably_owned",
+      "test_target": "acceptance_corpus",
+      "old": "\"observed_port_is_zero\": false",
+      "new": "\"observed_port_is_zero\": true"
+    },
+    {
+      "id": "QL21",
+      "law": "A refusal raised before any bind reports zero bind attempts",
+      "package": "grapt-location",
+      "file": "fixtures/rust-reconstruction/r4-host-auth-foundation/actions.jsonl",
+      "test": "the_corpus_is_structurally_valid_and_every_scenario_is_executably_owned",
+      "test_target": "acceptance_corpus",
+      "old": "\"bind_attempts\": 0",
+      "new": "\"bind_attempts\": 1"
+    },
+    {
+      "id": "QL22",
+      "law": "An observed address on the correct host still never reports port zero",
+      "package": "grapt-location",
+      "file": "fixtures/rust-reconstruction/r4-host-auth-foundation/actions.jsonl",
+      "test": "the_corpus_is_structurally_valid_and_every_scenario_is_executably_owned",
+      "test_target": "acceptance_corpus",
+      "old": "\"observed_address\": \"127.0.0.1:<port observed at ordinal 1>\"",
+      "new": "\"observed_address\": \"127.0.0.1:0\""
+    },
+    {
+      "id": "QL23",
+      "law": "An admitted connection reports the OBSERVED local address, never a zero port",
+      "package": "grapt-location",
+      "file": "crates/grapt-location/src/listener.rs",
+      "test": "an_accepted_connection_carries_the_observed_addresses_and_leaves_the_listener_owned",
+      "test_target": "listener_contract",
+      "old": "        let local = self.receipt.observed();\n        let Some(listener) = self.listener.as_ref() else {",
+      "new": "        let local = SocketAddr::new(self.receipt.observed().ip(), 0);\n        let Some(listener) = self.listener.as_ref() else {"
+    },
+    {
+      "id": "QL24",
+      "law": "An admitted connection names the peer that dialled in, never the address the listener itself holds",
+      "package": "grapt-location",
+      "file": "crates/grapt-location/src/listener.rs",
+      "test": "an_accepted_connection_names_the_peer_that_dialled_in_not_its_own_address",
+      "test_target": "listener_contract",
+      "old": "            Ok((stream, peer)) => Ok(AcceptedConnection {\n                stream,\n                peer,\n                local,\n            }),",
+      "new": "            Ok((stream, peer)) => Ok(AcceptedConnection {\n                stream,\n                peer: local,\n                local: peer,\n            }),"
+    },
+    {
+      "id": "QL25",
+      "law": "The dependency-direction gate refuses an upward workspace edge in the REAL manifest, not only in test fixtures",
+      "package": "grapt-location",
+      "file": "crates/grapt-location/Cargo.toml",
+      "test": "grapt_location_depends_only_on_allowed_lower_crates",
+      "test_target": "dependency_direction",
+      "old": "[dev-dependencies]\ntokio = { version = \"1\", features = [\"net\", \"rt\", \"macros\"] }",
+      "new": "[dev-dependencies]\ngrapt-types = { path = \"../grapt-types\" }\ntokio = { version = \"1\", features = [\"net\", \"rt\", \"macros\"] }"
+    },
+    {
+      "id": "QL26",
+      "law": "An observed port placeholder must name the exact earlier record that observed the port; an arbitrary angle-bracket token is not a port",
+      "package": "grapt-location",
+      "file": "fixtures/rust-reconstruction/r4-host-auth-foundation/actions.jsonl",
+      "test": "the_corpus_is_structurally_valid_and_every_scenario_is_executably_owned",
+      "test_target": "acceptance_corpus",
+      "old": "\"observed_address\": \"127.0.0.1:<port observed at ordinal 1>\"",
+      "new": "\"observed_address\": \"127.0.0.1:<fabricated non-port token>\""
+    },
+    {
+      "id": "QL27",
+      "law": "A literal port at `observed_address` cannot stand for the observed port its terminal fixed bind carries",
+      "package": "grapt-location",
+      "file": "fixtures/rust-reconstruction/r4-host-auth-foundation/actions.jsonl",
+      "test": "the_corpus_is_structurally_valid_and_every_scenario_is_executably_owned",
+      "test_target": "acceptance_corpus",
+      "old": "\"observed_address\": \"127.0.0.1:<port observed at ordinal 1>\"",
+      "new": "\"observed_address\": \"127.0.0.1:40001\""
+    },
+    {
+      "id": "QL28",
+      "law": "A literal port in a refusal `address` cannot stand for the observed port its terminal fixed bind carries",
+      "package": "grapt-location",
+      "file": "fixtures/rust-reconstruction/r4-host-auth-foundation/actions.jsonl",
+      "test": "the_corpus_is_structurally_valid_and_every_scenario_is_executably_owned",
+      "test_target": "acceptance_corpus",
+      "old": "\"address\": \"127.0.0.1:<port observed at ordinal 7>\"",
+      "new": "\"address\": \"127.0.0.1:40001\""
+    },
+    {
+      "id": "QL29",
+      "law": "A literal port in a connect `target` cannot stand for the observed port its terminal fixed bind carries",
+      "package": "grapt-location",
+      "file": "fixtures/rust-reconstruction/r4-host-auth-foundation/actions.jsonl",
+      "test": "the_corpus_is_structurally_valid_and_every_scenario_is_executably_owned",
+      "test_target": "acceptance_corpus",
+      "old": "\"target\": \"127.0.0.1:<port observed at ordinal 7>\"",
+      "new": "\"target\": \"127.0.0.1:40001\""
+    }
+  ]
+}

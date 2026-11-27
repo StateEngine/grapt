@@ -1,0 +1,1 @@
+| Native searchable display preferences | openai/codex | `codex-rs/core/src/config/edit.rs`, `codex-rs/tui/src/bottom_pane/list_selection_view.rs` | `bb64b894fd67158be0f874872e6d7bfe717e7368` | Apache-2.0 | Adapted bounded search, picker selection and commit-after-persist settings for native JSON preferences. |

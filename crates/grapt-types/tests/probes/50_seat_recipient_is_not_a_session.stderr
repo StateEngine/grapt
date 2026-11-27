@@ -1,0 +1,41 @@
+error[E0308]: mismatched types
+  --> tests/probes/50_seat_recipient_is_not_a_session.rs:27:24
+   |
+27 |     requires_recipient(session);
+   |     ------------------ ^^^^^^^ expected `SeatRecipientId`, found `SessionId`
+   |     |
+   |     arguments to this function are incorrect
+   |
+note: function defined here
+  --> tests/probes/50_seat_recipient_is_not_a_session.rs:9:4
+   |
+ 9 | fn requires_recipient(_: SeatRecipientId) {}
+   |    ^^^^^^^^^^^^^^^^^^ ------------------
+
+error[E0308]: mismatched types
+  --> tests/probes/50_seat_recipient_is_not_a_session.rs:30:24
+   |
+30 |     requires_recipient(agent);
+   |     ------------------ ^^^^^ expected `SeatRecipientId`, found `AgentId`
+   |     |
+   |     arguments to this function are incorrect
+   |
+note: function defined here
+  --> tests/probes/50_seat_recipient_is_not_a_session.rs:9:4
+   |
+ 9 | fn requires_recipient(_: SeatRecipientId) {}
+   |    ^^^^^^^^^^^^^^^^^^ ------------------
+
+error[E0308]: mismatched types
+  --> tests/probes/50_seat_recipient_is_not_a_session.rs:32:22
+   |
+32 |     requires_message(recipient);
+   |     ---------------- ^^^^^^^^^ expected `MailboxMessageId`, found `SeatRecipientId`
+   |     |
+   |     arguments to this function are incorrect
+   |
+note: function defined here
+  --> tests/probes/50_seat_recipient_is_not_a_session.rs:10:4
+   |
+10 | fn requires_message(_: MailboxMessageId) {}
+   |    ^^^^^^^^^^^^^^^^ -------------------

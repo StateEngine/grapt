@@ -1,0 +1,11 @@
+error[E0277]: `ResolvedModelTarget` doesn't implement `Debug`
+  --> tests/probes/47_target_debug_prints_authority.rs:19:22
+   |
+19 |     requires_debug::<grapt_types::ResolvedModelTarget>();
+   |                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ the trait `Debug` is not implemented for `ResolvedModelTarget`
+   |
+note: required by a bound in `requires_debug`
+  --> tests/probes/47_target_debug_prints_authority.rs:16:22
+   |
+16 | fn requires_debug<T: core::fmt::Debug>() {}
+   |                      ^^^^^^^^^^^^^^^^ required by this bound in `requires_debug`

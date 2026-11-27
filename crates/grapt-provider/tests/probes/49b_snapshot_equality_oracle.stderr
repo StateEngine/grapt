@@ -1,0 +1,12 @@
+error[E0277]: can't compare `PhysicalAttemptAuthoritySnapshot` with `PhysicalAttemptAuthoritySnapshot`
+  --> tests/probes/49b_snapshot_equality_oracle.rs:15:25
+   |
+15 |     requires_equality::<grapt_policy::PhysicalAttemptAuthoritySnapshot>();
+   |                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ no implementation for `PhysicalAttemptAuthoritySnapshot == PhysicalAttemptAuthoritySnapshot`
+   |
+   = help: the trait `PartialEq` is not implemented for `PhysicalAttemptAuthoritySnapshot`
+note: required by a bound in `requires_equality`
+  --> tests/probes/49b_snapshot_equality_oracle.rs:12:25
+   |
+12 | fn requires_equality<T: PartialEq>() {}
+   |                         ^^^^^^^^^ required by this bound in `requires_equality`

@@ -1,0 +1,247 @@
+{
+ "schema_version": 1,
+ "campaign": "CONTEXT-QUALITY-01",
+ "mutants": [
+  {
+   "id": "CQ-C01",
+   "invariant": "Anthropic requests with StablePrefix mark the conversation tail",
+   "crate": "grapt-provider",
+   "target": [
+    "--lib"
+   ],
+   "test": "cq_stable_prefix_marks_last_tool_system_and_tail_within_the_provider_limit",
+   "edits": [
+    {
+     "path": "crates/grapt-provider/src/routes/body.rs",
+     "before": "        mark_conversation_tail(&mut messages);\n",
+     "after": ""
+    }
+   ]
+  },
+  {
+   "id": "CQ-C02",
+   "invariant": "ordinary Anthropic coding requests opt into cache markers",
+   "crate": "grapt-product",
+   "target": [
+    "--lib",
+    "--all-features"
+   ],
+   "test": "pc_anthropic_selection_builds_a_bounded_tool_request",
+   "edits": [
+    {
+     "path": "crates/grapt-product/src/dogfood/production.rs",
+     "before": "prompt_cache: grapt_provider::AnthropicPromptCache::StablePrefix,",
+     "after": "prompt_cache: grapt_provider::AnthropicPromptCache::Off,"
+    }
+   ]
+  },
+  {
+   "id": "CQ-C03",
+   "invariant": "the tail marker moves with the growing conversation, keeping earlier bytes stable",
+   "crate": "grapt-provider",
+   "target": [
+    "--lib"
+   ],
+   "test": "cq_cached_prefix_is_byte_stable_while_tool_history_grows",
+   "edits": [
+    {
+     "path": "crates/grapt-provider/src/routes/body.rs",
+     "before": "    let block = messages\n        .iter_mut()\n        .rev()\n",
+     "after": "    let block = messages\n        .iter_mut()\n"
+    }
+   ]
+  },
+  {
+   "id": "CQ-U01",
+   "invariant": "a tool-only retry's usage is attributed to its Step message",
+   "crate": "grapt-session",
+   "target": [
+    "--lib",
+    "--all-features"
+   ],
+   "test": "cq_a_tool_only_retry_carries_its_usage_to_the_step_message",
+   "edits": [
+    {
+     "path": "crates/grapt-session-history/src/history.rs",
+     "before": "                self.bind_tool_attempt(row)\n",
+     "after": "                Ok(())\n"
+    }
+   ]
+  },
+  {
+   "id": "CQ-B01",
+   "invariant": "a calibrated charge never exceeds the byte bound",
+   "crate": "grapt-product",
+   "target": [
+    "--lib",
+    "--all-features"
+   ],
+   "test": "cq_suffix_is_charged_at_twice_the_confirmed_ratio_and_never_above_bytes",
+   "edits": [
+    {
+     "path": "crates/grapt-product/src/dogfood/continuation/admission.rs",
+     "before": "|scaled| scaled.min(estimated))",
+     "after": "|scaled| scaled)"
+    }
+   ]
+  },
+  {
+   "id": "CQ-B02",
+   "invariant": "calibration never crosses to another target issuance",
+   "crate": "grapt-product",
+   "target": [
+    "--lib",
+    "--all-features"
+   ],
+   "test": "cq_calibration_follows_its_session_and_target_into_the_next_execution",
+   "edits": [
+    {
+     "path": "crates/grapt-product/src/dogfood/continuation/admission.rs",
+     "before": "            .filter(|calibration| calibration.target.matches(target))\n",
+     "after": ""
+    }
+   ]
+  },
+  {
+   "id": "CQ-B03",
+   "invariant": "a zero or implausible confirmed count is not provenance for calibration",
+   "crate": "grapt-product",
+   "target": [
+    "--lib",
+    "--all-features"
+   ],
+   "test": "cq_implausible_or_absent_usage_leaves_the_byte_bound",
+   "edits": [
+    {
+     "path": "crates/grapt-product/src/dogfood/continuation/admission.rs",
+     "before": "let plausible = confirmed > 0\n            &&",
+     "after": "let plausible = true\n            ||"
+    }
+   ]
+  },
+  {
+   "id": "CQ-B04",
+   "invariant": "the output reserve is the bound the request asks for",
+   "crate": "grapt-product",
+   "target": [
+    "--lib",
+    "--all-features"
+   ],
+   "test": "cq_output_reserve_is_the_bound_the_request_actually_asks_for",
+   "edits": [
+    {
+     "path": "crates/grapt-product/src/dogfood/continuation/admission.rs",
+     "before": "ProviderRequest::AnthropicMessages(request) => request.max_tokens.value(),",
+     "after": "ProviderRequest::AnthropicMessages(_) => OUTPUT_RESERVE,"
+    }
+   ]
+  },
+  {
+   "id": "CQ-B05",
+   "invariant": "confirmed usage calibrates the estimate of new bytes on the product path",
+   "crate": "grapt-product",
+   "target": [
+    "--test",
+    "dogfood_headless",
+    "--all-features"
+   ],
+   "test": "cq_confirmed_usage_calibrates_admission_so_fitting_reads_are_not_compacted",
+   "edits": [
+    {
+     "path": "crates/grapt-product/src/dogfood/continuation/admission.rs",
+     "before": ".map_or(Ok(suffix), |calibration| calibration.charge(suffix))?;",
+     "after": ".map_or(Ok(suffix), |_| Ok(suffix))?;"
+    }
+   ]
+  },
+  {
+   "id": "CQ-B06",
+   "invariant": "a Session's calibration carries into its next execution",
+   "crate": "grapt-product",
+   "target": [
+    "--test",
+    "dogfood_headless",
+    "--all-features"
+   ],
+   "test": "cq_confirmed_usage_calibrates_admission_so_fitting_reads_are_not_compacted",
+   "edits": [
+    {
+     "path": "crates/grapt-product/src/dogfood/continuation/admission.rs",
+     "before": "            calibration: sessions.get(&session),\n",
+     "after": "            calibration: None,\n"
+    }
+   ]
+  },
+  {
+   "id": "CQ-R01",
+   "invariant": "the user's earlier words survive compaction outside the summary",
+   "crate": "grapt-product",
+   "target": [
+    "--test",
+    "dogfood_headless",
+    "--all-features"
+   ],
+   "test": "cq_repository_task_keeps_user_words_and_effects_across_compactions_and_restart",
+   "edits": [
+    {
+     "path": "crates/grapt-product/src/dogfood/continuation/retained_facts.rs",
+     "before": "    user_inputs(inbox, session, current, until, &mut facts)?;\n",
+     "after": ""
+    }
+   ]
+  },
+  {
+   "id": "CQ-R02",
+   "invariant": "a completed effect stays recorded after its exchange is summarized",
+   "crate": "grapt-product",
+   "target": [
+    "--test",
+    "dogfood_headless",
+    "--all-features"
+   ],
+   "test": "cq_repository_task_keeps_user_words_and_effects_across_compactions_and_restart",
+   "edits": [
+    {
+     "path": "crates/grapt-product/src/dogfood/continuation/retained_facts.rs",
+     "before": "    tool_ledger(inbox.store(), artifacts, session, until, &mut facts)?;\n",
+     "after": ""
+    }
+   ]
+  },
+  {
+   "id": "CQ-P01",
+   "invariant": "a compaction that would only repeat the previous one stops as no progress",
+   "crate": "grapt-product",
+   "target": [
+    "--test",
+    "dogfood_headless",
+    "--all-features"
+   ],
+   "test": "cq_identical_reread_after_compaction_stops_as_no_progress",
+   "edits": [
+    {
+     "path": "crates/grapt-product/src/dogfood/continuation/compaction.rs",
+     "before": "        if context.trigger != CompactionTrigger::UserRequested {",
+     "after": "        if false && context.trigger != CompactionTrigger::UserRequested {"
+    }
+   ]
+  },
+  {
+   "id": "CQ-F01",
+   "invariant": "a summary cancelled before publication is reported as interrupted, never as a published compaction",
+   "crate": "grapt-product",
+   "target": [
+    "--lib",
+    "--all-features"
+   ],
+   "test": "an_interrupt_after_publication_does_not_disown_the_published_descriptor",
+   "edits": [
+    {
+     "path": "crates/grapt-product/src/dogfood/continuation/compaction.rs",
+     "before": "        (Err(_), Some(by)) => Err(by),",
+     "after": "        (Err(_), Some(_)) => Ok(Ok(())),"
+    }
+   ]
+  }
+ ]
+}

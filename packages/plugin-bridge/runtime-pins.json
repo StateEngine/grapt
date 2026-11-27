@@ -1,0 +1,27 @@
+{
+  "schema": "grapt.plugin-runtime-pins.v1",
+  "release_line": 24,
+  "version": "v24.21.0",
+  "support": {
+    "status": "active-lts",
+    "source": "https://nodejs.org/en/about/previous-releases",
+    "checked_at": "2026-09-16"
+  },
+  "license": "Node.js LICENSE plus bundled dependency notices",
+  "targets": {
+    "x86_64-pc-windows-msvc": {
+      "source_url": "https://nodejs.org/dist/v24.21.0/node-v24.21.0-win-x64.zip",
+      "source_sha256": "158f7685b44de51f6c0df1d153526cbcd3e1bc739a8dfc607721cef75de9e541",
+      "executable_sha256": "ba4e6d110e8c1592a1ecd390f6b05f3da124b13871a5be62b341a07a853c6c32",
+      "executable_bytes": 93580104,
+      "license_sha256": "ed34dd8e3f0a78dbaf00d0444ce8e285b015b765379c2e17880455f70370f8e9"
+    },
+    "x86_64-unknown-linux-gnu": {
+      "source_url": "https://nodejs.org/dist/v24.21.0/node-v24.21.0-linux-x64.tar.xz",
+      "source_sha256": "fd8e59d5a511510f6a298afb548f18c7d2b1be404d8b4a27d94fbe49f56cb2d6",
+      "executable_sha256": "7fde7b8afa198da66257f42ee2001d874c7355631e6d1579a5fb5ef1f246df4c",
+      "executable_bytes": 126595440,
+      "license_sha256": "5888dbb9a1d2b18f2c3e6c5f6af1b39de658372b402a0577b002777f14c62ace"
+    }
+  }
+}

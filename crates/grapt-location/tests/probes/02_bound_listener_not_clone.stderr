@@ -1,0 +1,11 @@
+error[E0277]: the trait bound `BoundListener: Clone` is not satisfied
+  --> tests/probes/02_bound_listener_not_clone.rs:18:22
+   |
+18 |     requires_clone::<BoundListener>();
+   |                      ^^^^^^^^^^^^^ the trait `Clone` is not implemented for `BoundListener`
+   |
+note: required by a bound in `requires_clone`
+  --> tests/probes/02_bound_listener_not_clone.rs:15:22
+   |
+15 | fn requires_clone<T: Clone>() {}
+   |                      ^^^^^ required by this bound in `requires_clone`

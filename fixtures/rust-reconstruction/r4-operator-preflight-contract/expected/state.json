@@ -1,0 +1,215 @@
+{
+  "actions_run": 40,
+  "admitted": 6,
+  "admitted_by_kind": {
+    "custody": 2,
+    "gate": 1,
+    "mapping": 1,
+    "plan": 2
+  },
+  "own_label_count": 42,
+  "refusal_vocabulary": [
+    "artifact-class-not-retainable",
+    "artifact-declared-twice",
+    "boundary-does-not-match-matrix",
+    "coordinate-source-mismatch",
+    "custody-budget-exceeded",
+    "custody-budget-not-representable",
+    "endpoint-offered-as-identity",
+    "execution-not-authorized",
+    "host-bounds-unavailable-before-entrypoint",
+    "image-name-kill-refused",
+    "mapping-read-from-wire",
+    "mapping-receipt-unnamed",
+    "matrix-unservable-at-entrypoint",
+    "negative-control-omitted",
+    "phase-already-entered",
+    "phase-out-of-order",
+    "pid-offered-as-identity",
+    "receipt-root-inside-repository",
+    "retained-instance-identity-absent",
+    "retained-mapping-receipt-absent",
+    "retained-slot-ambiguous",
+    "run-never-announced",
+    "sleep-resume-parked",
+    "substitute-boundary-refused",
+    "tier-carries-no-caps-of-its-own",
+    "timeout-exceeds-tier-cap",
+    "too-few-engines-for-differential",
+    "too-many-engines-for-attribution",
+    "version-offered-as-identity"
+  ],
+  "refusals": [
+    {
+      "label": "matrix-unservable-at-entrypoint",
+      "message": "the differential matrix is unservable at the exactly-one-health-route entrypoint, which cannot serve [SessionList]: the landed minimum subset decides this, and narrowing it would delete the law that makes a differential mean anything",
+      "ordinal": 2
+    },
+    {
+      "label": "matrix-unservable-at-entrypoint",
+      "message": "the long-session matrix is unservable at the exactly-one-health-route entrypoint, which cannot serve [SessionList]: the landed minimum subset decides this, and narrowing it would delete the law that makes a differential mean anything",
+      "ordinal": 3
+    },
+    {
+      "label": "matrix-unservable-at-entrypoint",
+      "message": "the restart matrix is unservable at the no-host-runs entrypoint, which cannot serve [HealthGet]: the landed minimum subset decides this, and narrowing it would delete the law that makes a differential mean anything",
+      "ordinal": 4
+    },
+    {
+      "label": "sleep-resume-parked",
+      "message": "the sleep-resume matrix is parked: a real host sleep suspends every seat on this machine, so it needs a scheduled fleet quiesce or a second host, and that decision is not the operator's",
+      "ordinal": 6
+    },
+    {
+      "label": "substitute-boundary-refused",
+      "message": "the process-suspend boundary was offered in place of a host sleep: a process suspend or a network drop is a different matrix wearing the sleep matrix's label, and the receipt would be false in the one place the matrix exists to be true",
+      "ordinal": 7
+    },
+    {
+      "label": "substitute-boundary-refused",
+      "message": "the network-drop boundary was offered in place of a host sleep: a process suspend or a network drop is a different matrix wearing the sleep matrix's label, and the receipt would be false in the one place the matrix exists to be true",
+      "ordinal": 8
+    },
+    {
+      "label": "boundary-does-not-match-matrix",
+      "message": "the restart matrix crosses the engine-restart boundary, not none: a matrix measured across the wrong boundary measured something else",
+      "ordinal": 9
+    },
+    {
+      "label": "retained-mapping-receipt-absent",
+      "message": "no retained owner mapping receipt was declared: the retained side's owner identity is a declaration and the run fails closed without one rather than attributing it by guesswork",
+      "ordinal": 10
+    },
+    {
+      "label": "negative-control-omitted",
+      "message": "the plan omits the negative control(s) [DriverSuppliedBound, SelectorLeftAttached]: a run that only produces greens has not tested its instrument",
+      "ordinal": 11
+    },
+    {
+      "label": "tier-carries-no-caps-of-its-own",
+      "message": "the local-focused tier carries no caps of its own: a live run must be bounded by the tier it is executed under",
+      "ordinal": 12
+    },
+    {
+      "label": "timeout-exceeds-tier-cap",
+      "message": "a declared timeout of 5400001 ms exceeds the tier cap of 5400000 ms: a plan may be tighter than its tier and never looser",
+      "ordinal": 13
+    },
+    {
+      "label": "too-many-engines-for-attribution",
+      "message": "3 engine processes were declared against a cap of 2: a third listener makes attribution a guess",
+      "ordinal": 14
+    },
+    {
+      "label": "image-name-kill-refused",
+      "message": "a kill by image name (node.exe) was declared: the node and bash processes on this host are other seats, and an image-name kill takes the fleet out with the run",
+      "ordinal": 15
+    },
+    {
+      "label": "pid-offered-as-identity",
+      "message": "a process identifier was offered as the instance coordinate: pid is an attribute under D1, and a reused pid must never inherit ownership",
+      "ordinal": 17
+    },
+    {
+      "label": "endpoint-offered-as-identity",
+      "message": "an endpoint was offered as the slot coordinate: the endpoint is an attribute under D1, and one owner keeps its slot across a new ephemeral port",
+      "ordinal": 18
+    },
+    {
+      "label": "version-offered-as-identity",
+      "message": "a version was offered as the environment coordinate: two independent engines can report one version and one engine changes it across an upgrade without changing owner",
+      "ordinal": 19
+    },
+    {
+      "label": "coordinate-source-mismatch",
+      "message": "the slot coordinate was sourced from environment-sidecar-digest: every source in this declaration is identity-bearing, so only the pairing tells a crossed mapping from a sound one",
+      "ordinal": 20
+    },
+    {
+      "label": "retained-instance-identity-absent",
+      "message": "the retained registration carries no id: the field is optional in its schema, and with it absent there is no instance identity -- the run stops rather than synthesizing one",
+      "ordinal": 21
+    },
+    {
+      "label": "retained-slot-ambiguous",
+      "message": "the retained slot is ambiguous: four registration files matching the frozen discovery regex were observed in one state home, and discovery takes the first that probes in readdir order, so the run must pin an isolated state home",
+      "ordinal": 22
+    },
+    {
+      "label": "mapping-read-from-wire",
+      "message": "the mapping claims to be read from the wire: the frozen surface carries no engine identity at all, and the one correlation near it correlates on pid -- the exact coordinate D1 forbids as identity",
+      "ordinal": 23
+    },
+    {
+      "label": "mapping-receipt-unnamed",
+      "message": "the mapping receipt carries no id: a receipt that names nothing cannot be cited",
+      "ordinal": 24
+    },
+    {
+      "label": "receipt-root-inside-repository",
+      "message": "the receipt root C:/workspace/repo/receipts lies inside the repository: writing any file into the tree while a battery runs voids the run, and the receipt-root default is inside the tree",
+      "ordinal": 26
+    },
+    {
+      "label": "artifact-class-not-retainable",
+      "message": "an artifact of class session-body-content may not be retained: session bodies are workspace state and registrations carry a password",
+      "ordinal": 28
+    },
+    {
+      "label": "artifact-class-not-retainable",
+      "message": "an artifact of class credential-bearing-registration may not be retained: session bodies are workspace state and registrations carry a password",
+      "ordinal": 29
+    },
+    {
+      "label": "custody-budget-exceeded",
+      "message": "the declared artifact budget of 1048577 byte(s) exceeds the 1048576-byte evidence ceiling: evidence is a digest and a sample, never a raw stream",
+      "ordinal": 30
+    },
+    {
+      "label": "artifact-declared-twice",
+      "message": "the artifact run-receipt.md was declared twice: a cleanup that pulls one of two same-named artifacts destroys the other",
+      "ordinal": 31
+    },
+    {
+      "label": "execution-not-authorized",
+      "message": "the record-host-state-at-start phase requires a scheduled attended window and none was granted (parked: attended-window-not-scheduled): the tier is declared and its execution is withheld",
+      "ordinal": 33
+    },
+    {
+      "label": "phase-out-of-order",
+      "message": "the stop-engines phase was entered where announce was expected: reversal precedes diagnosis, and an out-of-order run can leave the daily driver on a borrowed engine",
+      "ordinal": 34
+    },
+    {
+      "label": "run-never-announced",
+      "message": "the run was concluded without an announcement: an attended window is a custody claim and an unannounced run cannot make it",
+      "ordinal": 35
+    },
+    {
+      "label": "phase-already-entered",
+      "message": "the announce phase was entered twice: a run cannot record two of the same phase and a projection counting them could not tell which was real",
+      "ordinal": 36
+    },
+    {
+      "label": "host-bounds-unavailable-before-entrypoint",
+      "message": "no host has reported its resource bounds: a recording admits only host-reported provenance and there is no ready host to read one from, so no differential plan is constructible yet -- by the contract's design, not by omission",
+      "ordinal": 37
+    },
+    {
+      "label": "too-few-engines-for-differential",
+      "message": "1 engine process(es) were declared where a differential requires 2: fewer than 2 is not a comparison, and a retained engine already running is not one of the 2 the operator must start inside the window",
+      "ordinal": 38
+    },
+    {
+      "label": "too-few-engines-for-differential",
+      "message": "0 engine process(es) were declared where a differential requires 2: fewer than 2 is not a comparison, and a retained engine already running is not one of the 2 the operator must start inside the window",
+      "ordinal": 39
+    },
+    {
+      "label": "custody-budget-not-representable",
+      "message": "the declared artifact budgets do not sum to a representable byte total: the 18446744073709551615 byte(s) already declared plus second.jsonl's own budget overflow a u64, so the declaration is refused before any comparison with the ceiling -- a wrapping sum would report a small total here and a saturating one would report u64::MAX, and neither is what was declared",
+      "ordinal": 40
+    }
+  ],
+  "refused": 34
+}

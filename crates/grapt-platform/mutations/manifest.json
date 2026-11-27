@@ -1,0 +1,150 @@
+{
+  "lane": "DOGFOOD-0-platform",
+  "prefix": "IGPX",
+  "rows": 13,
+  "mutations": [
+    {
+      "id": "IGPX01",
+      "law": "First contact preserves the absent store state instead of pretending readiness.",
+      "package": "grapt-platform",
+      "test_target": "platform_vertical",
+      "test": "first_contact_keeps_all_five_states_distinct_and_read_only",
+      "file": "crates/grapt-platform/src/store.rs",
+      "old": "        let readiness = preflight_read_only(&database);",
+      "new": "        let readiness = StoreReadiness::Ready; // MUTATED: IGPX01",
+      "red": "first contact collapsed absent into another readiness state"
+    },
+    {
+      "id": "IGPX02",
+      "law": "A migration-needed store opens only under the exact migrate directive.",
+      "package": "grapt-platform",
+      "test_target": "platform_vertical",
+      "test": "exact_owned_open_authority_is_required_before_any_write",
+      "file": "crates/grapt-platform/src/store.rs",
+      "old": "            (StoreReadiness::MigrationNeeded(plan), StoreDirective::Migrate) => {",
+      "new": "            (StoreReadiness::MigrationNeeded(plan), StoreDirective::Initialize | StoreDirective::Migrate) => { // MUTATED: IGPX02",
+      "red": "unauthorized directive opened a migration-needed store"
+    },
+    {
+      "id": "IGPX03",
+      "law": "Variant-expanded catalog rows are bounded before either allocation path.",
+      "package": "grapt-platform",
+      "test_target": "platform_vertical",
+      "test": "variant_expansion_is_bounded_before_catalog_allocation",
+      "file": "crates/grapt-platform/src/config.rs",
+      "old": "    if actual > MAX_CATALOG_ROWS {",
+      "new": "    if false && actual > MAX_CATALOG_ROWS { // MUTATED: IGPX03",
+      "red": "variant-expanded catalog rows escaped their pre-allocation bound"
+    },
+    {
+      "id": "IGPX04",
+      "law": "Credential capture bounds fail without disclosing captured secret bytes.",
+      "package": "grapt-platform",
+      "test_target": "platform_vertical",
+      "test": "credential_material_never_enters_refusals_and_settles_before_restart",
+      "file": "crates/grapt-platform/src/credential.rs",
+      "old": "        if bytes.len() > MAX_CREDENTIAL_BYTES {\n            return Err(CredentialRefusal::TooLarge {\n                bound: MAX_CREDENTIAL_BYTES,\n            });\n        }",
+      "new": "        if bytes.len() > MAX_CREDENTIAL_BYTES {\n            return Err(CredentialRefusal::Read(std::io::Error::other(\n                String::from_utf8_lossy(&bytes).into_owned(),\n            ))); // MUTATED: IGPX04\n        }",
+      "red": "credential refusal disclosed captured secret material"
+    },
+    {
+      "id": "IGPX05",
+      "law": "Credential custody returns an explicit settled receipt before restart.",
+      "package": "grapt-platform",
+      "test_target": "platform_vertical",
+      "test": "credential_material_never_enters_refusals_and_settles_before_restart",
+      "file": "crates/grapt-platform/src/credential.rs",
+      "old": "            settled: true,",
+      "new": "            settled: false, // MUTATED: IGPX05",
+      "red": "credential custody did not report settlement"
+    },
+    {
+      "id": "IGPX06",
+      "law": "Reload advances its published generation before exposing the new target.",
+      "package": "grapt-platform",
+      "test_target": "platform_vertical",
+      "test": "precedence_publishes_one_catalog_issued_target_and_reload_retires_the_old_one",
+      "file": "crates/grapt-platform/src/config.rs",
+      "old": "    pub fn to(&self) -> Generation {\n        self.to\n    }",
+      "new": "    pub fn to(&self) -> Generation {\n        self.from // MUTATED: IGPX06\n    }",
+      "red": "reload receipt did not advance its generation"
+    },
+    {
+      "id": "IGPX07",
+      "law": "The ready receipt names the operating-system-observed address, never requested port zero.",
+      "package": "grapt-product",
+      "test_target": "product_root",
+      "test": "ready_store_serves_registers_probes_drains_and_releases",
+      "file": "crates/grapt-product/src/ready.rs",
+      "old": "            observed_endpoint: owner.endpoint().as_str().to_owned(),",
+      "new": "            observed_endpoint: \"http://127.0.0.1:0\".to_owned(), // MUTATED: IGPX07",
+      "red": "ready receipt omitted the OS-observed address"
+    },
+    {
+      "id": "IGPX08",
+      "law": "The ready receipt has the fixed custody name the driver can discover while the process lives.",
+      "package": "grapt-product",
+      "test_target": "product_root",
+      "test": "ready_store_serves_registers_probes_drains_and_releases",
+      "file": "crates/grapt-product/src/ready.rs",
+      "old": "    let receipt = ReadyReceipt::from_owner(owner, serve_window_ms, build);\n    let path = service_root.join(READY_RECEIPT_FILE);",
+      "new": "    let receipt = ReadyReceipt::from_owner(owner, serve_window_ms, build);\n    let path = service_root.join(\"mutated-ready.json\"); // MUTATED: IGPX08",
+      "red": "before ready publication"
+    },
+    {
+      "id": "IGPX09",
+      "law": "Ready-time discovery carries the product build attribution used by the health owner.",
+      "package": "grapt-product",
+      "test_target": "product_root",
+      "test": "ready_store_serves_registers_probes_drains_and_releases",
+      "file": "crates/grapt-product/src/ready.rs",
+      "old": "            build: build.to_owned(),",
+      "new": "            build: owner.environment().as_str().to_owned(), // MUTATED: IGPX09",
+      "red": "ready receipt lost product build attribution"
+    },
+    {
+      "id": "IGPX10",
+      "law": "Ready custody binds service generation independently of a reused PID.",
+      "package": "grapt-product",
+      "test_target": "__lib__",
+      "test": "ready::tests::pid_reuse_cannot_overwrite_or_retire_another_generation",
+      "file": "crates/grapt-product/src/ready.rs",
+      "old": "            service_generation: owner.generation().value(),",
+      "new": "            service_generation: 0, // MUTATED: IGPX10",
+      "red": "a reused PID overwrote another service generation"
+    },
+    {
+      "id": "IGPX11",
+      "law": "Database authority is bound to physical volume/file identity rather than path metadata.",
+      "package": "grapt-store",
+      "test_target": "__lib__",
+      "test": "file_replacements_and_concurrent_creation_never_return_a_store",
+      "file": "crates/grapt-store/src/write/open.rs",
+      "old": "        if &observed != expected {",
+      "new": "        if false && &observed != expected { // MUTATED: IGPX11",
+      "red": "file_replacements_and_concurrent_creation_never_return_a_store"
+    },
+    {
+      "id": "IGPX12",
+      "law": "Insufficient observed backup capacity cannot authorize migration.",
+      "package": "grapt-store",
+      "test_target": "__lib__",
+      "test": "migration::authority::tests::backup_authority_keeps_every_refusal_distinct",
+      "file": "crates/grapt-store/src/migration/authority.rs",
+      "old": "        && matches!(backup.capacity, BackupCapacity::Sufficient)",
+      "new": "        && matches!(backup.capacity, BackupCapacity::Insufficient) // MUTATED: IGPX12",
+      "red": "backup_authority_keeps_every_refusal_distinct"
+    },
+    {
+      "id": "IGPX13",
+      "law": "Credential settlement coordinates are derived from held custody, never a second caller coordinate.",
+      "package": "grapt-platform",
+      "test_target": "platform_vertical",
+      "test": "credential_settlement_coordinates_come_from_held_custody",
+      "file": "crates/grapt-platform/src/credential.rs",
+      "old": "            account: grant.account,",
+      "new": "            account: grapt_types::AccountId::new(\"forged-account\").unwrap(), // MUTATED: IGPX13",
+      "red": "credential_settlement_coordinates_come_from_held_custody"
+    }
+  ]
+}

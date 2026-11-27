@@ -1,0 +1,15 @@
+{
+  "ordering_key": ["updated_ms", "session_id_binary"],
+  "page_snapshot": "one SQLite statement",
+  "cross_page_snapshot_promised": false,
+  "rows": [
+    {"session_id":"ses_legacy_b","updated_ms":200,"title":"legacy B","provenance_kind":"legacy-baseline","cutover_seq":4},
+    {"session_id":"ses_legacy_a","updated_ms":20000,"title":"renamed","provenance_kind":"rust-event","cutover_seq":-1},
+    {"session_id":"ses_restart","updated_ms":25000,"title":"restarted","provenance_kind":"rust-event","cutover_seq":-1},
+    {"session_id":"ses_tie_a","updated_ms":30000,"title":"tie","provenance_kind":"rust-event","cutover_seq":-1},
+    {"session_id":"ses_tie_b","updated_ms":30000,"title":"tie","provenance_kind":"rust-event","cutover_seq":-1},
+    {"session_id":"ses_tie_c","updated_ms":30000,"title":"tie","provenance_kind":"rust-event","cutover_seq":-1},
+    {"session_id":"ses_scope_root","updated_ms":40000,"title":"a needle here","provenance_kind":"rust-event","cutover_seq":-1},
+    {"session_id":"ses_tie_d","updated_ms":50000,"title":"tie","provenance_kind":"rust-event","cutover_seq":-1}
+  ]
+}

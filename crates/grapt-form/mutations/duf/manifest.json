@@ -1,0 +1,174 @@
+{
+  "purpose": "Prove the form-answer law and the frozen refusal statuses are each decided by the code that claims to decide them, not by a neighbouring guard that happens to refuse first.",
+  "run": "python3 crates/grapt-form/mutations/duf/run.py --prefix DUF",
+  "lane": "DAILY-USE-BACKEND-01",
+  "prefix": "DUF",
+  "rows": 15,
+  "mutations": [
+    {
+      "id": "DUF01",
+      "law": "An answer key that no field declares is refused, before any field is examined.",
+      "package": "grapt-form",
+      "test_target": "__lib__",
+      "test": "answer::tests::every_refusal_names_the_field_it_rejected",
+      "file": "crates/grapt-form/src/answer.rs",
+      "old": "    for key in answer.keys() {\n        if !fields\n            .iter()\n            .any(|field| field_key(field) == Some(key.as_str()))\n        {\n            return Some(format!(\"Unknown form field: {key}\"));\n        }\n    }",
+      "new": "    for key in answer.keys() {\n        // MUTATED: DUF01\n        let _ = key;\n    }",
+      "red": "does not name field nope"
+    },
+    {
+      "id": "DUF02",
+      "law": "A field made inactive by its own conditions is UNANSWERABLE: a value supplied for it is refused, not ignored.",
+      "package": "grapt-form",
+      "test_target": "__lib__",
+      "test": "answer::tests::an_inactive_field_is_refused_rather_than_ignored",
+      "file": "crates/grapt-form/src/answer.rs",
+      "old": "        if !active {\n            return Some(format!(\"Form field is not active: {key}\"));\n        }",
+      "new": "        if false {\n            // MUTATED: DUF02\n            return Some(format!(\"Form field is not active: {key}\"));\n        }",
+      "red": "Form field is not active: detail"
+    },
+    {
+      "id": "DUF03",
+      "law": "A required field that is ACTIVE and unanswered is refused; the activity test is part of the demand, not decoration.",
+      "package": "grapt-form",
+      "test_target": "__lib__",
+      "test": "answer::tests::a_required_but_inactive_field_is_not_demanded",
+      "file": "crates/grapt-form/src/answer.rs",
+      "old": "            if required(field) && active {\n                return Some(format!(\"Missing required form field: {key}\"));\n            }",
+      "new": "            if required(field) && !active {\n                // MUTATED: DUF03\n                return Some(format!(\"Missing required form field: {key}\"));\n            }",
+      "red": "Missing required form field: detail"
+    },
+    {
+      "id": "DUF04",
+      "law": "An UNANSWERED referenced field makes its condition false, so hiding a field cascades to every condition naming it.",
+      "package": "grapt-form",
+      "test_target": "__lib__",
+      "test": "answer::tests::an_inactive_field_is_refused_rather_than_ignored",
+      "file": "crates/grapt-form/src/answer.rs",
+      "old": "fn matches_condition(when: &Value, value: Option<&Value>) -> bool {\n    let Some(value) = value else {\n        return false;\n    };",
+      "new": "fn matches_condition(when: &Value, value: Option<&Value>) -> bool {\n    let Some(value) = value else {\n        // MUTATED: DUF04\n        return true;\n    };",
+      "red": "Form field is not active: detail"
+    },
+    {
+      "id": "DUF05",
+      "law": "A `neq` condition INVERTS its match; it is a distinct operator, not a synonym for `eq`.",
+      "package": "grapt-form",
+      "test_target": "__lib__",
+      "test": "answer::tests::an_inactive_field_is_refused_rather_than_ignored",
+      "file": "crates/grapt-form/src/answer.rs",
+      "old": "        Some(\"eq\") => hit,\n        Some(\"neq\") => !hit,",
+      "new": "        Some(\"eq\") => !hit, // MUTATED: DUF05\n        Some(\"neq\") => hit,",
+      "red": "Form field is not active: detail"
+    },
+    {
+      "id": "DUF06",
+      "law": "A CLOSED option set refuses a choice it never declared; only `custom` opens it.",
+      "package": "grapt-form",
+      "test_target": "__lib__",
+      "test": "answer::tests::a_closed_option_set_refuses_an_undeclared_choice_unless_custom",
+      "file": "crates/grapt-form/src/answer.rs",
+      "old": "        if !custom(field)\n            && !options\n                .iter()\n                .any(|option| option.get(\"value\") == Some(value))\n        {\n            return Some(format!(\"Invalid option for form field: {key}\"));\n        }",
+      "new": "        if custom(field)\n            && !options\n                .iter()\n                .any(|option| option.get(\"value\") == Some(value))\n        {\n            // MUTATED: DUF06\n            return Some(format!(\"Invalid option for form field: {key}\"));\n        }",
+      "red": "Invalid option for form field: pick"
+    },
+    {
+      "id": "DUF07",
+      "law": "A string length bound counts UTF-16 code units, as the frozen validator does; counting bytes refuses non-ASCII answers the product accepts.",
+      "package": "grapt-form",
+      "test_target": "__lib__",
+      "test": "answer::tests::a_length_bound_counts_the_same_units_the_frozen_check_counts",
+      "file": "crates/grapt-form/src/answer.rs",
+      "old": "    let length = text.encode_utf16().count() as u64;",
+      "new": "    let length = text.len() as u64; // MUTATED: DUF07",
+      "red": "Form field is too long: text"
+    },
+    {
+      "id": "DUF08",
+      "law": "A `when` condition may only reference an EARLIER field; a field is not yet available to its own conditions.",
+      "package": "grapt-form",
+      "test_target": "__lib__",
+      "test": "answer::tests::a_condition_may_only_reference_an_earlier_field",
+      "file": "crates/grapt-form/src/answer.rs",
+      "old": "        for when in field\n            .get(\"when\")\n            .and_then(Value::as_array)\n            .map(Vec::as_slice)\n            .unwrap_or_default()\n        {",
+      "new": "        earlier.push(field); // MUTATED: DUF08\n        for when in field\n            .get(\"when\")\n            .and_then(Value::as_array)\n            .map(Vec::as_slice)\n            .unwrap_or_default()\n        {",
+      "red": "a self-reference is not an earlier field"
+    },
+    {
+      "id": "DUF09",
+      "law": "A settled form refuses a reply with 409, never 404: the form EXISTS and the caller is late, which is not the same as the form being gone.",
+      "package": "grapt-api",
+      "test_target": "__lib__",
+      "test": "u3a::routes::tests::form_tests::each_form_route_emits_only_the_refusals_its_frozen_contract_admits",
+      "file": "crates/grapt-api/src/u3a/routes_dispatch.rs",
+      "old": "        FormReplyApplicationError::FormAlreadySettled(value) => json(StatusCode::CONFLICT, &value),",
+      "new": "        // MUTATED: DUF09\n        FormReplyApplicationError::FormAlreadySettled(value) => json(StatusCode::NOT_FOUND, &value),",
+      "red": "right: 409"
+    },
+    {
+      "id": "DUF10",
+      "law": "An invalid answer refuses with 400, never 409: it can be corrected and retried, which a settled form never can.",
+      "package": "grapt-api",
+      "test_target": "__lib__",
+      "test": "u3a::routes::tests::form_tests::each_form_route_emits_only_the_refusals_its_frozen_contract_admits",
+      "file": "crates/grapt-api/src/u3a/routes_dispatch.rs",
+      "old": "        FormReplyApplicationError::FormInvalidAnswer(value) => {\n            json(StatusCode::BAD_REQUEST, &value)\n        }",
+      "new": "        FormReplyApplicationError::FormInvalidAnswer(value) => {\n            // MUTATED: DUF10\n            json(StatusCode::CONFLICT, &value)\n        }",
+      "red": "right: 400"
+    },
+    {
+      "id": "DUF11",
+      "law": "`format: \"uri\"` is a WHATWG URL PARSE, not a shape test: a relative reference is refused where a schemed absolute URL is admitted.",
+      "package": "grapt-form",
+      "test_target": "__lib__",
+      "test": "answer::tests::a_uri_is_parsed_rather_than_shape_matched",
+      "file": "crates/grapt-form/src/answer.rs",
+      "old": "fn is_uri(value: &str) -> bool {\n    Url::parse(value).is_ok()\n}",
+      "new": "fn is_uri(value: &str) -> bool {\n    // MUTATED: DUF11\n    !value.is_empty()\n}",
+      "red": "is not an absolute URL and must be refused"
+    },
+    {
+      "id": "DUF12",
+      "law": "Hour 24 is END OF DAY and nothing else: 24:00:00 names midnight and 24:00:01 is not a time. Repointed when the reconstruction moved the clock rules into their own module; the law is unchanged.",
+      "package": "grapt-form",
+      "test_target": "__lib__",
+      "test": "date::differential::validity_reproduces_the_oracle_across_the_measured_corpus",
+      "file": "crates/grapt-form/src/date.rs",
+      "old": "    if hour == \"24\" {\n        return minute == \"00\"\n            && second.is_none_or(|second| second == \"00\")\n            && fraction.is_none_or(|fraction| fraction.bytes().all(|b| b == b'0'));\n    }",
+      "new": "    // MUTATED: DUF12\n    if false {\n        return minute == \"00\"\n            && second.is_none_or(|second| second == \"00\")\n            && fraction.is_none_or(|fraction| fraction.bytes().all(|b| b == b'0'));\n    }",
+      "red": "2026-09-06T24:00:01"
+    },
+    {
+      "id": "DUF13",
+      "law": "An UNCOMPILABLE pattern is its own refusal, distinct from a value that simply does not match: the two say different things about whose mistake it was. Repointed when the engine swap moved the arm; the law is unchanged.",
+      "package": "grapt-form",
+      "test_target": "__lib__",
+      "test": "answer::tests::a_pattern_decides_the_answer_and_an_uncompilable_one_is_its_own_refusal",
+      "file": "crates/grapt-form/src/answer.rs",
+      "old": "            PatternOutcome::Uncompilable => {\n                return Some(format!(\"Form field has invalid pattern: {key}\"))\n            }",
+      "new": "            // MUTATED: DUF13\n            PatternOutcome::Uncompilable => {\n                return Some(format!(\"Form field does not match pattern: {key}\"))\n            }",
+      "red": "Form field has invalid pattern: code"
+    },
+    {
+      "id": "DUF14",
+      "law": "RESURRECTION: the model list keeps its OWN row bound. Restoring the shared 256-row catalog bound makes a real configured catalog — 366 rows — unserveable, which is a total refusal rather than a truncated list.",
+      "package": "grapt-api",
+      "test_target": "model_list_capacity",
+      "test": "the_real_configured_catalog_is_carried",
+      "file": "crates/grapt-api/src/u3a/vocabulary/operations.rs",
+      "old": "    required data: BoundedVec<ModelInfoDto, MAX_MODEL_ROWS> => \"data\",\n} }\nclosed_object! { pub struct ModelDefaultResponseDto => \"inline:model-default-response\" {",
+      "new": "    // MUTATED: DUF14\n    required data: BoundedVec<ModelInfoDto, MAX_CATALOG_ROWS> => \"data\",\n} }\nclosed_object! { pub struct ModelDefaultResponseDto => \"inline:model-default-response\" {",
+      "red": "the measured real catalog must decode"
+    },
+    {
+      "id": "DUF15",
+      "law": "RESURRECTION: a response page is decoded by the PAGE bound, not the request bound. Restoring the request bound makes every real-catalog response undecodable by a client while the server still emits it happily.",
+      "package": "grapt-api",
+      "test_target": "model_list_capacity",
+      "test": "a_real_catalog_page_is_decodable_by_a_client_not_only_encodable",
+      "file": "crates/grapt-api/src/u3a/codec.rs",
+      "old": "    let decode = DecodeLimits::new(receipt.page_bytes, receipt.nested_items)\n        .map_err(|_| DtoCodecError::Limits)?;",
+      "new": "    // MUTATED: DUF15\n    let decode = DecodeLimits::new(receipt.request_dto_bytes, receipt.nested_items)\n        .map_err(|_| DtoCodecError::Limits)?;",
+      "red": "a client decodes the page"
+    }
+  ]
+}

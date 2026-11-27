@@ -1,0 +1,12 @@
+{"ordinal": 1, "actor": "capture-client", "kind": "sse.subscribe", "args": {"pending_events": 2, "interest": "absent"}, "expect": "subscription admitted; the connection frame is queued"}
+{"ordinal": 2, "actor": "capture-client", "kind": "sse.read", "args": {"subscriber": "slow"}, "expect": "frame carrying the hub evt_initial"}
+{"ordinal": 3, "actor": "server", "kind": "sse.publish", "args": {"event": "evt_first"}, "expect": "receipt delivered=1; the bounded queue now holds one frame"}
+{"ordinal": 4, "actor": "server", "kind": "sse.publish", "args": {"event": "evt_second"}, "expect": "receipt delivered=1; the bounded queue is full"}
+{"ordinal": 5, "actor": "server", "kind": "sse.publish", "args": {"event": "evt_third"}, "expect": "receipt overflowed=1; the subscriber is removed from the fan-out and the unread queued frames are discarded, never replayed"}
+{"ordinal": 6, "actor": "capture-client", "kind": "sse.read", "args": {"subscriber": "slow"}, "expect": "the typed SubscriberOverflow refusal, sticky on every later read"}
+{"ordinal": 7, "actor": "server", "kind": "sse.publish", "args": {"event": "evt_missed_a"}, "expect": "receipt delivered=0 overflowed=0 disconnected=0; no queue receives the event"}
+{"ordinal": 8, "actor": "server", "kind": "sse.publish", "args": {"event": "evt_missed_b"}, "expect": "receipt delivered=0 overflowed=0 disconnected=0; no queue receives the event"}
+{"ordinal": 9, "actor": "capture-client", "kind": "sse.subscribe", "args": {"pending_events": 2, "interest": "absent"}, "expect": "subscription admitted; the connection frame is queued"}
+{"ordinal": 10, "actor": "server", "kind": "sse.publish", "args": {"event": "evt_late"}, "expect": "receipt delivered=1 to the reconnected subscriber only"}
+{"ordinal": 11, "actor": "server", "kind": "sse.reconcile", "args": {}, "expect": "streams drain their bounded frames then close"}
+{"ordinal": 12, "actor": "capture-client", "kind": "sse.read", "args": {"subscriber": "reconnected"}, "expect": "frames carrying evt_initial then evt_late, then close; no presented frame carries evt_first, evt_second, evt_third, evt_missed_a or evt_missed_b"}

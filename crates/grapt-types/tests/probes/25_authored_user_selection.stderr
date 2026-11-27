@@ -1,0 +1,25 @@
+warning: unreachable expression
+  --> tests/probes/25_authored_user_selection.rs:20:18
+   |
+19 |         client: todo!(),
+   |                 ------- any code following this expression is unreachable
+20 |         request: todo!(),
+   |                  ^^^^^^^ unreachable expression
+   |
+   = note: `#[warn(unreachable_code)]` (part of `#[warn(unused)]`) on by default
+
+error[E0451]: fields `client`, `request`, `nonce`, `selector` and `target` of struct `UserModelSelection` are private
+  --> tests/probes/25_authored_user_selection.rs:19:9
+   |
+18 |     let _crossing = SubagentModelPreference::user_selected(UserModelSelection {
+   |                                                            ------------------ in this type
+19 |         client: todo!(),
+   |         ^^^^^^ private field
+20 |         request: todo!(),
+   |         ^^^^^^^ private field
+21 |         nonce: todo!(),
+   |         ^^^^^ private field
+22 |         selector: todo!(),
+   |         ^^^^^^^^ private field
+23 |         target: todo!(),
+   |         ^^^^^^ private field

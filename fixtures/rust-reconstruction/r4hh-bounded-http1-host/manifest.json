@@ -1,0 +1,215 @@
+{
+  "schema_version": 1,
+  "contract": "grapt-api-bounded-http1-host-corpus/v1",
+  "lane": "R4H-H",
+  "owning_crate": "grapt-api",
+  "admission": "bounded HTTP/1 host",
+  "base": "d04e2d96a527b8f6fedf00697fdf4105effd0f78",
+  "note": "Language-neutral statements of the R4H-H bounded HTTP/1 host. Each scenario names the exact compiled test that proves it; crates/grapt-api/tests/host_acceptance_corpus.rs refuses a scenario whose owner is not a real test function in the named target. This corpus is H's alone and lives in its own directory: R4H-A owns fixtures/rust-reconstruction/r4-api-auth-foundation under contract grapt-api-auth-acceptance-corpus/v1 and R4H-L owns fixtures/rust-reconstruction/r4-host-auth-foundation under grapt-location-acceptance-corpus/v1, and both validators close their scenario sets in both directions, so a row added to either would turn that lane red. Scenarios whose owner is a `lib` test are there because A's fixture verification route is #[cfg(test)] and unreachable from an integration test; a witness that needs a server-derived principal has nowhere else to live. R1 held this candidate on two defects, both closed here: the root owner's retained task set was unbounded and made the forced-close receipt false, and the architecture gate was red on a fresh default-config checkout. The last four scenarios are their witnesses.",
+  "scenarios": [
+    {
+      "id": "ready-real-http1-graceful",
+      "claim": "A real HTTP/1 request over an accepted location listener reaches the fixture route carrying the server-derived sealed principal, and an explicit stop with nothing in flight returns a graceful receipt whose admitted and refused counts are exact.",
+      "test_target": "lib",
+      "test": "a_real_http1_request_reaches_the_route_under_a_server_derived_principal"
+    },
+    {
+      "id": "principal-spoof-refused",
+      "claim": "A recipient and a client identity authored into a header, a query string and a path never replace the server-derived principal a route sees, and a request presenting no credential does not invoke the route at all.",
+      "test_target": "lib",
+      "test": "a_forged_identity_in_request_data_never_replaces_the_sealed_principal"
+    },
+    {
+      "id": "per-connection-request-budget",
+      "claim": "Exactly the configured number of requests route on one keep-alive connection; the next is a bounded overload refusal carrying Connection: close, and it does not reach the route.",
+      "test_target": "lib",
+      "test": "a_connection_routes_exactly_its_budget_and_then_refuses_and_closes"
+    },
+    {
+      "id": "global-overload-refuses-without-queueing",
+      "claim": "Global request admission answers immediately when the bound is full rather than waiting for a permit, and a released permit admits later work.",
+      "test_target": "lib",
+      "test": "global_admission_refuses_immediately_rather_than_queueing"
+    },
+    {
+      "id": "permit-held-through-response-body",
+      "claim": "An in-flight permit remains consumed after the response head has been produced and is released only when the response body ends or is dropped; while it is held the next request is refused, and releasing the body admits one.",
+      "test_target": "lib",
+      "test": "global_overload_refuses_immediately_and_recovers_when_a_body_ends"
+    },
+    {
+      "id": "connection-capacity-backpressure",
+      "claim": "Live admitted sockets never exceed the connection bound: an additional client is not admitted into a connection task while the bound is full, and is served once a permit returns.",
+      "test_target": "lib",
+      "test": "the_connection_bound_is_never_exceeded_and_a_release_admits_the_next_client"
+    },
+    {
+      "id": "connection-permit-held-until-task-ends",
+      "claim": "A connection permit is released when its task ends, not when its response was written: while the first connection is still live the terminal receipt reports exactly one admitted connection, however many clients connected.",
+      "test_target": "lib",
+      "test": "a_connection_permit_is_held_until_its_task_ends"
+    },
+    {
+      "id": "streaming-and-declared-body-bounds",
+      "claim": "A consuming route observes no more than the configured body bytes and answers 413; a known oversized Content-Length is refused ahead of the route without invoking it at all.",
+      "test_target": "lib",
+      "test": "a_streaming_body_over_the_bound_is_refused_and_the_route_sees_no_more_than_the_bound"
+    },
+    {
+      "id": "graceful-drain",
+      "claim": "A stop issued while a response body is still open keeps polling that connection after signalling graceful shutdown, and a body that completes before the drain deadline yields a graceful receipt.",
+      "test_target": "lib",
+      "test": "a_stop_with_a_completing_response_drains_gracefully"
+    },
+    {
+      "id": "forced-close-exact-inventory",
+      "claim": "An exhausted drain allowance snapshots the exact live connection count, aborts and joins every one of them, and returns a forced-close receipt that is never rendered as graceful.",
+      "test_target": "lib",
+      "test": "an_exhausted_drain_allowance_forces_close_with_an_exact_inventory"
+    },
+    {
+      "id": "accept-error-is-typed-and-bounded",
+      "claim": "One classified accept failure fails the host typed at the accept stage after exactly one attempt, with no retry schedule and no inspection of operating-system text.",
+      "test_target": "lib",
+      "test": "a_classified_accept_failure_stops_the_host_without_a_retry_loop"
+    },
+    {
+      "id": "accept-failures-are-classified-by-kind",
+      "claim": "Every accept failure is classified from an io::ErrorKind or from the listener's own closed refusal, including kinds a witness cannot make a real socket produce.",
+      "test_target": "lib",
+      "test": "accept_failures_are_classified_by_kind_and_never_by_text"
+    },
+    {
+      "id": "root-task-loss-is-its-own-fact",
+      "claim": "A root task that ends without producing a receipt is reported as that loss, naming whether it was detached, cancelled or panicked, rather than as a fabricated live-resource count nobody measured.",
+      "test_target": "lib",
+      "test": "a_host_whose_root_handle_is_gone_reports_the_loss_rather_than_an_inventory"
+    },
+    {
+      "id": "bounds-refuse-zero-naming-their-own-field",
+      "claim": "All eight host bounds refuse zero and each refusal names its own field rather than a sibling's.",
+      "test_target": "lib",
+      "test": "every_bound_refuses_zero_naming_its_own_field"
+    },
+    {
+      "id": "checked-limits-refuse-before-a-panicking-backend",
+      "claim": "A head buffer below the HTTP/1 backend's minimum is refused typed, reporting both the supplied value and the backend's minimum, without reaching the assertion that would panic; the minimum itself is admitted.",
+      "test_target": "lib",
+      "test": "the_head_buffer_refuses_below_hypers_minimum_without_panicking"
+    },
+    {
+      "id": "permit-counts-refuse-above-the-backend-maximum",
+      "claim": "Both semaphore-backed bounds refuse a count above the permit backend's maximum before the semaphore is constructed, and the maximum itself is admitted.",
+      "test_target": "lib",
+      "test": "a_permit_count_above_the_backend_maximum_is_refused_before_the_semaphore"
+    },
+    {
+      "id": "receipt-counters-refuse-to-wrap",
+      "claim": "A counter increment past the u64 ceiling is reported as an overflow that fails the receipt typed, and the counter holds its last true value rather than wrapping.",
+      "test_target": "lib",
+      "test": "counters_report_overflow_rather_than_wrapping"
+    },
+    {
+      "id": "deadline-authority-is-injected",
+      "claim": "All four timing methods the HTTP/1 connection uses route to the injected driver, including the reading of now whose trait default is an ambient wall clock.",
+      "test_target": "lib",
+      "test": "the_timer_delegates_every_method_to_its_driver"
+    },
+    {
+      "id": "the-driver-reads-the-runtime-clock",
+      "claim": "The production driver's reading of now moves with the runtime clock, so a witness can advance a deadline instead of waiting for one.",
+      "test_target": "lib",
+      "test": "the_production_driver_reads_the_runtime_clock_not_the_wall_clock"
+    },
+    {
+      "id": "header-count-over-limit",
+      "claim": "A head carrying more headers than the bound is refused by the parser with 431 before the authenticated service, while a well-formed request on the same host reaches the service and is refused there.",
+      "test_target": "http1_hostile",
+      "test": "a_head_with_more_headers_than_the_bound_is_refused_before_the_service"
+    },
+    {
+      "id": "head-buffer-over-limit",
+      "claim": "A head larger than the configured read buffer never reaches the authenticated service, under a header-count bound set high enough that it cannot be the bound in force.",
+      "test_target": "http1_hostile",
+      "test": "a_head_larger_than_the_read_buffer_is_refused_before_the_service"
+    },
+    {
+      "id": "slow-partial-header-timeout",
+      "claim": "Under deterministic time an incomplete head is closed without any response once its allowance is exhausted, while a complete head on the same paused clock is answered without touching the deadline.",
+      "test_target": "http1_hostile",
+      "test": "an_incomplete_head_is_closed_when_its_allowance_is_exhausted"
+    },
+    {
+      "id": "unauthenticated-body-is-never-read",
+      "claim": "An unauthenticated request declaring an oversized body is refused before its body is considered at all, so the host reads none of it and tells the caller nothing about its bounds.",
+      "test_target": "http1_hostile",
+      "test": "a_known_oversized_content_length_is_refused_without_reading_the_body"
+    },
+    {
+      "id": "stop-cancels-accept",
+      "claim": "A host proven to be serving is stopped while its accept is pending; the stop cancels that accept, the root joins, and the address serves nothing afterwards.",
+      "test_target": "shutdown_contract",
+      "test": "a_stop_cancels_a_pending_accept_and_joins"
+    },
+    {
+      "id": "listener-transfer-is-linear",
+      "claim": "The host consumes the listener by value and gives the socket up at its terminal: the exact observed address can be rebound by a new location owner once the host has joined.",
+      "test_target": "shutdown_contract",
+      "test": "the_observed_address_can_be_rebound_after_the_host_has_joined"
+    },
+    {
+      "id": "drop-is-a-backstop-with-no-receipt",
+      "claim": "Dropping a running host stops it serving and returns no receipt, because durable finalization that needs input or output may not be assumed to complete inside Drop.",
+      "test_target": "shutdown_contract",
+      "test": "a_dropped_host_stops_serving_and_returns_no_receipt"
+    },
+    {
+      "id": "direct-hyper-only",
+      "claim": "No production module contains the convenience server, the automatic protocol builder, an upgrade, HTTP/2, an unbounded channel, an ambient clock reading, an unwrap, an expect, unsafe code, or a lint suppression.",
+      "test_target": "host_architecture",
+      "test": "the_forbidden_transport_constructions_are_absent_from_production"
+    },
+    {
+      "id": "one-spawn-site-under-a-permit",
+      "claim": "The connection task is spawned in exactly one place and that spawn moves the already-acquired connection permit into the task.",
+      "test_target": "host_architecture",
+      "test": "the_connection_task_is_spawned_exactly_once_and_only_under_a_permit"
+    },
+    {
+      "id": "clock-access-lives-in-one-named-adapter",
+      "claim": "No production module outside the named deadline adapter reaches a clock, and the adapter itself does, so the placement check is about placement rather than about absence.",
+      "test_target": "host_architecture",
+      "test": "tokio_time_lives_only_in_the_named_deadline_adapter"
+    },
+    {
+      "id": "compile-time-seals",
+      "claim": "The compiler rejects a defaulted limit set, a listener used after transfer into the host, a cloned running host, and a raw router passed where the sealed authenticated service is required.",
+      "test_target": "compile_fail",
+      "test": "transport_boundary_seals_are_rejected_by_the_compiler"
+    },
+    {
+      "id": "retained-task-set-is-bounded",
+      "claim": "The root owner reaps completed connection tasks unconditionally, so its retained task set never exceeds max_connections however many sequential connections have been served, and every connection is still counted exactly once.",
+      "test_target": "lib",
+      "test": "the_retained_connection_task_set_stays_within_the_connection_bound"
+    },
+    {
+      "id": "terminal-receipt-counts-only-live-connections",
+      "claim": "A terminal receipt never reports more connections live at the deadline, or aborted and joined, than the connection bound admits could ever have been live at once.",
+      "test_target": "lib",
+      "test": "the_terminal_receipt_never_reports_more_live_than_the_connection_bound"
+    },
+    {
+      "id": "no-fabricated-forced-close-backlog",
+      "claim": "Under the production driver and a genuinely exhausted drain allowance, a run in which every response completed reports no forced-close backlog it did not have.",
+      "test_target": "lib",
+      "test": "a_real_exhausted_drain_allowance_reports_no_fabricated_backlog"
+    },
+    {
+      "id": "architecture-gate-reads-the-same-source-on-any-checkout",
+      "claim": "The architecture gate's test-module stripper cuts identically on an LF and a CRLF checkout, so a crate's legitimate test-only clock use is never scanned as production source because of how the tree was checked out.",
+      "test_target": "host_architecture",
+      "test": "the_stripper_cuts_the_test_module_on_crlf_as_well_as_lf"
+    }
+  ]
+}

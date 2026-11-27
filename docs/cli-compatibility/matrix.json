@@ -1,0 +1,721 @@
+{
+  "schema": "grapt.cli-compatibility.matrix.v1",
+  "oracle": "42e4888cc0f8c79a6c7fdd9ac74766a583a602e6",
+  "inventory": "fixtures/cli-compatibility/oracle-surface.json",
+  "classes": {
+    "compatible": "the Rust CLI behaves as the TypeScript CLI did; an executed witness or accepted receipt shows it",
+    "implemented": "implemented by this campaign to the TypeScript behaviour; a named witness shows it",
+    "redesigned": "kept in purpose, deliberately different in form, with the reason and a witness of the Rust form",
+    "refused": "outside the supported CLI contract; the CLI refuses it by name with a stable reason"
+  },
+  "extras": {
+    "extra:run:stdin": "run/run.ts:76",
+    "extra:exit:0": "index.ts:84",
+    "extra:exit:130": "run/noninteractive.ts:511,652",
+    "extra:exit:1-execution": "run/noninteractive.ts:495-516",
+    "extra:exit:1-other": "run/run.ts:254",
+    "extra:output:tty-styling": "run/noninteractive.ts:111-117",
+    "extra:output:errors": "run/ui.ts:22",
+    "extra:framework:--help": "framework/runtime.ts:79 (Effect Command.run)",
+    "extra:framework:--version": "framework/runtime.ts:79 (Effect Command.run)",
+    "extra:run:permission-reply": "run/noninteractive.ts:142-167",
+    "extra:output:eol": "run/noninteractive.ts:112"
+  },
+  "rows": [
+    {
+      "id": "CCM-DEF-01",
+      "oracle": [
+        "command:opencode",
+        "argument:opencode:directory",
+        "flag:opencode:--continue",
+        "flag:opencode:--session",
+        "flag:opencode:--prompt"
+      ],
+      "class": "refused",
+      "typescript": "`opencode [directory] [-c|-s <id>] [--prompt]` starts the interactive TUI (handlers/default.ts)",
+      "rust": "legacy top-level flags refuse; start the shipped native terminal with `grapt` or `grapt code`",
+      "evidence": [
+        "test:crates/grapt-cli/tests/public_seams/compatibility.rs::recovery_directions_name_the_shipped_terminal_and_update_commands",
+        "test:crates/grapt-cli/tests/public_seams/compatibility.rs::every_typescript_surface_outside_the_contract_is_refused_by_name"
+      ],
+      "refusal": "grapt (interactive)"
+    },
+    {
+      "id": "CCM-DEF-02",
+      "oracle": [
+        "flag:opencode:--standalone",
+        "flag:opencode:--server"
+      ],
+      "class": "refused",
+      "typescript": "`--standalone`/`--server <url>` choose a private server or a server URL for the TUI",
+      "rust": "top-level flags refuse as the interactive command; run/attach/acp use --embedded, --remote or --service",
+      "evidence": [
+        "test:crates/grapt-cli/tests/public_seams/compatibility.rs::every_typescript_surface_outside_the_contract_is_refused_by_name"
+      ],
+      "refusal": "grapt (interactive)"
+    },
+    {
+      "id": "CCM-DEF-03",
+      "oracle": [
+        "flag:opencode:--inspect",
+        "flag:opencode:--author",
+        "flag:opencode:--maintainer",
+        "flag:opencode:--auto",
+        "flag:opencode:--yolo",
+        "flag:opencode:--dangerously-skip-permissions"
+      ],
+      "class": "refused",
+      "typescript": "permission presets for the interactive session",
+      "rust": "top-level flags refuse as the interactive command",
+      "evidence": [
+        "test:crates/grapt-cli/tests/public_seams/compatibility.rs::every_typescript_surface_outside_the_contract_is_refused_by_name"
+      ],
+      "refusal": "grapt (interactive)"
+    },
+    {
+      "id": "CCM-ACP-01",
+      "oracle": [
+        "command:acp"
+      ],
+      "class": "redesigned",
+      "typescript": "`opencode acp`: ACP over stdio against a private standalone server (handlers/acp.ts)",
+      "rust": "`grapt acp <connection>`: the same ACP semantics against an explicit --service, --remote or --embedded server",
+      "evidence": [
+        "test:crates/grapt-cli/tests/public_seams/acp.rs::binary_acp_returns_initialize_while_stdin_remains_open",
+        "test:crates/grapt-cli/tests/public_seams/acp.rs::acp_lifecycle_uses_durable_load_replay_resume_fork_close_delete_and_list",
+        "receipt:docs/acp-compatibility/RESULTS.md"
+      ],
+      "reason": "the Rust CLI never starts an implicit private server; the connection is always explicit"
+    },
+    {
+      "id": "CCM-API-01",
+      "oracle": [
+        "command:api",
+        "argument:api:operation | method path",
+        "flag:api:--data",
+        "flag:api:--header",
+        "flag:api:--param",
+        "flag:api:--standalone",
+        "flag:api:--server"
+      ],
+      "class": "refused",
+      "typescript": "`opencode api`: a raw request to the running server",
+      "rust": "`grapt api` refuses with its stable reason",
+      "evidence": [
+        "test:crates/grapt-cli/tests/public_seams/compatibility.rs::every_typescript_surface_outside_the_contract_is_refused_by_name"
+      ],
+      "refusal": "api"
+    },
+    {
+      "id": "CCM-DBG-01",
+      "oracle": [
+        "command:debug",
+        "command:debug agents"
+      ],
+      "class": "refused",
+      "typescript": "`opencode debug agents`",
+      "rust": "`grapt debug` refuses with its stable reason",
+      "evidence": [
+        "test:crates/grapt-cli/tests/public_seams/compatibility.rs::every_typescript_surface_outside_the_contract_is_refused_by_name"
+      ],
+      "refusal": "debug"
+    },
+    {
+      "id": "CCM-CON-01",
+      "oracle": [
+        "command:console",
+        "command:console login",
+        "argument:console login:url"
+      ],
+      "class": "refused",
+      "typescript": "`opencode console login [url]` (exit 130 on cancel)",
+      "rust": "`grapt console` refuses with its stable reason",
+      "evidence": [
+        "test:crates/grapt-cli/tests/public_seams/compatibility.rs::every_typescript_surface_outside_the_contract_is_refused_by_name"
+      ],
+      "refusal": "console"
+    },
+    {
+      "id": "CCM-AUT-01",
+      "oracle": [
+        "command:auth",
+        "command:auth connect",
+        "argument:auth connect:url"
+      ],
+      "class": "refused",
+      "typescript": "`opencode auth connect <url>`",
+      "rust": "`grapt auth connect <url>` refuses with its stable reason; use profile-scoped `grapt login` and `grapt auth status`",
+      "evidence": [
+        "test:crates/grapt-cli/tests/public_seams/compatibility.rs::every_typescript_surface_outside_the_contract_is_refused_by_name"
+      ],
+      "refusal": "auth"
+    },
+    {
+      "id": "CCM-MCP-01",
+      "oracle": [
+        "command:mcp"
+      ],
+      "class": "refused",
+      "typescript": "`opencode mcp serve`",
+      "rust": "MCP server mode refuses with its stable reason",
+      "evidence": [
+        "test:crates/grapt-cli/tests/public_seams/compatibility.rs::every_typescript_surface_outside_the_contract_is_refused_by_name"
+      ],
+      "refusal": "mcp"
+    },
+    {
+      "id": "CCM-MCP-CONFIG-01",
+      "oracle": [
+        "command:mcp add",
+        "argument:mcp add:name",
+        "argument:mcp add:command",
+        "flag:mcp add:--url",
+        "flag:mcp add:--header",
+        "flag:mcp add:--env",
+        "flag:mcp add:--global"
+      ],
+      "class": "redesigned",
+      "typescript": "`opencode mcp add/remove`",
+      "rust": "`grapt mcp add/remove <name> --service <profile>` persists declarations in user configuration through the authenticated product",
+      "reason": "an explicit service owns the user configuration; stdio commands follow --, --env and --url are supported, and --global and --header are refused as unknown options",
+      "evidence": [
+        "test:crates/grapt-product/tests/dogfood_headless/mcp_configuration.rs::mcp_user_configuration_edits_preserve_comments_and_refuse_invalid_or_busy_inputs"
+      ]
+    },
+    {
+      "id": "CCM-MCP-LIST-01",
+      "oracle": [
+        "command:mcp list"
+      ],
+      "class": "redesigned",
+      "typescript": "`opencode mcp list`",
+      "rust": "`grapt mcp list --service <profile> [--directory <repository>] [--json]` lists server status through the authenticated product API; no configuration or credentials are printed",
+      "reason": "the public CLI discovers the service and reads its authenticated catalog",
+      "evidence": [
+        "test:crates/grapt-cli/tests/mcp_commands.rs::mcp_public_binary_exposes_help_and_requires_an_explicit_service"
+      ]
+    },
+    {
+      "id": "CCM-MCP-AUTH-01",
+      "oracle": [
+        "command:mcp auth",
+        "argument:mcp auth:name",
+        "command:mcp logout",
+        "argument:mcp logout:name"
+      ],
+      "class": "redesigned",
+      "typescript": "`opencode mcp auth|logout <name>`",
+      "rust": "`grapt mcp login|logout <name> --service <profile>` uses the authenticated product; login waits for saved credentials",
+      "reason": "the product owns credentials; the public CLI uses service discovery and its existing authenticated API transport",
+      "evidence": [
+        "test:crates/grapt-cli/src/command/mcp.rs::mcp_login_and_logout_use_the_public_command_grammar",
+        "test:crates/grapt-cli/src/client/mcp/tests.rs::mcp_auth_uses_existing_credentials_and_escapes_server_and_location",
+        "test:crates/grapt-cli/tests/mcp_commands.rs::mcp_public_binary_exposes_help_and_requires_an_explicit_service"
+      ]
+    },
+    {
+      "id": "CCM-PLG-01",
+      "oracle": [
+        "command:plugin",
+        "command:plugin list"
+      ],
+      "class": "refused",
+      "typescript": "`opencode plugin list`",
+      "rust": "`grapt plugin list` refuses with its stable reason; marketplace add and install are supported",
+      "evidence": [
+        "test:crates/grapt-cli/tests/public_seams/compatibility.rs::every_typescript_surface_outside_the_contract_is_refused_by_name"
+      ],
+      "refusal": "plugin"
+    },
+    {
+      "id": "CCM-MIG-01",
+      "oracle": [
+        "command:migrate"
+      ],
+      "class": "refused",
+      "typescript": "`opencode migrate`: v1 data to v2",
+      "rust": "`grapt migrate` refuses with its stable reason",
+      "evidence": [
+        "test:crates/grapt-cli/tests/public_seams/compatibility.rs::every_typescript_surface_outside_the_contract_is_refused_by_name",
+        "receipt:docs/migration-recovery/OPERATOR-RECIPE.md"
+      ],
+      "refusal": "migrate"
+    },
+    {
+      "id": "CCM-MIN-01",
+      "oracle": [
+        "command:mini",
+        "flag:mini:--standalone",
+        "flag:mini:--server",
+        "flag:mini:--continue",
+        "flag:mini:--session",
+        "flag:mini:--fork",
+        "flag:mini:--replay",
+        "flag:mini:--replay-limit",
+        "flag:mini:--model",
+        "flag:mini:--agent",
+        "flag:mini:--prompt",
+        "flag:mini:--demo"
+      ],
+      "class": "refused",
+      "typescript": "`opencode mini`: the minimal interactive interface",
+      "rust": "`grapt mini` refuses; start the shipped native terminal with `grapt` or `grapt code`",
+      "evidence": [
+        "test:crates/grapt-cli/tests/public_seams/compatibility.rs::recovery_directions_name_the_shipped_terminal_and_update_commands",
+        "test:crates/grapt-cli/tests/public_seams/compatibility.rs::every_typescript_surface_outside_the_contract_is_refused_by_name"
+      ],
+      "refusal": "mini"
+    },
+    {
+      "id": "CCM-PAR-01",
+      "oracle": [
+        "command:pair"
+      ],
+      "class": "refused",
+      "typescript": "`opencode pair`",
+      "rust": "`grapt pair` refuses with its stable reason",
+      "evidence": [
+        "test:crates/grapt-cli/tests/public_seams/compatibility.rs::every_typescript_surface_outside_the_contract_is_refused_by_name"
+      ],
+      "refusal": "pair"
+    },
+    {
+      "id": "CCM-UPG-01",
+      "oracle": [
+        "command:upgrade"
+      ],
+      "class": "refused",
+      "typescript": "`opencode upgrade`",
+      "rust": "`grapt upgrade` refuses; install a verified local package with `grapt update --from <package-directory>`",
+      "evidence": [
+        "test:crates/grapt-cli/tests/public_seams/compatibility.rs::recovery_directions_name_the_shipped_terminal_and_update_commands",
+        "test:crates/grapt-cli/tests/public_seams/compatibility.rs::every_typescript_surface_outside_the_contract_is_refused_by_name"
+      ],
+      "refusal": "upgrade"
+    },
+    {
+      "id": "CCM-SRV-01",
+      "oracle": [
+        "command:serve",
+        "flag:serve:--hostname",
+        "flag:serve:--port",
+        "flag:serve:--registration-file",
+        "flag:serve:--service",
+        "flag:serve:--stdio"
+      ],
+      "class": "refused",
+      "typescript": "`opencode serve [--hostname] [--port] [--service] [--stdio] [--registration-file]`",
+      "rust": "`grapt serve` refuses with its stable reason",
+      "evidence": [
+        "test:crates/grapt-cli/tests/public_seams/compatibility.rs::every_typescript_surface_outside_the_contract_is_refused_by_name",
+        "receipt:docs/service-handover/EVIDENCE-MAP.md"
+      ],
+      "refusal": "serve"
+    },
+    {
+      "id": "CCM-SVC-01",
+      "oracle": [
+        "command:service",
+        "command:service status"
+      ],
+      "class": "implemented",
+      "typescript": "`opencode service status`: the service URL, or `stopped` (handlers/service/status.ts)",
+      "rust": "`grapt service status --service <root>`: the URL on one line, or `stopped`, exit 0",
+      "evidence": [
+        "test:crates/grapt-cli/tests/public_seams/compatibility/status.rs::service_status_prints_stopped_when_no_service_is_registered",
+        "test:crates/grapt-product/tests/dogfood_headless/cli_compatibility.rs::the_typescript_run_service_and_resume_forms_work_against_the_real_product"
+      ],
+      "reason": "the service root is explicit (--service) rather than read from global configuration"
+    },
+    {
+      "id": "CCM-SVC-02",
+      "oracle": [
+        "command:service start"
+      ],
+      "class": "implemented",
+      "typescript": "`opencode service start`: ensure the service and print its URL (handlers/service/start.ts)",
+      "rust": "`grapt service start --service <root> --product <binary>` prints the started service's URL; `grapt launch` is the same start rendered `launched <url>`. Both, and `--embedded`, spawn the product as `serve --service <root> --port 0`, the only form it serves (before this campaign they omitted `--port 0` and none could start the real product). On Windows the service owner is spawned with an explicit handle list, so a caller reading either command through a pipe returns as soon as the service is up",
+      "evidence": [
+        "test:crates/grapt-product/tests/dogfood_headless/cli_compatibility.rs::the_typescript_run_service_and_resume_forms_work_against_the_real_product",
+        "receipt:docs/cli-compatibility/receipts/windows/ccm-w4-product-listed-20260925T103424Z.json",
+        "receipt:docs/cli-compatibility/receipts/windows/ccm-w5-ccm111-mutant-20260925T103445Z.json",
+        "receipt:docs/cli-compatibility/receipts/windows/ccm-w6-product-b320feea-20260925T110303Z.json",
+        "receipt:docs/cli-compatibility/receipts/windows/ccm-w7-ccm111-3b3cd5b2.log"
+      ],
+      "reason": "the service root and product binary are explicit"
+    },
+    {
+      "id": "CCM-SVC-03",
+      "oracle": [
+        "command:service restart"
+      ],
+      "class": "refused",
+      "typescript": "`opencode service restart`",
+      "rust": "`grapt service restart` refuses",
+      "evidence": [
+        "test:crates/grapt-cli/tests/public_seams/compatibility.rs::every_typescript_surface_outside_the_contract_is_refused_by_name"
+      ],
+      "refusal": "service restart"
+    },
+    {
+      "id": "CCM-SVC-04",
+      "oracle": [
+        "command:service stop"
+      ],
+      "class": "refused",
+      "typescript": "`opencode service stop`",
+      "rust": "`grapt service stop` refuses",
+      "evidence": [
+        "test:crates/grapt-cli/tests/public_seams/compatibility.rs::every_typescript_surface_outside_the_contract_is_refused_by_name"
+      ],
+      "refusal": "service stop"
+    },
+    {
+      "id": "CCM-SVC-05",
+      "oracle": [
+        "command:service get",
+        "argument:service get:key",
+        "command:service set",
+        "argument:service set:key",
+        "command:service unset",
+        "argument:service unset:key"
+      ],
+      "class": "refused",
+      "typescript": "`opencode service get|set|unset`: service configuration",
+      "rust": "`grapt service get|set|unset` refuse",
+      "evidence": [
+        "test:crates/grapt-cli/tests/public_seams/compatibility.rs::every_typescript_surface_outside_the_contract_is_refused_by_name"
+      ],
+      "refusal": [
+        "service get",
+        "service set",
+        "service unset"
+      ]
+    },
+    {
+      "id": "CCM-RUN-01",
+      "oracle": [
+        "command:run",
+        "argument:run:message"
+      ],
+      "class": "implemented",
+      "typescript": "`opencode run <message...> [-- more]`: words joined, a word with a space quoted (run/run.ts formatMessage)",
+      "rust": "`grapt run <connection> <message...> [-- more]`, with the same joining; --prompt and --stdin remain",
+      "evidence": [
+        "test:crates/grapt-cli/tests/public_seams/compatibility.rs::run_takes_the_typescript_message_words_and_defaults_to_a_new_session",
+        "test:crates/grapt-product/tests/dogfood_headless/cli_compatibility.rs::the_typescript_run_service_and_resume_forms_work_against_the_real_product"
+      ]
+    },
+    {
+      "id": "CCM-RUN-02",
+      "oracle": [
+        "command:run"
+      ],
+      "class": "implemented",
+      "typescript": "a run with no session flag starts a new Session (session-target.ts)",
+      "rust": "a run with no selector is `--new`",
+      "evidence": [
+        "test:crates/grapt-cli/tests/public_seams/compatibility.rs::run_takes_the_typescript_message_words_and_defaults_to_a_new_session",
+        "test:crates/grapt-product/tests/dogfood_headless/cli_compatibility.rs::the_typescript_run_service_and_resume_forms_work_against_the_real_product"
+      ]
+    },
+    {
+      "id": "CCM-RUN-03",
+      "oracle": [
+        "flag:run:--continue",
+        "flag:run:--session"
+      ],
+      "class": "implemented",
+      "typescript": "`-c/--continue` resumes the last Session, or starts one when there is none; `-s/--session <id>` continues one",
+      "rust": "`-c/--continue` (also `--resume`), starting a new Session when there is none to resume (with `--project P`, in P's worktree), and `-s/--session`",
+      "evidence": [
+        "test:crates/grapt-cli/tests/public_seams/compatibility.rs::run_takes_the_typescript_resume_forms",
+        "test:crates/grapt-cli/tests/public_seams/compatibility/resume_fork.rs::an_empty_resume_starts_a_new_session_and_never_forks",
+        "test:crates/grapt-cli/tests/public_seams/compatibility/resume_fork.rs::an_empty_project_scoped_resume_starts_its_session_in_that_project",
+        "test:crates/grapt-product/tests/dogfood_headless/cli_compatibility.rs::the_typescript_run_service_and_resume_forms_work_against_the_real_product"
+      ]
+    },
+    {
+      "id": "CCM-RUN-04",
+      "oracle": [
+        "flag:run:--fork"
+      ],
+      "class": "implemented",
+      "typescript": "`--fork` forks the Session selected by `--continue` or `--session` and continues in the fork; without either it fails",
+      "rust": "`--fork` with `-s/--session` or `-c/--continue`: the selected Session is forked and the run prompts the child; `--fork` alone or with `--new` refuses (`--fork requires --continue or --session`)",
+      "evidence": [
+        "test:crates/grapt-cli/tests/public_seams/compatibility/resume_fork.rs::run_fork_forks_the_selected_session_and_prompts_the_child",
+        "test:crates/grapt-cli/tests/public_seams/compatibility/resume_fork.rs::a_refused_fork_is_named_and_prompts_nothing",
+        "test:crates/grapt-product/tests/dogfood_headless/cli_compatibility.rs::run_fork_executes_in_a_child_and_leaves_the_parent_unchanged"
+      ]
+    },
+    {
+      "id": "CCM-RUN-05",
+      "oracle": [
+        "flag:run:--model",
+        "flag:run:--agent"
+      ],
+      "class": "refused",
+      "typescript": "`-m/--model`, `--agent`",
+      "rust": "refused",
+      "evidence": [
+        "test:crates/grapt-cli/tests/public_seams/compatibility.rs::every_typescript_surface_outside_the_contract_is_refused_by_name"
+      ],
+      "refusal": "--agent/--model"
+    },
+    {
+      "id": "CCM-RUN-06",
+      "oracle": [
+        "flag:run:--format"
+      ],
+      "class": "implemented",
+      "typescript": "`--format default`: answer text on stdout, progress and step labels on stderr (run/noninteractive.ts writeText, run/ui.ts println)",
+      "rust": "`--format default` (and no format): the same division, rendered from durable truth",
+      "evidence": [
+        "test:crates/grapt-cli/tests/public_seams/compatibility.rs::run_takes_the_typescript_default_format_and_thinking",
+        "test:crates/grapt-cli/tests/public_seams/compatibility/render.rs::a_text_run_writes_only_its_own_answer_to_stdout",
+        "test:crates/grapt-cli/tests/public_seams/compatibility/render.rs::a_text_run_reads_back_past_the_first_page_to_its_own_prompt",
+        "test:crates/grapt-cli/tests/public_seams/long_turn.rs::a_long_text_turn_survives_stream_ends_and_renders_past_the_first_page",
+        "test:crates/grapt-product/tests/dogfood_headless/cli_compatibility.rs::the_typescript_run_service_and_resume_forms_work_against_the_real_product",
+        "receipt:docs/cli-compatibility/receipts/windows/ccm-w1-seams-20260925T102427Z.json"
+      ]
+    },
+    {
+      "id": "CCM-RUN-07",
+      "oracle": [
+        "flag:run:--format"
+      ],
+      "class": "refused",
+      "typescript": "`--format json`: one JSON event per live advisory event (run/noninteractive.ts emit)",
+      "rust": "`--format json` refuses; machine output is `--jsonl`: durable message pages and the run receipt",
+      "evidence": [
+        "test:crates/grapt-cli/tests/public_seams/compatibility.rs::every_typescript_surface_outside_the_contract_is_refused_by_name"
+      ],
+      "refusal": "--format json"
+    },
+    {
+      "id": "CCM-RUN-08",
+      "oracle": [
+        "flag:run:--file"
+      ],
+      "class": "refused",
+      "typescript": "`-f/--file` attachments",
+      "rust": "refused",
+      "evidence": [
+        "test:crates/grapt-cli/tests/public_seams/compatibility.rs::every_typescript_surface_outside_the_contract_is_refused_by_name"
+      ],
+      "refusal": "--file"
+    },
+    {
+      "id": "CCM-RUN-09",
+      "oracle": [
+        "flag:run:--title"
+      ],
+      "class": "implemented",
+      "typescript": "`--title <name>`: Session title (run flag description, commands.ts)",
+      "rust": "`--title <name>` names the run's Session before the prompt: trimmed, nonempty, no control characters, at most 100 characters; `attach` does not take it",
+      "evidence": [
+        "test:crates/grapt-cli/tests/public_seams/compatibility/rename.rs::run_title_names_the_run_session_and_attach_does_not_take_it",
+        "test:crates/grapt-cli/tests/public_seams/compatibility/rename.rs::run_title_refuses_empty_overlong_and_control_names",
+        "test:crates/grapt-cli/tests/public_seams/compatibility/rename.rs::run_title_renames_the_session_before_the_prompt"
+      ]
+    },
+    {
+      "id": "CCM-RUN-10",
+      "oracle": [
+        "flag:run:--thinking"
+      ],
+      "class": "implemented",
+      "typescript": "`--thinking`: `Thinking: <text>` lines",
+      "rust": "`--thinking`: the same lines from durable reasoning",
+      "evidence": [
+        "test:crates/grapt-cli/tests/public_seams/compatibility.rs::run_takes_the_typescript_default_format_and_thinking",
+        "test:crates/grapt-cli/tests/public_seams/compatibility/render.rs::thinking_adds_the_reasoning_before_the_answer",
+        "receipt:docs/cli-compatibility/receipts/windows/ccm-w1-seams-20260925T102427Z.json"
+      ]
+    },
+    {
+      "id": "CCM-RUN-11",
+      "oracle": [
+        "flag:run:--inspect",
+        "flag:run:--author",
+        "flag:run:--maintainer",
+        "flag:run:--auto",
+        "flag:run:--yolo",
+        "flag:run:--dangerously-skip-permissions"
+      ],
+      "class": "implemented",
+      "typescript": "permission presets; without --auto a run auto-rejects permission requests and interrupts (run/noninteractive.ts replyPermission)",
+      "rust": "--inspect, --author and --maintainer set the Session's permission preset before the prompt (the strictest of several wins); --auto and --yolo approve each request once except a delete or move, which they refuse in words; --dangerously-skip-permissions approves every request",
+      "evidence": [
+        "test:crates/grapt-cli/tests/public_seams/compatibility.rs::permission_flags_choose_the_strictest_preset_and_the_auto_reply",
+        "test:crates/grapt-cli/tests/public_seams/compatibility/render.rs::an_auto_run_approves_once_and_refuses_removal"
+      ]
+    },
+    {
+      "id": "CCM-RUN-12",
+      "oracle": [
+        "flag:run:--standalone",
+        "flag:run:--server"
+      ],
+      "class": "refused",
+      "typescript": "`--standalone`, `--server <url>`",
+      "rust": "refused by name; a private server is `--embedded --service <root> --product <binary>`, a server URL is `--remote` or `--service`",
+      "evidence": [
+        "test:crates/grapt-cli/tests/public_seams/compatibility.rs::every_typescript_surface_outside_the_contract_is_refused_by_name",
+        "test:crates/grapt-product/tests/dogfood_headless/cli_compatibility.rs::the_typescript_run_service_and_resume_forms_work_against_the_real_product"
+      ],
+      "refusal": [
+        "--standalone",
+        "--server"
+      ]
+    },
+    {
+      "id": "CCM-RUN-13",
+      "oracle": [
+        "extra:run:stdin"
+      ],
+      "class": "redesigned",
+      "typescript": "piped stdin is appended to the message whenever stdin is not a TTY (run/run.ts mergeInput)",
+      "rust": "stdin is read only with `--stdin`",
+      "evidence": [
+        "test:crates/grapt-cli/tests/public_seams.rs::binary_run_refuses_invalid_stdin_before_embedded_connection_effects"
+      ],
+      "reason": "an implicit read of an open, never-closed stdin would hang a scripted run"
+    },
+    {
+      "id": "CCM-RUN-14",
+      "oracle": [
+        "extra:run:permission-reply"
+      ],
+      "class": "redesigned",
+      "typescript": "a run answers each permission request itself: auto-reject and interrupt, or approve under --auto (run/noninteractive.ts replyPermission)",
+      "rust": "without --auto, a run reports pending permissions (stderr in text mode, a record in --json/--jsonl) and never answers them; with --auto it answers them as the TypeScript --auto did",
+      "evidence": [
+        "test:crates/grapt-cli/tests/public_seams/compatibility/render.rs::a_text_run_reports_pending_permissions_and_never_answers_them",
+        "test:crates/grapt-cli/tests/public_seams/compatibility/render.rs::an_auto_run_approves_once_and_refuses_removal"
+      ],
+      "reason": "without --auto the Session's preset already decides what needs a person, so the CLI leaves the remaining requests to the answering client instead of auto-rejecting them"
+    },
+    {
+      "id": "CCM-EXIT-01",
+      "oracle": [
+        "extra:exit:0"
+      ],
+      "class": "compatible",
+      "typescript": "exit 0: success (index.ts)",
+      "rust": "exit 0: success",
+      "evidence": [
+        "test:crates/grapt-product/tests/dogfood_headless/cli_compatibility.rs::the_typescript_run_service_and_resume_forms_work_against_the_real_product",
+        "test:crates/grapt-product/tests/dogfood_headless/cli_continuity.rs::a_crashed_session_resumes_through_the_shipped_cli_and_refuses_named_mismatches"
+      ]
+    },
+    {
+      "id": "CCM-EXIT-02",
+      "oracle": [
+        "extra:exit:130"
+      ],
+      "class": "compatible",
+      "typescript": "exit 130: an interrupted run (run/noninteractive.ts)",
+      "rust": "exit 130: Cancelled",
+      "evidence": [
+        "test:crates/grapt-cli/tests/public_seams/server_loss.rs::cancellation_interrupts_the_session_while_stdout_is_back_pressured",
+        "receipt:docs/cli-server-loss/CONTRACT.md"
+      ]
+    },
+    {
+      "id": "CCM-EXIT-03",
+      "oracle": [
+        "extra:exit:1-execution"
+      ],
+      "class": "redesigned",
+      "typescript": "exit 1: the Session's execution failed (run/noninteractive.ts)",
+      "rust": "exit 12 (Remote) with the durable failure text on stderr; a run whose history never shows its admitted prompt also exits 12, never 0",
+      "evidence": [
+        "test:crates/grapt-cli/tests/public_seams/compatibility/render.rs::a_run_whose_execution_failed_exits_remote_with_its_reason",
+        "test:crates/grapt-cli/tests/public_seams/compatibility/render.rs::a_long_run_whose_execution_failed_past_the_first_page_exits_remote",
+        "test:crates/grapt-cli/tests/public_seams/compatibility/render.rs::a_run_whose_history_never_shows_its_prompt_is_refused",
+        "receipt:docs/cli-compatibility/receipts/windows/ccm-w1-seams-20260925T102427Z.json"
+      ],
+      "reason": "failures are classed: usage 2, discovery 10, protocol 11, remote 12, child 71, output 74; any non-zero exit is a failure, as in TypeScript. A run that never sees its own admitted prompt is a failure by deliberate rule (AdmissionUnseen), never an exit 0 with an empty answer"
+    },
+    {
+      "id": "CCM-EXIT-04",
+      "oracle": [
+        "extra:exit:1-other"
+      ],
+      "class": "redesigned",
+      "typescript": "exit 1: any other failure (run/run.ts reportRunError)",
+      "rust": "exit 2 usage, 10 discovery, 11 protocol, 12 remote, 71 child, 74 output",
+      "evidence": [
+        "test:crates/grapt-cli/tests/public_seams/compatibility.rs::the_binary_refuses_a_typescript_command_with_its_reason_and_exit_usage",
+        "test:crates/grapt-product/tests/dogfood_headless/cli_continuity.rs::a_crashed_session_resumes_through_the_shipped_cli_and_refuses_named_mismatches"
+      ],
+      "reason": "a script can tell a refusal from a lost server from a broken pipe"
+    },
+    {
+      "id": "CCM-OUT-01",
+      "oracle": [
+        "extra:output:tty-styling"
+      ],
+      "class": "redesigned",
+      "typescript": "a TTY run adds blank lines and ANSI styling (run/ui.ts)",
+      "rust": "plain lines on a TTY and a pipe alike",
+      "evidence": [
+        "test:crates/grapt-cli/tests/public_seams/compatibility/render.rs::a_text_run_writes_only_its_own_answer_to_stdout"
+      ],
+      "reason": "one bounded rendering for every consumer"
+    },
+    {
+      "id": "CCM-OUT-02",
+      "oracle": [
+        "extra:output:errors"
+      ],
+      "class": "redesigned",
+      "typescript": "errors render as `Error: <message>` (run/ui.ts error)",
+      "rust": "errors render as `grapt: <message>` on stderr",
+      "evidence": [
+        "test:crates/grapt-cli/tests/public_seams/compatibility.rs::the_binary_refuses_a_typescript_command_with_its_reason_and_exit_usage"
+      ],
+      "reason": "one diagnostic prefix across every command"
+    },
+    {
+      "id": "CCM-OUT-03",
+      "oracle": [
+        "extra:output:eol"
+      ],
+      "class": "redesigned",
+      "typescript": "each rendered line ends with the platform EOL, `\\r\\n` on Windows (run/noninteractive.ts writeText: text + EOL)",
+      "rust": "each line ends with `\\n` on every platform",
+      "evidence": [
+        "test:crates/grapt-product/tests/dogfood_headless/cli_compatibility.rs::the_typescript_run_service_and_resume_forms_work_against_the_real_product",
+        "receipt:docs/cli-compatibility/receipts/windows/ccm-w3-product-20260925T102803Z.json"
+      ],
+      "reason": "one byte-identical rendering across platforms; a Windows consumer reads `\\n` lines in PowerShell and cmd alike"
+    },
+    {
+      "id": "CCM-FWK-01",
+      "oracle": [
+        "extra:framework:--help"
+      ],
+      "class": "implemented",
+      "typescript": "`--help` (the Effect CLI framework, outside the oracle tree)",
+      "rust": "`grapt --help | -h | help`: usage on stdout, exit 0",
+      "evidence": [
+        "test:crates/grapt-cli/tests/public_seams/compatibility.rs::the_binary_answers_version_and_help"
+      ]
+    },
+    {
+      "id": "CCM-FWK-02",
+      "oracle": [
+        "extra:framework:--version"
+      ],
+      "class": "implemented",
+      "typescript": "`--version` (the Effect CLI framework, outside the oracle tree)",
+      "rust": "`grapt --version`: `grapt <version>`, exit 0",
+      "evidence": [
+        "test:crates/grapt-cli/tests/public_seams/compatibility.rs::the_binary_answers_version_and_help"
+      ]
+    }
+  ]
+}

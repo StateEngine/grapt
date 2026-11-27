@@ -1,0 +1,15 @@
+error[E0308]: mismatched types
+  --> tests/probes/11_raw_router_cannot_start_host.rs:31:49
+   |
+31 |     let _service = AuthenticatedApiService::new(raw, boundary(), body_bound());
+   |                    ---------------------------- ^^^ expected `ApiRouter`, found `Router`
+   |                    |
+   |                    arguments to this function are incorrect
+   |
+   = note: expected struct `ApiRouter`
+              found struct `axum::routing::Router`
+note: associated function defined here
+  --> src/http1.rs
+   |
+   |     pub fn new(
+   |            ^^^

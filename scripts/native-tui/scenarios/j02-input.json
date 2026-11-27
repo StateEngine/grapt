@@ -1,0 +1,159 @@
+{
+  "name": "J02 — input, paste, Unicode, resize, scrolling and interruption",
+  "about": [
+    "Terminal interaction against the SHIPPED binary under a real ConPTY.",
+    "",
+    "Every step here is a real browser keyboard or paste event through xterm's",
+    "own encoder and paste handling - not an invocation of a product test hook -",
+    "so what it exercises is the same path a user's terminal takes.",
+    "",
+    "THE PLATFORM CAVEAT THIS SCENARIO USED TO CARRY IS NOW FIXED, and the",
+    "steps below ASSERT the behaviour rather than merely recording what the",
+    "platform happened to deliver.",
+    "",
+    "What it said: crossterm 0.29 has no Event::Paste on Windows at all, so",
+    "ConPTY delivered every pasted newline as a key record indistinguishable",
+    "from Enter and the multiline paste SUBMITTED its earlier lines instead of",
+    "composing them, while U+2014 and U+2211 were dropped before reaching the",
+    "client. The evidence for that is preserved in the j02-double run, whose",
+    "transcript holds `[text] echo line one` and `[text] echo   line two` as two",
+    "sent turns with only `line three` left in the composer.",
+    "",
+    "What changed: on Windows the client now sets ENABLE_VIRTUAL_TERMINAL_INPUT",
+    "through a safe console-mode wrapper and owns the stdin byte reader itself,",
+    "parsing the bracketed-paste framing rather than consuming crossterm's",
+    "translated key events — which drop the escape introducer and lose those",
+    "characters. Measured, not assumed; see crates/grapt-client/src/vt.rs.",
+    "",
+    "So the multiline paste below must COMPOSE, leaving the transcript empty,",
+    "and the non-ASCII text must arrive intact. Both are asserted."
+  ],
+  "steps": [
+    {
+      "expect": "PROJECTS"
+    },
+    {
+      "key": "Enter"
+    },
+    {
+      "expect": "AGENTS"
+    },
+    {
+      "key": "Enter"
+    },
+    {
+      "expect": "MODELS"
+    },
+    {
+      "key": "Enter"
+    },
+    {
+      "expect": "SESSIONS"
+    },
+    {
+      "key": "n"
+    },
+    {
+      "expect": "TRANSCRIPT"
+    },
+    {
+      "paste": "line one\n\tline two indented by a real tab\nline three"
+    },
+    {
+      "capture": "a multiline paste, composed rather than submitted"
+    },
+    {
+      "expect": "line three",
+      "polls": 40
+    },
+    {
+      "expect": "line one",
+      "polls": 40
+    },
+    {
+      "paste": " — naïve café Ω ∑ 🙂"
+    },
+    {
+      "capture": "non-ASCII text, which the byte reader keeps intact"
+    },
+    {
+      "expect": "— naïve café Ω ∑",
+      "polls": 40
+    },
+    {
+      "paste": "日本語のテキストは全角です"
+    },
+    {
+      "capture": "wide East Asian characters as they survived the platform input path"
+    },
+    {
+      "resize": [
+        60,
+        20
+      ]
+    },
+    {
+      "capture": "the same prompt after shrinking the terminal"
+    },
+    {
+      "resize": [
+        130,
+        42
+      ]
+    },
+    {
+      "capture": "and after growing it back"
+    },
+    {
+      "key": "Enter"
+    },
+    {
+      "expect": "echo line one"
+    },
+    {
+      "capture": "the prompt text round-tripped through the wire"
+    },
+    {
+      "resize": [
+        130,
+        16
+      ]
+    },
+    {
+      "capture": "a short terminal, transcript overflowing"
+    },
+    {
+      "key": "PageUp"
+    },
+    {
+      "capture": "scrolled back from the live tail"
+    },
+    {
+      "key": "PageDown"
+    },
+    {
+      "capture": "returned to the tail"
+    },
+    {
+      "key": "h"
+    },
+    {
+      "key": "i"
+    },
+    {
+      "key": "Enter"
+    },
+    {
+      "key": "Control+c"
+    },
+    {
+      "expect": "interrupted"
+    },
+    {
+      "capture": "an interrupted execution settles as interrupted"
+    },
+    {
+      "key": "Control+q"
+    }
+  ]
+}

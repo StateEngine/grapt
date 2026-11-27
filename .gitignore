@@ -1,0 +1,23 @@
+/target
+target/
+.remote-compute-receipts/
+
+# Python bytecode. The mutation harnesses under crates/*/mutations are Python,
+# and importing or running one writes __pycache__ beside it. A .pyc is a build
+# artifact: binary, and specific to both the machine and the interpreter version
+# that produced it. One was committed into an F3B2 candidate by a `git add -A`
+# after the harness was imported for validation, which is exactly the class this
+# closes.
+__pycache__/
+*.py[cod]
+# Generated from notices/ by scripts/release/notices.py; never committed.
+/THIRD_PARTY_NOTICES.md
+
+# Local agent workspaces and scratch directories.
+.agents/
+.claude/
+.codex/
+.cursor/
+.gemini/
+.scratch/
+.serena/

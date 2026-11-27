@@ -1,0 +1,1 @@
+| `crates/secode-product/src/dogfood/source_cache.rs` | `openai/codex`, `codex-rs/core/src/agents_md_manager.rs`, retained validated instruction snapshot | `bb64b894fd67158be0f874872e6d7bfe717e7368` | **Modified mechanism**: bounded synchronous metadata-keyed byte/AST snapshots, current-access checks, and failure invalidation; no provider callbacks or async lock. |

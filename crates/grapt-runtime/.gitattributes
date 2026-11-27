@@ -1,0 +1,38 @@
+# This repository runs with `core.autocrlf=true` and has no repository-root
+# `.gitattributes`, so a fresh worktree otherwise receives CRLF and changes every
+# byte this crate's gates read. Six sibling crates already carry this file —
+# `grapt-api`, `-event`, `-policy`, `-provider`, `-schema` and `-service` — and
+# `grapt-api`'s header records what its absence cost there: a fresh
+# default-config clone reported 107 passed / 1 failed against 108 / 0 on an LF
+# one, same commit, same toolchain, same machine.
+#
+# `grapt-runtime` had none, and is the only crate in the workspace carrying an
+# `include_str!` source gate WITHOUT an attributes file. That gap is not latent
+# here — it is red right now, and has been for every lane that ran the suite on
+# Windows:
+#
+#   * `tests/attempt_tool_durable_boundary.rs` reads `src/tool_protocol.rs`
+#     through `include_str!` and matches literals that contain `\n`. On a CRLF
+#     checkout those literals can never match, so
+#     `artifact_capture_precedes_terminal_artifact_construction` and
+#     `public_authorized_entry_consumes_the_owned_lease_before_continuation`
+#     fail for a reason that has nothing to do with the laws they assert. They
+#     are two of the three pre-existing failures every recent receipt in this
+#     campaign has had to disclose and step around.
+#
+# That is worse than a false red. Those two are the CLOSEST existing analogue to
+# what L4 must witness, so without this file L4's own witnesses would be born
+# failing on this machine and it would have no green baseline to compare against.
+# The lane after this one is the reason it is being fixed now rather than later.
+#
+# It also means these gates assert exact source text: any reformat or move of
+# `tool_protocol.rs` breaks them, and this attribute is what makes that a real
+# signal rather than an artifact of who cloned the repository.
+#
+# Verified before landing: all 77 tracked files under this crate already hold LF
+# in the index (`git ls-files --eol` reports `i/lf` for every one), so these
+# rules pin the CHECKOUT and change no stored content.
+src/** text eol=lf
+tests/** text eol=lf
+mutations/** text eol=lf
+*.md text eol=lf

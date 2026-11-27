@@ -1,0 +1,11 @@
+#!/bin/sh
+# Block a push whose outgoing commits fail the publication scan.
+here=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd) || exit 1
+scan="$here/../pre_push_scan.py"
+for candidate in python3 python "py -3"; do
+    if $candidate -c "import sys; sys.exit(sys.version_info[0] != 3)" >/dev/null 2>&1; then
+        exec $candidate "$scan" "$@"
+    fi
+done
+echo "pre-push: no Python 3 found; cannot run the publication scan" >&2
+exit 1

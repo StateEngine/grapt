@@ -1,0 +1,30 @@
+error[E0599]: no associated function or constant named `observe` found for struct `PlanPreconditionObservation` in the current scope
+  --> tests/probes/44_observe_restore_preconditions.rs:16:53
+   |
+16 |     let _observation = PlanPreconditionObservation::observe(todo!(), todo!(), todo!());
+   |                                                     ^^^^^^^ associated function or constant not found in `PlanPreconditionObservation`
+   |
+note: if you're trying to build a new `PlanPreconditionObservation`, consider using `PlanPreconditionObservation::observe_at_provider_boundary` which returns `PlanPreconditionObservation`
+  --> src/checkpoint/restore_admission.rs
+   |
+   | /     pub fn observe_at_provider_boundary(
+   | |         plan: &SettledRestorePlan,
+   | |         satisfied: Vec<RestorePrecondition>,
+   | |         authorities: &DeterministicAuthorities<'_>,
+   | |     ) -> Self {
+   | |_____________^
+help: there is a method `observed_at` with a similar name, but with different arguments
+  --> src/checkpoint/restore_admission.rs
+   |
+   |     pub fn observed_at(&self) -> Timestamp {
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unreachable expression
+  --> tests/probes/44_observe_restore_preconditions.rs:16:70
+   |
+16 |     let _observation = PlanPreconditionObservation::observe(todo!(), todo!(), todo!());
+   |                                                             -------  ^^^^^^^ unreachable expression
+   |                                                             |
+   |                                                             any code following this expression is unreachable
+   |
+   = note: `#[warn(unreachable_code)]` (part of `#[warn(unused)]`) on by default

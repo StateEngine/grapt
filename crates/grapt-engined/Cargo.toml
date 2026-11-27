@@ -1,0 +1,68 @@
+[package]
+name = "grapt-engined"
+autotests = false
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+description = "E1a: the headless `grapt-engined` composition root. A leaf binary that assembles the landed bind, host and registration surfaces behind exactly two verb families — `serve` and `service ensure|stop|status` — and renders one JSON receipt per invocation. It owns no domain law: every bound, refusal and registration transition it prints is decided by grapt-api, grapt-location or grapt-service. It opens no database, reads no credential, resolves no hostname, calls no provider and executes no tool."
+
+# The frozen E1a dependency closure. Nothing here reaches grapt-store,
+# grapt-session, grapt-inbox, grapt-runtime or grapt-provider, and no
+# edge to one of those may be added under this lane: that boundary is
+# E1b/E2, not a convenience.
+#
+# `tokio` carries `rt-multi-thread` because the host runs connections
+# concurrently, and `signal` because a graceful drain has to be reachable from
+# an operator's interrupt rather than only from a bound being hit.
+[[test]]
+name = "integration"
+path = "tests/integration/main.rs"
+
+# Its corpus manifest names this target as the corpus owner.
+[[test]]
+name = "engined_acceptance_corpus"
+path = "tests/engined_acceptance_corpus.rs"
+
+# The workspace-wide `--test dependency_direction` gate selects this target by name.
+[[test]]
+name = "dependency_direction"
+path = "tests/dependency_direction.rs"
+
+[dependencies]
+grapt-api = { path = "../grapt-api" }
+grapt-location = { path = "../grapt-location" }
+grapt-service = { path = "../grapt-service" }
+grapt-types = { path = "../grapt-types" }
+tokio = { version = "1", default-features = false, features = [
+    "rt-multi-thread",
+    "signal",
+    "macros",
+    "net",
+    "time",
+] }
+
+[dev-dependencies]
+# Integration tests do not inherit normal dependencies, and every E1a witness is
+# an integration test: this crate is a binary, and a #[cfg(test)] unit inside
+# main.rs would witness a law from inside the artifact it constrains.
+#
+# serde_json is a TEST-ONLY edge and is deliberately not part of the frozen
+# dependency closure, which the dependency-direction gate asserts over
+# [dependencies] alone. The acceptance corpus is JSON and JSONL, and the
+# validator compares PARSED values rather than text so a reordered key or an
+# insignificant space cannot masquerade as a receipt difference. Sibling corpus
+# owners take the same edge for the same reason.
+serde_json = "1"
+grapt-api = { path = "../grapt-api" }
+grapt-location = { path = "../grapt-location" }
+grapt-service = { path = "../grapt-service" }
+grapt-types = { path = "../grapt-types" }
+tokio = { version = "1", default-features = false, features = [
+    "rt-multi-thread",
+    "macros",
+    "net",
+    "time",
+] }
+
+[lints]
+workspace = true

@@ -1,0 +1,15 @@
+error[E0382]: use of moved value: `ticket`
+ --> tests/probes/06_double_settle.rs:8:19
+  |
+6 |     let ticket = SettlementTicket::<PermissionBlocker>::new(PermissionReply::Once);
+  |         ------ move occurs because `ticket` has type `SettlementTicket<PermissionBlocker>`, which does not implement the `Copy` trait
+7 |     let _first = ticket.settle();
+  |                         -------- `ticket` moved due to this method call
+8 |     let _second = ticket.settle();
+  |                   ^^^^^^ value used here after move
+  |
+note: `SettlementTicket::<F>::settle` takes ownership of the receiver `self`, which moves `ticket`
+ --> src/blocker.rs
+  |
+  |     pub fn settle(self) -> BlockerState<F> {
+  |                   ^^^^

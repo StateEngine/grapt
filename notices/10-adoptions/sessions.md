@@ -1,0 +1,1 @@
+| Session title filtering and stable session-picker selection | `openai/codex`, `codex-rs/tui/src/resume_picker.rs` | `bb64b894fd67158be0f874872e6d7bfe717e7368` | Apache-2.0; Copyright 2025 OpenAI | Adapted to the existing engine session catalog, bounded server search and typed selection across grouped rows. |

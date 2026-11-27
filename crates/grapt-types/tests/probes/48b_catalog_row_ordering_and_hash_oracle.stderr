@@ -1,0 +1,23 @@
+error[E0277]: the trait bound `ModelCatalogRecord: Ord` is not satisfied
+  --> tests/probes/48b_catalog_row_ordering_and_hash_oracle.rs:22:20
+   |
+22 |     requires_ord::<grapt_types::ModelCatalogRecord>();
+   |                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ the trait `Ord` is not implemented for `ModelCatalogRecord`
+   |
+note: required by a bound in `requires_ord`
+  --> tests/probes/48b_catalog_row_ordering_and_hash_oracle.rs:18:20
+   |
+18 | fn requires_ord<T: Ord>() {}
+   |                    ^^^ required by this bound in `requires_ord`
+
+error[E0277]: the trait bound `ModelCatalogRecord: Hash` is not satisfied
+  --> tests/probes/48b_catalog_row_ordering_and_hash_oracle.rs:23:21
+   |
+23 |     requires_hash::<grapt_types::ModelCatalogRecord>();
+   |                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ the trait `Hash` is not implemented for `ModelCatalogRecord`
+   |
+note: required by a bound in `requires_hash`
+  --> tests/probes/48b_catalog_row_ordering_and_hash_oracle.rs:19:21
+   |
+19 | fn requires_hash<T: core::hash::Hash>() {}
+   |                     ^^^^^^^^^^^^^^^^ required by this bound in `requires_hash`

@@ -1,0 +1,80 @@
+{
+  "$schema": "../oracle-receipt-manifest.schema.json",
+  "schema_version": 1,
+  "id": "df0-journey-v1",
+  "title": "LIVE-HEADLESS-1 credential-backed black-box acceptance journey",
+  "oracle": {
+    "branch": "grapt",
+    "commit": "42e4888cc0",
+    "note": "Observable wire behaviour only. Every route, event name and envelope rule is read from the frozen compatibility record; the Rust product is a reconstruction, not a source port."
+  },
+  "scope": {
+    "preserves": [
+      "authenticated start with a numeric pid and exact PublishedConfig build identity",
+      "one catalog-issued provider/model with no credential on the wire",
+      "session create carrying the frozen ses prefix",
+      "a prompt that actually reaches one Physical Attempt",
+      "server.connected then reasoning, text and usage, settling exactly one terminal",
+      "durable re-list convergence after a cursorless severed-stream gap",
+      "byte-equivalent durable truth across a distinct-process restart with zero repeated provider call",
+      "an active prompt interrupted over HTTP, settling exactly one interrupted terminal"
+    ],
+    "intentionally_excludes": [
+      "tools, attachments, subagents, campaigns and their permission decisions",
+      "desktop renderer, visual-baseline and performance evidence",
+      "billable external provider requests; the acceptance provider is controlled loopback",
+      "provider selection beyond the one catalog-issued text-only target"
+    ]
+  },
+  "determinism": {
+    "clock": "Production timestamps are injected by the named SystemClock adapter and are compared only where exact retry must preserve the original value.",
+    "identifiers": "The named production ID adapter mints bounded typed-identity-safe process tokens; the stable prompt id pins retry identity.",
+    "network": "The shipped binary uses its production provider/runtime path. The test-only loopback feature admits only a parsed exact http://127.0.0.1:<port> authority, and the controlled provider records bounded requests in memory.",
+    "filesystem": "The witness uses a disposable service root and bounded artifact store; persisted events and attempt receipts are the replay authority."
+  },
+  "paths": {
+    "actions": "actions.jsonl",
+    "expected": {
+      "durable": "expected/durable.jsonl",
+      "state": "expected/state.json",
+      "waivers": "expected/waivers.json"
+    }
+  },
+  "record_contracts": {
+    "actions": "One executable owner and test per journey law, plus the pinned implemented disposition and frozen operationIds.",
+    "durable": "One terminal outcome row per case. Absence and identity mismatch remain refusals rather than fabricated success.",
+    "state": "The sorted case set, its count and disposition groups are recomputed from actions.jsonl and compared."
+  },
+  "evidence": [
+    {
+      "path": "crates/grapt-product/tests/dogfood_headless.rs",
+      "test": "live_headless_wire_failure_and_resurrection_witnesses",
+      "claim": "A shipped product process closes credential propagation, catalog-issued targeting, real provider parsing, reasoning/text/usage streaming, typed failures, restart replay and interrupt laws over authenticated HTTP."
+    },
+    {
+      "path": "crates/grapt-journey/tests/journey_laws.rs",
+      "test": "the_conformant_journey_satisfies_every_law",
+      "claim": "The language-neutral transcript law remains independently executable."
+    },
+    {
+      "path": "crates/grapt-journey/tests/journey_laws.rs",
+      "test": "an_empty_transcript_refuses_every_law_with_a_named_reason",
+      "claim": "An empty transcript refuses every law with a named reason, so absent journey evidence cannot pass vacuously."
+    },
+    {
+      "path": "crates/grapt-journey/tests/wire_and_stream.rs",
+      "test": "a_live_frame_carrying_a_durable_block_is_refused",
+      "claim": "The durable/live event-envelope asymmetry is enforced in both directions."
+    },
+    {
+      "path": "crates/grapt-journey/tests/disposition_and_readiness.rs",
+      "test": "generation_zero_is_the_first_accepted_generation",
+      "claim": "The readiness consumer accepts only v2 field names and treats service generation zero as FIRST."
+    },
+    {
+      "path": "crates/grapt-journey/tests/journey_corpus.rs",
+      "test": "state_is_recomputed_from_actions_and_never_trusted",
+      "claim": "The corpus state is derived from actions.jsonl rather than trusted."
+    }
+  ]
+}

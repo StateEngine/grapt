@@ -1,0 +1,14 @@
+error[E0624]: associated function `enter` is private
+  --> tests/probes/39_forge_provider_tool_chain.rs:21:38
+   |
+21 |       let scope = ProviderStreamScope::enter(
+   |                                        ^^^^^ private associated function
+   |
+  ::: src/provider_tool.rs
+   |
+   | /     pub(crate) fn enter(
+   | |         provider: ProviderId,
+   | |         account: AccountId,
+   | |         attempt: PhysicalAttemptId,
+   | |     ) -> Self {
+   | |_____________- private associated function defined here

@@ -1,0 +1,391 @@
+{
+  "name": "J03 - real approvals for read, edit and shell",
+  "about": [
+    "J03 - real read / edit / shell approvals, and what each one actually did.",
+    "",
+    "PURPOSE. The product gates these three tools on a real permission. Three",
+    "approvals are driven, one per tool, against production authority.",
+    "",
+    "PRECONDITION. The retained client must NOT be launched with --auto or",
+    "--dangerously-skip-permissions; in auto mode it answers every request",
+    "without drawing a prompt, and the run FAILS at the visible-ask step.",
+    "",
+    "AN APPROVAL IS NOT AN EXECUTION. Neither the ask disappearing nor any value",
+    "the model could compute establishes that a tool RAN. Two independent things",
+    "are required after every allow, and a generic substring is neither:",
+    "",
+    "1. THE NAMED CALL SETTLES, asserted as ONE string so the action and its",
+    "   terminal cannot be satisfied by two different rows. Native renders",
+    "   `tool <name> <status>`, so `tool shell completed` binds both. Retained",
+    "   uses its own verbs, which change with status and are therefore just as",
+    "   bound: Ran (index.tsx:2867, Running while in flight), Read (:2976,",
+    "   Reading while in flight) and Edited (:3177).",
+    "",
+    "2. THE BYTES ON DISK, for shell and edit, read outside the client entirely.",
+    "",
+    "THE EFFECT IS BRACKETED. Before the shell prompt the file must be MISSING -",
+    "the strict claim that nothing was written, not merely that it lacks a",
+    "marker - so a leftover from an earlier run cannot be mistaken for this",
+    "run's work. It is asserted missing again WHILE the ask is outstanding, then",
+    "present after the allow. The edit step brackets the NEW marker the same way.",
+    "",
+    "READ HAS NO ON-DISK EFFECT and is not given a fake one. Natively its evidence",
+    "is its own settled row, `tool read completed`, which names the action and its",
+    "terminal in one string.",
+    "",
+    "THE RETAINED READ IS ASSERTED ON ITS GROUPED ROW, and getting here took two",
+    "wrong answers worth recording.",
+    "",
+    "First I waited for `Read`, which timed out while the call had in fact",
+    "COMPLETED - the durable record shows `call_e4ihE3heXMcqzMwfVOv49cnU`",
+    "completed with a 13-byte output whose digest matches the native read exactly.",
+    "`Read` appears only in the PERMISSION PREVIEW and vanishes when the ask is",
+    "answered.",
+    "",
+    "Then I concluded the settled state shows only the file's content. Wrong",
+    "again: it renders a GROUPED exploration row, `Explored - 1 read`",
+    "(index.tsx:1470), and `Explored` versus `Exploring` is exactly a completion",
+    "discriminator. I had searched for capital `Read` and missed a row that says",
+    "`read`.",
+    "",
+    "IT IS ONE STRING, `Explored — 1 read`, so completion, tool and count are",
+    "bound adjacently rather than able to match three different rows.",
+    "",
+    "AN EARLIER REVISION SPLIT IT INTO TWO ASCII SUBSTRINGS on the belief that the",
+    "capture mangled the em dash. That belief was FALSE and the corruption was in",
+    "my own analysis script: it read the screen JSON with `open()`, which on this",
+    "machine defaults to cp1252, so correct UTF-8 arrived as three characters. The",
+    "raw pty transcript holds the clean bytes, the screen JSON holds them, and the",
+    "harness decodes its responses with an explicit `.decode(\"utf-8\")`. Nothing",
+    "in the product or the capture path corrupts anything.",
+    "product told the user.",
+    "project from the launch directory it is handed; native's is the service",
+    "root, a git boundary of its own. Both are passed explicitly and RECORDED in",
+    "the receipt as effect_root, and a path escaping its own root is refused.",
+    "",
+    "THE COMMAND IS SPELLED OUT, and that is a correction from an actual run, not",
+    "caution. Asked to 'create a file whose contents are ALPHAMARKER', the model",
+    "reached for `printf`, which the shell tool ran through cmd.exe on Windows:",
+    "",
+    "  shell exited with exit code: 1; captured output: 'printf' is not recognized",
+    "  as an internal or external command, operable program or batch file.",
+    "",
+    "The redirection had ALREADY created the file, so it sat at ZERO BYTES, and",
+    "the model then retried with a PowerShell one-liner - raising a SECOND ask this",
+    "scenario never answered. Naming the exact command removes that variance at its",
+    "cause. It is not an approval loop and does not compensate for a product",
+    "defect: the tool ran, failed, and recorded `failed / effect-failed` with the",
+    "captured output.",
+    "",
+    "AND NOTE WHAT THAT ZERO-BYTE FILE MEANS: a failed command CAN leave a",
+    "filesystem side effect. `effect-failed` is not proof that nothing was",
+    "written, and this scenario does not treat it as such. It is why the file is",
+    "asserted MISSING before the prompt rather than merely lacking its marker -",
+    "a previous failed attempt leaves a real file behind.",
+    "LIMITATION. Whether the model reaches for the named tool at all is still model",
+    "behaviour. A model that does not is a bounded timeout at the ask or at the",
+    "settled row - a reported run failure, never an acceptance."
+  ],
+  "steps": [
+    {
+      "expect": {
+        "native": "PROJECTS",
+        "retained": "Select a project"
+      },
+      "polls": 240
+    },
+    {
+      "capture": "the opening screen"
+    },
+    {
+      "key": {
+        "native": "Enter",
+        "retained": "i"
+      }
+    },
+    {
+      "expect": {
+        "native": "AGENTS",
+        "retained": "ctrl+x tab agents"
+      },
+      "polls": 240
+    },
+    {
+      "capture": "after choosing where to work"
+    },
+    {
+      "key": {
+        "native": "Enter",
+        "retained": "Enter"
+      }
+    },
+    {
+      "expect": {
+        "native": "MODELS"
+      },
+      "polls": 240
+    },
+    {
+      "paste": {
+        "native": "Sol"
+      }
+    },
+    {
+      "expect": {
+        "native": "Sol"
+      },
+      "polls": 240
+    },
+    {
+      "capture": "the model choice, where the two clients differ most"
+    },
+    {
+      "key": {
+        "native": "Enter"
+      }
+    },
+    {
+      "expect": {
+        "native": "model openai/GPT-5.6 Sol"
+      },
+      "polls": 240
+    },
+    {
+      "key": {
+        "native": "n"
+      }
+    },
+    {
+      "expect": {
+        "native": "TRANSCRIPT"
+      },
+      "polls": 240
+    },
+    {
+      "effect": {
+        "native": {
+          "path": "j03.txt",
+          "missing": true
+        },
+        "retained": {
+          "path": "j03.txt",
+          "missing": true
+        }
+      },
+      "polls": 120
+    },
+    {
+      "absent": {
+        "native": "PERMISSION",
+        "retained": "Allow once"
+      },
+      "polls": 240
+    },
+    {
+      "paste": "Use the shell tool to run exactly this command and nothing else: echo ALPHAMARKER> j03.txt"
+    },
+    {
+      "key": "Enter"
+    },
+    {
+      "expect": {
+        "native": "PERMISSION",
+        "retained": "Allow once"
+      },
+      "polls": 960
+    },
+    {
+      "effect": {
+        "native": {
+          "path": "j03.txt",
+          "missing": true
+        },
+        "retained": {
+          "path": "j03.txt",
+          "missing": true
+        }
+      },
+      "polls": 120
+    },
+    {
+      "capture": "the shell ask, with nothing written"
+    },
+    {
+      "key": {
+        "native": "o",
+        "retained": "Enter"
+      }
+    },
+    {
+      "absent": {
+        "native": "PERMISSION",
+        "retained": "Allow once"
+      },
+      "polls": 480
+    },
+    {
+      "expect": {
+        "native": "tool shell completed",
+        "retained": "Ran"
+      },
+      "polls": 960
+    },
+    {
+      "effect": {
+        "native": {
+          "path": "j03.txt",
+          "contains": "ALPHAMARKER"
+        },
+        "retained": {
+          "path": "j03.txt",
+          "contains": "ALPHAMARKER"
+        }
+      },
+      "polls": 480
+    },
+    {
+      "capture": "shell settled, and the bytes it wrote"
+    },
+    {
+      "absent": {
+        "native": "PERMISSION",
+        "retained": "Allow once"
+      },
+      "polls": 240
+    },
+    {
+      "paste": "Use the read tool to read j03.txt and tell me the single word it contains."
+    },
+    {
+      "key": "Enter"
+    },
+    {
+      "expect": {
+        "native": "PERMISSION",
+        "retained": "Allow once"
+      },
+      "polls": 960
+    },
+    {
+      "capture": "the read ask"
+    },
+    {
+      "key": {
+        "native": "o",
+        "retained": "Enter"
+      }
+    },
+    {
+      "absent": {
+        "native": "PERMISSION",
+        "retained": "Allow once"
+      },
+      "polls": 480
+    },
+    {
+      "expect": {
+        "native": "tool read completed",
+        "retained": "Explored — 1 read"
+      },
+      "polls": 960
+    },
+    {
+      "capture": "read settled"
+    },
+    {
+      "effect": {
+        "native": {
+          "path": "j03.txt",
+          "contains": "BETAMARKER",
+          "absent": true
+        },
+        "retained": {
+          "path": "j03.txt",
+          "contains": "BETAMARKER",
+          "absent": true
+        }
+      },
+      "polls": 120
+    },
+    {
+      "absent": {
+        "native": "PERMISSION",
+        "retained": "Allow once"
+      },
+      "polls": 240
+    },
+    {
+      "paste": "Use the edit tool to change the word in j03.txt from ALPHAMARKER to BETAMARKER."
+    },
+    {
+      "key": "Enter"
+    },
+    {
+      "expect": {
+        "native": "PERMISSION",
+        "retained": "Allow once"
+      },
+      "polls": 960
+    },
+    {
+      "effect": {
+        "native": {
+          "path": "j03.txt",
+          "contains": "BETAMARKER",
+          "absent": true
+        },
+        "retained": {
+          "path": "j03.txt",
+          "contains": "BETAMARKER",
+          "absent": true
+        }
+      },
+      "polls": 120
+    },
+    {
+      "capture": "the edit ask, old bytes still in place"
+    },
+    {
+      "key": {
+        "native": "o",
+        "retained": "Enter"
+      }
+    },
+    {
+      "absent": {
+        "native": "PERMISSION",
+        "retained": "Allow once"
+      },
+      "polls": 480
+    },
+    {
+      "expect": {
+        "native": "tool edit completed",
+        "retained": "Edited"
+      },
+      "polls": 960
+    },
+    {
+      "effect": {
+        "native": {
+          "path": "j03.txt",
+          "contains": "BETAMARKER"
+        },
+        "retained": {
+          "path": "j03.txt",
+          "contains": "BETAMARKER"
+        }
+      },
+      "polls": 480
+    },
+    {
+      "capture": "edit settled, and the changed bytes"
+    },
+    {
+      "key": {
+        "native": "Control+q",
+        "retained": "Control+c"
+      }
+    }
+  ]
+}

@@ -1,0 +1,363 @@
+{
+  "name": "J04 — large history, both clients, one product",
+  "about": [
+    "The large-history dimension, in its own file so a blocked dimension",
+    "cannot block it.",
+    "",
+    "THE SCENARIO ASSERTS MOVEMENT, not keystrokes. An earlier revision sent",
+    "PageUp three times and captured, which passed while the native client",
+    "could not scroll at all: its offset was capped by a count of slices while",
+    "a slice renders one row per line, so a 300-line answer moved the view by a",
+    "single row. A runner that presses a key and does not check the screen",
+    "moved is not a witness.",
+    "",
+    "THE SAME KEY IS NOT THE SAME DISTANCE, and assuming it was is the defect",
+    "this revision fixes. The frozen keybindings do bind PageUp to a page-up",
+    "ACTION on both clients, and an earlier revision of this file concluded",
+    "from that the same keystroke was the same user action and gave both",
+    "clients twelve presses. The magnitudes are not the same:",
+    "",
+    "  native    app.rs:358          scrolls by the FULL viewport height",
+    "  retained  index.tsx:382       scrolls by `scroll.height / 2`, a HALF page",
+    "",
+    "An attended run showed exactly that. Twelve presses took the native client",
+    "to the top of the answer and left the retained client at lines 110-142,",
+    "and the shared assertion then reported a retained failure that was really",
+    "a scenario that had not pressed far enough. Equal key counts cannot",
+    "establish a shared reachability claim between clients that move by",
+    "different amounts.",
+    "",
+    "So each client is now taken to the SAME ENDPOINTS and asserted there",
+    "SEPARATELY, and the differing cost is recorded rather than hidden: the",
+    "native assertion is made after twelve presses, the retained one after",
+    "thirty. Thirty is a bounded over-estimate, not a measurement — paging",
+    "clamps at the top, so surplus presses cost nothing and the count is chosen",
+    "to clear the distance with margin rather than to state a minimum.",
+    "",
+    "THAT COST DIFFERENCE IS A REAL PRODUCT DIFFERENCE and is reported as one:",
+    "reaching the top of the same answer takes the retained client about twice",
+    "the presses. This scenario does not call that a regression. It is the",
+    "half-page behaviour the retained client has always had, and whether the",
+    "native client should match it is a product question this witness does not",
+    "settle.",
+    "",
+    "The answer is asked to begin with FIRSTLINE so the top of the answer",
+    "carries a marker worth waiting for. `1` would match a hundred other rows.",
+    "",
+    "BE EXACT ABOUT WHAT THAT MATCH PROVES. The submitted prompt also contains",
+    "the word, and its echo sits immediately ABOVE the answer, so the assertion",
+    "is satisfied by the answer's first row or by the prompt echo one row",
+    "further back — not by one specific occurrence. Both are on the far side of",
+    "the 300 lines the view had to cross, so what is established is that the",
+    "view reached the TOP OF THE ANSWER, which is the reachability claim.",
+    "",
+    "The return is thirty PageDowns, at least as many as either client spent",
+    "going up. PageDown clamps at the TAIL, which is where the `300` assertion",
+    "needs the view to be, so a surplus is safe and a deficit would land short",
+    "and report a defect that is not there. That assertion is shared because by",
+    "then both clients are pinned to the same end of the transcript.",
+    "",
+    "The navigation prefix is copied from j04-comparative, so both scenarios",
+    "select the SAME model and this run is inside the matched-model claim."
+  ],
+  "steps": [
+    {
+      "expect": {
+        "native": "PROJECTS",
+        "retained": "Select a project"
+      },
+      "polls": 240
+    },
+    {
+      "capture": "the opening screen"
+    },
+    {
+      "key": {
+        "native": "Enter",
+        "retained": "i"
+      }
+    },
+    {
+      "expect": {
+        "native": "AGENTS",
+        "retained": "ctrl+x tab agents"
+      },
+      "polls": 240
+    },
+    {
+      "capture": "after choosing where to work"
+    },
+    {
+      "key": {
+        "native": "Enter",
+        "retained": "Enter"
+      }
+    },
+    {
+      "expect": {
+        "native": "MODELS"
+      },
+      "polls": 240
+    },
+    {
+      "paste": {
+        "native": "Sol"
+      }
+    },
+    {
+      "expect": {
+        "native": "Sol"
+      },
+      "polls": 240
+    },
+    {
+      "capture": "the model choice, where the two clients differ most"
+    },
+    {
+      "key": {
+        "native": "Enter"
+      }
+    },
+    {
+      "expect": {
+        "native": "model openai/GPT-5.6 Sol"
+      },
+      "polls": 240
+    },
+    {
+      "key": {
+        "native": "n"
+      }
+    },
+    {
+      "expect": {
+        "native": "TRANSCRIPT"
+      },
+      "polls": 240
+    },
+    {
+      "paste": "Reply with the word FIRSTLINE and then count from one to three hundred, one number per line, with no other commentary."
+    },
+    {
+      "key": "Enter"
+    },
+    {
+      "expect": "300",
+      "polls": 960
+    },
+    {
+      "capture": "a long transcript, at the tail"
+    },
+    {
+      "key": "PageUp"
+    },
+    {
+      "key": "PageUp"
+    },
+    {
+      "key": "PageUp"
+    },
+    {
+      "key": "PageUp"
+    },
+    {
+      "key": "PageUp"
+    },
+    {
+      "key": "PageUp"
+    },
+    {
+      "key": "PageUp"
+    },
+    {
+      "key": "PageUp"
+    },
+    {
+      "key": "PageUp"
+    },
+    {
+      "key": "PageUp"
+    },
+    {
+      "key": "PageUp"
+    },
+    {
+      "key": "PageUp"
+    },
+    {
+      "expect": {
+        "native": "FIRSTLINE"
+      },
+      "polls": 240
+    },
+    {
+      "capture": "native: the top of the answer, after twelve pages"
+    },
+    {
+      "key": "PageUp"
+    },
+    {
+      "key": "PageUp"
+    },
+    {
+      "key": "PageUp"
+    },
+    {
+      "key": "PageUp"
+    },
+    {
+      "key": "PageUp"
+    },
+    {
+      "key": "PageUp"
+    },
+    {
+      "key": "PageUp"
+    },
+    {
+      "key": "PageUp"
+    },
+    {
+      "key": "PageUp"
+    },
+    {
+      "key": "PageUp"
+    },
+    {
+      "key": "PageUp"
+    },
+    {
+      "key": "PageUp"
+    },
+    {
+      "key": "PageUp"
+    },
+    {
+      "key": "PageUp"
+    },
+    {
+      "key": "PageUp"
+    },
+    {
+      "key": "PageUp"
+    },
+    {
+      "key": "PageUp"
+    },
+    {
+      "key": "PageUp"
+    },
+    {
+      "expect": {
+        "retained": "FIRSTLINE"
+      },
+      "polls": 240
+    },
+    {
+      "capture": "retained: the top of the answer, after thirty half-pages"
+    },
+    {
+      "key": "PageDown"
+    },
+    {
+      "key": "PageDown"
+    },
+    {
+      "key": "PageDown"
+    },
+    {
+      "key": "PageDown"
+    },
+    {
+      "key": "PageDown"
+    },
+    {
+      "key": "PageDown"
+    },
+    {
+      "key": "PageDown"
+    },
+    {
+      "key": "PageDown"
+    },
+    {
+      "key": "PageDown"
+    },
+    {
+      "key": "PageDown"
+    },
+    {
+      "key": "PageDown"
+    },
+    {
+      "key": "PageDown"
+    },
+    {
+      "key": "PageDown"
+    },
+    {
+      "key": "PageDown"
+    },
+    {
+      "key": "PageDown"
+    },
+    {
+      "key": "PageDown"
+    },
+    {
+      "key": "PageDown"
+    },
+    {
+      "key": "PageDown"
+    },
+    {
+      "key": "PageDown"
+    },
+    {
+      "key": "PageDown"
+    },
+    {
+      "key": "PageDown"
+    },
+    {
+      "key": "PageDown"
+    },
+    {
+      "key": "PageDown"
+    },
+    {
+      "key": "PageDown"
+    },
+    {
+      "key": "PageDown"
+    },
+    {
+      "key": "PageDown"
+    },
+    {
+      "key": "PageDown"
+    },
+    {
+      "key": "PageDown"
+    },
+    {
+      "key": "PageDown"
+    },
+    {
+      "key": "PageDown"
+    },
+    {
+      "expect": "300",
+      "polls": 240
+    },
+    {
+      "capture": "returned to the tail"
+    },
+    {
+      "key": {
+        "native": "Control+q",
+        "retained": "Control+c"
+      }
+    }
+  ]
+}

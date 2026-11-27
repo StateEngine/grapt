@@ -1,0 +1,59 @@
+# Row-11 law: ambient clock and ID creation is confined to named production
+# adapters. `clippy::disallowed_methods` is the enforceable build-time gate —
+# neither trybuild nor rustc can reject a std API on its own.
+#
+# Scope note, measured rather than assumed:
+#   * `std::time::SystemTime::now` is the wall-clock durable-boundary call the
+#     law targets. Production wall-clock reads are confined to two named
+#     `ClockAuthority` adapters: `grapt-store/src/clock.rs::SystemClock` (used
+#     by store/server paths, including migration backups) and
+#     `grapt-cli/src/client/chatgpt.rs::SystemClock` (the CLI's standalone
+#     adapter, because `grapt-cli` does not depend on `grapt-store`).
+#     `grapt-cli/src/acp/timing.rs::DiagnosticClock` is a diagnostic-only
+#     exception whose readings never enter durable state or expiry decisions.
+#   * `std::time::Instant::now` is banned for the same reason a durable owner
+#     must not read ambient time.
+#   * `tokio::time::Instant::now` is deliberately NOT banned. It is a monotonic
+#     scheduling primitive used for timeouts and deadlines, never a durable
+#     fact, and banning it would force churn across accepted runtime lanes for
+#     no invariant.
+#   * `getrandom::fill` is the workspace's ONLY source of OS randomness. It
+#     arrived with the writer-owner identity fix (F3B4a): a writer identity must
+#     be unique over TIME, not merely among concurrently live processes, and the
+#     previous `{process id}-{per-process counter}` shape repeated after the OS
+#     reused a process id — which made an ownership transfer look like a
+#     re-election by the incumbent and skipped the epoch advance. The single
+#     permitted call site is the named production adapter
+#     `grapt-store/src/ids.rs`, which carries a one-line-wide allow. Every other
+#     reach for ambient randomness must fail the build, exactly as an ambient
+#     clock read does. `fixtures/negative/ambient-randomness` proves this entry
+#     actually fires.
+#
+#     This paragraph REPLACES the earlier note stating that no UUID or random-ID
+#     crate existed in the workspace dependency graph and that there was
+#     therefore no ambient ID constructor to disallow. That statement became
+#     false the moment `getrandom` was introduced, and a scope note that
+#     documents the opposite of what the file enforces is worse than no note.
+#   * The TUI client's ONE randomness site is `grapt-client/src/input_ids.rs`
+#     (`ClientInputIds`, an injected `IdAuthority`): a prompt's input id must
+#     be unique within its session before the server has answered, and the
+#     client depends on no store adapter. It seeds from std's OS-seeded
+#     `RandomState`, which no rule here bans; it is named so it stays one site.
+disallowed-methods = [
+    { path = "rusqlite::Connection::set_db_config", allow-invalid = true, reason = "only the store owns SQLite configuration; shared read connections must not disable schema protection" },
+    { path = "rusqlite::Connection::create_scalar_function", allow-invalid = true, reason = "function replacement can change governed trigger behavior; only the named directory-query adapter may register its fixed function" },
+    { path = "rusqlite::Connection::create_aggregate_function", allow-invalid = true, reason = "consumers must not replace functions used by governed SQL" },
+    { path = "rusqlite::Connection::create_window_function", allow-invalid = true, reason = "consumers must not replace functions used by governed SQL" },
+    { path = "rusqlite::Connection::remove_function", allow-invalid = true, reason = "consumers must not remove functions used by governed SQL" },
+    { path = "rusqlite::Connection::create_collation", allow-invalid = true, reason = "consumers must not replace collations used by governed SQL" },
+    { path = "rusqlite::Connection::remove_collation", allow-invalid = true, reason = "consumers must not remove collations used by governed SQL" },
+    { path = "rusqlite::Connection::collation_needed", allow-invalid = true, reason = "consumers must not install arbitrary collation registration callbacks" },
+    { path = "std::time::SystemTime::now", reason = "durable and lifecycle owners consume an injected ClockAuthority; ambient wall-clock reads belong only in a named production adapter" },
+    { path = "std::time::Instant::now", reason = "durable and lifecycle owners consume an injected ClockAuthority; use tokio::time::Instant for monotonic scheduling" },
+    { path = "getrandom::fill", allow-invalid = true, reason = "durable and lifecycle owners consume an injected IdAuthority; OS randomness belongs only in the named production adapter grapt-store/src/ids.rs" },
+]
+
+# Structure limits for the workspace lints of the same names.
+too-many-lines-threshold = 100
+cognitive-complexity-threshold = 25
+too-many-arguments-threshold = 7

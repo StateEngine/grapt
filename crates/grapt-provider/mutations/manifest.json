@@ -1,0 +1,474 @@
+{
+  "purpose": "Provider boundary and transport mutation coverage. H01 pins dependency direction. H02 observes the exact provider failure class at the Step boundary. Z01-Z06 cover wire keys, dependency declarations, HTTPS, tool decoding, bounded capture allocation, and terminal authentication failure. Z07-Z17 cover incremental UTF-8, EOF and CRLF framing, block ordinals, capacity release, and exact dependency features. Z18-Z32 cover shared transport, credentials, capture settlement, and physical-attempt identity bounds. Runtime-owned vocabulary rows remain in the runtime manifest.",
+  "run": "python crates/grapt-provider/mutations/run.py",
+  "packs": {
+    "PROVIDER-1-R3": [
+      "Z18",
+      "Z19",
+      "Z20",
+      "Z21",
+      "Z22",
+      "Z23",
+      "Z24",
+      "Z25",
+      "Z26",
+      "Z27",
+      "Z28",
+      "Z29",
+      "Z30",
+      "Z31"
+    ],
+    "PROVIDER-1-R4": [
+      "Z32"
+    ]
+  },
+  "isolation": "Every mutation is applied in its own disposable worktree at the exact committed candidate. The calling worktree remains unchanged. Each row also builds into its own deterministic target directory under the run root, named for the row id. The ambient CARGO_TARGET_DIR and CARGO_BUILD_TARGET_DIR -- which the Linux heavy-gate profile exports for every route -- are stripped from every cargo child rather than overridden, so one row's artifacts can neither decide nor forge the next row's verdict, and a bounded recursive path/type/size fingerprint before and after the battery shows the ambient directory received nothing.",
+  "scope_note": "Only deletable behavior seams receive mutation rows. The distinction between AttemptTerminalReason and StepTerminalReason is carried by compile-fail probes 70/71. ProviderEnded, ContextFailure, AuthorityRefused, DurabilityFailure and ProcessLoss are not produced by the attempt-to-Step conversion, so no rows claim to cover them. Probe 04 carries the Codex request type boundary; Z01 checks its serializer instead.",
+  "prefix_note": "This manifest owns the whole mutation prefixes H, Z and PR. Match complete prefixes: PR must never be interpreted as P. Pack names and evidence_label values are stable runner selectors and report identifiers. PR11-PR13 are rustdoc rows whose command is fixed by the runner; rejection requires the exact diagnostic under warnings-as-errors, not an arbitrary nonzero exit.",
+  "mutations": [
+    {
+      "id": "H02",
+      "law": "A Settled non-retryable provider failure carries its exact typed class from the attempt terminal to the Step terminal",
+      "package": "grapt-runtime",
+      "file": "crates/grapt-runtime/src/step/classification.rs",
+      "test": "attempt_admission::tests::step_policy::preflight_failure_retry_cap::a_settled_non_retryable_provider_failure_is_carried_up_losslessly",
+      "old": "        AttemptTerminalReason::ProviderFailure { class } => {\n            StepTerminalReason::ProviderFailure { class: *class }\n        }",
+      "new": "        AttemptTerminalReason::ProviderFailure { class: _ } => {\n            StepTerminalReason::ProviderFailure {\n                class: TerminalClass::Transport,\n            }\n        }"
+    },
+    {
+      "id": "Z01",
+      "law": "The Codex route never sends an output-token bound, and the serializer cannot reintroduce by string what the request type cannot name",
+      "package": "grapt-provider",
+      "file": "crates/grapt-provider/src/routes/body.rs",
+      "test": "routes::body::tests::the_codex_body_has_no_output_token_key_under_any_name",
+      "old": "    body.insert(\"store\".to_owned(), serde_json::Value::Bool(false));\n    body.insert(\"stream\".to_owned(), serde_json::Value::Bool(true));\n    let tools = responses_tools(&request.tools);",
+      "new": "    body.insert(\"store\".to_owned(), serde_json::Value::Bool(false));\n    body.insert(\"stream\".to_owned(), serde_json::Value::Bool(true));\n    body.insert(\n        \"max_output_tokens\".to_owned(),\n        serde_json::Value::Number(4096.into()),\n    );\n    let tools = responses_tools(&request.tools);"
+    },
+    {
+      "id": "Z02",
+      "law": "A third-party dependency this crate has not been ruled is refused by the external-dependency gate, in every legal TOML shape",
+      "package": "grapt-provider",
+      "file": "crates/grapt-provider/tests/allowed_external_dependencies.rs",
+      "test": "the_gate_catches_every_bypass_form",
+      "test_target": "allowed_external_dependencies",
+      "old": "const ALLOWED_DEPENDENCIES: &[&str] = &[\n    \"reqwest\",",
+      "new": "const ALLOWED_DEPENDENCIES: &[&str] = &[\n    \"ureq\",\n    \"reqwest\","
+    },
+    {
+      "id": "Z03",
+      "law": "Production client construction is unconditionally https-only and no path can select plaintext",
+      "package": "grapt-provider",
+      "file": "crates/grapt-provider/src/transport/client.rs",
+      "test": "codex::tests::production_client_refuses_plaintext",
+      "old": "        .use_preconfigured_tls(tls)\n        .https_only(true)\n        .build()",
+      "new": "        .use_preconfigured_tls(tls)\n        .build()"
+    },
+    {
+      "id": "Z04",
+      "law": "A Responses function-call item missing its durable call identity fails the attempt closed instead of being dropped into a clean stop",
+      "package": "grapt-provider",
+      "file": "crates/grapt-provider/src/routes/responses.rs",
+      "test": "codex::tests::a_tool_call_fails_closed_rather_than_being_dropped",
+      "old": "                ) else {\n                    sink.fail(\n                        ProviderFailureClass::InvalidProviderOutput,\n                        \"the provider announced a function call without an id, call id or name\",\n                    );\n                    return;\n                };",
+      "new": "                ) else {\n                    sink.unmodeled();\n                    return;\n                };"
+    },
+    {
+      "id": "Z05",
+      "law": "The SSE reader refuses an oversized frame before it grows its buffer, not after",
+      "package": "grapt-provider",
+      "file": "crates/grapt-provider/src/transport/sse.rs",
+      "test": "codex::tests::the_sse_decoder_is_bounded_before_it_grows",
+      "old": "        if projected > AdapterState::MAX_BYTES {",
+      "new": "        if projected > AdapterState::MAX_BYTES * 1024 {"
+    },
+    {
+      "id": "Z06",
+      "law": "An authentication rejection is terminal for the attempt and is never reclassified into something the runtime would retry",
+      "package": "grapt-provider",
+      "file": "crates/grapt-provider/src/transport/classify.rs",
+      "test": "codex::tests::a_401_is_terminal_and_issues_no_second_request",
+      "old": "        401 | 403 => ProviderFailureClass::Authentication,",
+      "new": "        401 | 403 => ProviderFailureClass::RateLimit { retry_after: None },"
+    },
+    {
+      "id": "Z07",
+      "law": "A UTF-8 code point split across transport chunks is carried, not reported as malformed provider output",
+      "package": "grapt-provider",
+      "file": "crates/grapt-provider/src/transport/sse.rs",
+      "test": "codex::tests::a_code_point_split_across_chunks_is_decoded_not_refused",
+      "old": "                if error.error_len().is_some() {",
+      "new": "                if true || error.error_len().is_some() {"
+    },
+    {
+      "id": "Z08",
+      "law": "An incomplete code point still outstanding when the stream ends is a typed refusal, not a silently dropped byte",
+      "package": "grapt-provider",
+      "file": "crates/grapt-provider/src/transport/sse.rs",
+      "test": "codex::tests::an_incomplete_code_point_at_eof_is_refused",
+      "old": "        if !self.carry.is_empty() {\n            return Err(self.fail(SseDecodeError::NotUtf8));\n        }",
+      "new": "        if false && !self.carry.is_empty() {\n            return Err(self.fail(SseDecodeError::NotUtf8));\n        }"
+    },
+    {
+      "id": "Z09",
+      "law": "A standards-valid CRLF event delimiter frames an SSE event",
+      "package": "grapt-provider",
+      "file": "crates/grapt-provider/src/transport/sse.rs",
+      "test": "codex::tests::crlf_event_delimiters_are_recognized",
+      "old": "            Some(b'\\r') => match bytes.get(index + 1) {\n                Some(b'\\n') => Some(2),\n                Some(_) => Some(1),\n                // Undecided while more bytes may arrive; decided at EOF:\n                // nothing more can turn this CR into a CRLF, so a frame that\n                // ends with two carriage returns is complete and frames once.\n                None => at_eof.then_some(1),\n            },",
+      "new": "            Some(b'\\r') => None,"
+    },
+    {
+      "id": "Z10",
+      "law": "A text block and a reasoning block open at the same time keep distinct ordinals for their whole lives",
+      "package": "grapt-provider",
+      "file": "crates/grapt-provider/src/transport/blocks.rs",
+      "test": "codex::tests::interleaved_text_and_reasoning_keep_distinct_ordinals",
+      "old": "    pub(crate) fn open_reasoning(&mut self) -> (BlockOrdinal, bool) {\n        match self.reasoning {\n            Some(ordinal) => (ordinal, false),\n            None => {\n                let ordinal = self.allocate();\n                self.reasoning = Some(ordinal);\n                (ordinal, true)",
+      "new": "    pub(crate) fn open_reasoning(&mut self) -> (BlockOrdinal, bool) {\n        match self.reasoning {\n            Some(ordinal) => (ordinal, false),\n            None => {\n                let ordinal = self.text.unwrap_or_else(|| self.allocate());\n                self.reasoning = Some(ordinal);\n                (ordinal, true)"
+    },
+    {
+      "id": "Z11",
+      "law": "The adapter refuses to open more concurrent attempts than its injected capacity",
+      "package": "grapt-provider",
+      "file": "crates/grapt-provider/src/transport/slot.rs",
+      "test": "codex::tests::the_active_registry_bounds_and_then_frees",
+      "old": "        if active.len() >= self.capacity {",
+      "new": "        if false && active.len() >= self.capacity {"
+    },
+    {
+      "id": "Z12",
+      "law": "Drop remains the cancellation backstop: a stream abandoned before any terminal still releases its slot",
+      "package": "grapt-provider",
+      "file": "crates/grapt-provider/src/transport/slot.rs",
+      "test": "codex::tests::dropping_an_unterminated_stream_still_releases_capacity",
+      "old": "        self.registry.release(&self.attempt);",
+      "new": "        let _ = &self.attempt;"
+    },
+    {
+      "id": "Z13",
+      "law": "The external-dependency gate compares the ruled feature set exactly, so removing a ruled feature is caught",
+      "package": "grapt-provider",
+      "file": "crates/grapt-provider/tests/allowed_external_dependencies.rs",
+      "test": "the_ruled_declarations_are_exact",
+      "test_target": "allowed_external_dependencies",
+      "old": "        features: &[\"ring\", \"std\", \"tls12\"],",
+      "new": "        features: &[\"ring\"],"
+    },
+    {
+      "id": "Z14",
+      "law": "A frame whose only delimiter is a pair of carriage returns at end of stream frames exactly once instead of being reported as a truncated stream",
+      "package": "grapt-provider",
+      "file": "crates/grapt-provider/src/transport/sse.rs",
+      "test": "codex::tests::a_lone_cr_delimited_frame_at_eof_frames_exactly_once",
+      "old": "                None => at_eof.then_some(1),",
+      "new": "                None => None,"
+    },
+    {
+      "id": "Z15",
+      "law": "A successful terminal releases the attempt's capacity slot at the terminal, not when the caller drops the stream",
+      "package": "grapt-provider",
+      "file": "crates/grapt-provider/src/transport/stream.rs",
+      "test": "codex::tests::a_successful_terminal_releases_capacity_before_the_object_is_dropped",
+      "old": "            // A terminal frees capacity here, not when the caller\n            // eventually drops the object.\n            self.slot = None;\n            self.capture_finish(CaptureOutcome::Terminal);",
+      "new": "            // A terminal frees capacity here, not when the caller\n            // eventually drops the object.\n            self.capture_finish(CaptureOutcome::Terminal);"
+    },
+    {
+      "id": "Z16",
+      "law": "An error terminal releases the attempt's capacity slot through its own path",
+      "package": "grapt-provider",
+      "file": "crates/grapt-provider/src/transport/stream.rs",
+      "test": "codex::tests::an_error_terminal_releases_capacity_before_the_object_is_dropped",
+      "old": "        if terminated {\n            self.finished = true;\n            self.response = None;\n            // A terminal frees capacity here, not when the caller\n            // eventually drops the object.\n            self.slot = None;\n            self.capture_finish(CaptureOutcome::Terminal);\n        }",
+      "new": "        if terminated {\n            self.finished = true;\n            self.response = None;\n            // A terminal frees capacity here, not when the caller\n            // eventually drops the object.\n            self.capture_finish(CaptureOutcome::Terminal);\n        }"
+    },
+    {
+      "id": "Z17",
+      "law": "A ruled dependency declared in a target-specific table is held to the exact ruled version, default posture and feature set",
+      "package": "grapt-provider",
+      "file": "crates/grapt-provider/tests/allowed_external_dependencies.rs",
+      "test": "a_ruled_name_drifting_in_any_table_is_refused",
+      "test_target": "allowed_external_dependencies",
+      "old": "    if let Some(targets) = manifest.get(\"target\").and_then(Value::as_table) {\n        for (cfg, value) in targets {",
+      "new": "    if let Some(targets) = manifest.get(\"target\").and_then(Value::as_table) {\n        for (cfg, value) in targets.iter().take(0) {"
+    },
+    {
+      "id": "Z18",
+      "evidence_label": "R1",
+      "law": "A chat-completions finish_reason settles every open tool call before terminal normalization",
+      "package": "grapt-provider",
+      "file": "crates/grapt-provider/src/routes/compat.rs",
+      "test": "routes::tests::compat_settles_every_open_tool_call_when_the_response_completes",
+      "old": "            self.settle_tool_calls(sink);",
+      "new": "            // MUTATED: response completion no longer settles tool calls."
+    },
+    {
+      "id": "Z19",
+      "evidence_label": "R1b",
+      "law": "Completion settles the complete open tool-call set rather than only the most recent call",
+      "package": "grapt-provider",
+      "file": "crates/grapt-provider/src/routes/compat.rs",
+      "test": "routes::tests::compat_settles_every_open_tool_call_when_the_response_completes",
+      "old": "        for index in std::mem::take(&mut self.open_tools) {",
+      "new": "        for index in std::mem::take(&mut self.open_tools).into_iter().rev().take(1) {"
+    },
+    {
+      "id": "Z20",
+      "evidence_label": "R1c",
+      "law": "EOF without finish_reason refuses rather than dispatching a provider-uncompleted tool call",
+      "package": "grapt-provider",
+      "file": "crates/grapt-provider/src/routes/compat.rs",
+      "test": "routes::tests::compat_still_refuses_a_tool_call_the_provider_never_completed",
+      "old": "    pub(crate) fn finish(&mut self, sink: &mut DecodeSink<'_>) {\n        if let Some(finish) = self.pending_finish.take() {",
+      "new": "    pub(crate) fn finish(&mut self, sink: &mut DecodeSink<'_>) {\n        self.settle_tool_calls(sink);\n        if let Some(finish) = self.pending_finish.take() {"
+    },
+    {
+      "id": "Z21",
+      "evidence_label": "R2",
+      "law": "Dropping a live capture tap settles the cancelled attempt as incomplete",
+      "package": "grapt-provider",
+      "file": "crates/grapt-provider/src/transport/capture.rs",
+      "test": "transport::capture::tests::dropping_a_tap_mid_flight_settles_incomplete",
+      "old": "    fn drop(&mut self) {\n        self.settle(CaptureOutcome::Incomplete);\n    }",
+      "new": "    fn drop(&mut self) {\n        let _ = &self.chunks;\n    }"
+    },
+    {
+      "id": "Z22",
+      "evidence_label": "R2b",
+      "law": "Cancellation is classified incomplete rather than terminal",
+      "package": "grapt-provider",
+      "file": "crates/grapt-provider/src/transport/capture.rs",
+      "test": "transport::capture::tests::dropping_a_tap_mid_flight_settles_incomplete",
+      "old": "    fn drop(&mut self) {\n        self.settle(CaptureOutcome::Incomplete);\n    }",
+      "new": "    fn drop(&mut self) {\n        self.settle(CaptureOutcome::Terminal);\n    }"
+    },
+    {
+      "id": "Z23",
+      "evidence_label": "R2c",
+      "law": "The wire ProviderStream owns the tap whose Drop settles cancellation",
+      "package": "grapt-provider",
+      "file": "crates/grapt-provider/src/transport/stream.rs",
+      "test": "transport::fixtures::tests::cancelling_a_stream_settles_its_capture_incomplete",
+      "old": "            slot: Some(slot),\n            capture,",
+      "new": "            slot: Some(slot),\n            capture: None,"
+    },
+    {
+      "id": "Z24",
+      "evidence_label": "R2d",
+      "law": "Every saturated chunk contributes to explicit loss accounting",
+      "package": "grapt-provider",
+      "file": "crates/grapt-provider/src/transport/capture.rs",
+      "test": "transport::capture::tests::a_full_backlog_drops_chunks_and_reports_how_many",
+      "old": "                self.loss.saturated_chunks = self.loss.saturated_chunks.saturating_add(1);",
+      "new": "                let _ = byte_count;"
+    },
+    {
+      "id": "Z25",
+      "evidence_label": "R2e",
+      "law": "Every attempt feed carries the exact PhysicalAttemptId that opened it",
+      "package": "grapt-provider",
+      "file": "crates/grapt-provider/src/transport/capture.rs",
+      "test": "transport::capture::tests::each_attempt_gets_its_own_identified_feed",
+      "old": "            attempt: attempt.clone(),",
+      "new": "            attempt: PhysicalAttemptId::new(\"att_shared\").unwrap_or_else(|| attempt.clone()),"
+    },
+    {
+      "id": "Z26",
+      "evidence_label": "R2f",
+      "law": "A saturated capture feed drops rather than blocking provider progress",
+      "package": "grapt-provider",
+      "file": "crates/grapt-provider/src/transport/capture.rs",
+      "test": "transport::capture::tests::a_consumer_that_never_drains_cannot_stall_the_producer",
+      "expected": "timeout",
+      "timeout_seconds": 20,
+      "old": "        match self.chunks.try_send(CaptureEvent::Chunk(bytes.to_vec())) {\n            Ok(()) => {}\n            Err(TrySendError::Full(_)) => {\n                self.loss.saturated_chunks = self.loss.saturated_chunks.saturating_add(1);\n                self.loss.saturated_bytes = self.loss.saturated_bytes.saturating_add(byte_count);\n            }\n            // The consumer is gone. Stop counting; there is no one to tell.\n            Err(TrySendError::Disconnected(_)) => {\n                self.settled = true;\n            }\n        }",
+      "new": "        let _ = byte_count;\n        if self\n            .chunks\n            .send(CaptureEvent::Chunk(bytes.to_vec()))\n            .is_err()\n        {\n            self.settled = true;\n        }"
+    },
+    {
+      "id": "Z27",
+      "evidence_label": "R3",
+      "law": "Anthropic ToolChoice::None preserves the provider's none wire value",
+      "package": "grapt-provider",
+      "file": "crates/grapt-provider/src/routes/body.rs",
+      "test": "routes::body::tests::anthropic_preserves_an_explicit_tool_choice_none",
+      "old": "        ToolChoice::None => serde_json::json!({ \"type\": \"none\" }),",
+      "new": "        ToolChoice::None => serde_json::json!({ \"type\": \"auto\" }),"
+    },
+    {
+      "id": "Z28",
+      "evidence_label": "R3b",
+      "law": "Anthropic's auto, none, any and named tool choices remain distinct",
+      "package": "grapt-provider",
+      "file": "crates/grapt-provider/src/routes/body.rs",
+      "test": "routes::body::tests::anthropic_maps_each_tool_choice_to_its_own_wire_value",
+      "old": "fn anthropic_tool_choice(choice: &ToolChoice) -> serde_json::Value {\n    match choice {\n        ToolChoice::Auto => serde_json::json!({ \"type\": \"auto\" }),\n        ToolChoice::None => serde_json::json!({ \"type\": \"none\" }),\n        ToolChoice::Required => serde_json::json!({ \"type\": \"any\" }),\n        ToolChoice::Named { tool } => serde_json::json!({ \"type\": \"tool\", \"name\": tool }),\n    }\n}",
+      "new": "fn anthropic_tool_choice(choice: &ToolChoice) -> serde_json::Value {\n    let _ = choice;\n    serde_json::json!({ \"type\": \"none\" })\n}"
+    },
+    {
+      "id": "Z29",
+      "evidence_label": "R3c",
+      "law": "Anthropic omits tool_choice when no tools are offered",
+      "package": "grapt-provider",
+      "file": "crates/grapt-provider/src/routes/body.rs",
+      "test": "routes::body::tests::anthropic_omits_tool_choice_entirely_when_no_tools_are_offered",
+      "old": "    if tools_present {\n        if let Some(choice) = request.tool_choice.as_ref() {\n            body.insert(\"tool_choice\".to_owned(), anthropic_tool_choice(choice));\n        }\n    }",
+      "new": "    if let Some(choice) = request.tool_choice.as_ref() {\n        body.insert(\"tool_choice\".to_owned(), anthropic_tool_choice(choice));\n    }"
+    },
+    {
+      "id": "Z30",
+      "law": "An oversized transport chunk is refused at the injected byte ceiling before capture copies it",
+      "package": "grapt-provider",
+      "file": "crates/grapt-provider/src/transport/capture.rs",
+      "test": "transport::capture::tests::one_oversized_chunk_is_refused_before_capture",
+      "old": "        if bytes.len() > self.max_chunk_bytes {",
+      "new": "        if false && bytes.len() > self.max_chunk_bytes {"
+    },
+    {
+      "id": "Z31",
+      "law": "A settled ProviderStream relinquishes the capture sender immediately so saturation cannot hide end-of-attempt",
+      "package": "grapt-provider",
+      "file": "crates/grapt-provider/src/transport/stream.rs",
+      "test": "transport::fixtures::tests::a_saturated_capture_reports_end_while_the_settled_stream_stays_alive",
+      "old": "        if let Some(mut capture) = self.capture.take() {",
+      "new": "        if let Some(capture) = self.capture.as_mut() {"
+    },
+    {
+      "id": "Z32",
+      "law": "The public AttemptOpener refuses an oversized PhysicalAttemptId before any clone or capture announcement, whether the announcement queue is empty or full",
+      "package": "grapt-provider",
+      "file": "crates/grapt-provider/src/opener.rs",
+      "test": "opener::tests::an_oversized_attempt_identity_is_refused_before_empty_or_full_capture_announcement",
+      "old": "        if attempt_bytes > MAX_PHYSICAL_ATTEMPT_ID_BYTES {",
+      "new": "        if false && attempt_bytes > MAX_PHYSICAL_ATTEMPT_ID_BYTES {"
+    },
+    {
+      "id": "PR01",
+      "law": "A request whose model spells the authority's but was vouched for by a different catalog issuance is refused",
+      "package": "grapt-provider",
+      "file": "crates/grapt-provider/src/authority.rs",
+      "test": "authority::tests::a_request_from_another_catalog_cannot_ride_a_genuine_authority",
+      "old": "if !request.model().is_same_issuance(target.model_ref()) {",
+      "new": "if request.model() != target.model_ref() {"
+    },
+    {
+      "id": "PR02",
+      "law": "The stale-issuance check runs before the coordinate checks, so a withdrawn release is named as stale rather than as a coordinate disagreement",
+      "package": "grapt-provider",
+      "file": "crates/grapt-provider/src/authority.rs",
+      "test": "authority::tests::a_superseded_issuance_is_refused_as_stale",
+      "old": "        if !target.is_current_issuance() {",
+      "new": "        if false && !target.is_current_issuance() {"
+    },
+    {
+      "id": "PR03",
+      "law": "An offered tool the authority does not make visible is refused",
+      "package": "grapt-provider",
+      "file": "crates/grapt-provider/src/authority.rs",
+      "test": "authority::tests::a_hidden_or_unlisted_tool_is_rejected",
+      "old": "            if !authority.tool_is_visible(&tool) {",
+      "new": "            if false && !authority.tool_is_visible(&tool) {"
+    },
+    {
+      "id": "PR04",
+      "law": "A duplicate offered tool name is refused, so two definitions cannot ride one authority check",
+      "package": "grapt-provider",
+      "file": "crates/grapt-provider/src/authority.rs",
+      "test": "authority::tests::a_duplicate_or_empty_tool_name_is_rejected",
+      "old": "            if name.trim().is_empty() || seen.contains(&name.as_str()) {",
+      "new": "            if name.trim().is_empty() {"
+    },
+    {
+      "id": "PR05",
+      "law": "A named tool choice must name a tool the request actually offers",
+      "package": "grapt-provider",
+      "file": "crates/grapt-provider/src/authority.rs",
+      "test": "authority::tests::named_tool_choice_must_name_an_offered_visible_tool",
+      "old": "                if !offered.contains(&name) {",
+      "new": "                if false && !offered.contains(&name) {"
+    },
+    {
+      "id": "PR06",
+      "law": "Requiring a tool call while offering none is refused as unsatisfiable rather than deferred to the provider",
+      "package": "grapt-provider",
+      "file": "crates/grapt-provider/src/authority.rs",
+      "test": "authority::tests::required_tool_choice_needs_at_least_one_visible_tool",
+      "old": "                if offered.is_empty() {",
+      "new": "                if false && offered.is_empty() {"
+    },
+    {
+      "id": "PR07",
+      "law": "The endpoint must serve the route the authority resolved",
+      "package": "grapt-provider",
+      "file": "crates/grapt-provider/src/authority.rs",
+      "test": "authority::tests::an_endpoint_for_another_route_is_refused",
+      "old": "        if endpoint.route() != target.route() {",
+      "new": "        if false && endpoint.route() != target.route() {"
+    },
+    {
+      "id": "PR08",
+      "law": "Custody covers an attempt only when the attempt matches, not merely when the issuance does",
+      "package": "grapt-provider",
+      "file": "crates/grapt-provider/src/authority.rs",
+      "test": "authority::tests::covers_requires_the_attempt_and_not_only_the_issuance",
+      "old": "        self.attempt == *attempt && self.authority.model().is_same_issuance(target)",
+      "new": "        self.authority.model().is_same_issuance(target)"
+    },
+    {
+      "id": "PR09",
+      "law": "Custody's formatter reaches neither the credential lease nor the model",
+      "package": "grapt-provider",
+      "file": "crates/grapt-provider/src/authority.rs",
+      "test": "authority::tests::secret_material_is_absent_from_the_prepared_request_and_receipt",
+      "old": "            .field(\"issuance\", &self.authority.model().issuance_generation())",
+      "new": "            .field(\"model\", &self.authority.model().model_ref())"
+    },
+    {
+      "id": "PR10",
+      "law": "The lease's credential version must be the one the authority resolved",
+      "package": "grapt-provider",
+      "file": "crates/grapt-provider/src/authority.rs",
+      "test": "authority::tests::a_lease_for_another_account_or_credential_version_is_refused",
+      "old": "        if lease.credential_version() != target.credential_version() {",
+      "new": "        if false && lease.credential_version() != target.credential_version() {"
+    },
+    {
+      "id": "PR11",
+      "kind": "rustdoc",
+      "law": "Public documentation for RouteBoundEndpoint names the crate-private ProviderAttemptCarrier::bind as text, never as an intra-doc link the governed rustdoc environment cannot resolve",
+      "package": "grapt-provider",
+      "file": "crates/grapt-provider/src/authority.rs",
+      "expect_error": "error: public documentation for `RouteBoundEndpoint` links to private item `ProviderAttemptCarrier::bind`",
+      "old": "/// makes `ProviderAttemptCarrier::bind`'s second check meaningful rather than",
+      "new": "/// makes [`ProviderAttemptCarrier::bind`]'s second check meaningful rather than"
+    },
+    {
+      "id": "PR12",
+      "kind": "rustdoc",
+      "law": "Public documentation for ProviderAttemptCarrier names the crate-private Self::into_parts as text, never as an intra-doc link the governed rustdoc environment cannot resolve",
+      "package": "grapt-provider",
+      "file": "crates/grapt-provider/src/authority.rs",
+      "expect_error": "error: public documentation for `ProviderAttemptCarrier` links to private item `Self::into_parts`",
+      "old": "/// receipt**: there is no public accessor for either, and `Self::into_parts` is",
+      "new": "/// receipt**: there is no public accessor for either, and [`Self::into_parts`] is"
+    },
+    {
+      "id": "PR13",
+      "kind": "rustdoc",
+      "law": "Public documentation for ProviderAttemptCarrier names the crate-private Self::bind as text, never as an intra-doc link the governed rustdoc environment cannot resolve",
+      "package": "grapt-provider",
+      "file": "crates/grapt-provider/src/authority.rs",
+      "expect_error": "error: public documentation for `ProviderAttemptCarrier` links to private item `Self::bind`",
+      "old": "/// provider except through `Self::bind`, which refuses every request whose model",
+      "new": "/// provider except through [`Self::bind`], which refuses every request whose model"
+    }
+  ],
+  "tombstones": [
+    {
+      "id": "H01",
+      "retired_law": "The provider dependency gate refuses every legal TOML route to an upward grapt-runtime dependency",
+      "retired_file": "grapt-provider per-crate dependency_direction test, deleted",
+      "retired_test": "the_gate_catches_every_bypass_form",
+      "reason": "The per-crate dependency gate this row mutated was replaced by the workspace crate-graph law (crates/grapt-types/tests/crate_graph.rs), which reads Cargo's own resolution, so no manifest spelling can hide an edge and the bypass parsing this row targeted no longer exists.",
+      "superseded_by": "crates/grapt-types/tests/crate_graph.rs (workspace_dependencies_match_the_reviewed_graph)"
+    }
+  ]
+}

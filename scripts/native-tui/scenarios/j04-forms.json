@@ -1,0 +1,181 @@
+{
+  "name": "J04 — a form raised by a producer, both clients, one product",
+  "about": [
+    "The forms dimension, added at r3 because settling a form through the",
+    "canonical routes is new in this revision. Before it there was nothing to",
+    "compare: the native client could show that a question existed and could",
+    "not answer it.",
+    "",
+    "THE PRODUCER IS EXTERNAL TO BOTH CLIENTS. A form comes from something that",
+    "needs an answer — an MCP server's elicitation, a tool that cannot proceed",
+    "without a choice — never from the client that displays it. `create` is the",
+    "one form route the native client deliberately does not implement, for that",
+    "reason. So the question is posted through the product's own route by the",
+    "runner, and both clients meet it exactly as they would meet any other.",
+    "",
+    "It is raised on the session THIS client opened, not a session made for the",
+    "occasion: a question nobody is looking at would prove only that the route",
+    "works.",
+    "",
+    "The retained client is asked what it renders, not what it can settle. Where",
+    "it declares no expectation the step is recorded as skipped for that side,",
+    "which is the honest way to compare a surface only one client implements —",
+    "and it is itself the comparison: this is a capability the native client has",
+    "and the retained one, on this product, does not.",
+    "",
+    "THIS DIMENSION IS NATIVE-ONLY, and now says so in the file rather than",
+    "leaving a reader to infer it from the steps. B2: every step from",
+    "the model choice to the settlement is native-only, the retained side idles",
+    "from step 3 until it is quit, and three captions said 'as each client shows",
+    "it'. The receipt then printed two symmetric rows with resource figures",
+    "beside each other, which reads as both clients having done the journey.",
+    "One did.",
+    "",
+    "`comparison: native-only` is carried into the receipt so the asymmetry is",
+    "a declared property of the dimension rather than a caption a reader has to",
+    "check against the step list."
+  ],
+  "steps": [
+    {
+      "expect": {
+        "native": "PROJECTS",
+        "retained": "Select a project"
+      },
+      "polls": 240
+    },
+    {
+      "key": {
+        "native": "Enter",
+        "retained": "i"
+      }
+    },
+    {
+      "expect": {
+        "native": "AGENTS",
+        "retained": "ctrl+x tab agents"
+      },
+      "polls": 240
+    },
+    {
+      "key": {
+        "native": "Enter",
+        "retained": "Enter"
+      }
+    },
+    {
+      "expect": {
+        "native": "MODELS"
+      },
+      "polls": 240
+    },
+    {
+      "paste": {
+        "native": "Sol"
+      }
+    },
+    {
+      "expect": {
+        "native": "Sol"
+      },
+      "polls": 240
+    },
+    {
+      "key": {
+        "native": "Enter"
+      }
+    },
+    {
+      "expect": {
+        "native": "model openai/GPT-5.6 Sol"
+      },
+      "polls": 240
+    },
+    {
+      "key": {
+        "native": "n"
+      }
+    },
+    {
+      "expect": {
+        "native": "TRANSCRIPT"
+      },
+      "polls": 240
+    },
+    {
+      "absent": {
+        "native": "WAITING ON A FORM"
+      },
+      "polls": 120
+    },
+    {
+      "form": {
+        "title": "Deployment target",
+        "fields": [
+          {
+            "key": "branch",
+            "type": "string",
+            "title": "Branch",
+            "description": "Which branch should this land on?",
+            "required": true
+          }
+        ]
+      }
+    },
+    {
+      "expect": {
+        "native": "WAITING ON A FORM"
+      },
+      "polls": 480
+    },
+    {
+      "expect": {
+        "native": "Deployment target"
+      },
+      "polls": 480
+    },
+    {
+      "capture": "the question, as the native client shows it"
+    },
+    {
+      "expect": {
+        "native": "branch : Branch  [string, required]"
+      },
+      "polls": 240
+    },
+    {
+      "paste": {
+        "native": "native-forms-r3"
+      }
+    },
+    {
+      "expect": {
+        "native": "= native-forms-r3"
+      },
+      "polls": 240
+    },
+    {
+      "capture": "the answer, composed in the client"
+    },
+    {
+      "key": {
+        "native": "Control+s"
+      }
+    },
+    {
+      "absent": {
+        "native": "WAITING ON A FORM"
+      },
+      "polls": 480
+    },
+    {
+      "capture": "settled, and gone from the pane"
+    },
+    {
+      "key": {
+        "native": "Control+q",
+        "retained": "Control+c"
+      }
+    }
+  ],
+  "comparison": "native-only"
+}

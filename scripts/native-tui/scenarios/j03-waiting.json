@@ -1,0 +1,52 @@
+{
+  "name": "J03 — approvals, forms and reconnect, from the real client",
+  "about": [
+    "The two states a run WAITS in, captured from the shipped binary under a",
+    "real ConPTY: an outstanding permission ask, and a pending form.",
+    "",
+    "Both are raised through the contract double's scripted prompt vocabulary",
+    "(`ask:` and `form:`) because a separate process cannot call the double's",
+    "Rust constructors. The states themselves are the frozen ones, served over",
+    "the frozen routes and decoded as the real DTOs.",
+    "",
+    "The form capture is the honest half of J03. The product at the accepted",
+    "base serves the two form LIST routes and none of reply, state, get or",
+    "cancel, so this client renders the question and says on screen that the",
+    "answer cannot be sent yet. A screenshot of a rendered form is not evidence",
+    "of a settled one, and this scenario is written so it cannot be read as one."
+  ],
+  "steps": [
+    { "expect": "PROJECTS" },
+    { "key": "Enter" },
+    { "expect": "AGENTS" },
+    { "key": "Enter" },
+    { "expect": "MODELS" },
+    { "key": "Enter" },
+    { "expect": "SESSIONS" },
+    { "key": "n" },
+    { "expect": "TRANSCRIPT" },
+
+    { "paste": "ask:write a file into the workspace" },
+    { "key": "Enter" },
+    { "expect": "PERMISSION" },
+    { "capture": "an outstanding approval takes the screen and names its choices" },
+
+    { "key": "x" },
+    { "capture": "ordinary typing cannot settle an approval" },
+    { "key": "o" },
+    { "expect": "TRANSCRIPT" },
+    { "capture": "answering once returns the keyboard to the session" },
+
+    { "paste": "form:which branch should I work on" },
+    { "key": "Enter" },
+    { "expect": "WAITING ON A FORM" },
+    { "capture": "a pending form, its fields, and why it cannot be answered here" },
+
+    { "key": "Escape" },
+    { "key": "Enter" },
+    { "expect": "WAITING ON A FORM" },
+    { "capture": "reopening the session finds the run still waiting on it" },
+
+    { "key": "Control+q" }
+  ]
+}

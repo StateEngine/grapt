@@ -1,0 +1,3 @@
+| Source | Upstream version and license | Local adaptation | Scenario-local waiver |
+|---|---|---|---|
+| OpenCode `packages/core/src/plugin/provider/azure.ts` | `042d0832f5f3a73eaa039a58a7d565776f6d4290`; MIT; unchanged license at `licenses/opencode/LICENSE` | Explicit Azure CLI selection for Azure OpenAI and Azure AI Services connections; request-time bearer authorization through the official `azure_identity` crate, target-specific token audiences, bounded helper containment, and shared CLI/TUI coordinates. | Native Entra authorization accepts public Azure resource hosts; sovereign-cloud endpoints, arbitrary proxy URLs and automatic deployment discovery remain outside this flow. API-key connections retain their existing endpoint behavior. |

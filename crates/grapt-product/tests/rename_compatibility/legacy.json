@@ -1,0 +1,61 @@
+{
+  "config": "{\"permission\":\"ask\",\"store\":{\"authority\":\"open-ready\"},\"product\":{\"build\":\"legacy-fixture\"},\"provider\":{\"id\":\"openai\",\"model\":\"fixture-model\",\"base_model\":\"fixture-model\",\"family\":\"fixture\",\"route\":\"responses\",\"account\":\"fixture-account\",\"credential_version\":\"chatgpt-oauth-v1\",\"policy_version\":\"fixture-policy\",\"variants\":[]}}",
+  "service": "slot=product\ninstance=fixture-instance\nenvironment=fixture\nversion=0.1.0\nserve_window_ms=10000\nprovider_mode=production\nprovider_connect_ms=1000\nprovider_response_head_ms=1000\nprovider_active_attempts=1\n",
+  "approval_fingerprint": [
+    189,
+    199,
+    184,
+    246,
+    218,
+    46,
+    49,
+    200,
+    57,
+    190,
+    68,
+    228,
+    65,
+    161,
+    147,
+    235,
+    52,
+    240,
+    154,
+    31,
+    100,
+    112,
+    177,
+    193,
+    244,
+    63,
+    205,
+    181,
+    226,
+    23,
+    38,
+    204
+  ],
+  "chatgpt": {
+    "schema": "secode.chatgpt-oauth.v2",
+    "access_token": "SYNTHETIC_LEGACY_ACCESS_NOT_VALID",
+    "refresh_token": "SYNTHETIC_LEGACY_REFRESH_NOT_VALID",
+    "expires_at_ms": 4000000000000,
+    "account": "fixture-account"
+  },
+  "plugin": {
+    "files": {
+      ".claude-plugin/plugin.json": "{\"name\":\"legacy-plugin\"}",
+      "commands/retained.md": "---\ndescription: Read retained plugin data\n---\nRetained data ${CLAUDE_PLUGIN_DATA}"
+    },
+    "digest": "b551a4fddb3e62df17895c08a87a2344fc7b17f14ed5e5c636a01b78b9c5a3e3",
+    "data_digest": "6c87177f30b6325716a02a6358145acad7feb27948e8d0d0c8c458b4ffca4c8f",
+    "bytes": 106
+  },
+  "mcp_key": "07076a53e4326d5db4c5c2df1bcca4b89115ea705518bdaf658c0da4bfe539a1",
+  "mail": {
+    "local_id": "remote-mail:d096cbf11edc9c65de1ecae4bd8dce4342b158ff339895a50be725f85931eb01",
+    "record_hex": "53454d524d320000012853454d4258310000001d72656d6f74652d736561742d6d61696c2d7472616e73706f72742f76310000004c72656d6f74652d6d61696c3a643039366362663131656463396336356465316563616534626438646365343334326231353866663333393839356135306265373235663835393331656230310000004e72656d6f74652d73656e6465723a3738326233353134303236623662623636363465613236653265323261353434663765386139616666633630646636343465343735353661623332663932333100000011666978747572652d726563697069656e740000000768616e646f66660000002952657461696e6564206d61696c206d757374206e6f7420626520696e6765737465642074776963652e0000000d6c65676163792d637572736f72000000000e736f757263652d70726f6a6563740000000f666978747572652d70726f6a65637400000011666978747572652d726563697069656e7400000011666978747572652d726563697069656e740000000e666978747572652d73656e6465720000005564656c69766572793a72656d6f74652d6d61696c3a643039366362663131656463396336356465316563616534626438646365343334326231353866663333393839356135306265373235663835393331656230310000000e6c65676163792d62696e64696e670000000e6c65676163792d6d6573736167650000000d6c65676163792d637572736f72000000406432666436653538326538633563386465316537333066346161656461306461363164626236353835363036663439613235656631623837303164323539613700000018323032362d31302d31335430303a30303a30302e3030305a000000000000000100000000000000000006616374697665010101",
+    "body": "Retained mail must not be ingested twice."
+  },
+  "mcp_credential": "{\"access\":\"SYNTHETIC_LEGACY_MCP_TOKEN_NOT_VALID\",\"client\":\"fixture-client\",\"expires_ms\":4000000000000,\"generation\":\"mcl_fixture_old\",\"issuer\":\"https://issuer.example.invalid\",\"refresh\":\"SYNTHETIC_LEGACY_MCP_REFRESH_NOT_VALID\",\"resource\":\"https://mcp.example.invalid/mcp\",\"version\":2}"
+}

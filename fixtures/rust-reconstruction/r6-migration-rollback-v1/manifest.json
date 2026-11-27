@@ -1,0 +1,63 @@
+{
+  "$schema": "../oracle-receipt-manifest.schema.json",
+  "schema_version": 1,
+  "id": "r6-migration-rollback-v1",
+  "title": "R6 production database migration and rollback rehearsal",
+  "law_pack": {
+    "revision": 9,
+    "sources": [
+      {"path":"specs/secode-rust-reconstruction-r1-2026-08-07.md","sha256":"626333034f4760faf2fd2769e1a797d2ebbad5187e0bd787d33b99bf32a47865"},
+      {"path":"docs/reports/SECODE_RUST_RECONSTRUCTION_DISPOSITION_2026-08-07.md","sha256":"cca761d01667451dbac9bda6a8c6424ce6c25313fdc4457882f41fc10b2a70fc"},
+      {"path":"docs/reports/SECODE_RUST_FOUNDATIONAL_TYPES_AND_LIFECYCLES_2026-08-07.md","sha256":"31d4ae9af4229939225374efb9c721e752bc0fc163615e3f188acebed051b032"},
+      {"path":"docs/reports/SECODE_RUST_PROVIDER_STREAM_RUNTIME_CONTRACT_2026-08-08.md","sha256":"6c202f89e1e8bdc1de7304f22539ba043a4032f90376434841718f9b5624cdf6"},
+      {"path":"fixtures/rust-reconstruction/README.md","sha256":"26ebe50177d2d7ba0436c646f477e3dd220cd8f1acffdfe1f4c5f1205e760c3a"},
+      {"path":"specs/secode-rust-agency-continuity-amendment-r1-2026-08-08.md","sha256":"97c14bd84ac1c742721865b66259d718bb4125b50fa429976ad4467e1c15c581"},
+      {"path":"docs/reports/SECODE_CODEX_HARNESS_SURVEY_DISPOSITION_2026-08-08.md","sha256":"548b5e4a6383d963a4d96231cf14f3786ac43cdfbad8902bd21c47b5f8d9390c"},
+      {"path":"docs/reports/SECODE_SURVEY_DELTA_DISPOSITION_2026-08-08.md","sha256":"c25d65352aac7f8275adfc9284c83274f98b134d9e3b0ce1dffc22d9886faac3"},
+      {"path":"specs/secode-rust-campaign-mode-amendment-r1-2026-08-08.md","sha256":"775a3485b707232c991a557856cdb6778a5ce2a9220111dad18fcdeacda1ae2d"}
+    ],
+    "matrix": {"path":"docs/reports/SECODE_RUST_RATIFIED_ARCHITECTURE_SUPERSESSION_MATRIX_2026-08-08.md","sha256":"9301ccee905750352cbd904a63c6909bc5a2b87982bacec3ca29e7ec1c89af9b"},
+    "release": {"path":"docs/reports/SECODE_RUST_R1_FOUNDATION_RELEASE_ORDER_2026-08-08.md","sha256":"0b4d1f19f89bd822a2eb7f949b1d717e55afcdfc38da7eb6f13e327b1b6dbf9d"}
+  },
+  "law_conformance": {
+    "basis": "ratified-law-pack",
+    "oracle_status": "not-implemented-in-frozen-typescript-engine",
+    "note": "The frozen TypeScript engine has no typed rehearsal journal, canonical rollback receipt, or migration eligibility handoff. This corpus therefore states the ratified R6 contract and names no invented oracle capture."
+  },
+  "scope": {
+    "preserves": [
+      "Existing database domain rows survive the selected Rust migration exactly.",
+      "The production source is opened read-only; mutation occurs only in disposable snapshots.",
+      "Source, candidate, backup, and rollback trust is bound to distinct retained physical file identities.",
+      "A verified pre-mutation backup restores into a new database and is compared exactly.",
+      "Every durable phase is immutable, hash-linked, bounded, and restartable."
+    ],
+    "intentionally_excludes": [
+      "No daily-driver database is opened writable.",
+      "No dual-write mode and no TypeScript migration implementation are retained.",
+      "Service election, retirement, registration mutation, and cutover commit remain exclusively owned by the unified R6 release authority."
+    ]
+  },
+  "determinism": {
+    "clock": "All rehearsal instants come from an injected fixed ClockAuthority.",
+    "identifiers": "Run and migration identifiers are literal action-owned values.",
+    "network": "No network is used.",
+    "filesystem": "Each replay uses a bounded disposable temporary root and removes only that exact root."
+  },
+  "paths": {"actions":"actions.jsonl","expected":{"durable":"expected/durable.jsonl","state":"expected/state.json","waivers":"expected/waivers.json"}},
+  "record_contracts": {
+    "actions": "Ordinals are contiguous. rehearse creates the backup-first candidate and eligibility handoff, resume repeats the same run, restore creates a new rollback artifact, and backup-absent proves a checkpoint cannot synthesize missing evidence.",
+    "durable": "One exact outcome row is produced for each action; refusal rows are observations and never hidden skips.",
+    "state": "The fold records admitted/refused counts, handoff readiness, and source-byte preservation."
+  },
+  "evidence": [
+    {"path":"crates/grapt-release/tests/migration_corpus.rs","test":"the_language_neutral_corpus_replays_through_the_public_operator","claim":"Parses every action, executes it through public release APIs, and compares the produced durable and state projections byte-for-value."},
+    {"path":"crates/grapt-release/tests/r6_migration.rs","test":"every_material_checkpoint_resumes_with_effects_already_ahead","claim":"Deletes each suffix of the immutable checkpoint chain while leaving effects ahead and requires exact successful recovery."},
+    {"path":"crates/grapt-release/tests/r6_migration.rs","test":"hardlinked_candidate_is_refused_before_checkpoint_or_source_mutation","claim":"Makes the candidate a hard link of the source and proves refusal occurs before checkpoint residue or source mutation."},
+    {"path":"crates/grapt-release/src/rehearsal.rs","test":"rehearsal::tests::candidate_identity_is_revalidated_at_the_write_boundary","claim":"Replaces the candidate with a source hard link after initial checks and proves retained identity revalidation refuses at the write boundary."},
+    {"path":"crates/grapt-release/tests/r6_migration.rs","test":"former_cutover_cli_is_refused_before_fabricated_retirement_can_write","claim":"Invokes the removed cutover command with fabricated retirement data and proves fixed refusal without registration mutation."},
+    {"path":"crates/grapt-release/tests/r6_migration.rs","test":"eligibility_handoff_contains_only_database_evidence","claim":"Proves the typed handoff contains database eligibility evidence and no retirement, election, registration, or commit authority fields."},
+    {"path":"crates/grapt-release/tests/migration_corpus.rs","test":"corpus_pins_the_complete_ordered_current_law_pack","claim":"Compares revision, ordered sources, supersession matrix, and release receipt exactly against the staged current law pack."},
+    {"path":"crates/grapt-release/tests/frozen_clone_rehearsal.rs","test":"frozen_clone_completes_migration_and_rollback_without_source_mutation","claim":"Ignored evidence-machine witness migrates and restores the sanitized 406 MiB clone while proving source bytes unchanged."}
+  ]
+}

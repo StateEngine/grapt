@@ -1,0 +1,88 @@
+{
+  "schema": "grapt.toolchain-activation.mutations.v1",
+  "campaign": "TOOLCHAIN-ACTIVATION-01",
+  "mutation_prefix": "TMA",
+  "note": "J02 resurrection battery: every row is proven red-then-green under the TMA prefix. The harness refuses a row unless its anchor occurs exactly once, and a named test that never ran is UNACCOUNTED, never red.",
+  "mutations": [
+    {
+      "id": "TMA101",
+      "file": "crates/grapt-toolchain/src/activate.rs",
+      "old": "    if actual_archive != pin_entry.archive_sha256 {\n",
+      "new": "    if actual_archive == pin_entry.archive_sha256 {\n",
+      "package": "grapt-toolchain",
+      "target": "activation_corpus",
+      "test": "refusals_fetch::a_digest_mismatch_refuses_before_anything_is_staged",
+      "law": "R14: the delivered archive must hash to the pinned archive digest before anything is staged; the compare is the law, not the witness"
+    },
+    {
+      "id": "TMA102",
+      "file": "crates/grapt-toolchain/src/identity.rs",
+      "old": "            && self.source == pin.source\n            && self.archive_sha256 == pin.archive_sha256\n",
+      "new": "            && self.source == pin.source\n",
+      "package": "grapt-toolchain",
+      "target": "lib",
+      "test": "identity::tests::the_match_law_requires_every_pin_fact",
+      "law": "the match law requires archive_sha256 equality: a revocation that changes only the digest must break reuse"
+    },
+    {
+      "id": "TMA103",
+      "file": "crates/grapt-toolchain/src/identity.rs",
+      "old": "            && self.target == pin.target\n            && self.source == pin.source\n",
+      "new": "            && self.target == pin.target\n",
+      "package": "grapt-toolchain",
+      "target": "lib",
+      "test": "identity::tests::the_match_law_requires_every_pin_fact",
+      "law": "the match law requires source equality: a re-cut that moves the archive at the same version must break reuse"
+    },
+    {
+      "id": "TMA104",
+      "file": "crates/grapt-toolchain/src/activate.rs",
+      "old": "    if !identity_published {\n        rollback_identity_write(&guard, &layout, root, tool, executable, had_previous);\n",
+      "new": "    if !identity_published {\n",
+      "package": "grapt-toolchain",
+      "target": "activation_corpus",
+      "test": "refusals_activation::an_identity_write_failure_rolls_back",
+      "law": "R21: an identity-write failure rolls the activation back; an unattributable binary is never left at the canonical path"
+    },
+    {
+      "id": "TMA105",
+      "file": "crates/grapt-toolchain/src/activate.rs",
+      "old": "    take_lock(&lock_path, request.clock)?;\n",
+      "new": "    let _ = take_lock(&lock_path, request.clock);\n",
+      "package": "grapt-toolchain",
+      "target": "activation_corpus",
+      "test": "refusals_activation::a_held_lock_refuses_activation_in_flight",
+      "law": "R18: a held lock refuses activation; concurrent callers serialize rather than race"
+    },
+    {
+      "id": "TMA106",
+      "file": "crates/grapt-toolchain/src/activate.rs",
+      "old": "            let staged = Sha256::of(&bytes);\n            if staged == expected {\n                return Ok(());\n",
+      "new": "            let staged = Sha256::of(&bytes);\n            if staged != expected {\n                return Ok(());\n",
+      "package": "grapt-toolchain",
+      "target": "lib",
+      "test": "activate::tests::a_staged_copy_that_does_not_rehash_refuses_and_is_removed",
+      "law": "R19: the staged executable must re-read to the verified digest; the re-hash is the law, not the copy"
+    },
+    {
+      "id": "TMA107",
+      "file": "crates/grapt-toolchain/src/activate.rs",
+      "old": "            \"executable\": self.executable,\n            \"commit\": self.commit,\n",
+      "new": "            \"executable\": self.executable,\n",
+      "package": "grapt-toolchain",
+      "target": "activation_corpus",
+      "test": "witnesses::a_fresh_install_activates_and_publishes_the_verified_binary",
+      "law": "the receipt names the proven git commit of the pin: attribution is part of the activation receipt, not an afterthought"
+    },
+    {
+      "id": "TMA108",
+      "file": "crates/grapt-toolchain/src/activate.rs",
+      "old": "                if Sha256::of(&bytes) == identity.binary_sha256 {\n",
+      "new": "                if true {\n",
+      "package": "grapt-toolchain",
+      "target": "activation_corpus",
+      "test": "witnesses::tampered_canonical_bytes_reacquire_the_verified_binary",
+      "law": "the reuse vouch requires the canonical bytes to hash to the record's binary digest: a mismatched hash is never a vouch"
+    }
+  ]
+}

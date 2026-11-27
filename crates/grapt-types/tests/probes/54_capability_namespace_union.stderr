@@ -1,0 +1,127 @@
+error[E0308]: mismatched types
+  --> tests/probes/54_capability_namespace_union.rs:49:21
+   |
+49 |     requires_effect(target);
+   |     --------------- ^^^^^^ expected `&CapabilityId`, found `&ModelTargetCapabilityId`
+   |     |
+   |     arguments to this function are incorrect
+   |
+   = note: expected reference `&CapabilityId`
+              found reference `&ModelTargetCapabilityId`
+note: function defined here
+  --> tests/probes/54_capability_namespace_union.rs:31:4
+   |
+31 | fn requires_effect(_: &CapabilityId) {}
+   |    ^^^^^^^^^^^^^^^ ----------------
+
+error[E0308]: mismatched types
+  --> tests/probes/54_capability_namespace_union.rs:51:27
+   |
+51 |     requires_model_target(&effect);
+   |     --------------------- ^^^^^^^ expected `&ModelTargetCapabilityId`, found `&CapabilityId`
+   |     |
+   |     arguments to this function are incorrect
+   |
+   = note: expected reference `&ModelTargetCapabilityId`
+              found reference `&CapabilityId`
+note: function defined here
+  --> tests/probes/54_capability_namespace_union.rs:32:4
+   |
+32 | fn requires_model_target(_: &ModelTargetCapabilityId) {}
+   |    ^^^^^^^^^^^^^^^^^^^^^ ---------------------------
+
+error[E0308]: mismatched types
+  --> tests/probes/54_capability_namespace_union.rs:53:21
+   |
+53 |     requires_effect(restore);
+   |     --------------- ^^^^^^^ expected `&CapabilityId`, found `&CheckpointRestoreCapabilityId`
+   |     |
+   |     arguments to this function are incorrect
+   |
+   = note: expected reference `&CapabilityId`
+              found reference `&CheckpointRestoreCapabilityId`
+note: function defined here
+  --> tests/probes/54_capability_namespace_union.rs:31:4
+   |
+31 | fn requires_effect(_: &CapabilityId) {}
+   |    ^^^^^^^^^^^^^^^ ----------------
+
+error[E0308]: mismatched types
+  --> tests/probes/54_capability_namespace_union.rs:54:27
+   |
+54 |     requires_model_target(restore);
+   |     --------------------- ^^^^^^^ expected `&ModelTargetCapabilityId`, found `&CheckpointRestoreCapabilityId`
+   |     |
+   |     arguments to this function are incorrect
+   |
+   = note: expected reference `&ModelTargetCapabilityId`
+              found reference `&CheckpointRestoreCapabilityId`
+note: function defined here
+  --> tests/probes/54_capability_namespace_union.rs:32:4
+   |
+32 | fn requires_model_target(_: &ModelTargetCapabilityId) {}
+   |    ^^^^^^^^^^^^^^^^^^^^^ ---------------------------
+
+error[E0308]: mismatched types
+  --> tests/probes/54_capability_namespace_union.rs:55:33
+   |
+55 |     requires_checkpoint_restore(&effect);
+   |     --------------------------- ^^^^^^^ expected `&CheckpointRestoreCapabilityId`, found `&CapabilityId`
+   |     |
+   |     arguments to this function are incorrect
+   |
+   = note: expected reference `&CheckpointRestoreCapabilityId`
+              found reference `&CapabilityId`
+note: function defined here
+  --> tests/probes/54_capability_namespace_union.rs:33:4
+   |
+33 | fn requires_checkpoint_restore(_: &CheckpointRestoreCapabilityId) {}
+   |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^ ---------------------------------
+
+error[E0308]: mismatched types
+  --> tests/probes/54_capability_namespace_union.rs:56:33
+   |
+56 |     requires_checkpoint_restore(target);
+   |     --------------------------- ^^^^^^ expected `&CheckpointRestoreCapabilityId`, found `&ModelTargetCapabilityId`
+   |     |
+   |     arguments to this function are incorrect
+   |
+   = note: expected reference `&CheckpointRestoreCapabilityId`
+              found reference `&ModelTargetCapabilityId`
+note: function defined here
+  --> tests/probes/54_capability_namespace_union.rs:33:4
+   |
+33 | fn requires_checkpoint_restore(_: &CheckpointRestoreCapabilityId) {}
+   |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^ ---------------------------------
+
+error[E0308]: mismatched types
+  --> tests/probes/54_capability_namespace_union.rs:59:30
+   |
+59 |     let _ = grant.authorizes(target, &GrantScope::Once);
+   |                   ---------- ^^^^^^ expected `&CapabilityId`, found `&ModelTargetCapabilityId`
+   |                   |
+   |                   arguments to this method are incorrect
+   |
+   = note: expected reference `&CapabilityId`
+              found reference `&ModelTargetCapabilityId`
+note: method defined here
+  --> src/capability.rs
+   |
+   |     pub fn authorizes(&self, capability: &CapabilityId, requested: &GrantScope) -> bool {
+   |            ^^^^^^^^^^
+
+error[E0308]: mismatched types
+  --> tests/probes/54_capability_namespace_union.rs:60:30
+   |
+60 |     let _ = grant.authorizes(restore, &GrantScope::Once);
+   |                   ---------- ^^^^^^^ expected `&CapabilityId`, found `&CheckpointRestoreCapabilityId`
+   |                   |
+   |                   arguments to this method are incorrect
+   |
+   = note: expected reference `&CapabilityId`
+              found reference `&CheckpointRestoreCapabilityId`
+note: method defined here
+  --> src/capability.rs
+   |
+   |     pub fn authorizes(&self, capability: &CapabilityId, requested: &GrantScope) -> bool {
+   |            ^^^^^^^^^^

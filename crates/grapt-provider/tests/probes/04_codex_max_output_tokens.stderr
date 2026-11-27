@@ -1,0 +1,17 @@
+warning: unreachable expression
+  --> tests/probes/04_codex_max_output_tokens.rs:23:16
+   |
+22 |         model: todo!(),
+   |                ------- any code following this expression is unreachable
+23 |         input: Vec::new(),
+   |                ^^^^^^^^^^ unreachable expression
+   |
+   = note: `#[warn(unreachable_code)]` (part of `#[warn(unused)]`) on by default
+
+error[E0560]: struct `ChatGptCodexRequest` has no field named `max_output_tokens`
+  --> tests/probes/04_codex_max_output_tokens.rs:29:9
+   |
+29 |         max_output_tokens: MaxOutputTokens::new(4096),
+   |         ^^^^^^^^^^^^^^^^^ `ChatGptCodexRequest` does not have this field
+   |
+   = note: all struct fields are already assigned

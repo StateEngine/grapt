@@ -1,0 +1,1 @@
+| `openai/codex` | Apache-2.0 | `bb64b894fd67158be0f874872e6d7bfe717e7368` | `codex-rs/core/src/mcp_tool_call.rs` actual MCP error preservation, adapted into bounded model and transcript diagnostics with immutable host provenance in `secode-product` and `secode-codemode`. |

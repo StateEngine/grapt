@@ -1,0 +1,124 @@
+{
+  "$schema": "../manifest.schema.json",
+  "schema_version": 1,
+  "id": "session-list-keyset-v1",
+  "title": "Bounded session list: immutable import recency, strict keysets, filters, crash recovery and page-local races",
+  "law_pack": {
+    "revision": 9,
+    "sources": [
+      {
+        "path": "specs/secode-rust-reconstruction-r1-2026-08-07.md",
+        "sha256": "626333034f4760faf2fd2769e1a797d2ebbad5187e0bd787d33b99bf32a47865"
+      },
+      {
+        "path": "docs/reports/SECODE_RUST_RECONSTRUCTION_DISPOSITION_2026-08-07.md",
+        "sha256": "cca761d01667451dbac9bda6a8c6424ce6c25313fdc4457882f41fc10b2a70fc"
+      },
+      {
+        "path": "docs/reports/SECODE_RUST_FOUNDATIONAL_TYPES_AND_LIFECYCLES_2026-08-07.md",
+        "sha256": "31d4ae9af4229939225374efb9c721e752bc0fc163615e3f188acebed051b032"
+      },
+      {
+        "path": "docs/reports/SECODE_RUST_PROVIDER_STREAM_RUNTIME_CONTRACT_2026-08-08.md",
+        "sha256": "6c202f89e1e8bdc1de7304f22539ba043a4032f90376434841718f9b5624cdf6"
+      },
+      {
+        "path": "fixtures/rust-reconstruction/README.md",
+        "sha256": "26ebe50177d2d7ba0436c646f477e3dd220cd8f1acffdfe1f4c5f1205e760c3a"
+      },
+      {
+        "path": "specs/secode-rust-agency-continuity-amendment-r1-2026-08-08.md",
+        "sha256": "97c14bd84ac1c742721865b66259d718bb4125b50fa429976ad4467e1c15c581"
+      },
+      {
+        "path": "docs/reports/SECODE_CODEX_HARNESS_SURVEY_DISPOSITION_2026-08-08.md",
+        "sha256": "548b5e4a6383d963a4d96231cf14f3786ac43cdfbad8902bd21c47b5f8d9390c"
+      },
+      {
+        "path": "docs/reports/SECODE_SURVEY_DELTA_DISPOSITION_2026-08-08.md",
+        "sha256": "c25d65352aac7f8275adfc9284c83274f98b134d9e3b0ce1dffc22d9886faac3"
+      },
+      {
+        "path": "specs/secode-rust-campaign-mode-amendment-r1-2026-08-08.md",
+        "sha256": "775a3485b707232c991a557856cdb6778a5ce2a9220111dad18fcdeacda1ae2d"
+      }
+    ],
+    "matrix": {
+      "path": "docs/reports/SECODE_RUST_RATIFIED_ARCHITECTURE_SUPERSESSION_MATRIX_2026-08-08.md",
+      "sha256": "9301ccee905750352cbd904a63c6909bc5a2b87982bacec3ca29e7ec1c89af9b"
+    }
+  },
+  "oracle": {
+    "branch": "grapt",
+    "commit": "42e4888cc0"
+  },
+  "scope": {
+    "preserves": [
+      "All shipped updated values and their typed baseline provenance survive import.",
+      "The bounded import preserves the exact source domain: its row count and content digest are verified against the read-only preflight before the import commits.",
+      "Creation, moved, renamed, agent, preset, model, revert and fork are the exact recency authority set.",
+      "Usage, message, part, step, input and execution facts preserve recency.",
+      "Pagination is a strict total order over (updated_ms, SessionId) in both directions.",
+      "Scope, workspace, title and parent filters compose as AND; presentation subpath is absent from store criteria.",
+      "Every request is bounded before materialization or decode allocation, and every SQLite read a request performs is under that one declared VM-step bound.",
+      "A populated legacy source without this projection is refused at open and must pass through the admitted migration; an absent projection is never served as an empty page.",
+      "Projection row, watermark and durable fact settle atomically; restart catches up from durable truth."
+    ],
+    "intentionally_excludes": [
+      "Cross-page snapshot stability; each page is internally consistent, but a writer may move a key between page requests.",
+      "HTTP DTO naming, desktop rendering, live-feed replay and provider execution.",
+      "Effect abstractions and the frozen oracle's internal SQL query shape."
+    ]
+  },
+  "determinism": {
+    "clock": "Every durable fact carries the created_ms supplied by its action; the harness installs a frozen clock authority and no engine may substitute wall-clock time.",
+    "identifiers": "All session, event and project identifiers are supplied by the initial state and the actions; engines must not generate replacements.",
+    "network": "No network, provider, MCP or plugin process is permitted.",
+    "filesystem": "The harness owns one disposable database directory per run; no other filesystem effect is permitted."
+  },
+  "paths": {
+    "initial_state": "initial-state.json",
+    "actions": "actions.jsonl",
+    "expected": {
+      "api": "expected/api.jsonl",
+      "events": "expected/events.jsonl",
+      "durable": "expected/durable.jsonl",
+      "projection": "expected/projection.json",
+      "waivers": "expected/waivers.json"
+    }
+  },
+  "record_contracts": {
+    "actions": "Each line has an ordinal, an actor, and one deterministic harness command. Harness commands are not public HTTP endpoints.",
+    "api": "Each line associates one action ordinal with the outcome of a list request: either a served page in exact requested order, or the typed refusal that request produced. Actions with no list result are omitted.",
+    "events": "Each line is one post-commit advisory notice: the action ordinal that produced it, its aggregate and the durable sequence it names. A notice is emitted only after its fact and authoritative projection commit.",
+    "durable": "Each line is one committed aggregate fact: action ordinal, aggregate, sequence and durable type. It intentionally omits live-delivery transport details.",
+    "projection": "The final canonical list rows in the ordering key, with each row's recency provenance, plus the lane's explicit page-local race posture."
+  },
+  "evidence": [
+    {
+      "path": "crates/grapt-session/tests/session_list_acceptance_corpus.rs",
+      "test": "the_corpus_manifest_validates_against_the_ratified_schema",
+      "claim": "The manifest is validated against the ratified fixtures/rust-reconstruction/manifest.schema.json itself, and every declared path exists."
+    },
+    {
+      "path": "crates/grapt-session/tests/session_list_acceptance_corpus.rs",
+      "test": "every_action_executes_against_the_implementation_and_matches_the_declared_outputs",
+      "claim": "Every actions.jsonl action is executed against the candidate store and session-list implementation, and the produced API, event, durable and projection surfaces are compared against the declared expectations."
+    },
+    {
+      "path": "crates/grapt-store/tests/session_list_closure.rs",
+      "test": "a_bounded_import_preserves_every_row_when_source_collation_is_nocase",
+      "claim": "A bounded import over a legacy source whose declared collation differs from the batch order preserves every row across the batch boundary."
+    },
+    {
+      "path": "crates/grapt-store/tests/session_list_closure.rs",
+      "test": "a_production_open_refuses_to_manufacture_an_empty_projection_beside_legacy_rows",
+      "claim": "A normal open refuses to create an empty-rust-store projection beside populated legacy session rows."
+    },
+    {
+      "path": "crates/grapt-session/tests/session_list_keyset.rs",
+      "test": "a_hostile_large_clean_projection_is_bounded_and_costs_no_whole_table_scan",
+      "claim": "A list request over a large clean projection performs no whole-table scan and every SQLite read it makes is under its declared VM-step bound."
+    }
+  ]
+}

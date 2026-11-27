@@ -1,0 +1,25 @@
+warning: unreachable expression
+  --> tests/probes/24_forge_catalog_entry.rs:14:17
+   |
+13 |         snapshot: todo!(),
+   |                   ------- any code following this expression is unreachable
+14 |         record: todo!(),
+   |                 ^^^^^^^ unreachable expression
+   |
+   = note: `#[warn(unreachable_code)]` (part of `#[warn(unused)]`) on by default
+
+error[E0451]: fields `snapshot` and `record` of struct `ModelCatalogEntry` are private
+  --> tests/probes/24_forge_catalog_entry.rs:13:9
+   |
+12 |     let _forged = ModelCatalogEntry {
+   |                   ----------------- in this type
+13 |         snapshot: todo!(),
+   |         ^^^^^^^^ private field
+14 |         record: todo!(),
+   |         ^^^^^^ private field
+
+error: type `model::catalog::CatalogSnapshot` is private
+  --> tests/probes/24_forge_catalog_entry.rs:13:19
+   |
+13 |         snapshot: todo!(),
+   |                   ^^^^^^^ private type

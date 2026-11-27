@@ -1,0 +1,23 @@
+{
+  "store": {
+    "authority": "open-ready"
+  },
+  "product": {
+    "build": "dc860926faf9623bc633176221f3592949a80b48"
+  },
+  "provider": {
+    "id": "openai",
+    "model": "gpt-5.6-sol",
+    "base_model": "gpt-5.6-sol",
+    "family": "openai-responses",
+    "route": "route-live",
+    "account": "account-a",
+    "credential_version": "credential-v1",
+    "policy_version": "live-policy-v1",
+    "variants": []
+  },
+  "catalog": {
+    "source": "models.dev-chatgpt"
+  },
+  "mcp": {}
+}

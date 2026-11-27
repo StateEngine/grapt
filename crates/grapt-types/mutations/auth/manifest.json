@@ -1,0 +1,109 @@
+{
+  "purpose": "The authority boundary after its semantic decomposition. AUTH rows pin the three owners' laws at their new homes: the durable audit vocabulary and its refusal law (audit.rs), the sealed live-authority mints and the live-to-audit projection (live.rs), and the injected clock/identity seams (determinism.rs). The rows that score against capability:: and campaign:: witnesses are the DIRECTION CHECK on the custody finding recorded in the admission packet section 9: five of live.rs's laws are witnessed only from other modules, and a row that dies against a foreign witness is what proves the law is carried rather than merely described.",
+  "run": "python crates/grapt-types/mutations/run.py --prefix AUTH",
+  "isolation": "Every mutation is applied in its own disposable worktree at the exact committed candidate. The calling worktree remains unchanged. The engine, the isolation, the anchor preflight, the NO TEST RAN and compile-kill refusals, the duplicate-evidence check and the checked cleanup are the shared runner's, not a second copy.",
+  "scope_note": "This manifest owns only crates/grapt-types/src/authority.rs and its three private submodules. The facade itself carries no executable line to mutate, which is the point of a facade. LiveSystemPolicyRatification::mint's unreachable None (packet section 11.9) receives NO row: it is a separately ruled follow-up, and a row for an unreachable refusal would witness an invention. The v1-arm direction of the packet's A12 sketch is not expressible as a compiling wrong program because that arm has no PermissionSettlement in scope to return; the law is carried by the type system, and AUTH12 attacks the same discrimination from the arm that can be written.",
+  "prefix_note": "This manifest owns ONE whole prefix, AUTH, allocated by the mutation prefix policy after a global canonical/oracle/author/review census found zero AUTH[0-9]+ identities and no competing admitted candidate. Whole-prefix comparison is load-bearing here rather than decorative: A is a live prefix elsewhere in this workspace, so any containment-based comparison would make every AUTH row collide with it. The shared runner's mandatory selector self-test covers AUTH against A, AU, AUTHA, AUTHX, lowercase and PL before a single row is applied.",
+  "mutations": [
+    {
+      "id": "AUTH01",
+      "law": "The live-to-audit projection is total: a live decision can always be written down",
+      "package": "grapt-types",
+      "file": "crates/grapt-types/src/authority/live.rs",
+      "test": "authority::tests::a_live_decision_writes_itself_down_without_losing_a_coordinate",
+      "old": "        PermissionSettlement::new(PermissionSettlementParts {\n            permission: self.permission.clone(),",
+      "new": "        return None;\n        PermissionSettlement::new(PermissionSettlementParts {\n            permission: self.permission.clone(),"
+    },
+    {
+      "id": "AUTH02",
+      "law": "The projection preserves the decision's own granted scope",
+      "package": "grapt-types",
+      "file": "crates/grapt-types/src/authority/live.rs",
+      "test": "authority::tests::a_live_decision_writes_itself_down_without_losing_a_coordinate",
+      "old": "            scope: self.scope.clone(),",
+      "new": "            scope: GrantScope::Attempt,"
+    },
+    {
+      "id": "AUTH03",
+      "law": "The projection preserves the answering principal and never substitutes another authority",
+      "package": "grapt-types",
+      "file": "crates/grapt-types/src/authority/live.rs",
+      "test": "authority::tests::a_live_decision_writes_itself_down_without_losing_a_coordinate",
+      "old": "            principal: self.principal.clone(),",
+      "new": "            principal: AuthorityPrincipal::System,"
+    },
+    {
+      "id": "AUTH04",
+      "law": "A grant projected with denial provenance is unbuildable, so the projection refuses rather than dropping the provenance",
+      "package": "grapt-types",
+      "file": "crates/grapt-types/src/authority/live.rs",
+      "test": "authority::tests::an_audit_receipt_carries_its_denial_and_never_returns_live_authority",
+      "old": "            denial,\n            client: self.client.clone(),",
+      "new": "            denial: None,\n            client: self.client.clone(),"
+    },
+    {
+      "id": "AUTH05",
+      "law": "A refusal never mints live authority",
+      "package": "grapt-types",
+      "file": "crates/grapt-types/src/authority/live.rs",
+      "test": "capability::tests::a_refusal_carries_no_live_authority",
+      "old": "        if !parts.decision.is_grant() {\n            return None;\n        }",
+      "new": "        if false && !parts.decision.is_grant() {\n            return None;\n        }"
+    },
+    {
+      "id": "AUTH06",
+      "law": "A Session reply must be answered at Session scope, and no other reply may claim it — both directions",
+      "package": "grapt-types",
+      "file": "crates/grapt-types/src/authority/live.rs",
+      "test": "capability::tests::a_session_reply_must_be_answered_at_session_scope",
+      "old": "        if (parts.decision == PermissionReply::Session) != session_scoped {",
+      "new": "        if (parts.decision == PermissionReply::Session) == session_scoped {"
+    },
+    {
+      "id": "AUTH08",
+      "law": "A refusal must carry denial provenance and a grant must not — the settlement's one validating law",
+      "package": "grapt-types",
+      "file": "crates/grapt-types/src/authority/audit.rs",
+      "test": "authority::tests::refusal_without_provenance_is_unbuildable",
+      "old": "        if refused != parts.denial.is_some() {",
+      "new": "        if refused == parts.denial.is_some() {"
+    },
+    {
+      "id": "AUTH09",
+      "law": "Whether a principal is human is decided in exactly one place, and a model claim is never human ratification",
+      "package": "grapt-types",
+      "file": "crates/grapt-types/src/authority/audit.rs",
+      "test": "authority::tests::a_model_reviewer_is_not_a_human",
+      "old": "        matches!(self, AuthorityPrincipal::Human { .. })",
+      "new": "        true"
+    },
+    {
+      "id": "AUTH10",
+      "law": "An empty IdToken is refused outright",
+      "package": "grapt-types",
+      "file": "crates/grapt-types/src/authority/determinism.rs",
+      "test": "authority::tests::id_token_is_inert",
+      "old": "        if raw.is_empty() {\n            return None;\n        }",
+      "new": "        if false && raw.is_empty() {\n            return None;\n        }"
+    },
+    {
+      "id": "AUTH11",
+      "law": "The answering instant is read from the injected clock, never fabricated",
+      "package": "grapt-types",
+      "file": "crates/grapt-types/src/authority/determinism.rs",
+      "test": "authority::tests::injected_authorities_are_deterministic",
+      "old": "    pub fn now(&self) -> Timestamp {\n        self.clock.now()\n    }",
+      "new": "    pub fn now(&self) -> Timestamp {\n        Timestamp::from_millis(0)\n    }"
+    },
+    {
+      "id": "AUTH12",
+      "law": "The stored record's two variants are actually discriminated: an attributed v2 row exposes its settlement and an imported v1 row does not",
+      "package": "grapt-types",
+      "file": "crates/grapt-types/src/authority/audit.rs",
+      "test": "authority::tests::a_stored_settlement_records_attribution_and_never_live_authority",
+      "old": "            PermissionSettlementRecord::Attributed(settlement) => Some(settlement.as_ref()),",
+      "new": "            PermissionSettlementRecord::Attributed(_settlement) => None,"
+    }
+  ],
+  "tombstones": []
+}

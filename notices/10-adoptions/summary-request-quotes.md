@@ -1,0 +1,1 @@
+| Verbatim request and next-action quotations | `xai-org/grok-build`, `crates/common/xai-grok-compaction/src/code_compaction/templates/full_replace_summary_prompt.txt` at `2bdd1d6a6369de0e8c68132ea4539e9abd9e14a8` (Apache-2.0, Copyright 2023-2026 SpaceXAI); adapted request-preservation and latest-quote guidance into SE's concise continuation template. |

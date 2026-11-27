@@ -1,0 +1,1 @@
+| `crates/secode-tui/src/backend/commands/permissions.rs` | `openai/codex`, `codex-rs/tui/src/chatwidget/slash_dispatch.rs` | `bb64b894fd67158be0f874872e6d7bfe717e7368` | Modified by Grapt: explicit preset commands reuse server-selected and effective policy readback; no local authority decision. Copyright 2025 OpenAI, Apache-2.0; license and NOTICE in `licenses/openai-codex/`. |

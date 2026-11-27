@@ -1,0 +1,27 @@
+error[E0308]: mismatched types
+  --> tests/probes/41b_apply_one_plan_twice.rs:30:61
+   |
+30 |     let first = plan.apply(first_rescue, first_observation, first_lease, authorities);
+   |                      -----                                  ^^^^^^^^^^^ expected `CheckpointRestoreAuthorityLease`, found `AuthorityLease`
+   |                      |
+   |                      arguments to this method are incorrect
+   |
+note: method defined here
+  --> src/checkpoint/restore_admission.rs
+   |
+   |     pub fn apply(
+   |            ^^^^^
+
+error[E0308]: mismatched types
+  --> tests/probes/41b_apply_one_plan_twice.rs:31:64
+   |
+31 |     let second = plan.apply(second_rescue, second_observation, second_lease, authorities);
+   |                       -----                                    ^^^^^^^^^^^^ expected `CheckpointRestoreAuthorityLease`, found `AuthorityLease`
+   |                       |
+   |                       arguments to this method are incorrect
+   |
+note: method defined here
+  --> src/checkpoint/restore_admission.rs
+   |
+   |     pub fn apply(
+   |            ^^^^^

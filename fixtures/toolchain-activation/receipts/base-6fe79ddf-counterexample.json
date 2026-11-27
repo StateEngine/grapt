@@ -1,0 +1,58 @@
+{
+  "base": "6fe79ddf09272aab309d5ce14276af8db3c15da8",
+  "branch": "toolchain-activation",
+  "campaign": "TOOLCHAIN-ACTIVATION-01",
+  "finding": "S1 is not satisfied at the accepted base: no grapt-toolchain owner, no product activation seam, no typed pin/identity contract, no verified staged activation, no same-version re-cut refusal, no identity-write rollback. The one shipped tool binary (plugin-runtime Node) is guarded at execution time only; its activation has none of the row-1 invariants.",
+  "product_seam": {
+    "command": "opencode-cli toolchain activate --root <root> --target <triple> --pin <pin>",
+    "declared_verbs": [
+      "--version",
+      "startup",
+      "serve",
+      "handover",
+      "codemode worker (private)"
+    ],
+    "result_at_base": "unknown-command refusal (exit 2): the product has no toolchain activation boundary",
+    "toolchain_verb_present": false,
+    "usage_string": "--version \\\n             | serve --service <root> --port 0 \\\n             | handover --service <root> --run-root <dir> --run-id <id> --engine-version <commit>"
+  },
+  "schema": "grapt.toolchain-activation.base-counterexample.v1",
+  "shipped_tool_binary": {
+    "activation_gap": "no archive digest verification at activation, no same-version re-cut refusal, no identity-write rollback, no identity record the product owns and re-verifies against the CURRENT pin",
+    "execution_guarded": "read_verified checks sha256 against the pin before spawn; version is checked against the pin",
+    "path": "crates/grapt-product/src/dogfood/plugins/materialize.rs -> crates/grapt-plugin/src/supervisor/runtime.rs",
+    "product_resolves_node": true,
+    "runtime_manifest_schema": "grapt.plugin-runtime.v1",
+    "runtime_read_verified_present": true
+  },
+  "surveys": [
+    {
+      "argv": "rg -n grapt-toolchain crates/ Cargo.toml",
+      "exit": 1,
+      "hit_rows": [],
+      "hits": 0,
+      "id": "TMA-BASE-01",
+      "question": "does the workspace declare a grapt-toolchain member?"
+    },
+    {
+      "argv": "rg -n grapt-toolchain crates/",
+      "exit": 1,
+      "hit_rows": [],
+      "hits": 0,
+      "id": "TMA-BASE-02",
+      "question": "does any Rust source reference a toolchain activation owner?"
+    },
+    {
+      "exit": 1,
+      "hit_rows": [
+        "crates/grapt-product/src/main.rs (usage string carries no toolchain verb)"
+      ],
+      "hits": 0,
+      "id": "TMA-BASE-03",
+      "question": "does the product binary expose a toolchain verb?"
+    }
+  ],
+  "toolchain_crate_present": false,
+  "worktree": "C:\\fixtures\\rust-toolchain-delta-r1",
+  "worktree_clean": false
+}

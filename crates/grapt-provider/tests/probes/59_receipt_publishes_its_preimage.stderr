@@ -1,0 +1,5 @@
+error[E0599]: no associated function or constant named `canonical_bytes` found for struct `EffectiveGraphReceipt` in the current scope
+  --> tests/probes/59_receipt_publishes_its_preimage.rs:15:50
+   |
+15 |     let _ = grapt_policy::EffectiveGraphReceipt::canonical_bytes;
+   |                                                  ^^^^^^^^^^^^^^^ associated function or constant not found in `EffectiveGraphReceipt`

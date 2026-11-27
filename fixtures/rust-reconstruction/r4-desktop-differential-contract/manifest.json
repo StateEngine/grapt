@@ -1,0 +1,123 @@
+{
+  "$schema": "../oracle-receipt-manifest.schema.json",
+  "schema_version": 1,
+  "id": "r4-desktop-differential-contract",
+  "title": "R4D-2A retained-desktop differential driver contract",
+  "law_pack": {
+    "revision": 9,
+    "sources": [
+      {
+        "path": "specs/secode-rust-reconstruction-r1-2026-08-07.md",
+        "sha256": "626333034f4760faf2fd2769e1a797d2ebbad5187e0bd787d33b99bf32a47865"
+      },
+      {
+        "path": "docs/reports/SECODE_RUST_RECONSTRUCTION_DISPOSITION_2026-08-07.md",
+        "sha256": "cca761d01667451dbac9bda6a8c6424ce6c25313fdc4457882f41fc10b2a70fc"
+      },
+      {
+        "path": "docs/reports/SECODE_RUST_FOUNDATIONAL_TYPES_AND_LIFECYCLES_2026-08-07.md",
+        "sha256": "31d4ae9af4229939225374efb9c721e752bc0fc163615e3f188acebed051b032"
+      },
+      {
+        "path": "docs/reports/SECODE_RUST_PROVIDER_STREAM_RUNTIME_CONTRACT_2026-08-08.md",
+        "sha256": "6c202f89e1e8bdc1de7304f22539ba043a4032f90376434841718f9b5624cdf6"
+      },
+      {
+        "path": "fixtures/rust-reconstruction/README.md",
+        "sha256": "26ebe50177d2d7ba0436c646f477e3dd220cd8f1acffdfe1f4c5f1205e760c3a"
+      },
+      {
+        "path": "specs/secode-rust-agency-continuity-amendment-r1-2026-08-08.md",
+        "sha256": "36fbf3b96258565ff14924d597a1c3a83e6307672b23a754d9f1287e92aa272a"
+      },
+      {
+        "path": "docs/reports/SECODE_CODEX_HARNESS_SURVEY_DISPOSITION_2026-08-08.md",
+        "sha256": "548b5e4a6383d963a4d96231cf14f3786ac43cdfbad8902bd21c47b5f8d9390c"
+      },
+      {
+        "path": "docs/reports/SECODE_SURVEY_DELTA_DISPOSITION_2026-08-08.md",
+        "sha256": "c25d65352aac7f8275adfc9284c83274f98b134d9e3b0ce1dffc22d9886faac3"
+      },
+      {
+        "path": "specs/secode-rust-campaign-mode-amendment-r1-2026-08-08.md",
+        "sha256": "775a3485b707232c991a557856cdb6778a5ce2a9220111dad18fcdeacda1ae2d"
+      }
+    ],
+    "matrix": {
+      "path": "docs/reports/SECODE_RUST_RATIFIED_ARCHITECTURE_SUPERSESSION_MATRIX_2026-08-08.md",
+      "sha256": "9301ccee905750352cbd904a63c6909bc5a2b87982bacec3ca29e7ec1c89af9b"
+    }
+  },
+  "law_conformance": {
+    "basis": "ratified-law-pack",
+    "oracle_status": "not-implemented-in-frozen-typescript-engine",
+    "note": "There is no oracle for this corpus and this manifest carries no oracle block rather than naming a commit it was not captured from. The frozen TypeScript engine at 42e4888cc0 runs no cross-engine differential: it persists one string under the desktop store key defaultServerUrl and probes GET /api/health with a 3,000 ms timeout across two URLs, accepting any 2xx. It has no matrix, no operation subset, no restart identity law and no notion of a differential receipt, so there is nothing to capture. Neither is anything captured from the Rust side: at this canonical the workspace declares no binary target, grapt-api serves no product route (its own module note says it serves none, not even /health), and CredentialAdapter::verify returns Err on every branch by the accepted R4HA-04 ruling, so a production build answers 401 to every request. Those three facts each block the LIVE differential on their own and none is this lane's to change. This corpus therefore records the driver CONTRACT — matrices, minimum operation subsets, admissibility, restart and reversibility laws, and the shape of the bound recording — and records no measurement of any engine."
+  },
+  "scope": {
+    "preserves": [
+      "R4D-1's landed attachment vocabulary, consumed rather than restated: ProbeOutcome, SelectionReceipt, AdmittedDifferential, SelectorState and AttachmentRefusal. All four attachment refusal words reach this corpus in R4D-1's own spelling, because DifferentialRefusal::Attachment carries the landed refusal and delegates its label to it.",
+      "Owner identity as {ServiceSlotId, ServiceInstanceId, EnvironmentReceipt}, with PID and endpoint as attributes, exactly as landed in grapt-types::service. Ordinal 23 confirms a receipt across a changed PID, generation and endpoint; ordinal 24 refuses a different instance that inherited both the PID and the endpoint.",
+      "The reversible selector the frozen desktop already exposes. R4D-1 proved reverting is always available; this corpus records that a plan which does not return the selector to the retained engine is refused.",
+      "The frozen V2 surface as the authority for operation identity: 101 paths and 120 operations, GET /api/health = v2.health.get with responses 200/400/401, GET /api/session = v2.session.list."
+    ],
+    "intentionally_excludes": [
+      "Any measurement of any engine. No process is started, no socket opened, no port bound and no request issued. Every owner receipt is a value built from its action row and every instant is supplied by the row through an injected ClockAuthority.",
+      "The host's real resource-bound VALUES. The nine renderings recorded here are synthetic `unmeasured-*` tokens that exercise the recording law; none was read from a running host, and the crate never parses a rendering.",
+      "A dependency on grapt-api. ApiHostLimits is neither imported nor re-declared, and none of its nine newtypes' validation is duplicated: whether a bound value is legal remains grapt-api's law. What crosses the boundary is the nine FIELD NAMES, and crates/grapt-service/tests/host_bound_drift.rs refuses unless this crate's list equals that struct's field set in order.",
+      "A service entrypoint, controller, socket, route or credential backend. No binary target is added, no file lock taken, no discovery registration mutated and no ReplacementOutcome produced.",
+      "Any TypeScript execution and any desktop driver. The frozen tree is read as evidence and never run.",
+      "Any claim of live parity. A DifferentialPlan is the claim that a driver MAY run a matrix, never that it did."
+    ]
+  },
+  "determinism": {
+    "clock": "Every selected_at is supplied by the harness from an injected ClockAuthority as an exact millisecond value named in actions.jsonl; no ambient time is read anywhere in the crate or the suite.",
+    "identifiers": "Every slot, instance, environment, generation, PID and endpoint is supplied verbatim by actions.jsonl; none is minted ambiently and none is derived from the host.",
+    "network": "No network. No socket is opened, no port is bound and no request is issued; every owner receipt and every recorded bound is a value constructed from the action row.",
+    "filesystem": "Read-only. The suite reads this corpus and the host's limits source by exact path and writes nothing; no temporary directory, database or store is created."
+  },
+  "paths": {
+    "actions": "actions.jsonl",
+    "expected": {
+      "durable": "expected/durable.jsonl",
+      "state": "expected/state.json",
+      "waivers": "expected/waivers.json"
+    }
+  },
+  "record_contracts": {
+    "actions": "Every row declares its kind in its own `action` field, and this contract is stated by KIND rather than by ordinal range. That is deliberate: the previous wording enumerated `1-22` and `23-24`, and appending rows falsified it while leaving a schema-valid artifact, which is the defect the R2 closure review named. Ordinals are unique and ascending but NOT contiguous per kind — confirm rows sit between two blocks of plan rows — so any range enumeration here would be wrong again at the next append. Row counts are not restated here either; `expected/state.json` carries them and is derived by the owner from the model's own answers, so it cannot go stale. THE KINDS: `bounds-catalog` (exactly one, first) declares the complete host-reported recording that plan rows use unless they carry their own `bounds`, named once so the mutation rows can show exactly one departure from it. `plan` rows each carry a matrix, a declared operation subset, both engine receipts with their probe outcomes and injected instants, the matrix evidence, and the terminal selector state; a `plan` row may also carry `subset_declared_for` to declare its subset for a different matrix, which is the only way to reach the borrowed-subset law, and `evidence_note` as free prose the owner never reads. `confirm` rows carry a recorded receipt and an observed owner, checked through `still_current`. Each row carries its own inputs; nothing is inherited from ambient state, and the owner refuses an action kind it does not know rather than skipping the row.",
+    "durable": "The ordered plans that were ADMITTED, by action ordinal, each carrying its matrix, the operation ids it declared, both engine receipts with their three identity coordinates plus generation, PID, endpoint and injected instant, all nine recorded bounds with their renderings and provenance, its matrix evidence, and its terminal selector. A refused action contributes no durable row. This is the CONTRACT and its projection: it is not a filesystem record and it asserts that no service was running.",
+    "state": "The projection folded from those durable rows plus every refusal: how many actions ran, how many plans were admitted and refused, the per-matrix admitted counts, the ordered refusals with their exact label and message, the sorted unique refusal vocabulary, and the confirmations. The refusal_labels array carries every word this contract can produce — R4D-1's four plus this lane's own — compared against DifferentialRefusal::ALL_LABELS rather than against any count restated here, so no law is carried by a variant match alone and no number in this prose can go stale. Every value here is derived from the model's own answers; nothing is observed from a process."
+  },
+  "evidence": [
+    {
+      "path": "crates/grapt-service/tests/differential_corpus.rs",
+      "test": "the_corpus_replays_through_the_model_and_matches_every_expected_surface",
+      "claim": "Executed against the grapt-service model in the R4D-2A candidate root. The suite replays actions.jsonl through the real public API and PRODUCES expected/durable.jsonl and expected/state.json, then compares both exhaustively — every durable row and every projection key. Nothing in expected/* is projected or hand-written, and a missing expected file fails loudly rather than being skipped."
+    },
+    {
+      "path": "crates/grapt-service/tests/differential_corpus.rs",
+      "test": "every_refusal_this_contract_can_produce_reaches_the_recorded_projection",
+      "claim": "Asserts the recorded refusal vocabulary is exactly DifferentialRefusal::ALL_LABELS, read from the enum rather than from a literal of the test's own. The R1 review falsified the previous form of this claim: both completeness tests compared hand-written 18-entry lists, so a nineteenth variant with a label and no corpus row left the whole suite green. The binding is now DifferentialRefusal::label_index, whose match is exhaustive over this enum AND over the AttachmentRefusal it carries, so a new law is a COMPILE ERROR before it can be an unrecorded label; every_label_in_the_carrier_is_produced_by_a_real_variant then forces the array and the corpus to grow with it."
+    },
+    {
+      "path": "crates/grapt-service/tests/differential_contract.rs",
+      "test": "subset completeness, bound recording, restart identity, resume re-admission, long-session bounds, plan relations and the no-duplication check",
+      "claim": "Executed against the same model. Each law is asserted against its own DifferentialRefusal variant, so no one law passes by tripping another's guard, and each refusal case has a positive control differing only in the single defect. no_refusal_label_is_spelled_twice_across_the_whole_vocabulary checks mechanically that this lane mints no second spelling of a landed attachment law."
+    },
+    {
+      "path": "crates/grapt-service/tests/host_bound_drift.rs",
+      "test": "this_crates_bound_list_equals_the_hosts_real_field_set_in_order plus six extractor controls",
+      "claim": "Reads crates/grapt-api/src/limits.rs and refuses unless HostBoundName::ALL equals the declared field set of ApiHostLimits, in order. Reading is not depending: no grapt-api symbol is imported and the crate graph is unchanged. The extractor refuses any body line it does not recognise rather than skipping it, and the controls drive it against synthetic sources the real file cannot reach — a tenth field, a rename that keeps the count at nine, a reordering, a near-miss struct name, an unparsable body, and a CRLF copy of the real file."
+    },
+    {
+      "path": "crates/grapt-service/tests/schema_conformance.rs",
+      "test": "the_differential_contract_manifest_validates_against_the_actual_ratified_schema",
+      "claim": "Validates THIS manifest against the ratified oracle-receipt-manifest.schema.json resolved through the frozen-fixture seam, using the same bounded evaluator that panics on any keyword it does not implement. The evaluator's same-file control and its three synthetic refusal tests already prove it can fail."
+    },
+    {
+      "path": "crates/grapt-service/mutations/qs/manifest.json",
+      "test": "QS01-QS21 via crates/grapt-service/mutations/qs/run.py",
+      "claim": "One mutation per load-bearing behaviour of this contract — the exact allocation scored is the id range in `test` above, stated once so there is no second count to forget — each applied in its own disposable worktree at the candidate commit and each required to turn its named witness red for its own distinct reason. QS19 removes the evidence-to-engines relation and QS20 removes the restart environment check (both added at R1 closure); QS21 weakens the resume pairing law back to mere agreement between the two evidence halves, which is the exact defect the R2 closure review found (added at R2 closure)."
+    }
+  ]
+}

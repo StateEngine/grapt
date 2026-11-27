@@ -1,0 +1,1 @@
+| `crates/secode-product/src/dogfood/history/index.rs` | `openai/codex`, `codex-rs/state/src/runtime/threads.rs` (`push_thread_order_and_limit`, keyset predicate) | `bb64b894fd67158be0f874872e6d7bfe717e7368` | **Modified**: order by immutable durable sequence, push down public source limits, preserve visibility and reject duplicate boundaries. Apache-2.0, Copyright 2025 OpenAI. |

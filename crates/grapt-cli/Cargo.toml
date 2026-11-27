@@ -1,0 +1,67 @@
+[package]
+name = "grapt-cli"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+description = "Bounded Rust CLI, noninteractive, and ACP client over the versioned Grapt API."
+
+[[bin]]
+name = "grapt"
+path = "src/main.rs"
+
+[features]
+default = []
+loopback-testkit = []
+
+[dependencies]
+globset = "=0.4.20"
+grapt-image = { path = "../grapt-image" }
+grapt-connections = { path = "../grapt-connections" }
+grapt-login = { path = "../grapt-login" }
+grapt-worktree = { path = "../grapt-worktree" }
+grapt-api = { path = "../grapt-api" }
+grapt-schema = { path = "../grapt-schema" }
+grapt-service = { path = "../grapt-service" }
+grapt-types = { path = "../grapt-types" }
+reqwest = { version = "0.13.4", default-features = false, features = ["rustls-no-provider"] }
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
+rustls-platform-verifier = "0.7"
+sha2 = "0.10"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+toml = "0.8"
+yaml-rust2 = { version = "=0.11.0", default-features = false }
+tokio = { version = "1", default-features = false, features = ["io-std", "io-util", "macros", "process", "rt-multi-thread", "signal", "sync", "time"] }
+# Raw mode for no-echo API-key entry, confined to client/terminal/secret_input.rs. The
+# same pinned version and features grapt-tui already admits, so the lockfile gains no
+# entry.
+crossterm = { version = "=0.29.0", default-features = false, features = [
+    "bracketed-paste",
+    "events",
+    "windows",
+] }
+
+[target.'cfg(unix)'.dependencies]
+rustix = { version = "=1.1.6", features = ["fs"] }
+# O_NONBLOCK, so refusing a FIFO in place of a sign-in file cannot block.
+libc = "0.2"
+
+# Admitted by CLI-COMPATIBILITY-MATRIX-01 r2: the service owner is spawned with an
+# explicit handle list, so it never holds a pipe its caller reads.
+[target.'cfg(windows)'.dependencies]
+windows-spawn = "=0.1.0"
+# Retained physical installer identities.
+same-file = "1.0"
+# Read-only prune identity/link counts.
+winapi-util = "0.1"
+# C10: safe, exact-pinned USER Path access and bounded-child notification.
+winreg = "=0.56.0"
+windows-env = "=0.3.1"
+
+[dev-dependencies]
+# `test-util` lets launch-window tests advance the 30 s bound on a paused clock.
+tokio = { version = "1", default-features = false, features = ["io-std", "io-util", "macros", "net", "process", "rt-multi-thread", "signal", "sync", "test-util", "time"] }
+
+[lints]
+workspace = true

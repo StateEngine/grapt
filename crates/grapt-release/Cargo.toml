@@ -1,0 +1,34 @@
+[package]
+name = "grapt-release"
+autotests = false
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+description = "R6 database migration, rollback rehearsal, and unified-cutover handoff operator."
+
+[[bin]]
+name = "grapt-migrate"
+path = "src/bin/grapt-migrate.rs"
+
+[[test]]
+name = "integration"
+path = "tests/integration/main.rs"
+
+# Remote release evidence runs this target by name.
+[[test]]
+name = "frozen_clone_rehearsal"
+path = "tests/frozen_clone_rehearsal.rs"
+
+[dependencies]
+rusqlite = { version = "0.41", features = ["bundled", "backup"] }
+same-file = "1.0"
+grapt-permission = { path = "../grapt-permission" }
+grapt-store = { path = "../grapt-store" }
+grapt-types = { path = "../grapt-types" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+thiserror = "2"
+
+[lints]
+workspace = true

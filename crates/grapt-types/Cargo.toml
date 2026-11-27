@@ -1,0 +1,31 @@
+[package]
+name = "grapt-types"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+description = "Foundational newtypes and closed vocabularies for the Grapt Rust reconstruction. Owning crate per the frozen type-ownership table; no downstream crate may construct these from raw parts."
+
+[dependencies]
+
+[lints]
+workspace = true
+
+[dev-dependencies]
+trybuild = "1.0.120"
+toml = "0.8"
+# The usage-compat acceptance corpus is JSON, and its gate validates the
+# fixture manifest against the RATIFIED
+# `fixtures/rust-reconstruction/oracle-receipt-manifest.schema.json` itself
+# rather than against a second hand-written copy of its rules. That needs a
+# JSON reader, and the schema constrains two fields by `pattern`, so it also
+# needs a regular-expression engine. `regex-lite` is chosen over `regex` for
+# the reason grapt-session already recorded when it made the same choice: it
+# carries no transitive dependencies at all.
+#
+# Both are DEV dependencies and cannot enter this crate's library closure —
+# see `tests/dependency_direction.rs`, which keeps `[dependencies]` empty and
+# deliberately does not restrict this table.
+serde_json = "1"
+regex-lite = "0.1"
+syn = { version = "2", default-features = false, features = ["full", "parsing", "printing", "visit"] }
+quote = "1"

@@ -1,0 +1,40 @@
+{
+  "schema": "grapt.toolchain-activation.targets.v1",
+  "campaign": "TOOLCHAIN-ACTIVATION-01",
+  "admission": {
+    "boundary": "the seam parses any well-formed triple (1..=128 of [a-z0-9._-]); the boundary carries no target list and no default target",
+    "support": "a target is supported exactly when the committed pin table carries an entry for it (R10); an absent entry refuses target-unsupported; support is pin content, not a hardcoded list"
+  },
+  "matrix": [
+    {
+      "target": "x86_64-pc-windows-msvc",
+      "host": "windows",
+      "entry": "rg.exe",
+      "source": "archives/rg.tar",
+      "witnessed_by": [
+        "TM01 install",
+        "TM01 reuse",
+        "TM01 recut",
+        "TM01 target-removed",
+        "TM01 rollback"
+      ]
+    },
+    {
+      "target": "x86_64-unknown-linux-gnu",
+      "host": "linux",
+      "entry": "rg.exe",
+      "source": "archives/rg.tar",
+      "witnessed_by": [
+        "TM01 install",
+        "TM01 reuse",
+        "TM01 recut",
+        "TM01 target-removed",
+        "TM01 rollback"
+      ]
+    }
+  ],
+  "revocation_fixture": {
+    "target": "aarch64-unknown-linux-musl",
+    "role": "second pin entry in every TM01 scene; the native entry is revoked while this one stands, proving support is per-entry pin content"
+  }
+}

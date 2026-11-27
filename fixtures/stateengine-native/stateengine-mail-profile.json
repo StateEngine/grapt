@@ -1,0 +1,30 @@
+{
+  "source_commit": "dcec0682b3d32912bfa4172634af70453fc7ef5f",
+  "source_path": "src/remote-seat-mail-limits.mjs",
+  "limits": {
+    "max_refs_per_message": 64,
+    "max_ref_utf8_bytes": 2048,
+    "max_aggregate_ref_bytes_per_message": 131072,
+    "max_decoded_message_bytes_including_metadata": 196608,
+    "max_decoded_page_bytes_including_metadata": 524288,
+    "max_cursor_bytes": 144,
+    "max_snapshot_token_bytes": 36,
+    "max_pages_per_runtime_slice": 8,
+    "max_messages_per_runtime_slice": 512,
+    "max_decoded_bytes_per_runtime_slice": 4194304,
+    "max_ack_debt_items_per_recovery_page": 64,
+    "max_connect_attempts_per_activation": 3,
+    "max_reconnect_attempts_per_runtime_slice": 3,
+    "max_connect_duration_ticks": 5000,
+    "max_single_reconnect_delay_ticks": 1000,
+    "max_total_reconnect_delay_ticks_per_slice": 3000,
+    "max_fetch_duration_ticks": 10000,
+    "max_ack_duration_ticks": 10000,
+    "max_shutdown_duration_ticks": 5000,
+    "max_joined_transport_tasks_at_shutdown": 2,
+    "max_diagnostic_bytes": 512,
+    "max_body_utf8_bytes": 32768,
+    "max_messages_per_page": 64,
+    "max_aggregate_body_bytes_per_page": 262144
+  }
+}

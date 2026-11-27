@@ -1,0 +1,30 @@
+{
+  "purpose": "R3 durable subagent-delivery resurrection witness. The parent fact must remain OperationDelivery and can never become synthetic UserInput{Steer}.",
+  "run": "python crates/grapt-subagent/mutations/run.py",
+  "mutations": [
+    {
+      "id": "SAG01",
+      "law": "A background result enters the parent inbox only as InboxInputClass::OperationDelivery, never as UserInput{Steer}",
+      "file": "crates/grapt-inbox/src/admission/operation_delivery.rs",
+      "test": "the_delivery_payload_is_derived_from_stored_facts",
+      "old": "            \"type\": \"operation-delivery\",\n            \"operationID\": stored.operation.as_str(),",
+      "new": "            \"type\": \"user\",\n            \"delivery\": \"steer\",\n            \"operationID\": stored.operation.as_str(),"
+    },
+    {
+      "id": "SAG02",
+      "law": "A known subagent failure is durably delivered as Failed debt, never as completed output",
+      "file": "crates/grapt-inbox/src/admission/operation_delivery.rs",
+      "test": "durable_delivery_r3::failed_process_loss_and_quarantine_are_durable_parent_debts",
+      "old": "                OperationDeliverySettlement::Failed,\n                None,\n                raw.error.ok_or_else(|| {",
+      "new": "                OperationDeliverySettlement::Completed,\n                None,\n                raw.error.ok_or_else(|| {"
+    },
+    {
+      "id": "SAG03",
+      "law": "An externally ambiguous effect is durably quarantined, never collapsed into known failure",
+      "file": "crates/grapt-inbox/src/admission/operation_delivery.rs",
+      "test": "durable_delivery_r3::failed_process_loss_and_quarantine_are_durable_parent_debts",
+      "old": "                OperationDeliverySettlement::Quarantined,\n                None,\n                raw.evidence.ok_or_else(|| {",
+      "new": "                OperationDeliverySettlement::Failed,\n                None,\n                raw.evidence.ok_or_else(|| {"
+    }
+  ]
+}

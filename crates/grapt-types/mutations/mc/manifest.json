@@ -1,0 +1,171 @@
+{
+  "purpose": "L1 MODEL-TARGET-CAPABILITY-IDENTITY. Every row mutates crates/grapt-types/src/model.rs, the file that derives the routing authority a physical attempt runs under. Custody on that file STARTS AT ZERO: at base f6f01295a8bc9d0bb9d2c8816dafe89e53b88ea7 no row in any of the 23 mutation-bearing manifests named it, so this family inherits no coverage and no receipt may imply otherwise. The rows pin three laws and nothing else. Optional-variant presence is structural and never a legal sentinel value (MC01-MC03). Every capability coordinate is actually derived, and the separators that keep the encoding injective are actually escaped (MC04-MC12, MC16). Identity spelling is exact UTF-8 bytes and row identity is the whole sealed claim (MC13-MC15). MC15 is the DIRECTION CHECK: it dies against a grapt-event witness this lane neither owns nor edits, which is what proves the law is carried rather than merely described.",
+  "run": "python crates/grapt-types/mutations/run.py --prefix MC",
+  "isolation": "Every mutation is applied in its own disposable worktree at the exact committed candidate. The calling worktree remains unchanged. The engine, the isolation, the anchor preflight, the NO TEST RAN and compile-kill refusals, the duplicate-evidence check and the checked cleanup are the shared runner's, not a second copy.",
+  "scope_note": "This manifest owns exactly two files. L1R decomposed model.rs into named mod children, so the thirteen capability rows now anchor in crates/grapt-types/src/model/target.rs and the three catalog rows in crates/grapt-types/src/model/catalog.rs; model/reference.rs carries no row, because no MC law is about ModelRef. Two L1 laws deliberately receive NO row, and the omission is recorded here rather than left as a gap. (1) That PolicyVersion is NOT a capability coordinate cannot be attacked by a compiling mutant: canonical_target_form does not take a PolicyVersion, so a mutant that added one would not compile, and the harness correctly refuses a mutant that does not compile. The law is carried by the existing assertion in every_inert_routing_coordinate_resolves_a_different_target that a re-policied target keeps the SAME capability, and MC09 attacks the arm that can be written. (2) The nominal split between CapabilityId and ModelTargetCapabilityId cannot be attacked either, because reverting a type separation fails no test that does not already exist. It is carried by compile-fail probe 54_capability_namespace_union and, at runtime, by the disjointness witness MC16 scores. Both follow the precedent compile_fail.rs already records for probes 46, 49 and 53.",
+  "prefix_note": "This manifest owns ONE whole prefix, MC, allocated in ruling R-g (R2 model-registry rulings R1, 2026-08-17). The lane did not self-allocate. The whole-token live-plus-tombstone census was REPRODUCED at the exact base before this file was first written: 23 mutation-bearing manifests, 907 live rows plus 7 tombstones = 914 qualified rows, 46 selector-shaped whole-token prefixes, plus 6 ids in crates/grapt-event/mutations/manifest.json (M06B, MH1A, MH1B, MH2A, MH2B, MH2C) that no --prefix can select at all. MC had zero rows and is not among the 46. Whole-prefix comparison is load-bearing here rather than decorative: M is a live prefix with 116 rows in this workspace, and under the runner's fullmatch(PREFIX + digits) selector --prefix M selects only M followed by digits, so MC01 is never swept into it. MC is also whole-token distinct from both prefixes the runner already dispatches, PL and AUTH, so neither is a prefix of the other and dispatch stays unambiguous. The shared runner's mandatory selector self-test covers MC against M, MCA, MC0A, MCC, lowercase and separator spellings before a single row is applied.",
+  "mutations": [
+    {
+      "id": "MC01",
+      "law": "An absent variant is a presence bit, never a value, with every other capability coordinate held equal",
+      "package": "grapt-types",
+      "file": "crates/grapt-types/src/model/target.rs",
+      "test": "model::tests::target::an_absent_variant_and_a_literal_dash_variant_derive_different_capabilities",
+      "old": "        None => out.push_str(\"variant_present=0|\"),",
+      "new": "        None => {\n            out.push_str(\"variant_present=1|\");\n            push(&mut out, \"variant\", \"-\");\n        }",
+      "red": "Absent and Some(\"-\") differ in NOTHING but variant presence — provider, model, base model, family, route, account, credential version and catalog version are equal — so restoring the sentinel makes both encode the identical variant=-| and derive ONE capability. The assert_ne! fails on that exact equality. This is the H4 collision in its dangerous direction: an accidental EQUALITY reads as same authority rather than as a refusal. Corrected in R2 after governed run 20260818030252-512c2bbf058d40a3 showed the earlier witness, which also varied base model and family, could not be killed: both coordinates remain in canonical_target_form, so its inequality held for a reason unrelated to the law."
+    },
+    {
+      "id": "MC02",
+      "law": "A present variant sets the presence bit to one",
+      "package": "grapt-types",
+      "file": "crates/grapt-types/src/model/target.rs",
+      "test": "model::tests::target::the_canonical_form_spells_variant_presence_structurally",
+      "old": "            out.push_str(\"variant_present=1|\");",
+      "new": "            out.push_str(\"variant_present=0|\");",
+      "red": "The present form reads variant_present=0|variant=preview|, so the present-form contains assertion fails on exact bytes."
+    },
+    {
+      "id": "MC03",
+      "law": "A present variant's value is encoded, not merely its presence",
+      "package": "grapt-types",
+      "file": "crates/grapt-types/src/model/target.rs",
+      "test": "model::tests::target::two_variants_of_one_endpoint_derive_different_capabilities",
+      "old": "            push(&mut out, \"variant\", variant.as_str());",
+      "new": "            let _ = variant;",
+      "red": "The present form loses variant=preview|, so variants x and y derive one capability and the assert_ne! fails."
+    },
+    {
+      "id": "MC04",
+      "law": "The base model is a capability coordinate",
+      "package": "grapt-types",
+      "file": "crates/grapt-types/src/model/target.rs",
+      "test": "model::tests::target::a_different_base_model_derives_a_different_capability",
+      "old": "    push(&mut out, \"base\", model.base_model().as_str());",
+      "new": "    push(&mut out, \"base\", \"\");",
+      "red": "Two base models derive an identical capability and the assert_ne! fails."
+    },
+    {
+      "id": "MC05",
+      "law": "The family is a capability coordinate",
+      "package": "grapt-types",
+      "file": "crates/grapt-types/src/model/target.rs",
+      "test": "model::tests::target::a_different_family_derives_a_different_capability",
+      "old": "    push(&mut out, \"family\", model.family().as_str());",
+      "new": "    push(&mut out, \"family\", \"\");",
+      "red": "Two families derive an identical capability and the assert_ne! fails."
+    },
+    {
+      "id": "MC06",
+      "law": "The route is a capability coordinate",
+      "package": "grapt-types",
+      "file": "crates/grapt-types/src/model/target.rs",
+      "test": "model::tests::target::a_different_model_or_route_derives_a_different_capability",
+      "old": "    push(&mut out, \"route\", route.as_str());",
+      "new": "    push(&mut out, \"route\", \"\");",
+      "red": "Two routes derive an identical capability, so the second assert_ne! fails while the model arm still passes."
+    },
+    {
+      "id": "MC07",
+      "law": "The account is a capability coordinate",
+      "package": "grapt-types",
+      "file": "crates/grapt-types/src/model/target.rs",
+      "test": "model::tests::target::a_resolved_target_derives_its_own_capability",
+      "old": "    push(&mut out, \"account\", account.as_str());",
+      "new": "    push(&mut out, \"account\", \"\");",
+      "red": "The existing assertion \"another account is another resolved target\" fails."
+    },
+    {
+      "id": "MC08",
+      "law": "The credential version is a capability coordinate",
+      "package": "grapt-types",
+      "file": "crates/grapt-types/src/model/target.rs",
+      "test": "model::tests::target::a_resolved_target_derives_its_own_capability",
+      "old": "    push(&mut out, \"credential\", credential_version.as_str());",
+      "new": "    push(&mut out, \"credential\", \"\");",
+      "red": "The existing assertion \"a rotated credential version is another resolved target\" fails."
+    },
+    {
+      "id": "MC09",
+      "law": "PolicyVersion is a target-sameness coordinate, even though it is deliberately not a capability coordinate (R-c)",
+      "package": "grapt-types",
+      "file": "crates/grapt-types/src/model/target.rs",
+      "test": "model::tests::target::every_inert_routing_coordinate_resolves_a_different_target",
+      "old": "            && self.policy == other.policy",
+      "new": "            && true",
+      "red": "The loop's assertion \"changing the policy version must resolve a different target\" fails."
+    },
+    {
+      "id": "MC10",
+      "law": "A pipe inside a value is escaped and cannot synthesise a field boundary",
+      "package": "grapt-types",
+      "file": "crates/grapt-types/src/model/target.rs",
+      "test": "model::tests::target::the_canonical_form_escapes_backslash_pipe_and_equals",
+      "old": "                '|' => out.push_str(\"\\\\p\"),",
+      "new": "                '|' => out.push('|'),",
+      "red": "The adversarial route encodes with a raw pipe, so the expected escaped bytes are absent and the contains assertion fails."
+    },
+    {
+      "id": "MC11",
+      "law": "An equals inside a value is escaped and cannot synthesise a label boundary",
+      "package": "grapt-types",
+      "file": "crates/grapt-types/src/model/target.rs",
+      "test": "model::tests::target::the_canonical_form_escapes_backslash_pipe_and_equals",
+      "old": "                '=' => out.push_str(\"\\\\e\"),",
+      "new": "                '=' => out.push('='),",
+      "red": "The adversarial route encodes with a raw equals, so the expected escaped bytes are absent and the contains assertion fails."
+    },
+    {
+      "id": "MC12",
+      "law": "A backslash inside a value is doubled, so no escape sequence can be forged",
+      "package": "grapt-types",
+      "file": "crates/grapt-types/src/model/target.rs",
+      "test": "model::tests::target::the_canonical_form_escapes_backslash_pipe_and_equals",
+      "old": "                '\\\\' => out.push_str(\"\\\\\\\\\"),",
+      "new": "                '\\\\' => out.push('\\\\'),",
+      "red": "The adversarial route encodes with an undoubled backslash and the contains assertion fails."
+    },
+    {
+      "id": "MC13",
+      "law": "Catalog lookup is exact byte identity (R-d)",
+      "package": "grapt-types",
+      "file": "crates/grapt-types/src/model/catalog.rs",
+      "test": "model::tests::catalog::byte_distinct_spellings_are_distinct_coordinates",
+      "old": "            .find(|record| record.coordinates() == (provider, model, variant))?;",
+      "new": "            .find(|record| {\n                let (record_provider, record_model, record_variant) = record.coordinates();\n                record_provider\n                    .as_str()\n                    .eq_ignore_ascii_case(provider.as_str())\n                    && record_model == model\n                    && record_variant == variant\n            })?;",
+      "red": "entry finds the \"anthropic\" row for an \"Anthropic\" lookup, so the is_none() assertion fails."
+    },
+    {
+      "id": "MC14",
+      "law": "A release that contradicts itself is refused (C1, second clause)",
+      "package": "grapt-types",
+      "file": "crates/grapt-types/src/model/catalog.rs",
+      "test": "model::tests::catalog::a_catalog_that_contradicts_itself_is_refused",
+      "old": "            .any(|pair| pair[0].coordinates() == pair[1].coordinates())",
+      "new": "            .any(|_pair| false)",
+      "red": "A self-contradicting release loads and the is_none() assertion fails."
+    },
+    {
+      "id": "MC15",
+      "law": "FOREIGN WITNESS. Row identity is same_row, never a blanket predicate (C1, first clause)",
+      "package": "grapt-event",
+      "test_target": "summary_restart_adversary",
+      "file": "crates/grapt-types/src/model/catalog.rs",
+      "test": "a_foreign_target_is_refused_with_its_neutral_recovery_after_a_restart",
+      "old": "        records.dedup_by(|left, right| left.same_row(right));",
+      "new": "        records.dedup_by(|_left, _right| true);",
+      "red": "Blanket collapse keeps only the first sorted row, so the (openai, gpt-x) row is gone, the catalog can no longer issue the foreign target the refusal drill requires, and the test fails at its .ok_or(\"target\")? propagation."
+    },
+    {
+      "id": "MC16",
+      "law": "The model-target namespace prefix is its own",
+      "package": "grapt-types",
+      "file": "crates/grapt-types/src/model/target.rs",
+      "test": "capability::tests::the_three_canonical_namespaces_are_pairwise_disjoint",
+      "old": "    let mut out = String::from(\"model-target|\");",
+      "new": "    let mut out = String::from(\"tool.invoke|\");",
+      "red": "A model-target form begins tool.invoke|, so the pairwise-disjointness assertion fails."
+    }
+  ],
+  "tombstones": []
+}

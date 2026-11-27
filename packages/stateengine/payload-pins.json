@@ -1,0 +1,25 @@
+{
+  "schema": "secode.stateengine-payload-pins.v1",
+  "targets": {
+    "aarch64-apple-darwin": {
+      "manifest_sha256": "681c182cf5d45075d2134b5b4c94ea8d5d0b8e84011a9c4e10966ab79621c76a",
+      "source_commit": "4cf99c451616f403d5bc3e621404f3facfeb3593",
+      "version": "0.1.15"
+    },
+    "x86_64-apple-darwin": {
+      "manifest_sha256": "3da84ec330bb4d95c055085c2db861a515f233065c43c0a83316bbbba899dad5",
+      "source_commit": "4cf99c451616f403d5bc3e621404f3facfeb3593",
+      "version": "0.1.15"
+    },
+    "x86_64-pc-windows-msvc": {
+      "manifest_sha256": "4f851e0e53c191458baaf462e54e767b311a1e272ad99ecca45b2205f634e666",
+      "source_commit": "c7ad3effb82f73a233328f2a091d2f1f0db77638",
+      "version": "0.0.1-alpha.1"
+    },
+    "x86_64-unknown-linux-gnu": {
+      "manifest_sha256": "d2757db2bf7b0c95f2205f9dbd3916e23b2a34d2affb3cb4a23b089bb9869bce",
+      "source_commit": "c7ad3effb82f73a233328f2a091d2f1f0db77638",
+      "version": "0.0.1-alpha.1"
+    }
+  }
+}

@@ -1,0 +1,29 @@
+{
+  "waivers": [
+    {
+      "id": "notice-is-this-lane-s-public-event-surface",
+      "scope": "expected/events.jsonl",
+      "corrected_expectation": "This lane's post-commit public surface is the bounded advisory notice, not a session transcript event envelope. Each recorded line is one notice naming a committed fact by aggregate and durable sequence. The lane publishes no HTTP event stream of its own, so the events surface records notices rather than pretending an SSE envelope was captured."
+    },
+    {
+      "id": "shipped-updated-values-are-imported-not-reconstructed",
+      "scope": "expected/projection.json",
+      "corrected_expectation": "Shipped session.time_updated values are imported exactly as immutable legacy-baseline provenance. They are not reconstructed from event time, so ses_legacy_b retains 200 even though its aggregate head is sequence 4."
+    },
+    {
+      "id": "batch-boundary-collation-is-carried-by-a-named-witness",
+      "scope": "actions.jsonl action 1",
+      "corrected_expectation": "The initial state declares the shipped NOCASE collation on session.id so the import's continuation predicate is exercised, but two rows cannot straddle the 512-row batch bound. The boundary case itself is carried by crates/grapt-store/tests/session_list_closure.rs::a_bounded_import_preserves_every_row_when_source_collation_is_nocase, which imports 513 rows across the bound."
+    },
+    {
+      "id": "page-local-race-is-an-explicit-non-guarantee",
+      "scope": "actions.jsonl action 14",
+      "corrected_expectation": "Each page is internally consistent within one SQLite statement. A writer may move a key between page requests, so a key observed on one page may be absent from or repeated on the next. Cross-page snapshot stability is deliberately not promised and the fixture asserts both observations are legal."
+    },
+    {
+      "id": "injected-corruption-is-reverted-after-it-is-observed",
+      "scope": "actions.jsonl action 11",
+      "corrected_expectation": "The oversize-title row is injected to prove the row bound refuses before decode allocation, then removed. Leaving it would make every later action refuse, so the corpus reverts the injection and the final projection contains no ses_oversize row."
+    }
+  ]
+}

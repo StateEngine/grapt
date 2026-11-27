@@ -1,0 +1,177 @@
+{
+  "schema": "grapt.toolchain-activation.local-run-receipt/v1",
+  "campaign": "TOOLCHAIN-ACTIVATION-01",
+  "command": "tma-workspace-final",
+  "variant": "local serialized rerun at the composed candidate on the Windows host",
+  "candidate": "188ea36a08be4e07ca991ce74ecc11a026259957",
+  "run_root": "C:\\fixtures\\rust-toolchain-delta-r1",
+  "candidate_custody": {
+    "head_at_run": "188ea36a08be4e07ca991ce74ecc11a026259957 (on branch toolchain-activation, clean worktree)",
+    "zero_executable_diff_to_branch_tip": "trivially the head itself (the run head IS the branch tip); the successor evidence commit lands on top with zero executable diff (crates, Cargo.toml, Cargo.lock), and the TMA battery candidate fe4e3fa6d57d82af50fe36c344773b565ad43ea0 is an ancestor with zero executable change (final-gate integrity)",
+    "checked_out_to_branch_after_run": "toolchain-activation @ 188ea36a08be4e07ca991ce74ecc11a026259957, clean"
+  },
+  "host": {
+    "platform": "windows",
+    "arch": "x86_64",
+    "machine": "FIXTURE-HOST",
+    "os": "Microsoft Windows 11 Home"
+  },
+  "toolchain": {
+    "rustc": "rustc 1.97.1 (8bab26f4f 2026-07-14)",
+    "cargo": "cargo 1.97.1 (c980f4866 2026-06-30)",
+    "python": "Python 3.14.6"
+  },
+  "serialization": {
+    "cargo_jobs": 1,
+    "test_threads": 1
+  },
+  "env": {
+    "CI": "1",
+    "RUST_BACKTRACE": "1",
+    "CARGO_TERM_COLOR": "never",
+    "CLIPPY_CONF_DIR": ". (workspace and negative clippy steps)",
+    "SECODE_FIXTURES": "C:\\workspace\\repo\\fixtures\\rust-reconstruction (test step; oracle-receipt-manifest.schema.json sha256 6d855521e8107668025de7461cc0742654eac316ebcdba32a396c9ccb632f07f verified)"
+  },
+  "started_utc": "2026-09-18T09:30:21Z",
+  "finished_utc": "2026-09-18T09:43:05Z",
+  "steps": [
+    {
+      "id": "workspace-clippy",
+      "position": 1,
+      "argv": [
+        "cargo",
+        "+1.97.1",
+        "clippy",
+        "--workspace",
+        "--all-targets",
+        "--all-features",
+        "--locked",
+        "-j",
+        "1",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "expected_exit": 0,
+      "exit_code": 0,
+      "exit_matched": true,
+      "duration_seconds": 49,
+      "log": "step1-clippy.log",
+      "log_sha256": "1812edc84b2d32e1882bf640cc8c6cad9b8e69fb7266e8fd026d9bbc23ae6e7f",
+      "log_bytes": 5903,
+      "notes": "the single live warning is the pre-existing clippy configuration diagnostic on the workspace getrandom::fill disallowed-methods entry, identical to carrier runs 20260917233655-028095a753bf4cac and 20260918021252-db7af5d6b16a47d6 and the C3 serialized rerun; a config diagnostic, not a code lint, and the step exits 0"
+    },
+    {
+      "id": "workspace-test",
+      "position": 2,
+      "argv": [
+        "cargo",
+        "+1.97.1",
+        "test",
+        "--workspace",
+        "--no-fail-fast",
+        "--locked",
+        "-j",
+        "1",
+        "--",
+        "--test-threads=1"
+      ],
+      "expected_exit": 0,
+      "exit_code": 0,
+      "exit_matched": true,
+      "duration_seconds": 713,
+      "log": "step2-test.log",
+      "log_sha256": "710a5f22496e90399911e74b5ce1eb12c3a1e9a8a9a2bffb25a6ee2159a7e123",
+      "log_bytes": 394351,
+      "summary": {
+        "test_binaries": 278,
+        "binaries_ok": 278,
+        "tests_passed": 3722,
+        "tests_failed": 0,
+        "tests_ignored": 26
+      },
+      "notes": "the named environmental test compose::tests::acceptance_corpus_is_schema_valid_closed_and_executable ran and passed with SECODE_FIXTURES pinned; 3722 passed is +4 over the C3 rerun's 3718, accounted by the eight upstream commits now in the accepted base (the SESSION-CONTINUITY-01 continuity witness suites); the 29 plugin-containment cgroup tests of the carrier runs are cfg(linux)-gated (supervisor module linux) and do not run on this platform"
+    },
+    {
+      "id": "negative-clock",
+      "position": 3,
+      "argv": [
+        "cargo",
+        "+1.97.1",
+        "clippy",
+        "--manifest-path",
+        "fixtures/negative/ambient-clock/Cargo.toml",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "expected_exit": 101,
+      "exit_code": 101,
+      "exit_matched": true,
+      "duration_seconds": 0,
+      "log": "step3-negative-clock.log",
+      "log_sha256": "0e73c9c0e4ffce1c70c9c0607d94c884c2cb0722704ef436dc357b61b8c2ea83",
+      "log_bytes": 1155,
+      "notes": "the gate fires: error naming clippy::disallowed_methods with the ClockAuthority note"
+    },
+    {
+      "id": "negative-randomness",
+      "position": 4,
+      "argv": [
+        "cargo",
+        "+1.97.1",
+        "clippy",
+        "--manifest-path",
+        "fixtures/negative/ambient-randomness/Cargo.toml",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "expected_exit": 101,
+      "exit_code": 101,
+      "exit_matched": true,
+      "duration_seconds": 0,
+      "log": "step4-negative-randomness.log",
+      "log_sha256": "cf8bca2c31b29ff9a56d8d48144e720e3ccff1b6a52c293ac2ed5259877e6303",
+      "log_bytes": 1178,
+      "notes": "the gate fires: error naming clippy::disallowed_methods with the IdAuthority note"
+    },
+    {
+      "id": "final-gate",
+      "position": 5,
+      "argv": [
+        "python",
+        "scripts\\qualification\\toolchain-activation\\final_gate.py",
+        "--candidate",
+        "188ea36a08be4e07ca991ce74ecc11a026259957",
+        "--receipt",
+        "E:\\temp\\tma-compose-fe4e3fa6\\tma-188ea36a-workspace-final-windows-serialized.json"
+      ],
+      "expected_exit": 0,
+      "exit_code": 0,
+      "exit_matched": true,
+      "duration_seconds": 1,
+      "log": "step5-final-gate.log",
+      "log_sha256": "d657f2709d06ca79b421547f037dfd3923064342b41470a3fdae5a04560cff54",
+      "log_bytes": 307,
+      "receipt": "tma-188ea36a-workspace-final-windows-serialized.json",
+      "receipt_sha256": "74ee1131dd98cb91b6270603d5e3fc2070e1c13ec74209093689b2c9eb73fa65",
+      "receipt_bytes": 2021,
+      "notes": "TMA-WORKSPACE-FINAL PASSED on windows/x86_64: candidate, integrity (battery fixtures/toolchain-activation/receipts/tma-fe4e3fa6-battery.json, 7 red rows, zero executable change against battery candidate fe4e3fa6d57d82af50fe36c344773b565ad43ea0, so the battery's red witnesses cover this head) and TM01 all-passed (78 checks across install/reuse/recut/target-removed/rollback, x86_64-pc-windows-msvc); TM01 binary sha256 434d02b37cd3e34995461403e818ab12035fb1cf445e3a6b5e645a1ab8cb2a57 - the bytes differ from the C3 runs only because each run rebuilds the binary (MSVC linking is not byte-deterministic across builds)"
+    }
+  ],
+  "log_archive": {
+    "path": "tma-188ea36a-workspace-final-windows-serialized-logs.tar.gz",
+    "sha256": "80058bcddc17b9a2dede354de62231abe259404dcb5c66098bd8455482cd02a8",
+    "bytes": 91215,
+    "contents": [
+      "manifest.txt",
+      "step1-clippy.log",
+      "step2-test.log",
+      "step3-negative-clock.log",
+      "step4-negative-randomness.log",
+      "step5-final-gate.log"
+    ]
+  },
+  "outcome": "passed"
+}

@@ -1,0 +1,153 @@
+{
+  "as_of": "[redacted]",
+  "assignment": {
+    "status": "unknown"
+  },
+  "attention": {
+    "next_action": "[redacted]",
+    "ref": "[redacted]",
+    "remedy": "none",
+    "status": "[redacted]"
+  },
+  "budget": {
+    "byte_limit": 4096,
+    "rendered_bytes": 3532
+  },
+  "changes": {
+    "complete": false,
+    "new": [
+      {
+        "ref": "[redacted]",
+        "source": "[redacted]",
+        "summary": "[redacted]",
+        "ts": "[redacted]"
+      },
+      {
+        "ref": "[redacted]",
+        "source": "[redacted]",
+        "summary": "[redacted]",
+        "ts": "[redacted]"
+      },
+      {
+        "ref": "[redacted]",
+        "source": "[redacted]",
+        "summary": "[redacted]",
+        "ts": "[redacted]"
+      }
+    ],
+    "new_omitted": 30,
+    "resolved": [
+      {
+        "ref": "[redacted]",
+        "source": "[redacted]",
+        "summary": "[redacted]",
+        "ts": "[redacted]"
+      }
+    ],
+    "resolved_omitted": 0,
+    "since": "FIXTURE_CURSOR",
+    "still_open": [],
+    "still_open_omitted": 0
+  },
+  "complete": true,
+  "cursor": "FIXTURE_CURSOR",
+  "evidence_health": {
+    "status": "healthy"
+  },
+  "inbox": {
+    "actionable_live_unread": 0
+  },
+  "lane": {
+    "ref": "[redacted]",
+    "state": "complete"
+  },
+  "mode": "cold-resume",
+  "omitted": {
+    "changes.new": {
+      "items": 30
+    },
+    "changes.new.text": {
+      "characters": 658
+    },
+    "changes.resolved.text": {
+      "characters": 79
+    },
+    "timeline": {
+      "items": 4
+    },
+    "timeline.text": {
+      "characters": 308
+    }
+  },
+  "principal": {
+    "agent_id": "agt_fixture",
+    "display_name": "[redacted]",
+    "identity_fingerprint": "fixture-fingerprint",
+    "project_id": "fixture",
+    "verified": true
+  },
+  "raw_log": {
+    "lag_label": "[redacted]",
+    "last_turn_ts": "[redacted]",
+    "source": "floor+export",
+    "status": "ok"
+  },
+  "render": "brief",
+  "rendered_bytes": 3532,
+  "restriction": {
+    "status": "none"
+  },
+  "resume_status": "ready",
+  "retrieve": {
+    "arguments": {
+      "sections": [
+        "[redacted]",
+        "[redacted]",
+        "[redacted]",
+        "[redacted]",
+        "[redacted]",
+        "[redacted]",
+        "[redacted]",
+        "[redacted]",
+        "[redacted]"
+      ]
+    },
+    "tool": "stateengine_resume"
+  },
+  "schema_version": 2,
+  "seat_continuity": {
+    "status": "bounded-tail",
+    "turns": []
+  },
+  "served_version": {
+    "omitted_stamps": 2,
+    "relationship": "same-commit",
+    "tracked_dirty": [
+      false,
+      false
+    ]
+  },
+  "summary": "[redacted]",
+  "timeline": [
+    {
+      "gist": "[redacted]",
+      "ts": "[redacted]"
+    },
+    {
+      "gist": "[redacted]",
+      "ts": "[redacted]"
+    },
+    {
+      "gist": "[redacted]",
+      "ts": "[redacted]"
+    }
+  ],
+  "unread_coordination": {
+    "complete": true,
+    "has_more": false,
+    "messages": [],
+    "omitted": 0,
+    "total": 0
+  },
+  "working_state": null
+}

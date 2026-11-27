@@ -1,0 +1,172 @@
+# Published crates whose MIT text is omitted from their crate archive.
+# Upstream texts are copied unchanged. Missing upstream copyright notices use
+# the explicitly labeled standard MIT fallbacks below, without invented attribution.
+
+[[package]]
+name = "jsonschema-regex"
+version = "0.56.0"
+license = "MIT"
+text = "licenses/jsonschema-regex/LICENSE-MIT"
+source = "https://raw.githubusercontent.com/Stranger6667/jsonschema/1e244c994dd81a1feb7801556a813c6bf2d45dad/LICENSE"
+
+[[package]]
+name = "jsonschema-value"
+version = "0.56.0"
+license = "MIT"
+text = "licenses/jsonschema-regex/LICENSE-MIT"
+source = "https://raw.githubusercontent.com/Stranger6667/jsonschema/1e244c994dd81a1feb7801556a813c6bf2d45dad/LICENSE"
+
+[[package]]
+name = "mutants"
+version = "0.0.4"
+license = "MIT"
+text = "licenses/mutants/LICENSE-MIT"
+source = "https://raw.githubusercontent.com/sourcefrog/cargo-mutants/14011d08c42a7cd368698fe28f77eb4cd0b65bf0/LICENSE"
+
+[[package]]
+name = "rquickjs-core"
+version = "0.13.0"
+license = "MIT"
+text = "licenses/rquickjs-core/LICENSE-MIT"
+source = "https://raw.githubusercontent.com/DelSkayn/rquickjs/f3039c8d931417049ce6133b3ff4550ca38438a5/LICENSE"
+
+[[package]]
+name = "rsqlite-vfs"
+version = "0.1.1"
+license = "MIT"
+text = "licenses/rsqlite-vfs/LICENSE-MIT"
+source = "https://raw.githubusercontent.com/Spxg/sqlite-wasm-rs/1bb309784f25c401ddf95131dcde4c4cdad7aee7/LICENSE"
+
+[[package]]
+name = "uuid-simd"
+version = "0.8.0"
+license = "MIT"
+text = "licenses/uuid-simd/LICENSE-MIT"
+source = "https://raw.githubusercontent.com/Nugine/simd/d74c030d9dc4f3cae02146d1f497ff62726ef09a/LICENSE"
+
+[[package]]
+name = "vsimd"
+version = "0.8.0"
+license = "MIT"
+text = "licenses/uuid-simd/LICENSE-MIT"
+source = "https://raw.githubusercontent.com/Nugine/simd/d74c030d9dc4f3cae02146d1f497ff62726ef09a/LICENSE"
+
+# The published source declares MIT but supplies no copyright notice, so retain a labeled
+# standard-text fallback.
+[[package]]
+name = "objc2-encode"
+version = "4.1.0"
+license = "MIT"
+text = "licenses/objc2-encode/LICENSE-MIT"
+source = "https://raw.githubusercontent.com/madsmtm/objc2/8d214f5477365ffcbcbb7de058c86ed9a518efb7/LICENSE.md"
+
+# Same labeled standard-MIT fallback for this exact upstream package.
+[[package]]
+name = "objc2-foundation"
+version = "0.3.2"
+license = "MIT"
+text = "licenses/objc2-foundation/LICENSE-MIT"
+source = "https://raw.githubusercontent.com/madsmtm/objc2/7b1abfd750a2cacaea71d6a56ecfb83cb7de560b/LICENSE.md"
+
+# Same labeled standard-MIT fallback for this exact upstream package.
+[[package]]
+name = "objc2"
+version = "0.6.3"
+license = "MIT"
+text = "licenses/objc2/LICENSE-MIT"
+source = "https://raw.githubusercontent.com/madsmtm/objc2/b4167b582b2f75f9a1be75495c41b765344fd03c/LICENSE.md"
+
+# Upstream declares MIT but includes no license or copyright notice.
+[[package]]
+name = "fax"
+version = "0.2.6"
+license = "MIT"
+text = "licenses/fax/LICENSE-MIT"
+source = "https://raw.githubusercontent.com/pdf-rs/fax/40b226eb97b391355e971fd95a8dd532a4c127a0/Cargo.toml"
+
+# Upstream declares MIT but includes no license or copyright notice.
+[[package]]
+name = "fax_derive"
+version = "0.2.0"
+license = "MIT"
+text = "licenses/fax_derive/LICENSE-MIT"
+source = "https://raw.githubusercontent.com/pdf-rs/fax/40b226eb97b391355e971fd95a8dd532a4c127a0/derive/Cargo.toml"
+[[package]]
+name = "windows-env"
+version = "0.3.1"
+license = "MIT"
+text = "licenses/windows-env/LICENSE-MIT"
+source = "https://raw.githubusercontent.com/lxl66566/windows-env/e1f92ef0d2d47266734fd65c8c98b82051edb3e2/LICENSE"
+
+# The crate omits the repository's MIT copyright text from its published archive.
+[[package]]
+name = "mxc-sdk"
+version = "1.0.1"
+license = "MIT"
+text = "licenses/mxc-sdk-1.0.1/LICENSE.md"
+source = "https://raw.githubusercontent.com/microsoft/mxc/fda29ac63bc306b7f97f3b86b4b63d44f7f40cf2/LICENSE.md"
+
+# Repository copyright omitted from this published crate archive.
+[[package]]
+name = "tracelogging"
+version = "1.2.4"
+license = "MIT"
+text = "licenses/tracelogging-1.2.4/LICENSE"
+source = "https://raw.githubusercontent.com/microsoft/tracelogging/bdd914bd827ff6b9d6d65972d622834fdf04518a/LICENSE"
+
+# Repository copyright omitted from this published crate archive.
+[[package]]
+name = "tracelogging_macros"
+version = "1.2.3"
+license = "MIT"
+text = "licenses/tracelogging_macros-1.2.3/LICENSE"
+source = "https://raw.githubusercontent.com/microsoft/tracelogging/4d3c8b02da568d34daf977db7052a819ab4b18ec/LICENSE"
+
+[[package]]
+name = "base64-simd"
+version = "0.8.0"
+license = "MIT"
+text = "licenses/uuid-simd/LICENSE-MIT"
+source = "https://raw.githubusercontent.com/Nugine/simd/d74c030d9dc4f3cae02146d1f497ff62726ef09a/LICENSE"
+
+[[package]]
+name = "azure_core"
+version = "1.0.0"
+license = "MIT"
+text = "licenses/azure-sdk-for-rust/LICENSE.txt"
+source = "https://raw.githubusercontent.com/Azure/azure-sdk-for-rust/c3c92ed4349125e25d176f13faa9ef016b790b3e/LICENSE.txt"
+
+[[package]]
+name = "azure_core_macros"
+version = "1.0.0"
+license = "MIT"
+text = "licenses/azure-sdk-for-rust/LICENSE.txt"
+source = "https://raw.githubusercontent.com/Azure/azure-sdk-for-rust/c3c92ed4349125e25d176f13faa9ef016b790b3e/LICENSE.txt"
+
+[[package]]
+name = "azure_identity"
+version = "1.0.0"
+license = "MIT"
+text = "licenses/azure-sdk-for-rust/LICENSE.txt"
+source = "https://raw.githubusercontent.com/Azure/azure-sdk-for-rust/c3c92ed4349125e25d176f13faa9ef016b790b3e/LICENSE.txt"
+
+[[package]]
+name = "typespec"
+version = "1.1.0"
+license = "MIT"
+text = "licenses/azure-sdk-for-rust/LICENSE.txt"
+source = "https://raw.githubusercontent.com/Azure/azure-sdk-for-rust/9a8a5f7bdb986e4c3ba230ad26b99996aae467d9/LICENSE.txt"
+
+[[package]]
+name = "typespec_client_core"
+version = "1.1.0"
+license = "MIT"
+text = "licenses/azure-sdk-for-rust/LICENSE.txt"
+source = "https://raw.githubusercontent.com/Azure/azure-sdk-for-rust/9a8a5f7bdb986e4c3ba230ad26b99996aae467d9/LICENSE.txt"
+
+[[package]]
+name = "typespec_macros"
+version = "1.0.0"
+license = "MIT"
+text = "licenses/azure-sdk-for-rust/LICENSE.txt"
+source = "https://raw.githubusercontent.com/Azure/azure-sdk-for-rust/c3c92ed4349125e25d176f13faa9ef016b790b3e/LICENSE.txt"

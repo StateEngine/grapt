@@ -1,0 +1,107 @@
+[
+ {
+  "file": "remote-compute/daily-use-linux.json",
+  "line": 968,
+  "text": "\"crates/secode-release/mutations/r6mr/run.py\","
+ },
+ {
+  "file": "remote-compute/daily-use-linux.json",
+  "line": 2039,
+  "text": "\"path\": \"artifacts/secode.exe\","
+ },
+ {
+  "file": "remote-compute/daily-use-windows-build.py",
+  "line": 51,
+  "text": "\"secode.exe\": (\"secode-cli\", \"secode\"),"
+ },
+ {
+  "file": "remote-compute/daily-use-windows-build.py",
+  "line": 52,
+  "text": "\"secode-migrate.exe\": (\"secode-release\", \"secode-migrate\"),"
+ },
+ {
+  "file": "remote-compute/release-packaging-linux.json",
+  "line": 417,
+  "text": "\"path\": \"artifacts/secode\","
+ },
+ {
+  "file": "remote-compute/release-packaging-linux.json",
+  "line": 471,
+  "text": "\"path\": \"artifacts-windows/secode.exe\","
+ },
+ {
+  "file": "remote-compute/secode-linux-evidence.json",
+  "line": 251,
+  "text": "\"secode-release\","
+ },
+ {
+  "file": "remote-compute/secode-linux-evidence.json",
+  "line": 350,
+  "text": "\"secode-release\","
+ },
+ {
+  "file": "remote-compute/secode-linux-evidence.json",
+  "line": 480,
+  "text": "\"secode-release\","
+ },
+ {
+  "file": "remote-compute/secode-linux-evidence.json",
+  "line": 605,
+  "text": "{\"id\": \"release-frozen-clone-rehearsal\", \"argv\": [\"cargo\", \"+1.97.1\", \"test\", \"-p\", \"secode-release\", \"--test\", \"frozen_clone_rehearsal\", \"--\", \"--include-ignored\"], \"timeout_ms\": 7200000}"
+ },
+ {
+  "file": "remote-compute/secode-linux-evidence.json",
+  "line": 613,
+  "text": "{\"id\": \"scoped-fmt\", \"argv\": [\"cargo\", \"+1.97.1\", \"fmt\", \"-p\", \"secode-provider\", \"-p\", \"secode-runtime\", \"-p\", \"secode-store\", \"-p\", \"secode-location\", \"-p\", \"secode-platform\", \"-p\", \"secode-product\", \"-p\", \"secode-api\", \"-p\", \"secode-service\", \"-p\", \"secode-release\", \"-p\", \"secode-client\", \"-p\", \"secode-cli\", \"--check\"], \"timeout_ms\": 600000},"
+ },
+ {
+  "file": "remote-compute/secode-linux-evidence.json",
+  "line": 621,
+  "text": "{\"id\": \"release-evidence\", \"argv\": [\"cargo\", \"+1.97.1\", \"test\", \"-p\", \"secode-release\", \"--test\", \"frozen_clone_rehearsal\", \"--\", \"--include-ignored\"], \"timeout_ms\": 7200000},"
+ },
+ {
+  "file": "remote-compute/secode-linux-evidence.json",
+  "line": 639,
+  "text": "{\"id\": \"scoped-fmt\", \"argv\": [\"cargo\", \"+1.97.1\", \"fmt\", \"-p\", \"secode-provider\", \"-p\", \"secode-runtime\", \"-p\", \"secode-store\", \"-p\", \"secode-location\", \"-p\", \"secode-platform\", \"-p\", \"secode-product\", \"-p\", \"secode-api\", \"-p\", \"secode-service\", \"-p\", \"secode-release\", \"-p\", \"secode-client\", \"-p\", \"secode-cli\", \"--check\"], \"timeout_ms\": 600000},"
+ },
+ {
+  "file": "remote-compute/secode-linux-evidence.json",
+  "line": 647,
+  "text": "{\"id\": \"release-evidence\", \"argv\": [\"cargo\", \"+1.97.1\", \"test\", \"-p\", \"secode-release\", \"--test\", \"frozen_clone_rehearsal\", \"--\", \"--include-ignored\"], \"timeout_ms\": 7200000},"
+ },
+ {
+  "file": "remote-compute/secode-linux.json",
+  "line": 403,
+  "text": "{\"id\": \"release-mutations-r6mr\", \"argv\": [\"python3\", \"crates/secode-release/mutations/r6mr/run.py\", \"--prefix\", \"R6MR\"], \"timeout_ms\": 14400000}"
+ },
+ {
+  "file": "remote-compute/test_profile.py",
+  "line": 546,
+  "text": "\"secode-platform\", \"secode-product\", \"secode-api\", \"secode-service\", \"secode-release\""
+ },
+ {
+  "file": "scripts/build/gate_plan.py",
+  "line": 71,
+  "text": "prerequisites = ([[\"cargo\", \"build\", \"--locked\", \"-p\", \"secode-cli\", \"--bin\", \"secode\","
+ },
+ {
+  "file": "scripts/build/test_gate.py",
+  "line": 152,
+  "text": "['cargo', 'build', '--locked', '-p', 'secode-cli', '--bin', 'secode',"
+ },
+ {
+  "file": "scripts/build/test_gate.py",
+  "line": 324,
+  "text": "['cargo', 'build', '--locked', '-p', 'secode-cli', '--bin', 'secode',"
+ },
+ {
+  "file": "scripts/build/test_gate.py",
+  "line": 344,
+  "text": "['cargo', 'build', '--locked', '-p', 'secode-cli', '--bin', 'secode',"
+ },
+ {
+  "file": "scripts/build/windows_gate.py",
+  "line": 28,
+  "text": "result.append(['cargo', 'build', '--locked', '-p', 'secode-cli', '--bin', 'secode',"
+ }
+]

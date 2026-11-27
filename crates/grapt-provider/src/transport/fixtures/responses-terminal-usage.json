@@ -1,0 +1,52 @@
+[
+  {
+    "type": "response.failed",
+    "sequence_number": 3,
+    "response": {
+      "id": "resp_fixture_failed",
+      "object": "response",
+      "status": "failed",
+      "error": {
+        "code": "context_length_exceeded",
+        "message": "Your input exceeds the context window of this model. C:\\backend\\reply token-value-never-printed sk-private-echo"
+      },
+      "output": [
+        {
+          "content": "PRIVATE_OUTPUT_CANARY"
+        }
+      ],
+      "metadata": {
+        "private": "PRIVATE_METADATA_CANARY"
+      },
+      "usage": null
+    }
+  },
+  {
+    "type": "response.incomplete",
+    "response": {
+      "status": "incomplete",
+      "incomplete_details": {
+        "reason": "context_length_exceeded"
+      },
+      "output": [
+        {
+          "content": "PRIVATE_OUTPUT_CANARY"
+        }
+      ],
+      "metadata": {
+        "private": "PRIVATE_METADATA_CANARY"
+      },
+      "usage": null
+    }
+  },
+  {
+    "type": "response.completed",
+    "response": {
+      "status": "completed",
+      "usage": {
+        "input_tokens": "invalid",
+        "output_tokens": 1
+      }
+    }
+  }
+]

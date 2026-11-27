@@ -1,0 +1,164 @@
+[package]
+name = "grapt-product"
+version = "0.1.0"
+autotests = false
+edition.workspace = true
+license = "MIT OR Apache-2.0"
+description = "Rust product composition root with authenticated health, bounded readiness, and the LIVE-HEADLESS-1 provider journey."
+
+[features]
+default = []
+handover-crash-fixture = []
+loopback-provider-testkit = ["grapt-provider/loopback-testkit", "grapt-login/loopback-testkit", "grapt-connections/loopback-testkit", "grapt-runtime/loopback-testkit"]
+checkpoint-fixture = []
+
+[[bin]]
+name = "grapt-server"
+path = "src/main.rs"
+
+[[bin]]
+name = "cache-usage-benchmark"
+path = "src/bin/cache_usage_benchmark.rs"
+
+[[test]]
+name = "integration"
+path = "tests/integration/main.rs"
+
+# Keep feature-specific checkpoint qualification independently addressable.
+[[test]]
+name = "checkpoint_compatibility"
+path = "tests/checkpoint_compatibility.rs"
+required-features = ["checkpoint-fixture"]
+
+# These journeys retain process-wide provider fixtures and harness re-execution.
+[[test]]
+name = "capture"
+path = "tests/capture.rs"
+
+[[test]]
+name = "dogfood_headless"
+path = "tests/dogfood_headless.rs"
+
+# The readiness witness re-executes this exact test harness.
+[[test]]
+name = "cutover_readiness"
+path = "tests/cutover_readiness.rs"
+
+# Preserve the handover suites' process-wide counters and timing state.
+[[test]]
+name = "handover_journey"
+path = "tests/handover_journey.rs"
+
+[[test]]
+name = "handover_ordering"
+path = "tests/handover_ordering.rs"
+
+# The shipped-CLI support owns a process-wide diagnostic Once.
+[[test]]
+name = "product_root"
+path = "tests/product_root.rs"
+
+[[example]]
+name = "checkpoint_compatibility"
+path = "examples/checkpoint_compatibility.rs"
+required-features = ["checkpoint-fixture"]
+
+[dependencies]
+grapt-diagnostics = { path = "../grapt-diagnostics" }
+grapt-connections = { path = "../grapt-connections" }
+grapt-image = { path = "../grapt-image" }
+grapt-login = { path = "../grapt-login" }
+grapt-worktree = { path = "../grapt-worktree" }
+base64 = "0.22.1"
+crc32fast = "=1.5.2"
+globset = "=0.4.20"
+# Image viewing: decoder stays behind an exact dependency pin.
+image = { version = "=0.25.9", default-features = false, features = ["png", "jpeg", "gif", "webp"] }
+jsonschema = { version = "=0.56.0", default-features = false }
+notify = { version = "=8.2.0", default-features = false, features = ["macos_fsevent"] }
+processkit = { version = "=3.3.4", default-features = false, features = ["limits", "process-control"] }
+regex = "=1.13.1"
+ring = "0.17.14"
+rusqlite = { version = "0.41", features = ["bundled"] }
+same-file = "=1.0.6"
+tempfile = "=3.27.0"
+grapt-api = { path = "../grapt-api" }
+grapt-artifact = { path = "../grapt-artifact" }
+grapt-auth-basic = { path = "../grapt-auth-basic" }
+grapt-config = { path = "../grapt-config" }
+grapt-context = { path = "../grapt-context" }
+grapt-codemode = { path = "../grapt-codemode" }
+grapt-checkpoint = { path = "../grapt-checkpoint" }
+grapt-event = { path = "../grapt-event" }
+grapt-form = { path = "../grapt-form" }
+grapt-inbox = { path = "../grapt-inbox" }
+grapt-instruction = { path = "../grapt-instruction" }
+grapt-location = { path = "../grapt-location" }
+grapt-mail-transport = { path = "../grapt-mail-transport" }
+grapt-mcp = { path = "../grapt-mcp" }
+grapt-mcp-client = { path = "../grapt-mcp-client" }
+grapt-mcp-host = { path = "../grapt-mcp-host" }
+grapt-web = { path = "../grapt-web" }
+grapt-platform = { path = "../grapt-platform" }
+grapt-plugin = { path = "../grapt-plugin" }
+grapt-policy = { path = "../grapt-policy" }
+grapt-release = { path = "../grapt-release" }
+grapt-permission = { path = "../grapt-permission" }
+grapt-provider = { path = "../grapt-provider" }
+grapt-runtime = { path = "../grapt-runtime" }
+grapt-schema = { path = "../grapt-schema" }
+grapt-sandbox = { path = "../grapt-sandbox" }
+grapt-service = { path = "../grapt-service" }
+grapt-session = { path = "../grapt-session" }
+grapt-service-state = { path = "../grapt-service-state" }
+grapt-shell = { path = "../grapt-shell" }
+grapt-stateengine-api = { path = "../grapt-stateengine-api" }
+grapt-store = { path = "../grapt-store" }
+grapt-subagent = { path = "../grapt-subagent" }
+grapt-toolchain = { path = "../grapt-toolchain" }
+grapt-tools-local = { path = "../grapt-tools-local" }
+grapt-types = { path = "../grapt-types" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "0.8"
+thiserror = "2"
+tokio = { version = "1", default-features = false, features = ["io-util", "macros", "net", "process", "rt-multi-thread", "signal", "sync", "time"] }
+url = "2.5.8"
+yaml-rust2 = { version = "=0.11.0", default-features = false }
+
+[target.'cfg(windows)'.dependencies]
+sysinfo = { version = "=0.39.6", default-features = false, features = ["system"] }
+interprocess = { version = "=2.4.5", default-features = false }
+win32job = "=2.0.3"
+filedescriptor = "=0.8.3"
+tokio = { version = "1", default-features = false, features = ["signal"] }
+conpty-oxide = { version = "=0.1.2", default-features = false, features = ["blocking"] }
+windows-spawn = { version = "=0.1.0", default-features = false }
+# Same safe adapter already used by the CLI: refuse hard-linked plugin resources.
+winapi-util = "=0.1.11"
+
+[target.'cfg(windows)'.dev-dependencies]
+winconsole = { version = "=0.11.1", default-features = false }
+
+[target.'cfg(any(target_os = "linux", target_os = "macos"))'.dependencies]
+# Safe process identity and non-reaping exit observation during cleanup.
+rustix = { version = "=1.1.6", default-features = false, features = ["process", "std"] }
+
+[target.'cfg(unix)'.dependencies]
+portable-pty = "=0.9.0"
+nix = { version = "=0.30.1", default-features = false, features = ["signal", "process", "socket", "uio", "fs"] }
+
+[dev-dependencies]
+grapt-tui-driver = { path = "../grapt-tui-driver" }
+grapt-client = { path = "../grapt-client" }
+grapt-provider = { path = "../grapt-provider", features = ["deterministic-testkit"] }
+tokio = { version = "1", default-features = false, features = ["test-util"] }
+grapt-mcp-client = { path = "../grapt-mcp-client", features = ["loopback-testkit"] }
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
+rustls-platform-verifier = "0.7"
+grapt-store = { path = "../grapt-store" }
+serde_json = "1"
+sha2 = "0.10"
+
+[lints]
+workspace = true

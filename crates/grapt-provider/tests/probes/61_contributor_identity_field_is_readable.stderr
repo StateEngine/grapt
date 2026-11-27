@@ -1,0 +1,5 @@
+error[E0616]: field `value` of struct `EnvExposure` is private
+  --> tests/probes/61_contributor_identity_field_is_readable.rs:13:15
+   |
+13 |     &exposure.value
+   |               ^^^^^ private field

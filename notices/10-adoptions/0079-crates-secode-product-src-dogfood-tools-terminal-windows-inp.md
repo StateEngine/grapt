@@ -1,0 +1,1 @@
+| `crates/secode-tools-local/src/terminal/windows_input.rs` | `openai/codex`: `codex-rs/utils/pty/src/windows_input.rs`, `windows_input_tests.rs` | `bb64b894fd67158be0f874872e6d7bfe717e7368` | Modified: bounded writer integration and private tests for Enter, UTF-8, interrupts and backspace. |

@@ -1,0 +1,16 @@
+error[E0603]: tuple struct constructor `NoVisibleOutput` is private
+  --> tests/probes/08_forge_no_visible_output.rs:11:34
+   |
+11 |     let forged = grapt_provider::NoVisibleOutput(());
+   |                                  ^^^^^^^^^^^^^^^ private tuple struct constructor
+   |
+  ::: src/disposition.rs
+   |
+   | pub struct NoVisibleOutput(pub(crate) ());
+   |                            ------------- a constructor is private if any of the fields is private
+   |
+note: the tuple struct constructor `NoVisibleOutput` is defined here
+  --> src/lib.rs
+   |
+   | pub use disposition::{AttemptDisposition, NoVisibleOutput};
+   |                                           ^^^^^^^^^^^^^^^

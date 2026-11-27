@@ -1,0 +1,1 @@
+| `crates/secode-mcp-client/src/oauth/discovery.rs`, `oauth/http.rs` | `openai/codex`, `codex-rs/rmcp-client/src/ema_resource.rs`, `oauth_http_client.rs` | `092d3acd6bec3e3a14bdc7e7a2810ab628ab759d` | Modified: bounded unauthenticated discovery, explicit issuer binding, independent deadlines and no token POST redirects/retries. |

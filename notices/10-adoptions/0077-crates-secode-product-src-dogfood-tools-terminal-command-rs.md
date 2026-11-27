@@ -1,0 +1,1 @@
+| `crates/secode-product/src/dogfood/tools/terminal/command.rs` | `openai/codex`: `codex-rs/core/src/shell.rs` | `bb64b894fd67158be0f874872e6d7bfe717e7368` | Modified: explicit absolute shell paths and bounded arguments, preserving login/profile selection. |

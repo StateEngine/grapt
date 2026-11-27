@@ -1,0 +1,1 @@
+| `crates/secode-product/src/dogfood/tools/plan.rs` | `openai/codex`: `codex-rs/protocol/src/plan_tool.rs`, `codex-rs/core/src/tools/handlers/plan.rs`, `codex-rs/core/src/tools/handlers/plan_spec.rs` | `bb64b894fd67158be0f874872e6d7bfe717e7368` | Modified: bounded arguments, governed permission path, existing committed tool input owns history. |

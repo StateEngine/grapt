@@ -1,0 +1,510 @@
+{
+  "contract": "remote-compute-profile/v1",
+  "runner_contract": "remote-compute-runner/v1",
+  "profile_id": "release-packaging-01-linux",
+  "target": {
+    "ssh_target": "build-host",
+    "remote_run_root": "/home/example/secode-remote-compute/runs",
+    "remote_artifact_root": "/home/example/secode-remote-compute/artifacts",
+    "connect_timeout_ms": 10000
+  },
+  "environment": {
+    "inherit": [
+      "HOME",
+      "USER"
+    ],
+    "fixed": {
+      "PATH": "/home/example/.cargo/bin:/usr/local/bin:/usr/bin:/bin",
+      "CI": "1",
+      "LC_ALL": "C",
+      "CARGO_INCREMENTAL": "1",
+      "CARGO_TERM_COLOR": "never",
+      "RUST_BACKTRACE": "1",
+      "RUSTDOCFLAGS": "-D warnings",
+      "CLIPPY_CONF_DIR": "."
+    }
+  },
+  "toolchain": {
+    "checks": [
+      {
+        "argv": [
+          "rustc",
+          "+1.97.1",
+          "--version"
+        ],
+        "expect": {
+          "stream": "stdout",
+          "match": "exact",
+          "value": "rustc 1.97.1 (8bab26f4f 2026-07-14)"
+        }
+      },
+      {
+        "argv": [
+          "cargo",
+          "+1.97.1",
+          "--version"
+        ],
+        "expect": {
+          "stream": "stdout",
+          "match": "exact",
+          "value": "cargo 1.97.1 (c980f4866 2026-06-30)"
+        }
+      },
+      {
+        "argv": [
+          "cargo",
+          "+1.97.1",
+          "clippy",
+          "--version"
+        ],
+        "expect": {
+          "stream": "stdout",
+          "match": "exact",
+          "value": "clippy 0.1.97 (8bab26f4f6 2026-07-14)"
+        }
+      },
+      {
+        "argv": [
+          "rustfmt",
+          "+1.97.1",
+          "--version"
+        ],
+        "expect": {
+          "stream": "stdout",
+          "match": "exact",
+          "value": "rustfmt 1.9.0-stable (8bab26f4f6 2026-07-14)"
+        }
+      }
+    ],
+    "bootstrap": [
+      [
+        "/home/example/.cargo/bin/rustup",
+        "toolchain",
+        "install",
+        "1.97.1",
+        "--profile",
+        "minimal",
+        "--component",
+        "clippy",
+        "--component",
+        "rustfmt"
+      ]
+    ],
+    "bootstrap_policy": "cache-keyed"
+  },
+  "cache": {
+    "mode": "shared-keyed",
+    "namespace": "secode-rust",
+    "key": "linux-x86_64-rust-1.97.1-v1",
+    "env": {
+      "CARGO_HOME": "{{domain}}/cargo-home",
+      "RUSTUP_HOME": "{{domain}}/rustup-home",
+      "CARGO_TARGET_DIR": "{{domain}}/cargo-target"
+    }
+  },
+  "resources": {
+    "domains": {
+      "domain1": {
+        "cpu_policy": "host-shared",
+        "memory": {
+          "policy": "runner-unbounded"
+        },
+        "concurrency": 1,
+        "cache_namespace": "carrier1"
+      }
+    },
+    "classes": {
+      "focused": {
+        "timeout_ms": 1800000,
+        "domains": [
+          "domain1"
+        ]
+      },
+      "full": {
+        "timeout_ms": 43200000,
+        "domains": [
+          "domain1"
+        ]
+      },
+      "final": {
+        "timeout_ms": 86400000,
+        "domains": [
+          "domain1"
+        ]
+      }
+    }
+  },
+  "commands": {
+    "release-linux-artifacts": {
+      "steps": [
+        {
+          "id": "release-linux-artifacts",
+          "argv": [
+            "python3",
+            "scripts/release/build_artifacts.py"
+          ],
+          "timeout_ms": 10800000
+        }
+      ],
+      "resource_class": "full",
+      "timeout_ms": 10800000,
+      "artifacts": [
+        "release-linux-product",
+        "release-linux-cli",
+        "release-linux-tui",
+        "release-linux-migrate",
+        "release-linux-engined",
+        "release-linux-build-receipt"
+      ]
+    },
+    "release-packaging-checks": {
+      "steps": [
+        {
+          "id": "package-refusals",
+          "argv": [
+            "python3",
+            "-m",
+            "pytest",
+            "scripts/release/test_package_refusals.py",
+            "-q"
+          ],
+          "timeout_ms": 900000
+        },
+        {
+          "id": "shipped-set-matches-cargo-metadata",
+          "argv": [
+            "python3",
+            "scripts/release/verify_shipped_set.py"
+          ],
+          "timeout_ms": 900000
+        }
+      ],
+      "resource_class": "focused",
+      "timeout_ms": 1800000,
+      "artifacts": []
+    },
+    "release-linux-journey": {
+      "steps": [
+        {
+          "id": "build",
+          "argv": [
+            "python3",
+            "scripts/release/build_artifacts.py"
+          ],
+          "timeout_ms": 10800000
+        },
+        {
+          "id": "package",
+          "argv": [
+            "python3",
+            "scripts/release/package.py",
+            "--rust-root",
+            ".",
+            "--artifacts",
+            "artifacts",
+            "--build-receipt",
+            "artifacts/build-receipt.json",
+            "--output",
+            "../secode-release-package",
+            "--target",
+            "x86_64-unknown-linux-gnu"
+          ],
+          "timeout_ms": 900000
+        },
+        {
+          "id": "exercise",
+          "argv": [
+            "python3",
+            "scripts/release/exercise_package.py",
+            "--package",
+            "../secode-release-package",
+            "--work",
+            "../secode-release-journey",
+            "--receipt",
+            "artifacts/journey-receipt.json"
+          ],
+          "timeout_ms": 1800000
+        }
+      ],
+      "resource_class": "full",
+      "timeout_ms": 14400000,
+      "artifacts": [
+        "release-linux-product",
+        "release-linux-cli",
+        "release-linux-tui",
+        "release-linux-migrate",
+        "release-linux-engined",
+        "release-linux-build-receipt",
+        "release-linux-journey-receipt"
+      ]
+    },
+    "release-linux-upgrade": {
+      "steps": [
+        {
+          "id": "build",
+          "argv": [
+            "python3",
+            "scripts/release/build_artifacts.py",
+            "--output",
+            "../current-artifacts"
+          ],
+          "timeout_ms": 10800000
+        },
+        {
+          "id": "package",
+          "argv": [
+            "python3",
+            "scripts/release/package.py",
+            "--rust-root",
+            ".",
+            "--artifacts",
+            "../current-artifacts",
+            "--build-receipt",
+            "../current-artifacts/build-receipt.json",
+            "--output",
+            "../current-package",
+            "--target",
+            "x86_64-unknown-linux-gnu"
+          ],
+          "timeout_ms": 900000
+        },
+        {
+          "id": "upgrade",
+          "argv": [
+            "python3",
+            "scripts/release/upgrade_journey.py",
+            "--root",
+            ".",
+            "--current-package",
+            "../current-package",
+            "--scratch",
+            "../upgrade-scratch",
+            "--receipt",
+            "artifacts/upgrade-receipt.json"
+          ],
+          "timeout_ms": 10800000
+        }
+      ],
+      "resource_class": "full",
+      "timeout_ms": 21600000,
+      "artifacts": [
+        "release-linux-upgrade-receipt"
+      ]
+    },
+    "release-linux-provider-canary": {
+      "steps": [
+        {
+          "id": "build",
+          "argv": [
+            "python3",
+            "scripts/release/build_artifacts.py",
+            "--output",
+            "../canary-artifacts"
+          ],
+          "timeout_ms": 10800000
+        },
+        {
+          "id": "package",
+          "argv": [
+            "python3",
+            "scripts/release/package.py",
+            "--rust-root",
+            ".",
+            "--artifacts",
+            "../canary-artifacts",
+            "--build-receipt",
+            "../canary-artifacts/build-receipt.json",
+            "--output",
+            "../canary-package",
+            "--target",
+            "x86_64-unknown-linux-gnu"
+          ],
+          "timeout_ms": 900000
+        },
+        {
+          "id": "canary",
+          "argv": [
+            "python3",
+            "scripts/release/provider_canary.py",
+            "--package",
+            "../canary-package",
+            "--inputs",
+            "/home/example/secode-release-provider-inputs",
+            "--root",
+            "../canary-service",
+            "--receipt",
+            "artifacts/provider-canary-receipt.json",
+            "--model",
+            "google/gemini-2.5-flash-lite"
+          ],
+          "timeout_ms": 1800000
+        }
+      ],
+      "resource_class": "full",
+      "timeout_ms": 14400000,
+      "artifacts": [
+        "release-linux-canary-receipt"
+      ]
+    },
+    "release-windows-artifacts": {
+      "steps": [
+        {
+          "id": "release-windows-artifacts",
+          "argv": [
+            "python3",
+            "scripts/release/build_artifacts.py",
+            "--target",
+            "x86_64-pc-windows-msvc",
+            "--output",
+            "artifacts-windows"
+          ],
+          "timeout_ms": 10800000
+        }
+      ],
+      "resource_class": "full",
+      "timeout_ms": 10800000,
+      "artifacts": [
+        "release-windows-product",
+        "release-windows-cli",
+        "release-windows-tui",
+        "release-windows-migrate",
+        "release-windows-engined",
+        "release-windows-build-receipt"
+      ]
+    },
+    "release-linux-provider-reopen": {
+      "steps": [
+        {
+          "id": "reopen",
+          "argv": [
+            "python3",
+            "scripts/release/provider_canary.py",
+            "--reopen-only",
+            "--probe-copy",
+            "../reopen-probe-copy",
+            "--package",
+            "/home/example/secode-release-canary-package",
+            "--root",
+            "/home/example/secode-release-canary-preserved",
+            "--receipt",
+            "artifacts/provider-reopen-receipt.json"
+          ],
+          "timeout_ms": 900000
+        }
+      ],
+      "resource_class": "focused",
+      "timeout_ms": 1800000,
+      "artifacts": [
+        "release-linux-reopen-receipt"
+      ]
+    }
+  },
+  "inputs": {
+    "artifacts": []
+  },
+  "evidence": {
+    "max_total_bytes": 402653184,
+    "max_log_bytes": 67108864,
+    "artifacts": [
+      {
+        "id": "release-linux-product",
+        "path": "artifacts/grapt-server",
+        "required": true,
+        "max_bytes": 100663296
+      },
+      {
+        "id": "release-linux-cli",
+        "path": "artifacts/grapt",
+        "required": true,
+        "max_bytes": 100663296
+      },
+      {
+        "id": "release-linux-tui",
+        "path": "artifacts/grapt-tui",
+        "required": true,
+        "max_bytes": 100663296
+      },
+      {
+        "id": "release-linux-migrate",
+        "path": "artifacts/grapt-migrate",
+        "required": true,
+        "max_bytes": 100663296
+      },
+      {
+        "id": "release-linux-engined",
+        "path": "artifacts/grapt-engined",
+        "required": true,
+        "max_bytes": 100663296
+      },
+      {
+        "id": "release-linux-build-receipt",
+        "path": "artifacts/build-receipt.json",
+        "required": true,
+        "max_bytes": 1048576
+      },
+      {
+        "id": "release-linux-journey-receipt",
+        "path": "artifacts/journey-receipt.json",
+        "required": true,
+        "max_bytes": 4194304
+      },
+      {
+        "id": "release-linux-upgrade-receipt",
+        "path": "artifacts/upgrade-receipt.json",
+        "required": true,
+        "max_bytes": 4194304
+      },
+      {
+        "id": "release-linux-canary-receipt",
+        "path": "artifacts/provider-canary-receipt.json",
+        "required": true,
+        "max_bytes": 4194304
+      },
+      {
+        "id": "release-windows-product",
+        "path": "artifacts-windows/grapt-server.exe",
+        "required": true,
+        "max_bytes": 104857600
+      },
+      {
+        "id": "release-windows-cli",
+        "path": "artifacts-windows/grapt.exe",
+        "required": true,
+        "max_bytes": 104857600
+      },
+      {
+        "id": "release-windows-tui",
+        "path": "artifacts-windows/grapt-tui.exe",
+        "required": true,
+        "max_bytes": 104857600
+      },
+      {
+        "id": "release-windows-migrate",
+        "path": "artifacts-windows/grapt-migrate.exe",
+        "required": true,
+        "max_bytes": 104857600
+      },
+      {
+        "id": "release-windows-engined",
+        "path": "artifacts-windows/grapt-engined.exe",
+        "required": true,
+        "max_bytes": 104857600
+      },
+      {
+        "id": "release-windows-build-receipt",
+        "path": "artifacts-windows/build-receipt.json",
+        "required": true,
+        "max_bytes": 1048576
+      },
+      {
+        "id": "release-linux-reopen-receipt",
+        "path": "artifacts/provider-reopen-receipt.json",
+        "required": true,
+        "max_bytes": 4194304
+      }
+    ]
+  },
+  "cleanup": {
+    "policy": "always-remove-run-and-artifacts"
+  }
+}

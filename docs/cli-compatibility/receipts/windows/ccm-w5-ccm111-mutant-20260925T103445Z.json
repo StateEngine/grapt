@@ -1,0 +1,68 @@
+{
+  "schema": "secode.cls.observation-run.v1",
+  "label": "ccm-w5-ccm111-mutant",
+  "mode": "witness",
+  "witness": "cli_compatibility::",
+  "history_bytes": null,
+  "root": "E:\\cli-matrix\\runs\\ccm-w5-ccm111-mutant-20260925T103445Z",
+  "platform": "win32",
+  "started_utc": "20260925T103445Z",
+  "bounds_s": {
+    "smoke": 60,
+    "child": 200,
+    "outer": 300
+  },
+  "smoke": {
+    "phase": "smoke",
+    "mode": "smoke",
+    "bound_s": 60,
+    "elapsed_s": 1.172,
+    "timed_out": false,
+    "harness_drained_at_s": null,
+    "exit_code": 0,
+    "stdout": {
+      "bytes": 166,
+      "tail": "\nrunning 1 test\ntest cli_server_loss::observe_cli_server_loss ... ok\n\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 35 filtered out; finished in 1.16s\n\n"
+    },
+    "stderr": {
+      "bytes": 0,
+      "tail": ""
+    },
+    "observation": {
+      "drain_started_ms": null,
+      "exit_code": 0,
+      "exit_ms": 146,
+      "exited_by_itself": true,
+      "history_bytes": null,
+      "mode": "smoke",
+      "platform": "windows",
+      "schema": "secode.cls.j01-observation.v1",
+      "session": "ses_6eb8269f0dae59df8663e470c309558dx0",
+      "stderr": [],
+      "stdout_bytes": 3030,
+      "stdout_tail": "pe\":\"assistant\",\"id\":\"msg_6eb8269f0dae59df8663e470c309558dx10\",\"time\":{\"created\":1790332486199.0,\"completed\":1790332486219.0},\"agent\":\"agt_live_headless1\",\"model\":{\"id\":\"gpt-live\",\"providerID\":\"openai\"},\"content\":[{\"type\":\"text\",\"text\":\"first answer through the CLI\",\"state\":{\"durableBytes\":28,\"durableCapture\":\"complete\",\"publicBoundBytes\":262144,\"publicProjection\":\"complete\"}}],\"finish\":\"stop\",\"observedUsage\":{\"inputTotal\":11,\"output\":4,\"total\":15}},{\"type\":\"user\",\"id\":\"msg_6eb8269f0dae59df8663e470c309558dx2\",\"time\":{\"created\":1790332485479.0},\"text\":\"first task\"}],\"cursor\":{\"previous\":\"eyJpZCI6Im1zZ182ZWI4MjY5ZjBkYWU1OWRmODY2M2U0NzBjMzA5NTU4ZHgyNSIsIm9yZGVyIjoiZGVzYyIsImRpcmVjdGlvbiI6InByZXZpb3VzIn0\",\"next\":\"eyJpZCI6Im1zZ182ZWI4MjY5ZjBkYWU1OWRmODY2M2U0NzBjMzA5NTU4ZHgyIiwib3JkZXIiOiJkZXNjIiwiZGlyZWN0aW9uIjoibmV4dCJ9\"}}\n{\"schema\":\"secode.cli.run-receipt.v1\",\"session\":\"ses_6eb8269f0dae59df8663e470c309558dx0\",\"prompted\":true,\"cancelled\":null,\"cancellation_outcome\":null,\"exit\":\"success\",\"pre_visible_attempts\":1}\n"
+    }
+  },
+  "measurement": {
+    "phase": "measurement",
+    "mode": "witness",
+    "bound_s": 200,
+    "elapsed_s": 121.198,
+    "timed_out": false,
+    "harness_drained_at_s": null,
+    "exit_code": 101,
+    "stdout": {
+      "bytes": 799,
+      "tail": "\nrunning 1 test\ntest cli_compatibility::the_typescript_run_service_and_resume_forms_work_against_the_real_product ... FAILED\n\nfailures:\n\n---- cli_compatibility::the_typescript_run_service_and_resume_forms_work_against_the_real_product stdout ----\n\nthread 'cli_compatibility::the_typescript_run_service_and_resume_forms_work_against_the_real_product' (44980) panicked at crates\\secode-product\\tests\\dogfood_headless\\cli_compatibility.rs:103:5:\na caller reading service start through a pipe waited 120.0410871s\nnote: run with `RUST_BACKTRACE=1` environment variable to display a backtrace\n\n\nfailures:\n    cli_compatibility::the_typescript_run_service_and_resume_forms_work_against_the_real_product\n\ntest result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 35 filtered out; finished in 121.19s\n\n"
+    },
+    "stderr": {
+      "bytes": 0,
+      "tail": ""
+    },
+    "observation": null
+  },
+  "verdict": "MEASURED: witness FAILED",
+  "survivors": [],
+  "outer_elapsed_s": 122.596,
+  "outer_bound_met": true
+}

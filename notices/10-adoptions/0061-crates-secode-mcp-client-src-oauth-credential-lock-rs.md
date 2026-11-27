@@ -1,0 +1,1 @@
+| `crates/secode-mcp-client/src/oauth/credential_lock.rs`, `oauth/challenge.rs` | `openai/codex`, `codex-rs/rmcp-client/src/oauth/refresh_lock.rs`, `www_authenticate.rs` | `092d3acd6bec3e3a14bdc7e7a2810ab628ab759d` | Modified: one bounded profile lock and strict bounded Bearer metadata/scope parsing. |

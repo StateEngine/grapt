@@ -1,0 +1,503 @@
+{
+  "tools": [
+    {
+      "name": "stateengine_tools",
+      "description": "Use to discover capabilities on demand: list names, describe one schema, or call a named tool with its arguments.",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "action"
+        ],
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": [
+              "list",
+              "describe",
+              "call"
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "arguments": {
+            "type": "object",
+            "additionalProperties": true
+          }
+        }
+      }
+    },
+    {
+      "name": "stateengine_project_status",
+      "description": "Read project decisions, active work, runtime and git state when you need an overview.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string"
+          },
+          "user_id": {
+            "type": "string"
+          },
+          "source_cli": {
+            "type": "string"
+          },
+          "agent_id": {
+            "type": "string"
+          },
+          "census_limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 50
+          },
+          "census_cursor": {
+            "type": "string"
+          },
+          "agent_name": {
+            "type": "string"
+          },
+          "agent_role": {
+            "type": "string"
+          },
+          "user_role": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "stateengine_memory_recall",
+      "description": "Use when grep cannot explain a choice. Searches memory; ratified decisions rank first.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string"
+          },
+          "query": {
+            "type": "string"
+          },
+          "limit": {
+            "type": "number"
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "stateengine_atlas_query",
+      "description": "Use for why, who or when. Atlas is this project's index of decisions, receipts, tasks, invariants and code, never file contents; use grep. Text will not be found here even though the file is indexed.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string"
+          },
+          "query": {
+            "type": "string"
+          },
+          "queries": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 10,
+            "description": "200/20 from the INV-13 pack bound, not a chosen number; limits sum to at most 200.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "description": "Unique within the batch."
+                },
+                "query": {
+                  "type": "string"
+                },
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "file",
+                    "symbol",
+                    "cli-verb",
+                    "test",
+                    "artifact",
+                    "task",
+                    "seat",
+                    "branch",
+                    "receipt",
+                    "outcome",
+                    "decision",
+                    "review",
+                    "merge",
+                    "invariant",
+                    "message",
+                    "turn",
+                    "raw-log"
+                  ]
+                },
+                "limit": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 200,
+                  "description": "Default 20."
+                }
+              },
+              "required": [
+                "id",
+                "query"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "file",
+              "symbol",
+              "cli-verb",
+              "test",
+              "artifact",
+              "task",
+              "seat",
+              "branch",
+              "receipt",
+              "outcome",
+              "decision",
+              "review",
+              "merge",
+              "invariant",
+              "message",
+              "turn",
+              "raw-log"
+            ]
+          },
+          "tree": {
+            "type": "string"
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 200,
+            "description": "Default 50, or 20 per batch entry."
+          },
+          "order": {
+            "type": "string",
+            "enum": [
+              "relevance",
+              "recency"
+            ]
+          },
+          "verbose": {
+            "type": "boolean"
+          },
+          "include_evidence": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "project_id"
+        ],
+        "additionalProperties": false,
+        "oneOf": [
+          {
+            "required": [
+              "query"
+            ]
+          },
+          {
+            "required": [
+              "queries"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "stateengine_identity_whoami",
+      "description": "Use before scoped work to confirm your own agent identity. Cannot query another agent.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "stateengine_resume",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "openWorldHint": false
+      },
+      "description": "Use when picking up work you cannot remember. Unbound sessions name project_id and agent_id.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string"
+          },
+          "agent_id": {
+            "type": "string"
+          },
+          "since": {
+            "type": "string",
+            "description": "Cursor from an earlier resume."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 200
+          },
+          "unread_limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "byte_budget": {
+            "type": "integer",
+            "minimum": 1024,
+            "maximum": 16384,
+            "description": "Default 6144; raise toward 16384 to buy sections."
+          },
+          "sections": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Names from the envelope's priced pointers."
+          },
+          "focus": {
+            "type": "string",
+            "maxLength": 2000
+          },
+          "packet_id": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "description": "Your boot packet's packet_id."
+          },
+          "include_evidence": {
+            "type": "boolean"
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "stateengine_msg_send",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "openWorldHint": false
+      },
+      "description": "Use to send findings or coordinate work. An unknown recipient is REFUSED; not checked is whether it is the RIGHT agent.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "envelope": {
+            "type": "string",
+            "enum": [
+              "lean",
+              "full"
+            ]
+          },
+          "project_id": {
+            "type": "string"
+          },
+          "agent_id": {
+            "type": "string"
+          },
+          "to": {
+            "type": "string"
+          },
+          "to_project": {
+            "type": "string",
+            "description": "Destination project."
+          },
+          "work_action": {
+            "type": "string",
+            "enum": [
+              "admit",
+              "assign",
+              "return",
+              "question",
+              "ruling-request",
+              "ruling",
+              "finding"
+            ],
+            "description": "Finding infers it; floor needs addressees."
+          },
+          "addressees": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 20,
+            "uniqueItems": true,
+            "items": {
+              "type": "string"
+            },
+            "description": "Canonical floor recipients."
+          },
+          "kind": {
+            "type": "string",
+            "description": "Default question.",
+            "enum": [
+              "task-pointer",
+              "question",
+              "blocker",
+              "done",
+              "handoff",
+              "ruling-request",
+              "finding"
+            ]
+          },
+          "body": {
+            "type": "string"
+          },
+          "msg_id": {
+            "type": "string"
+          },
+          "refs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Refs; archives nothing."
+          },
+          "supersedes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Replaces your messages to this recipient."
+          },
+          "project": {
+            "type": "string",
+            "description": "Deprecated 2026-10-09: use project_id."
+          }
+        },
+        "required": [
+          "agent_id",
+          "to",
+          "body"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "stateengine_msg_list",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "openWorldHint": false
+      },
+      "description": "Read mail titles before opening bodies with stateengine_msg_read; unread_only starts oldest-first.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string"
+          },
+          "agent_id": {
+            "type": "string"
+          },
+          "to": {
+            "type": "string"
+          },
+          "dismiss": {
+            "type": "boolean",
+            "description": "Bulk-dismiss your inbox; needs before, from or kind."
+          },
+          "before": {
+            "type": "string"
+          },
+          "from": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "retry_key": {
+            "type": "string"
+          },
+          "unread_only": {
+            "type": "boolean"
+          },
+          "headers": {
+            "type": "boolean"
+          },
+          "full": {
+            "type": "boolean",
+            "description": "Whole bodies."
+          },
+          "limit": {
+            "type": "number"
+          },
+          "select": {
+            "type": "string",
+            "description": "Default oldest.",
+            "enum": [
+              "oldest",
+              "newest"
+            ]
+          },
+          "envelope": {
+            "type": "string"
+          },
+          "continuation": {
+            "type": "number"
+          },
+          "scope": {
+            "type": "string",
+            "description": "agent: unread across every project; needs unread_only."
+          },
+          "continuations": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "number"
+            }
+          },
+          "agentId": {
+            "type": "string",
+            "description": "Deprecated 2026-10-09: use agent_id."
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "stateengine_msg_read",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "description": "Read your message by id and mark it read. Does not answer or dismiss; foreign rows refuse.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "envelope": {
+            "type": "string",
+            "enum": [
+              "lean",
+              "full"
+            ]
+          },
+          "project_id": {
+            "type": "string"
+          },
+          "msg_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "msg_id"
+        ],
+        "additionalProperties": false
+      }
+    }
+  ]
+}

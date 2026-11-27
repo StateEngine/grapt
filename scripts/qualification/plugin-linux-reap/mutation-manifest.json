@@ -1,0 +1,190 @@
+{
+  "purpose": "PLUGIN-LINUX-REAP-01 (PLR) mutation witnesses. Each row names one load-bearing behaviour of the linux plugin-bridge termination and memory contract, the exact edit that removes it, and the witness that must turn red once it is gone. A witness that stays green under its own mutation attributes nothing. The base-side red of the reap witness (the immediate-timeout-after-kill defect, J01) was established on the base by field evidence (repro-base.log, CCM battery); these rows prove the CANDIDATE's guards against resurrection.",
+  "run": "python scripts/qualification/plugin-linux-reap/run-mutations.py",
+  "prefix": "PLR",
+  "prefix_note": "PLR101-PLR115 are this lane's allocation. Selection is whole-token (re.fullmatch PLR[0-9]+), never str.startswith, so a named battery can never widen into another lane's rows.",
+  "isolation": "Every mutation is applied inside its own disposable git worktree checked out at the exact candidate commit. This repository is the seat's own worktree with its own .git (no shared stash family, no frozen root), so worktree add/remove/prune here cannot touch any other seat. No mutant is ever written into the calling worktree, which the runner re-checks after the run.",
+  "build_note": "All disposable worktrees build against a dedicated per-run CARGO_TARGET_DIR (target/plr-mutants-<pid> inside the candidate worktree, removed after the run; the runner passes it explicitly), so each mutant pays only the incremental recompile of the mutated crate and its dependents. A shared target dir let a stale fingerprint reuse a bridge test binary with another tree's CARGO_MANIFEST_DIR baked in at compile time (env! in tests/bridge.rs), so after each witness run the embedded-manifest check reads the binary's bytes: the mutated worktree's own path must be baked in and no foreign one; one self-heal (cargo clean -p grapt-plugin plus rebuild) is allowed, then the gate fails. Mutants run strictly sequentially, so no two cargo processes ever share the target dir concurrently.",
+  "attribution_note": "Witness runs use cargo test --no-fail-fast: cargo stops at the first failing test binary and later suites go silently unrun, which caused a real wrong-witness attribution at R2a. Each row runs exactly one named witness, so the flag is a no-op safety belt here; it becomes load-bearing if a row is ever widened to a whole target.",
+  "determinism_note": "The W2 seam witnesses are engineered to be deterministic under every row: the clock is the real, bounded tokio::time::Instant (400 ms total bound: 100 ms cleanup + 300 ms reap) and the child status is an injected probe, so no platform, kernel, or containment feature is involved and the witnesses run on any carrier. candidate: the never-exiting probe runs the full bound and lands in the bounded SurvivesKill naming the unit (asserted 350-600 ms elapsed); PLR101: a single immediate poll returns the base-defect timeout at the first non-exit - red on the outcome and the elapsed bound; PLR102: the unbounded drain never returns - red on the 10 s witness join bound, a red rather than a hang. The rss leg of the PLR103 witness is deterministic because with headroom 0 the ceiling equals the threshold and the kernel OOM at the ceiling is recorded by whichever evidence path wins the race - the cgroup telemetry counter delta, the systemd Result=oom-kill verdict, or the violation reader's live fallback - while every boundary path emits the same canonical reason (memory_boundary_reason, the configured MemoryMax byte count), so the reason text cannot vary with the race winner (C16 correction round). PLR108's designated witness is the stalled-query seam (R6): the injected query reports the same overrun outcome the production bound produces - killed, reaped, then TimedOut - after the full per-call wait, so the attach must return None at the stated deadline; the mutant's fixed 30-iteration loop (30 x (50 ms query + 50 ms sleep) at the witness's sample) outlives the 2.5 s assertion bound deterministically, with no D-Bus in the red path, while the real delayed-cgroup witness (unit activates at 6 s inside the 10 s startup bound) stays in-tree green as the end-to-end proof. PLR107 and PLR110 are pure classify witnesses with no platform dependency: the witness feeds the probed production shapes (not-found+sentinel, loaded+sentinel, unmodelled states) straight through the function, so the red is the assertion text itself. PLR111's witness is deterministic on any linux carrier: the stub is a /bin/sh script that execs /bin/sleep 5 by absolute path (the spawned child inherits no environment), the bound is 500 ms on the real bounded clock, green kills and reaps the stub at the bound and asserts Err(TimedOut) within the bound plus 300 ms of scheduling slack, and the .output() mutant deterministically blocks the stub's full 5 s sleep before answering Ok(None). PLR112's witness holds the window at the watchdog's private sampler seam instead of racing it (QCU r3; the earlier forced-removal form could not remove the emptied cgroup under the filing namespace, run 20260929025903): a real unit and its real systemd-run launcher start, the watchdog attaches and one actual sample is acknowledged, the watchdog is then held at its next sample while the published MainPID - bound to the attached cgroup - is SIGKILLed and the unit's settled state is awaited through the production bounded query, and only then is absence injected at the sampler boundary. Green ends the watchdog at the first missing decision with nothing recorded and the launcher still live; the deletion mutant is fed absence only while the launcher is live and records the telemetry violation at its third decision, which the witness reds on. Every handshake is bounded (25 s); a launcher exit before a decision or a lost handshake voids the run, never passes it. PLR113 is a pure decision witness with no platform dependency: the witness feeds the unsettled and unreadable shapes (running and activating SubStates, unrecognised LoadStates, a missing property, overlong and non-UTF-8 output, a failed query, a transport error) straight through the decision function, so the widened-SubState mutant reds on the assertion text itself at the first unsettled input. PLR114's witness is deterministic on any linux carrier: the stub is a /bin/sh script that execs /bin/sleep 30 by absolute path (the spawned child inherits no environment), the bound is the 10 s allowance on the real bounded clock, green kills and reaps the stub at the bound and asserts the UNAVAILABLE fail-closed classification within the bound plus 300 ms of scheduling slack, and the .output() mutant deterministically blocks the stub's full 30 s sleep before answering, reding on the elapsed bound. PLR115's witness is deterministic on this carrier by construction rather than by timing luck: unit B's full lifecycle (started, cgroup receipt read, main process SIGKILLed, terminal state awaited through the production bounded query, stopped, proven absent) is asserted on receipts before the watchdog starts, so at watchdog start the unit is provably not-found and the attach runs its full 2 s bound on a ControlGroup that is empty at every query; the branch then spends exactly two bounded queries (containment verdict, main-state read) before the one-shot deferral, and the witness sleeps 4 s past the verdict. The live stand-in child is a real process guarded by a pre-watchdog void check, and every path terminates both controls, so the row depends on no scheduler race; the check-deletion mutant fail-closes at the first attach-deadline tick and records the telemetry-loss violation, which the witness reds on.",
+  "mutations": [
+    {
+      "id": "PLR101",
+      "law": "The post-kill reap is bounded and ends in the distinct survives-kill outcome. A single immediate poll that gives up at the first non-exit is the J01 base-defect shape (immediate timeout after kill, the exact mechanism that timed out under carrier load); the seam witness reds on both the outcome and the elapsed bound",
+      "package": "grapt-plugin",
+      "file": "crates/grapt-plugin/src/supervisor/process.rs",
+      "test_target": "lib",
+      "test": "supervisor::process::tests::a_child_that_never_reports_exit_yields_survives_kill_bounded_naming_the_unit",
+      "old": "    loop {\n        if tokio::time::Instant::now() >= total_deadline {\n            return Err(PluginError::SurvivesKill(format!(\n                \"plugin bridge launcher for containment unit {unit} was killed but not reaped within the post-kill bound of {} ms\",\n                reap.as_millis()\n            )));\n        }\n        match probe() {\n            Ok(true) => return Ok(()),\n            Ok(false) => thread::sleep(Duration::from_millis(10)),\n            Err(error) => return Err(PluginError::Protocol(error.to_string())),\n        }\n    }",
+      "new": "    match probe() {\n        Ok(true) => return Ok(()),\n        _ => return Err(PluginError::Timeout(\"process cleanup\")),\n    }",
+      "expected_diagnostic": "the never-exiting child produced the wrong termination outcome"
+    },
+    {
+      "id": "PLR102",
+      "law": "The post-kill reap bound IS the bound: an unbounded drain after kill turns the distinct survives-kill outcome into non-return. The seam witness runs the post-kill drain under a 10 s join bound, so an unbounded drain never returns and the witness reds on that bound instead of hanging the battery",
+      "package": "grapt-plugin",
+      "file": "crates/grapt-plugin/src/supervisor/process.rs",
+      "test_target": "lib",
+      "test": "supervisor::process::tests::a_child_that_never_reports_exit_yields_survives_kill_bounded_naming_the_unit",
+      "old": "    loop {\n        if tokio::time::Instant::now() >= total_deadline {\n            return Err(PluginError::SurvivesKill(format!(\n                \"plugin bridge launcher for containment unit {unit} was killed but not reaped within the post-kill bound of {} ms\",\n                reap.as_millis()\n            )));\n        }\n        match probe() {\n            Ok(true) => return Ok(()),\n            Ok(false) => thread::sleep(Duration::from_millis(10)),\n            Err(error) => return Err(PluginError::Protocol(error.to_string())),\n        }\n    }",
+      "new": "    loop {\n        if let Ok(true) = probe() {\n            return Ok(());\n        }\n        thread::sleep(Duration::from_millis(10));\n    }",
+      "expected_diagnostic": "the post-kill drain is unbounded (PLR102 shape)"
+    },
+    {
+      "id": "PLR103",
+      "law": "The hard cgroup ceiling strictly exceeds the observed RSS termination threshold by the stated headroom; collapsing the headroom makes the ceiling equal the threshold, so the kernel OOM at the ceiling - the distinct cgroup-boundary outcome - preempts the observed-threshold attribution the rss witness exists to prove",
+      "package": "grapt-plugin",
+      "file": "crates/grapt-plugin/src/protocol.rs",
+      "test_target": "integration",
+      "test": "bridge::resource::observed_rss_and_sustained_cpu_thresholds_terminate_the_owned_process",
+      "old": "pub const MEMORY_MAX_HEADROOM_BYTES: u64 = 144 * 1024 * 1024;",
+      "new": "pub const MEMORY_MAX_HEADROOM_BYTES: u64 = 0;",
+      "expected_diagnostic": "plugin bridge RSS reached the 268435456-byte hard cgroup memory boundary"
+    },
+    {
+      "id": "PLR104",
+      "law": "A normally exiting supervisor leaves no private runtime directory: when the last admission claim is released the admitted copies and the empty directory levels are removed. Deleting the drop-path removal leaves the witness's fixture root standing, so the dropped-supervisor witness reds",
+      "package": "grapt-plugin",
+      "file": "crates/grapt-plugin/src/supervisor/runtime.rs",
+      "test_target": "integration",
+      "test": "bridge::a_dropped_supervisor_removes_its_private_runtime_directory",
+      "old": "            if let Err(error) = remove_private_runtime(&self.0) {\n                report_removal_failure(&self.0, &error);\n            }\n",
+      "new": "            let _ = &self.0;\n",
+      "expected_diagnostic": "the dropped supervisor left its private runtime directory behind"
+    },
+    {
+      "id": "PLR105",
+      "law": "Stream end is classified only after the launcher's exit is observed within the stated bound, and only a recorded limit event keeps its own reason; removing the observation restores the base race (a transient unit that no longer answers the live query reads as evidence loss, and an unobserved exit reads as 'exited or closed' - the 29P/1F carrier red at loadavg 4.05)",
+      "package": "grapt-plugin",
+      "file": "crates/grapt-plugin/src/supervisor/process.rs",
+      "test_target": "lib",
+      "test": "supervisor::process::tests::a_stream_end_observes_a_late_exit_within_the_bound_and_classifies_it_as_exited",
+      "old": "    let deadline = match tokio::time::Instant::now().checked_add(bound) {\n        Some(deadline) => deadline,\n        None => return stream_end_without_exit(stream_error),\n    };\n    loop {\n        if observe_exit() {\n            return StreamEnd::Exited(match recorded {\n                Some(violation) if violation.kind == ViolationKind::Resource => {\n                    violation.reason.clone()\n                }\n                _ => \"plugin bridge exited without replying\".to_owned(),\n            });\n        }\n        if tokio::time::Instant::now() >= deadline {\n            return stream_end_without_exit(stream_error);\n        }\n        thread::sleep(Duration::from_millis(10));\n    }",
+      "new": "    let _ = observe_exit;\n    let _ = bound;\n    let _ = stream_error;\n    StreamEnd::Exited(\n        recorded\n            .map(|violation| violation.reason.clone())\n            .unwrap_or_else(|| \"plugin bridge exited or closed its output\".to_owned()),\n    )",
+      "expected_diagnostic": "an exit observed within the bound must be classified as Exited"
+    },
+    {
+      "id": "PLR106",
+      "law": "An observed launcher exit still gets its containment unit stopped: the C6 shape (early return before stop_containment) left every cleanly exited generation's unit loaded - RemainAfterExit keeps its cgroup - its charge accumulated under the aggregate slice, and the resulting slice-level OOM was reported back as the victim unit's own hard boundary (C6 governed 7P/23F at 17:13Z; 209 loaded-failed units on the box at 17:19Z; journal 13:06:08Z names both the victim unit and its slice). The witness spawns a real unit whose service fails (so the launcher's exit is fully observed before terminate() runs - the exact C6 early-return precondition), calls terminate(), and requires the unit to be completely absent (LoadState=not-found, the unit_is_explicitly_absent evidence shape) within the bound; the C6 shape leaves the failed unit loaded with its cgroup forever and reds on the bound",
+      "package": "grapt-plugin",
+      "file": "crates/grapt-plugin/src/supervisor/process.rs",
+      "test_target": "lib",
+      "test": "supervisor::process::linux::tests::linux_terminate_after_observed_exit_still_stops_the_unit",
+      "old": "        if self.exit_observed.load(Ordering::Acquire) {\n            let outcome = self.stop_containment();\n            *held = None;\n            return outcome;\n        }",
+      "new": "        if self.exit_observed.load(Ordering::Acquire) {\n            *held = None;\n            return Ok(());\n        }",
+      "expected_diagnostic": "was not absent within 5s of an observed exit"
+    },
+    {
+      "id": "PLR107",
+      "law": "The OOMKills sentinel (UINT64_MAX) is absence under any LoadState, never OOM evidence and never corruption: systemctl --user show answers both a not-found unit (OOMKills=18446744073709551615, Result=success, exit 0; probed 2026-09-26) and a loaded unit whose counter is not yet populated - the startup window the shape-capture probe caught (1387 production-shape queries, 3 distinct shapes, exactly 1 loaded+sentinel sample, first seen in the startup window) - with the sentinel, and the C5/C6/C9 hot path (is_running -> violation -> classify_systemd_oom_evidence) read that sentinel as the bridge's own hard-boundary OOM on every poll racing a unit transition, the load-dependent parallel-load reds whose journal carried zero OOM lines; C11's loaded+sentinel -> Err(UNAVAILABLE) branch relabeled the same generation-killing failure as evidence-unavailable (42 UNAVAILABLE strings across 3 48-wide iterations) and so failed the evidence bar, because the counter is a monotonic kill count that can never physically reach u64::MAX. R5 keeps the sentinel guard inside the exhaustive LoadState match: deleting it from the loaded arm restores the base misread (sentinel > 0 -> Some(OOM)), and the witness - which feeds both the probed not-found shape and the probed loaded+sentinel startup shape through classify - reds on the loaded+sentinel assertion",
+      "package": "grapt-plugin",
+      "file": "crates/grapt-plugin/src/supervisor/process/linux.rs",
+      "test_target": "lib",
+      "test": "supervisor::process::linux::tests::linux_oom_evidence_reads_the_not_found_sentinel_as_absent",
+      "old": "        \"loaded\" if oom_kills != u64::MAX => {\n            (oom_kills > 0).then(|| memory_boundary_reason(memory_max_bytes))\n        }",
+      "new": "        \"loaded\" => {\n            (oom_kills > 0).then(|| memory_boundary_reason(memory_max_bytes))\n        }",
+      "expected_diagnostic": "the loaded+sentinel startup shape was not read as absence"
+    },
+    {
+      "id": "PLR108",
+      "law": "The cgroup attach budget is bounded by the generation's own startup_millis, and the bound is enforced per query (R1 + R6, consolidated HOLD 2026-09-26): each query runs as a bounded subprocess that waits at most the remaining budget, is killed and reaped on overrun, the sleep is clamped to the remaining time, and a stalled query fails the attach closed at the deadline. The pre-fix fixed 30 x sample window (~3 s at the 100 ms default sample) gave up while a healthy generation's cgroup was still materialising under D-Bus contention, and its timeout-less systemctl .output() made even the polled window unbounded - a stalled D-Bus query could hold the attach past the startup bound forever (the C12 sxs3 residual class: locate_cgroup 30-sample budget starved by D-Bus contention; 1x sxs2 -> 29x sxs3, load-scaled, rotating victims; the --property=ControlGroup path is never OOM evidence). Restoring the fixed count makes the stalled-query seam witness run the whole 30-iteration loop past the stated bound and red on the elapsed bound; the delayed-cgroup witness stays in-tree green as the end-to-end proof on a real unit that activates at 6 s inside the 10 s startup bound",
+      "package": "grapt-plugin",
+      "file": "crates/grapt-plugin/src/supervisor/process/linux.rs",
+      "test_target": "lib",
+      "test": "supervisor::process::linux::query_seam::linux_attach_ends_within_the_bound_when_the_query_stalls",
+      "old": "    let deadline = tokio::time::Instant::now().checked_add(bound)?;\n    loop {\n        let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());\n        if remaining.is_zero() {\n            return None;\n        }\n        match query(unit, remaining) {\n            Ok(Some(relative)) if !relative.is_empty() => {\n                return Some(Path::new(\"/sys/fs/cgroup\").join(relative.trim_start_matches('/')));\n            }\n            Err(error) if error.kind() == std::io::ErrorKind::TimedOut => {\n                // The query outlived the remaining budget: it was killed\n                // and reaped by the bound, and the attach fails closed at\n                // the deadline instead of waiting on a stalled query.\n                return None;\n            }\n            _ => {}\n        }\n        if control.has_exited().unwrap_or(true) {\n            return None;\n        }\n        let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());\n        if remaining.is_zero() {\n            return None;\n        }\n        thread::sleep(sample.min(remaining));\n    }\n",
+      "new": "    let _ = bound;\n    for _ in 0..30 {\n        let _ = query(unit, sample);\n        if control.has_exited().unwrap_or(true) {\n            return None;\n        }\n        thread::sleep(sample);\n    }\n    None\n",
+      "expected_diagnostic": "the stalled attach outlived the stated bound plus slack"
+    },
+    {
+      "id": "PLR109",
+      "law": "The explicit systemd verdict Result=oom-kill is positive OOM evidence under any LoadState and whether or not the OOMKills counter is populated (PLR-R2-C13-OOM-RESULT-PRECEDENCE, consolidated HOLD 2026-09-26): the C12 combined guard returned Ok(None) before reading Result, so a poll racing a not-loaded state or an unpopulated sentinel suppressed a real OOM verdict, and an unknown LoadState such as a startup stub read as absent by default rather than on its own evidence. Positive evidence is evaluated first, then the sentinel/LoadState classification, and a non-loaded state with no positive evidence reads as absence - never a blanket UNAVAILABLE, because the shape probe (1387 production-shape queries, 3 distinct shapes) found zero OOM evidence in any non-loaded state and fail-closing a valid startup state would repeat the C5 class; restoring C12's early combined guard resurrects the suppression, and the witness feeds not-found+oom-kill, loaded+sentinel+oom-kill, and stub+zero+success through classify",
+      "package": "grapt-plugin",
+      "file": "crates/grapt-plugin/src/supervisor/process/linux.rs",
+      "test_target": "lib",
+      "test": "supervisor::process::linux::tests::linux_oom_evidence_evaluates_positive_result_before_load_state",
+      "old": "    // R2 (consolidated review HOLD, 2026-09-26): positive evidence first.\n    // systemd's own verdict that the unit was OOM-killed stands under any\n    // LoadState and whether or not the OOMKills counter is populated - a\n    // poll racing the start or stop window reads Result=oom-kill beside a\n    // not-loaded state or an unpopulated sentinel, and neither race may\n    // suppress the verdict.\n    if result == \"oom-kill\" {\n        return Ok(Some(memory_boundary_reason(memory_max_bytes)));\n    }",
+      "new": "    let _ = result;\n    if load_state != \"loaded\" || oom_kills == u64::MAX {\n        return Ok(None);\n    }\n",
+      "expected_diagnostic": "an explicit oom-kill verdict was suppressed by the unit state"
+    },
+    {
+      "id": "PLR110",
+      "law": "The OOM-evidence LoadState match is exhaustive (R5, consolidated HOLD 2026-09-26): every state systemd can report that is not modelled - error, bad-setting, masked, merged, or an unrecognised value - fails closed UNAVAILABLE naming the state, kept distinct from absence and from the transport UNAVAILABLE, because the pre-fix blanket rule read every unmodelled state as absence by default and a unit parked in an unmodelled state could then hide its kills. Restoring the blanket non-loaded -> absence rule reads those states as absence and the witness reds on the first unmodelled state it feeds through classify",
+      "package": "grapt-plugin",
+      "file": "crates/grapt-plugin/src/supervisor/process/linux.rs",
+      "test_target": "lib",
+      "test": "supervisor::process::linux::tests::linux_oom_evidence_fail_closes_every_unmodelled_load_state",
+      "old": "    let state = match load_state {\n        \"loaded\" if oom_kills != u64::MAX => {\n            (oom_kills > 0).then(|| memory_boundary_reason(memory_max_bytes))\n        }\n        \"loaded\" => None,\n        \"not-found\" => None,\n        \"stub\" => None,\n        other => {\n            return Err(format!(\n                \"plugin containment OOM evidence is unavailable: the unit's LoadState is {other}\"\n            ))\n        }\n    };",
+      "new": "    let state = if load_state != \"loaded\" {\n        None\n    } else if oom_kills == u64::MAX {\n        None\n    } else {\n        (oom_kills > 0).then(|| memory_boundary_reason(memory_max_bytes))\n    };",
+      "expected_diagnostic": "an unmodelled LoadState was read as absence by default"
+    },
+    {
+      "id": "PLR111",
+      "law": "The bound lives in the ControlGroup query itself, not only in the attach loop that consumes its verdict (pre-review, 2026-09-27): PLR108's seam proves the attach fails closed on a TimedOut verdict, but no row tied bounded_command_output_within to the query that feeds it - swapping the query back to the timeout-less .output() stayed green because the seam bypasses it and the helper test does not route through the query. The witness runs the injectable-path seam (bounded_show_control_group_at) against a stalled stub systemctl: green is Err(TimedOut) at the stated bound plus scheduling slack; the .output() mutant blocks the stub's full sleep and answers Ok(None), and the witness reds on the result",
+      "package": "grapt-plugin",
+      "file": "crates/grapt-plugin/src/supervisor/process/linux.rs",
+      "test_target": "lib",
+      "test": "supervisor::process::linux::query_seam::a_stalled_control_group_query_is_killed_at_the_stated_bound",
+      "old": "bounded_command_output_within(command, wait)",
+      "new": "command.output()",
+      "expected_diagnostic": "a stalled ControlGroup query must be killed at the stated bound and fail closed as TimedOut"
+    },
+    {
+      "id": "PLR112",
+      "law": "A settled unit exit is not a telemetry loss: when the watchdog's cgroup telemetry read fails, a settled terminal unit state (LoadState loaded or not-found, SubState exited, failed or dead) defers the classification to the stream-end path exactly as the dead-child path does, so the watchdog's unconditional 3-sample fail-close must not record 'telemetry became unavailable' over a known exit; the OOM verdict still wins above it, and an unsettled, unknown, or unreadable unit fails closed as before. Deleting the settled-exit check makes the forced-window witness red on the recorded telemetry violation",
+      "package": "grapt-plugin",
+      "file": "crates/grapt-plugin/src/supervisor/process/linux.rs",
+      "test_target": "lib",
+      "test": "supervisor::process::linux::query_seam::linux_watchdog_defers_a_settled_unit_exit_instead_of_fail_closing",
+      "old": "                    if unit_main_process_exited(&unit) {\n                        return;\n                    }",
+      "new": "",
+      "expected_diagnostic": "the watchdog fail-closed over a known exit"
+    },
+{
+  "id": "PLR113",
+  "law": "The R8 decision is two-sided and each side carries its own row: PLR112 deletes the deferral half (the settled-exit check), but the fail-closed half - that every unsettled, unrecognised, or unreadable unit state answers false so the watchdog's 3-sample fail-close still fires - had no row of its own. the reviewer's pre-review of 7dbfe167 required it before the review request. Widening the SubState match to accept everything makes the pure decision defer the fail-close on an unsettled unit, and the witness reds on its first unsettled input (SubState=running under LoadState=loaded); restored green at the final sha is the same witness passing in-tree",
+  "package": "grapt-plugin",
+  "file": "crates/grapt-plugin/src/supervisor/process/linux.rs",
+  "test_target": "lib",
+  "test": "supervisor::process::linux::query_seam::main_process_exit_evidence_fails_closed_on_every_unsettled_state",
+  "old": "        && matches!(sub_state, \"exited\" | \"failed\" | \"dead\")",
+  "new": "        && matches!(sub_state, _)",
+  "expected_diagnostic": "an unsettled or unreadable unit state deferred the fail-close"
+},
+{
+  "id": "PLR114",
+  "law": "The containment (OOM-verdict) query the watchdog's missing branch runs before its 3-sample fail-close was a timeout-less .output() call - the exact shape PLR111 removed from the sibling ControlGroup query ('the bound lives in the query itself, not only in the consumer'). It predates the R8 correction (introduced with the OOM verdict at C15, 37ee80be), and the pre-review bound formula stated 'containment query (<= 10 s)' for a query that had no bound: a stalled user manager could hold the watchdog's fail-close window unbounded, and the telemetry-loss contract could not state its worst case as a single number. The disclosed R9 correction (this campaign's review-correction round, reported with the review request - not a silent scope addition) routes the query through the same bounded stack and 10 s allowance as the attach and main-state queries; a stalled query is killed and reaped at the allowance and classifies as UNAVAILABLE, which the missing branch already fails closed on. Swapping the bounded call back to the timeout-less .output() lets the stalled stub run its full sleep and the witness reds on the elapsed bound",
+  "package": "grapt-plugin",
+  "file": "crates/grapt-plugin/src/supervisor/process/linux.rs",
+  "test_target": "lib",
+  "test": "supervisor::process::linux::query_seam::a_stalled_containment_query_is_killed_at_the_stated_bound",
+  "old": "    let output = bounded_command_output_within(command, UNIT_MAIN_STATE_ALLOWANCE);\n    let evidence = match output.as_ref() {\n        Ok(output) => Ok((output.status.success(), output.stdout.as_slice())),\n        Err(_) => Err(()),\n    };\n    classify_systemd_oom_evidence(evidence, memory_max_bytes)",
+  "new": "    let output = command.output();\n    let evidence = match output.as_ref() {\n        Ok(output) => Ok((output.status.success(), output.stdout.as_slice())),\n        Err(_) => Err(()),\n    };\n    classify_systemd_oom_evidence(evidence, memory_max_bytes)",
+  "expected_diagnostic": "the bounded containment query outlived the stated allowance plus scheduling slack"
+}
+,
+{
+  "id": "PLR115",
+  "law": "R11 reshapes this row from the end-to-end stopped-unit witness to the attach-branch decision seam. The R10 shared predicate accepted LoadState not-found as a settled exit, and a never-created unit reads not-found/dead with rc 0 on this carrier (verified on-box), so the attach branch deferred the not-yet-created state and returned silently - a unit activating just after the attach bound ran unwatched (the returned finding PLR-R11-72933DEA-ATTACH-NOTFOUND-FAILS-OPEN on 80f3c50e). R11 splits the decision over one shared core (main_state_evidence) into two predicates: the sampling branch keeps not-found (its unit was attached, so a unit gone there is a settled exit, the R8 law unchanged), and the attach predicate (attach_process_exited_evidence) defers ONLY a settled terminal SubState under LoadState loaded - not-found, every unsettled or unrecognised SubState, unrecognised LoadState, missing property, overlong or non-UTF-8 output, a failed query, and the transport error all fail the attach fail-close closed. This row witnesses the attach side of the shared core: the same core edit as PLR113 (the R8 two-sided precedent - each side carries its own row) read through the attach predicate, whose loaded+terminal deferral the attach branch relies on. The end-to-end not-found half is the PLR116 control witness (never-created unit name + live child reaches the branch and records the fail-close verdict); the stopped-unit construction this witness replaced assembled exactly the not-found shape that must now fail closed, so it is retired with the stated reason and reshaped to the decision level, the same class as the PLR113 seam row",
+  "package": "grapt-plugin",
+  "file": "crates/grapt-plugin/src/supervisor/process/linux.rs",
+  "test_target": "lib",
+  "test": "supervisor::process::linux::query_seam::attach_process_exit_evidence_defers_only_a_settled_loaded_terminal_state",
+  "old": "        && matches!(sub_state, \"exited\" | \"failed\" | \"dead\")",
+  "new": "        && matches!(sub_state, _)",
+  "expected_diagnostic": "an unsettled, not-found, or unreadable unit state deferred the attach fail-close"
+}
+,
+{
+  "id": "PLR116",
+  "law": "The attach-failure branch fails closed over a never-created unit (R11): the attach exhausted its bound without ever locating the unit's cgroup, so the unit read here is the not-yet-created shape - LoadState not-found, SubState dead, OOMKills UINT64_MAX, Result=success, rc 0 (verified on-box) - and deferring that shape is the R10 shared-predicate defect (finding PLR-R11-72933DEA-ATTACH-NOTFOUND-FAILS-OPEN): under the measured funnel (15-25 s activations against the 10 s production attach bound) a unit activating just after the deadline ran unwatched, with no RSS or CPU policy. The R11 attach predicate answers false for not-found, and the branch's order is unchanged (dead child, OOM verdict, attach-predicate deferral, immediate fail-close), so the branch records the telemetry-unavailable violation and terminates the owned bridge. The witness is end-to-end and deterministic: a never-created unit name (its containment id consumed from the process-global counter, so no future real unit can take the name) paired with a real live child, so the dead-child check passes and the OOM verdict classifies the not-found unit as absence by construction - no timing race, no sustained state. The mutant re-admits not-found in the attach predicate (the accept_not_found wiring), and the witness reds on the missing fail-close verdict",
+  "package": "grapt-plugin",
+  "file": "crates/grapt-plugin/src/supervisor/process/linux.rs",
+  "test_target": "lib",
+  "test": "supervisor::process::linux::query_seam::linux_attach_failure_fails_closed_over_a_never_created_unit",
+  "old": "    main_state_evidence(evidence, false)",
+  "new": "    main_state_evidence(evidence, true)",
+  "expected_diagnostic": "the attach-failure branch did not fail closed over a never-created unit"
+}
+  ]
+}

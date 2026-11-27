@@ -1,0 +1,1 @@
+| `crates/secode-store/src/write/open/journal.rs` | `openai/codex`, `codex-rs/state/src/sqlite.rs`, connection journal policy | `bb64b894fd67158be0f874872e6d7bfe717e7368` | **Modified**: synchronous rusqlite WAL/NORMAL with readback; admission/refusal and legacy recovery finish before changing journal mode. |

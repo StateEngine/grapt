@@ -1,0 +1,59 @@
+{
+  "name": "J01 — opening selection, chat and reopen",
+  "about": [
+    "The J01 journey as keyboard input against the SHIPPED binary under a real",
+    "PTY: the project gateway, the agent roster, the model picker, a session",
+    "created against that selection, a prompt streamed back, and the same",
+    "session reopened from the picker.",
+    "",
+    "Every `expect` is a bounded wait on text the terminal actually shows, so a",
+    "screen that never arrived stops the run and names the step instead of being",
+    "captured as though it had."
+  ],
+  "steps": [
+    { "expect": "PROJECTS" },
+    { "capture": "the project gateway is the first screen" },
+    { "key": "Enter" },
+    { "expect": "AGENTS" },
+    { "capture": "choosing a project leads to its agent roster" },
+    { "key": "Enter" },
+    { "expect": "MODELS" },
+    { "capture": "choosing an agent leads to the model picker" },
+
+    { "paste": "fast" },
+    { "capture": "typing filters the model picker" },
+    { "key": "Backspace" },
+    { "key": "Backspace" },
+    { "key": "Backspace" },
+    { "key": "Backspace" },
+
+    { "key": "Enter" },
+    { "expect": "SESSIONS" },
+    { "capture": "the selection footer names project, agent and model" },
+
+    { "key": "n" },
+    { "expect": "TRANSCRIPT" },
+    { "capture": "a session created against the selection" },
+
+    { "key": "h" },
+    { "key": "i" },
+    { "key": "Enter" },
+    { "expect": "echo hi" },
+    { "capture": "the reply streamed into the transcript" },
+
+    { "key": "Escape" },
+    { "key": "Enter" },
+    { "expect": "echo hi" },
+    { "capture": "the same session reopened with its history intact" },
+
+    { "key": "Control+p" },
+    { "expect": "MODELS" },
+    { "capture": "the model picker is still reachable after the first prompt" },
+    { "key": "Escape" },
+
+    { "resize": [ 100, 30 ] },
+    { "capture": "the frame follows a resize" },
+
+    { "key": "Control+q" }
+  ]
+}

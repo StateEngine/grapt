@@ -1,0 +1,1 @@
+| `crates/secode-cli/src/client/terminal/profile_trust.rs` | `openai/codex`, `codex-rs/config/src/project_trust.rs` | `bb64b894fd67158be0f874872e6d7bfe717e7368` | Modified by Grapt: canonical-path user decisions additionally bind bounded profile-configuration bytes; explicit selection, revocation and process-origin checks remain separate. Apache-2.0, Copyright 2025 OpenAI. |

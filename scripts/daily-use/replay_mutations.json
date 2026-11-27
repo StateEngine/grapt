@@ -1,0 +1,675 @@
+{
+  "schema_version": 1,
+  "rows": [
+    {
+      "id": "DUB-OU01",
+      "tree": "retained",
+      "source": "packages/app/src/components/session/session-context-metrics.ts",
+      "edits": [
+        {
+          "anchor": "observed.total",
+          "replacement": "(observed.total ?? tokenTotal(message))"
+        }
+      ],
+      "command": [
+        "bun",
+        "test",
+        "--preload",
+        "./happydom.ts",
+        "src/components/session/session-context-metrics.test.ts"
+      ],
+      "cwd": "packages/app",
+      "failure_pattern": "\\(fail\\)\\ getSessionContext\\ >\\ an\\ absent\\ total\\ is\\ not\\ derived\\ from\\ even\\ complete\\ component\\ counts"
+    },
+    {
+      "id": "DUB-OU02",
+      "tree": "retained",
+      "source": "packages/app/src/components/session/session-context-metrics.ts",
+      "edits": [
+        {
+          "anchor": "if (msg.role !== \"assistant\") continue",
+          "replacement": "if (msg.role !== \"assistant\" || tokenTotal(msg) === 0) continue"
+        }
+      ],
+      "command": [
+        "bun",
+        "test",
+        "--preload",
+        "./happydom.ts",
+        "src/components/session/session-context-metrics.test.ts"
+      ],
+      "cwd": "packages/app",
+      "failure_pattern": "\\(fail\\)\\ getSessionContext\\ >\\ the\\ latest\\ partial\\ observation\\ keeps\\ its\\ own\\ model\\ and\\ absent\\ coordinates"
+    },
+    {
+      "id": "DUB-OU03",
+      "tree": "retained",
+      "source": "packages/app/src/components/session/session-context-metrics.ts",
+      "edits": [
+        {
+          "anchor": "observed.cacheWrite,",
+          "replacement": "(observed.cacheWrite ?? 0),"
+        }
+      ],
+      "command": [
+        "bun",
+        "test",
+        "--preload",
+        "./happydom.ts",
+        "src/components/session/session-context-metrics.test.ts"
+      ],
+      "cwd": "packages/app",
+      "failure_pattern": "\\(fail\\)\\ getSessionContext\\ >\\ the\\ latest\\ partial\\ observation\\ keeps\\ its\\ own\\ model\\ and\\ absent\\ coordinates"
+    },
+    {
+      "id": "DUB-OU04",
+      "tree": "retained",
+      "source": "packages/app/src/utils/session-message.ts",
+      "edits": [
+        {
+          "anchor": "message.observedUsage ?? (message.tokens ? undefined : {})",
+          "replacement": "undefined"
+        }
+      ],
+      "command": [
+        "bun",
+        "test",
+        "--preload",
+        "./happydom.ts",
+        "src/utils/session-message.test.ts"
+      ],
+      "cwd": "packages/app",
+      "failure_pattern": "\\(fail\\)\\ normalizeSessionMessages\\ >\\ preserves\\ observed\\ usage\\ and\\ distinguishes\\ missing\\ counts\\ from\\ reported\\ zero"
+    },
+    {
+      "id": "DUB-OU05",
+      "tree": "retained",
+      "source": "packages/schema/src/token-usage.ts",
+      "edits": [
+        {
+          "anchor": "inputTotal: NonNegativeInt.pipe(optional)",
+          "replacement": "inputTotal: Schema.Finite.pipe(optional)"
+        }
+      ],
+      "command": [
+        "bun",
+        "test",
+        "test/token-usage.test.ts"
+      ],
+      "cwd": "packages/schema",
+      "failure_pattern": "\\(fail\\)\\ every\\ coordinate\\ rejects\\ null,\\ negative,\\ fractional\\ and\\ unsafe\\ counts"
+    },
+    {
+      "id": "DUB-OU06",
+      "tree": "rust",
+      "source": "crates/grapt-api/src/u3a/codec.rs",
+      "edits": [
+        {
+          "anchor": "9_007_199_254_740_991",
+          "replacement": "9_007_199_254_740_992"
+        }
+      ],
+      "command": [
+        "cargo",
+        "test",
+        "-p",
+        "grapt-api",
+        "--test",
+        "observed_usage",
+        "--no-fail-fast",
+        "-j",
+        "2"
+      ],
+      "cwd": ".",
+      "failure_pattern": "test\\ observed_counts_preserve_absence_zero_and_safe_integer_bounds\\ \\.\\.\\.\\ FAILED"
+    },
+    {
+      "id": "DUB-OU07",
+      "tree": "rust",
+      "source": "crates/grapt-product/src/dogfood/mod.rs",
+      "edits": [
+        {
+          "anchor": "usage::observed_usage_dto(&message.usage)",
+          "replacement": "usage::observed_usage_dto(&[])"
+        }
+      ],
+      "command": [
+        "cargo",
+        "test",
+        "-p",
+        "grapt-product",
+        "--features",
+        "loopback-provider-testkit",
+        "--test",
+        "dogfood_headless",
+        "selected_secondary_account_crosses_production_composition_and_restart",
+        "--no-fail-fast",
+        "-j",
+        "2"
+      ],
+      "cwd": ".",
+      "failure_pattern": "test\\ provider_accounts::selected_secondary_account_crosses_production_composition_and_restart\\ \\.\\.\\.\\ FAILED"
+    },
+    {
+      "id": "DUB-OU08",
+      "tree": "rust",
+      "source": "crates/grapt-product/src/dogfood/history.rs",
+      "edits": [
+        {
+          "anchor": "value.get(\"id\").and_then(Value::as_str) == Some(message.as_str())",
+          "replacement": "value.get(\"id\").and_then(Value::as_str).is_some() || message.as_str().is_empty()"
+        }
+      ],
+      "command": [
+        "cargo",
+        "test",
+        "-p",
+        "grapt-product",
+        "--features",
+        "loopback-provider-testkit",
+        "--test",
+        "dogfood_headless",
+        "selected_secondary_account_crosses_production_composition_and_restart",
+        "--no-fail-fast",
+        "-j",
+        "2"
+      ],
+      "cwd": ".",
+      "failure_pattern": "test\\ provider_accounts::selected_secondary_account_crosses_production_composition_and_restart\\ \\.\\.\\.\\ FAILED"
+    },
+    {
+      "id": "DUB-GUI01",
+      "tree": "retained",
+      "source": "packages/app/src/pages/session/composer/session-composer-state.ts",
+      "edits": [
+        {
+          "anchor": "pathKey(a.directory) === pathKey(b.directory)",
+          "replacement": "true"
+        }
+      ],
+      "command": [
+        "bun",
+        "test",
+        "--conditions=browser",
+        "--preload",
+        "./happydom.ts",
+        "src/pages/session/composer/session-composer-state.test.ts"
+      ],
+      "cwd": "packages/app",
+      "failure_pattern": "\\(fail\\)\\ located\\ Session\\ forms\\ >\\ merges\\ Session\\ and\\ current\\-location\\ global\\ forms\\ with\\ reply\\ ownership"
+    },
+    {
+      "id": "DUB-GUI02",
+      "tree": "retained",
+      "source": "packages/app/src/pages/session/composer/session-composer-state.ts",
+      "edits": [
+        {
+          "anchor": "if (scope !== selected || current !== revision) return",
+          "replacement": "if (scope !== selected) return"
+        }
+      ],
+      "command": [
+        "bun",
+        "test",
+        "--conditions=browser",
+        "--preload",
+        "./happydom.ts",
+        "src/pages/session/composer/session-composer-state.test.ts"
+      ],
+      "cwd": "packages/app",
+      "failure_pattern": "\\(fail\\)\\ located\\ Session\\ forms\\ >\\ settlement\\ invalidates\\ an\\ in\\-flight\\ list\\ and\\ duplicate\\ refreshes\\ coalesce"
+    },
+    {
+      "id": "DUB-GUI03",
+      "tree": "retained",
+      "source": "packages/app/src/pages/session/composer/session-form-dock.tsx",
+      "edits": [
+        {
+          "anchor": "if (form.sessionID !== \"global\") return undefined",
+          "replacement": "if (true) return undefined"
+        }
+      ],
+      "command": [
+        "bun",
+        "test",
+        "--conditions=browser",
+        "--preload",
+        "./happydom.ts",
+        "src/pages/session/composer/session-composer-state.test.ts"
+      ],
+      "cwd": "packages/app",
+      "failure_pattern": "\\(fail\\)\\ located\\ Session\\ forms\\ >\\ merges\\ Session\\ and\\ current\\-location\\ global\\ forms\\ with\\ reply\\ ownership"
+    },
+    {
+      "id": "DUB-MS01",
+      "tree": "retained",
+      "source": "packages/app/src/context/server-session.ts",
+      "edits": [
+        {
+          "anchor": "if (event.durable.seq <= (previous?.[field]?.seq ?? -1)) return",
+          "replacement": "if (false) return"
+        }
+      ],
+      "command": [
+        "bun",
+        "test",
+        "--preload",
+        "./happydom.ts",
+        "src/context/server-session.test.ts"
+      ],
+      "cwd": "packages/app",
+      "failure_pattern": "\\(fail\\)\\ server\\ session\\ >\\ repeated\\ model\\ selection\\ updates\\ Session\\ Info\\ and\\ rejects\\ stale\\ or\\ duplicate\\ facts"
+    },
+    {
+      "id": "DUB-MS02",
+      "tree": "retained",
+      "source": "packages/app/src/context/server-session.ts",
+      "edits": [
+        {
+          "anchor": "selected.model !== selectionAtRequest?.model",
+          "replacement": "false"
+        }
+      ],
+      "command": [
+        "bun",
+        "test",
+        "--preload",
+        "./happydom.ts",
+        "src/context/server-session.test.ts"
+      ],
+      "cwd": "packages/app",
+      "failure_pattern": "\\(fail\\)\\ server\\ session\\ >\\ a\\ pending\\ Session\\ read\\ cannot\\ overwrite\\ a\\ newer\\ selection"
+    },
+    {
+      "id": "DUB-MS03",
+      "tree": "retained",
+      "source": "packages/app/src/context/server-session.ts",
+      "edits": [
+        {
+          "anchor": "if (!generations.has(sessionID) || (!info && !requests.has(sessionID))) return",
+          "replacement": "if (!info && !requests.has(sessionID)) return"
+        }
+      ],
+      "command": [
+        "bun",
+        "test",
+        "--preload",
+        "./happydom.ts",
+        "src/context/server-session.test.ts"
+      ],
+      "cwd": "packages/app",
+      "failure_pattern": "\\(fail\\)\\ server\\ session\\ >\\ repeated\\ model\\ selection\\ updates\\ Session\\ Info\\ and\\ rejects\\ stale\\ or\\ duplicate\\ facts"
+    },
+    {
+      "id": "DUB-GUI04",
+      "tree": "rust",
+      "source": "crates/grapt-api/src/http1.rs",
+      "edits": [
+        {
+          "anchor": "                            | \"x-grapt-directory\"\n",
+          "replacement": ""
+        }
+      ],
+      "command": [
+        "cargo",
+        "test",
+        "-p",
+        "grapt-api",
+        "--test",
+        "basic_ingress",
+        "--no-fail-fast",
+        "-j",
+        "2"
+      ],
+      "cwd": ".",
+      "failure_pattern": "test\\ repeated_admitted_desktop_preflight_values_are_all_validated\\ \\.\\.\\.\\ FAILED"
+    },
+    {
+      "id": "DUB-HS01",
+      "tree": "rust",
+      "source": "crates/grapt-product/src/compose.rs",
+      "edits": [
+        {
+          "anchor": "let _exit = host.stop().await;",
+          "replacement": "std::mem::forget(host);"
+        }
+      ],
+      "command": [
+        "cargo",
+        "test",
+        "-p",
+        "grapt-product",
+        "--lib",
+        "registration_failure_stops_host_before_refusal",
+        "--no-fail-fast",
+        "-j",
+        "2"
+      ],
+      "cwd": ".",
+      "failure_pattern": "test\\ compose::tests::registration_failure_stops_host_before_refusal\\ \\.\\.\\.\\ FAILED"
+    },
+    {
+      "id": "DUB-UI01",
+      "tree": "retained",
+      "source": "packages/app/src/context/server-session.ts",
+      "edits": [
+        {
+          "anchor": "if (execution.messageID) hydrateV2Message(sessionID, execution.messageID)",
+          "replacement": "if (false && execution.messageID) hydrateV2Message(sessionID, execution.messageID)"
+        }
+      ],
+      "command": [
+        "bun",
+        "test",
+        "--preload",
+        "./happydom.ts",
+        "src/context/server-session.test.ts"
+      ],
+      "cwd": "packages/app",
+      "failure_pattern": "\\(fail\\)\\ server\\ session\\ >\\ hydrates\\ canonical\\ completion\\ once\\ after\\ session\\.execution\\.succeeded"
+    },
+    {
+      "id": "DUB-UI02",
+      "tree": "retained",
+      "source": "packages/app/src/context/server-session.ts",
+      "edits": [
+        {
+          "anchor": "if (generations.get(sessionID) !== active || executionRefresh.get(sessionID) !== execution) return\n        if (request.invalidated",
+          "replacement": "if (false) return\n        if (request.invalidated"
+        }
+      ],
+      "command": [
+        "bun",
+        "test",
+        "--preload",
+        "./happydom.ts",
+        "src/context/server-session.test.ts"
+      ],
+      "cwd": "packages/app",
+      "failure_pattern": "\\(fail\\)\\ server\\ session\\ >\\ stalled\\ message\\ GETs\\ have\\ a\\ fixed\\ request\\ bound"
+    },
+    {
+      "id": "DUB-UI03",
+      "tree": "retained",
+      "source": "packages/app/src/context/server-session.ts",
+      "edits": [
+        {
+          "anchor": "if (request.invalidated || removedMessages.get(sessionID)?.has(messageID)) return",
+          "replacement": "if (removedMessages.get(sessionID)?.has(messageID)) return"
+        }
+      ],
+      "command": [
+        "bun",
+        "test",
+        "--preload",
+        "./happydom.ts",
+        "src/context/server-session.test.ts"
+      ],
+      "cwd": "packages/app",
+      "failure_pattern": "\\(fail\\)\\ server\\ session\\ >\\ a\\ newer\\ stream\\ edit\\ cannot\\ be\\ overwritten\\ by\\ an\\ older\\ terminal\\ GET"
+    },
+    {
+      "id": "DUB-UI04",
+      "tree": "retained",
+      "source": "packages/app/src/context/server-session.ts",
+      "edits": [
+        {
+          "anchor": "(a, b) => a.time.created - b.time.created || cmp(a.id, b.id),",
+          "replacement": "(a, b) => cmp(a.id, b.id),"
+        }
+      ],
+      "command": [
+        "bun",
+        "test",
+        "--preload",
+        "./happydom.ts",
+        "src/context/server-session.test.ts"
+      ],
+      "cwd": "packages/app",
+      "failure_pattern": "\\(fail\\)\\ server\\ session\\ >\\ hydrates\\ canonical\\ completion\\ once\\ after\\ session\\.execution\\.succeeded"
+    },
+    {
+      "id": "DUB-UI07",
+      "tree": "retained",
+      "source": "packages/app/src/context/server-session.ts",
+      "edits": [
+        {
+          "anchor": "if (messageHydrations.size >= 32) {",
+          "replacement": "if (false) {"
+        }
+      ],
+      "command": [
+        "bun",
+        "test",
+        "--preload",
+        "./happydom.ts",
+        "src/context/server-session.test.ts"
+      ],
+      "cwd": "packages/app",
+      "failure_pattern": "\\(fail\\)\\ server\\ session\\ >\\ stalled\\ message\\ GETs\\ have\\ a\\ fixed\\ request\\ bound"
+    },
+    {
+      "id": "DUB-UI05",
+      "tree": "retained",
+      "source": "packages/app/src/components/settings-websearch-state.ts",
+      "edits": [
+        {
+          "anchor": "return { kind: \"unsupported\" }",
+          "replacement": "return { kind: \"ready\", value: { provider: \"exa\" } }"
+        }
+      ],
+      "command": [
+        "bun",
+        "test",
+        "--conditions=browser",
+        "--preload",
+        "./happydom.ts",
+        "src/components/settings-websearch-state.test.ts"
+      ],
+      "cwd": "packages/app",
+      "failure_pattern": "\\(fail\\)\\ loading\\ and\\ unsupported\\ do\\ not\\ invent\\ a\\ selection\\ or\\ permit\\ writes"
+    },
+    {
+      "id": "DUB-UI06",
+      "tree": "retained",
+      "source": "packages/app/src/components/settings-websearch-state.ts",
+      "edits": [
+        {
+          "anchor": "error.cause.status === 404",
+          "replacement": "true"
+        }
+      ],
+      "command": [
+        "bun",
+        "test",
+        "--conditions=browser",
+        "--preload",
+        "./happydom.ts",
+        "src/components/settings-websearch-state.test.ts"
+      ],
+      "cwd": "packages/app",
+      "failure_pattern": "\\(fail\\)\\ request\\ failure\\ remains\\ retryable:\\ UnexpectedStatus\\ \\{\"status\":401\\}"
+    },
+    {
+      "id": "DUB-OU09",
+      "tree": "retained",
+      "source": "packages/app/src/components/session/session-context-metrics.ts",
+      "edits": [
+        {
+          "anchor": "if (!latest || msg.time.created >= latest.time.created) latest = msg",
+          "replacement": "latest = msg"
+        }
+      ],
+      "command": [
+        "bun",
+        "test",
+        "--preload",
+        "./happydom.ts",
+        "src/components/session/session-context-metrics.test.ts"
+      ],
+      "cwd": "packages/app",
+      "failure_pattern": "\\(fail\\)\\ getSessionContext\\ >\\ latest\\ means\\ creation\\ time\\ even\\ when\\ the\\ store\\ indexes\\ messages\\ by\\ ID"
+    },
+    {
+      "id": "DUB-MS04",
+      "tree": "rust",
+      "source": "crates/grapt-product/src/dogfood/selection.rs",
+      "edits": [
+        {
+          "anchor": "    let seq = select_model_committed(\n        held.store_mut(),\n        &authorities,\n        &session,\n        &model,\n        &mut [&mut SessionListProjector],\n    )\n    .map_err(|error| failure(error, &session))?;\n    if let Some(seq) = seq {\n        input_events::publish(&held, &application.hub, &session, seq);\n    }\n",
+          "replacement": "    let _seq = select_model_committed(\n        held.store_mut(),\n        &authorities,\n        &session,\n        &model,\n        &mut [&mut SessionListProjector],\n    )\n    .map_err(|error| failure(error, &session))?;\n    if let Some(seq) = None::<u64> {\n        input_events::publish(&held, &application.hub, &session, seq);\n    }\n"
+        }
+      ],
+      "command": [
+        "cargo",
+        "test",
+        "-p",
+        "grapt-product",
+        "--features",
+        "loopback-provider-testkit",
+        "--test",
+        "dogfood_headless",
+        "selected_secondary_account_crosses_production_composition_and_restart",
+        "--no-fail-fast",
+        "-j",
+        "2"
+      ],
+      "cwd": ".",
+      "failure_pattern": "test\\ provider_accounts::selected_secondary_account_crosses_production_composition_and_restart\\ \\.\\.\\.\\ FAILED"
+    },
+    {
+      "id": "DUB-MS05",
+      "tree": "rust",
+      "source": "crates/grapt-session/src/selection.rs",
+      "edits": [
+        {
+          "anchor": "if current.agent.as_deref() == Some(agent.as_str()) {",
+          "replacement": "if false {"
+        }
+      ],
+      "command": [
+        "cargo",
+        "test",
+        "-p",
+        "grapt-product",
+        "--lib",
+        "selection_projection",
+        "--no-fail-fast",
+        "-j",
+        "2"
+      ],
+      "cwd": ".",
+      "failure_pattern": "test\\ dogfood::committed_projection_tests::selection_projection_uses_committed_identity_and_noop_has_no_cursor\\ \\.\\.\\.\\ FAILED"
+    },
+    {
+      "id": "DUB-PG01",
+      "tree": "rust",
+      "source": "crates/grapt-product/src/dogfood/mcp.rs",
+      "edits": [
+        {
+          "anchor": "        if complete {",
+          "replacement": "        if complete || catalog.cursor().is_some() {"
+        }
+      ],
+      "command": [
+        "cargo",
+        "test",
+        "-p",
+        "grapt-product",
+        "--lib",
+        "dogfood::mcp::tests::pagination",
+        "--no-fail-fast",
+        "-j",
+        "2"
+      ],
+      "cwd": ".",
+      "failure_pattern": "test\\ dogfood::mcp::tests::pagination::discovery_follows_cursor_and_registers_the_second_page_tool\\ \\.\\.\\.\\ FAILED"
+    },
+    {
+      "id": "DUB-CG01",
+      "tree": "retained",
+      "source": "packages/app/src/components/session/session-context-metrics.ts",
+      "edits": [
+        {
+          "anchor": "const context = build(measured, providers)",
+          "replacement": "const context = build(messages, providers)"
+        }
+      ],
+      "command": [
+        "bun",
+        "test",
+        "--preload",
+        "./happydom.ts",
+        "src/components/session/session-context-metrics.test.ts"
+      ],
+      "cwd": "packages/app",
+      "failure_pattern": "\\(fail\\)\\ getSessionContext\\ >\\ pending\\ and\\ failed\\ attempts\\ retain\\ a\\ labeled\\ gauge\\ with\\ the\\ measured\\ model\\ denominator"
+    },
+    {
+      "id": "DUB-MS06",
+      "tree": "rust",
+      "source": "scripts/daily-use/assemble_candidate.py",
+      "edits": [
+        {
+          "anchor": "    ).rstrip()",
+          "replacement": "    ).strip()"
+        }
+      ],
+      "command": [
+        "python",
+        "scripts/daily-use/test_provenance.py",
+        "AssemblyProvenance",
+        "-v"
+      ],
+      "cwd": ".",
+      "red_exit": 1,
+      "failure_pattern": "test_first_unstaged_path_keeps_its_first_character.*FAIL",
+      "green_pattern": "Ran 1 test"
+    },
+    {
+      "id": "DUB-PG02",
+      "tree": "rust",
+      "source": "crates/grapt-product/src/dogfood/mcp.rs",
+      "edits": [
+        {
+          "anchor": ".exchange(request, catalog_remaining(cataloguing.elapsed()))",
+          "replacement": ".exchange(request, catalog_remaining(Duration::ZERO))"
+        }
+      ],
+      "command": [
+        "cargo",
+        "test",
+        "-p",
+        "grapt-product",
+        "--lib",
+        "discovery_pages_share_one_catalog_deadline",
+        "--no-fail-fast",
+        "-j",
+        "2"
+      ],
+      "cwd": ".",
+      "failure_pattern": "test dogfood::mcp::tests::pagination::discovery_pages_share_one_catalog_deadline ... FAILED"
+    },
+    {
+      "id": "DUB-SR01",
+      "tree": "retained",
+      "source": "packages/app/src/components/session-switcher.tsx",
+      "edits": [
+        {
+          "anchor": "if (sessionID !== rootID()) return\n    if (data) setOperations(data)",
+          "replacement": "if (!data || sessionID !== rootID()) return\n    setOperations(data)"
+        }
+      ],
+      "command": [
+        "bun",
+        "test",
+        "--conditions=browser",
+        "--preload",
+        "./happydom.ts",
+        "./test-isolated/session-switcher-refresh.test.ts"
+      ],
+      "cwd": "packages/app",
+      "failure_pattern": "\\(fail\\) an unsupported subagent list does not discard the successful default model response"
+    }
+  ]
+}

@@ -1,0 +1,1 @@
+| `crates/secode-tui/src/activity.rs` | `openai/codex` / `codex-rs/tui/src/motion.rs` and `codex-rs/tui/src/status_indicator_widget.rs` | `c465563aa9626d99420062135b187d299f904f81` | Modified by Grapt: single-cell Braille animation and execution-owned elapsed status in the existing live-status presentation; Copyright 2025 OpenAI, Apache-2.0. |

@@ -1,0 +1,101 @@
+{
+  "contract": "remote-compute-profile/v1",
+  "runner_contract": "remote-compute-runner/v1",
+  "profile_id": "qualification-custody-01",
+  "target": {
+    "ssh_target": "build-host",
+    "remote_run_root": "/home/example/secode-remote-compute/runs",
+    "remote_artifact_root": "/home/example/secode-remote-compute/artifacts",
+    "connect_timeout_ms": 10000
+  },
+  "environment": {
+    "inherit": ["HOME", "USER"],
+    "fixed": {
+      "PATH": "/home/example/.cargo/bin:/usr/local/bin:/usr/bin:/bin",
+      "CI": "1",
+      "LC_ALL": "C",
+      "CARGO_INCREMENTAL": "1",
+      "CARGO_TERM_COLOR": "never",
+      "RUST_BACKTRACE": "1",
+      "CLIPPY_CONF_DIR": ".",
+      "CARGO_BUILD_JOBS": "2",
+      "PYTHONDONTWRITEBYTECODE": "1"
+    }
+  },
+  "toolchain": {
+    "checks": [
+      {
+        "argv": ["rustc", "+1.97.1", "--version"],
+        "expect": {"stream": "stdout", "match": "exact", "value": "rustc 1.97.1 (8bab26f4f 2026-07-14)"}
+      },
+      {
+        "argv": ["cargo", "+1.97.1", "--version"],
+        "expect": {"stream": "stdout", "match": "exact", "value": "cargo 1.97.1 (c980f4866 2026-06-30)"}
+      }
+    ],
+    "bootstrap": [["/home/example/.cargo/bin/rustup", "toolchain", "install", "1.97.1", "--profile", "minimal"]],
+    "bootstrap_policy": "cache-keyed"
+  },
+  "cache": {
+    "mode": "shared-keyed",
+    "namespace": "secode-rust",
+    "key": "linux-x86_64-rust-1.97.1-v1",
+    "env": {
+      "CARGO_HOME": "{{domain}}/cargo-home",
+      "RUSTUP_HOME": "{{domain}}/rustup-home",
+      "CARGO_TARGET_DIR": "{{domain}}/cargo-target"
+    }
+  },
+  "resources": {
+    "domains": {
+      "domain0": {
+        "cpu_policy": "host-shared",
+        "memory": {"policy": "runner-unbounded"},
+        "concurrency": 1,
+        "cache_namespace": "carrier0"
+      }
+    },
+    "classes": {
+      "focused": {"timeout_ms": 600000, "domains": ["domain0"]},
+      "full": {"timeout_ms": 7200000, "domains": ["domain0"]}
+    }
+  },
+  "commands": {
+    "qcu-smoke": {
+      "resource_class": "focused",
+      "timeout_ms": 600000,
+      "steps": [
+        {"id": "plr-harness-import", "argv": ["python3", "scripts/qualification/plugin-linux-reap/run-mutations.py", "--help"], "timeout_ms": 60000},
+        {"id": "custody-controls", "argv": ["python3", "scripts/qualification/custody/test_custody.py"], "timeout_ms": 120000},
+        {"id": "qcu-resurrections", "argv": ["python3", "scripts/qualification/custody/run_mutations.py"], "timeout_ms": 120000}
+      ],
+      "artifacts": []
+    },
+    "qcu-plr-one": {
+      "resource_class": "full",
+      "timeout_ms": 7200000,
+      "steps": [
+        {
+          "id": "plr-intended-red-restored-green",
+          "argv": ["python3", "scripts/qualification/plugin-linux-reap/run-mutations.py", "--id", "PLR101", "--receipt", "../qualification-custody-receipt.json"],
+          "timeout_ms": 7140000
+        },
+        {
+          "id": "verify-and-collect-custody",
+          "argv": ["python3", "scripts/qualification/custody/verify.py", "--receipt", "../qualification-custody-receipt.json", "--id", "PLR101", "--manifest", "scripts/qualification/plugin-linux-reap/mutation-manifest.json", "--collect", "artifacts/qualification-custody-receipt.json"],
+          "timeout_ms": 60000
+        }
+      ],
+      "artifacts": ["qcu-plr-receipt"]
+    }
+  },
+  "inputs": {"artifacts": []},
+  "evidence": {
+    "max_total_bytes": 67108864,
+    "max_log_bytes": 16777216,
+    "artifacts": [
+      {"id": "qcu-plr-receipt", "path": "artifacts/qualification-custody-receipt.json", "required": true, "max_bytes": 4194304}
+    ]
+  },
+  "cleanup": {"policy": "always-remove-run-and-artifacts"}
+}

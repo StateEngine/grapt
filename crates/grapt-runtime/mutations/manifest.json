@@ -1,0 +1,996 @@
+{
+  "purpose": "R2A, R3b-1, FC-1, R2b-3, R3c1 and R2 attempt/tool-durable runtime evidence. T01-T18 retain typed-terminal ownership; F01-F05 pin mailbox drain and dependency direction; FC01 pins the migration join; U01-U07 pin the Step-scoped durable failure settlement; Q01-Q12 pin the private bounded mailbox-advisory seam; TD01-TD28 pin governed tool execution, durable terminal truth, bounded coalescing/retry, sealed attempt admission, pre-commit call-limit refusal, and provider-failure task abort; PA01-PA12 pin the private physical-attempt owner. SE01 pins the L4a rule that a finish normalizing to a failure is classified before the attempt terminal is written, never after. Each entry names one load-bearing behaviour, the exact source edit that removes it, and the witness that must turn red once it is gone. SE05-SE06 pin L4a's durable half: the success terminal's dispatch to the store seam, and the write boundary's refusal of a failure-shaped finish. IGP01-IGP13 pin the U2 attempt vertical: custody deletion, both settlement halves, the visible-output retry guard, fabricated success from a forwarded provider failure, unbounded-channel resurrection, tool-terminal durable-write deletion, settle-before-terminal reorder, the opener's configured-route independence, post-custody refusal custody return, the single-transaction reserve-and-permit, the positional opening law, and the pre-stream typed-failure class.",
+  "run": "python crates/grapt-runtime/mutations/run.py",
+  "isolation": "Every mutation is applied inside its own disposable git worktree checked out at the exact candidate commit. No mutant is ever written into the calling worktree, so a restore step cannot silently leave a stale build behind.",
+  "scope_note": "T01-T18 and F01-F05 remain accounted in their existing residuals; FC01 remains the join-only migration law. U01 replaces the provisional StepFailed path, U02/U03 pin one pre-provider authority read, U04 keeps election out of terminal settlement, U05 preserves the accepted typed reason, U06 suppresses duplicate advisory on idempotent replay, and U07 pins the reviewed direct event dependency. Q01-Q12 pin exact private SEMADV1 metadata, UTF-8 byte accounting, independent key/byte caps, reserved sticky rescan, same-key phase convergence, durable ordering, sink-loss isolation, and durable-reread reconnect. PA01-PA12 use the fresh whole-token PA allocation: one injected mint and ceiling, reserve then durable permit before one private opener, fail-closed public composition, durable recovery classification, existing atomic process-loss settlement, distinct retry identities, and sealed public surfaces. Crash rollback remains carried by the accepted store chokepoint and its named R2b-2 witnesses rather than a fabricated runtime mutation row; R3c1 source-cursor, source-ack, ProtocolVersion, public wire, client, and transport remain explicit residuals in R2B3_RESIDUALS.md and R3C1_RESIDUALS.md. SE01 belongs to L4a and guards the attempt terminal arm only: ContentFilter and Error are the two oracle finishes that normalize to NormalizedFinish::Failed, and the arm that used to build the success terminal from the raw finish now classifies first. The workspace's other normalization (application.rs) reads report.result, which the Step driver returns only after committing the Step terminal, so it cannot carry this law; that is why the row targets the attempt arm and not the routing gate. SE05 and SE06 are the same lane's durable half: SE05 pins that the success terminal is dispatched to the store seam rather than delegated to the in-memory owner, and SE06 pins that the write boundary refuses a failure-shaped finish rather than encoding it as a disposition. SE01 and SE06 are deliberately the same rule at its two ends - classify before settling, and refuse to write what was not classified - because a rule stated at one end only leaves one place to get it wrong. IGP01-IGP13 use the whole-token IGP allocation, which a fresh recursive census over every manifest in this workspace confirms this manifest owns alone. IGP12 is the U2-ETA-R1-F1 correction's row and its anchor sits on the opening DECISION; IGP05 was re-anchored onto the POST-OPENING forward at the same time, so the two rows cannot reach each other's code: IGP05 can no longer touch the synthetic first-fragment refusal, and IGP12's mutant is the pre-correction permissive shape rather than a guard deletion, because the defect that was removed was tolerance of a first fragment that is not AttemptOpened. Both halves of IGP12's witness were shown to fail on their own: the permissive shape kills case 1, and a separate swallow-later-openings shape kills case 2 while case 1 still passes, so neither case is carrying the other. IGP13 is the U2-ETA-R1-F2 correction's row and the only cross-crate IGP entry: it mutates the provider's staged-Codex reader, whose law is observable only from the runtime that consumes it, so the row names the runtime package its witness lives in. Its mutant restores the pre-correction shape \u00e2\u20ac\u201d the failure yielded with no opening marker ahead of it \u00e2\u20ac\u201d rather than deleting a guard, because the defect removed was a MISSING emission. No existing row owned this law: IGP09 owns the endpoint's configured route identity and IGP10 owns custody return on a post-custody refusal, and IGP05 owns the POST-opening forward, which a pre-stream failure never reaches. The wrapper loops rather than awaiting the second fragment inside the opening arm: a direct await there would let the first content fragment bypass the single post-opening forward, which is IGP05's anchor, and IGP05 would survive its own mutant (the F2 mutation audit).",
+  "mutations": [
+    {
+      "id": "FC01",
+      "law": "A mailbox row preserved by production migration reaches the runtime handler and commits its durable consumed marker",
+      "package": "grapt-runtime",
+      "file": "crates/grapt-store/src/write.rs",
+      "test": "a_migrated_mailbox_row_reaches_the_handler_and_is_durably_consumed",
+      "old": "        let tx = self.governed_transaction()?;\n        let consumed = Self::consume_mailbox_message_within(&tx, expected, id)?;\n        tx.commit()?.discard();\n        Ok(consumed)",
+      "new": "        let migrated: i64 = self.conn.query_row(\n            \"SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'rust_migration'\",\n            [],\n            |row| row.get(0),\n        )?;\n        if migrated != 0 {\n            return Ok(crate::mailbox::MailboxConsumed::AlreadyConsumed);\n        }\n        let tx = self.governed_transaction()?;\n        let consumed = Self::consume_mailbox_message_within(&tx, expected, id)?;\n        tx.commit()?.discard();\n        Ok(consumed)",
+      "test_target": "mailbox_drain"
+    },
+    {
+      "id": "F01",
+      "law": "A mailbox row is consumed only after the caller handler succeeds",
+      "package": "grapt-runtime",
+      "file": "crates/grapt-runtime/src/mailbox.rs",
+      "test": "a_handler_failure_leaves_that_message_actionable",
+      "old": "        handler\n            .handle(message)\n            .map_err(|source| MailboxDrainError::Handler {\n                message: message.id().clone(),\n                consumed_before_failure: consumed_messages,\n                source,\n            })?;\n        store\n            .consume_mailbox_message(recipient, message.id())\n            .map_err(|source| MailboxDrainError::Consume {\n                message: message.id().clone(),\n                consumed_before_failure: consumed_messages,\n                source,\n            })?;",
+      "new": "        store\n            .consume_mailbox_message(recipient, message.id())\n            .map_err(|source| MailboxDrainError::Consume {\n                message: message.id().clone(),\n                consumed_before_failure: consumed_messages,\n                source,\n            })?;\n        handler\n            .handle(message)\n            .map_err(|source| MailboxDrainError::Handler {\n                message: message.id().clone(),\n                consumed_before_failure: consumed_messages,\n                source,\n            })?;",
+      "test_target": "mailbox_drain"
+    },
+    {
+      "id": "F02",
+      "law": "The caller observes the store page in ascending admission order",
+      "package": "grapt-runtime",
+      "file": "crates/grapt-runtime/src/mailbox.rs",
+      "test": "one_invocation_handles_one_page_in_order_and_returns_its_exclusive_cursor",
+      "old": "    for message in &page.messages {",
+      "new": "    for message in page.messages.iter().rev() {",
+      "test_target": "mailbox_drain"
+    },
+    {
+      "id": "F03",
+      "law": "A full page returns the store's exclusive next_after cursor",
+      "package": "grapt-runtime",
+      "file": "crates/grapt-runtime/src/mailbox.rs",
+      "test": "one_invocation_handles_one_page_in_order_and_returns_its_exclusive_cursor",
+      "old": "        next_after: page.next_after,",
+      "new": "        next_after: None,",
+      "test_target": "mailbox_drain"
+    },
+    {
+      "id": "F04",
+      "law": "Handler success marks local consumption and is not confused with source acknowledgement",
+      "package": "grapt-runtime",
+      "file": "crates/grapt-runtime/src/mailbox.rs",
+      "test": "a_successful_handler_is_followed_by_consumption",
+      "old": "            .consume_mailbox_message(recipient, message.id())",
+      "new": "            .acknowledge_mailbox_source(recipient, message.id())",
+      "test_target": "mailbox_drain"
+    },
+    {
+      "id": "U01",
+      "law": "The Step-scoped decorator replaces the provisional inner StepFailed writer with session.step.failed.2",
+      "package": "grapt-runtime",
+      "file": "crates/grapt-runtime/src/settlement.rs",
+      "test": "attempt_admission::tests::session_application::runtime_and_harness::attempts_and_continuation::a_failed_step_uses_one_pre_attempt_context_across_physical_retries",
+      "old": "            DurableFact::StepFailed { failure } => self.commit_failure(failure),",
+      "new": "            DurableFact::StepFailed { .. } => self.inner.commit(fact),"
+    },
+    {
+      "id": "U02",
+      "law": "One logical Step reads the EventId authority exactly once before provider I/O, independent of physical retries",
+      "package": "grapt-runtime",
+      "file": "crates/grapt-runtime/src/application.rs",
+      "test": "attempt_admission::tests::session_application::runtime_and_harness::attempts_and_continuation::a_failed_step_uses_one_pre_attempt_context_across_physical_retries",
+      "old": "        let terminal_event = ids.mint();",
+      "new": "        let terminal_event = {\n            let _first = ids.mint();\n            ids.mint()\n        };"
+    },
+    {
+      "id": "U03",
+      "law": "One logical Step reads the clock authority exactly once before provider I/O, independent of physical retries",
+      "package": "grapt-runtime",
+      "file": "crates/grapt-runtime/src/application.rs",
+      "test": "attempt_admission::tests::session_application::runtime_and_harness::attempts_and_continuation::a_failed_step_uses_one_pre_attempt_context_across_physical_retries",
+      "old": "        let terminal_created_ms = clock.now_ms();",
+      "new": "        let terminal_created_ms = {\n            let _first = clock.now_ms();\n            clock.now_ms()\n        };"
+    },
+    {
+      "id": "U04",
+      "law": "Terminal settlement reuses the pre-provider FencedWriter and never self-elects past a transferred epoch",
+      "package": "grapt-runtime",
+      "file": "crates/grapt-runtime/src/settlement.rs",
+      "test": "attempt_admission::tests::session_application::runtime_and_harness::attempts_and_continuation::a_transferred_epoch_refuses_step_settlement_without_self_election",
+      "old": "            let store = inbox.store_mut();\n            let tx = store.governed_transaction().map_err(|error| OwnerError {\n                reason: format!(\"StepFailedV2 transaction refused: {error}\"),\n            })?;\n            let appended = grapt_store::step_failed::record_observed(\n                &tx,\n                &self.context.session,\n                &self.context.event_id,\n                self.context.writer,",
+      "new": "            let store = inbox.store_mut();\n            let aggregate = grapt_store::AggregateId::Session(self.context.session.clone());\n            store.elect_writer(&aggregate).map_err(|error| OwnerError {\n                reason: format!(\"mutant terminal election refused: {error}\"),\n            })?;\n            let writer = store.fencing_token(&aggregate).map_err(|error| OwnerError {\n                reason: format!(\"mutant terminal token refused: {error}\"),\n            })?;\n            let tx = store.governed_transaction().map_err(|error| OwnerError {\n                reason: format!(\"StepFailedV2 transaction refused: {error}\"),\n            })?;\n            let appended = grapt_store::step_failed::record_observed(\n                &tx,\n                &self.context.session,\n                &self.context.event_id,\n                writer,"
+    },
+    {
+      "id": "U05",
+      "law": "The durable payload carries the accepted classified Step reason and never fabricates DurabilityFailure",
+      "package": "grapt-runtime",
+      "file": "crates/grapt-runtime/src/settlement.rs",
+      "test": "attempt_admission::tests::session_application::runtime_and_harness::attempts_and_continuation::a_failed_step_uses_one_pre_attempt_context_across_physical_retries",
+      "old": "            StepFailedFact::new(self.context.step, failure.reason().clone()).map_err(|error| {",
+      "new": "            StepFailedFact::new(\n                self.context.step,\n                grapt_types::StepTerminalReason::DurabilityFailure,\n            )\n            .map_err(|error| {"
+    },
+    {
+      "id": "U06",
+      "law": "Idempotent same-owner replay emits no duplicate existing advisory",
+      "package": "grapt-runtime",
+      "file": "crates/grapt-runtime/src/settlement.rs",
+      "test": "settlement::tests::same_owner_replay_is_idempotent_and_suppresses_duplicate_advisory",
+      "old": "            // its named lossy disposition here, before the existing advisory.\n            notices.discard();\n            if let Some(receipts) = &self.receipts {\n                receipts.release(&settled);\n            }\n            appended\n        };\n\n        self.terminal_position = Some(grapt_session::CommittedPosition {\n            event: self.context.event_id.clone(),\n            created_ms: self.context.created_ms,\n            seq: match &appended {\n                Appended::Committed { seq } | Appended::Idempotent { seq } => *seq,\n            },\n        });\n        self.advisory = match appended {\n            Appended::Committed { .. } => StepTerminalAdvisory::NotifyCommitted,\n            Appended::Idempotent { .. } => StepTerminalAdvisory::SuppressIdempotent,",
+      "new": "            // its named lossy disposition here, before the existing advisory.\n            notices.discard();\n            if let Some(receipts) = &self.receipts {\n                receipts.release(&settled);\n            }\n            appended\n        };\n\n        self.terminal_position = Some(grapt_session::CommittedPosition {\n            event: self.context.event_id.clone(),\n            created_ms: self.context.created_ms,\n            seq: match &appended {\n                Appended::Committed { seq } | Appended::Idempotent { seq } => *seq,\n            },\n        });\n        self.advisory = match appended {\n            Appended::Committed { .. } => StepTerminalAdvisory::NotifyCommitted,\n            Appended::Idempotent { .. } => StepTerminalAdvisory::NotifyCommitted,"
+    },
+    {
+      "id": "T01",
+      "law": "Length is Truncated: a stream cut at the provider's output ceiling is not a completion claim",
+      "package": "grapt-provider",
+      "file": "crates/grapt-provider/src/fragment.rs",
+      "test": "length_is_truncated_and_not_a_completion_claim",
+      "old": "            Self::Length => NormalizedFinish::Completed {\n                completion: Disposition::Truncated,\n            },",
+      "new": "            Self::Length => NormalizedFinish::Completed {\n                completion: Disposition::AssertedComplete,\n            },",
+      "test_target": "terminal_vocabulary"
+    },
+    {
+      "id": "T02",
+      "law": "QuotaExceeded maps to Quota: the one class whose name changes across the boundary is mapped, not invented",
+      "package": "grapt-provider",
+      "file": "crates/grapt-provider/src/fragment.rs",
+      "test": "quota_exceeded_becomes_quota",
+      "old": "            Self::QuotaExceeded => Terminal::Quota,",
+      "new": "            Self::QuotaExceeded => Terminal::Authentication,",
+      "test_target": "terminal_vocabulary"
+    },
+    {
+      "id": "T03",
+      "law": "The truncation marker is budgeted BEFORE the cut, so retained bytes including the marker never exceed the cap",
+      "package": "grapt-provider",
+      "file": "crates/grapt-provider/src/fragment.rs",
+      "test": "one_byte_over_the_cap_truncates_within_the_cap",
+      "old": "        let budget = Self::MAX_BYTES - Self::TRUNCATION_MARKER.len();",
+      "new": "        let budget = Self::MAX_BYTES;",
+      "test_target": "terminal_vocabulary"
+    },
+    {
+      "id": "T04",
+      "law": "The cap is a ceiling, not a budget: input of exactly MAX_BYTES is kept whole and unmarked",
+      "package": "grapt-provider",
+      "file": "crates/grapt-provider/src/fragment.rs",
+      "test": "a_detail_of_exactly_the_cap_is_kept_whole",
+      "old": "        if raw.len() <= Self::MAX_BYTES {",
+      "new": "        if raw.len() < Self::MAX_BYTES {",
+      "test_target": "terminal_vocabulary"
+    },
+    {
+      "id": "T05",
+      "law": "The cut lands on a character boundary, so a truncated diagnostic is always valid UTF-8",
+      "package": "grapt-provider",
+      "file": "crates/grapt-provider/src/fragment.rs",
+      "test": "truncation_never_splits_a_multibyte_character",
+      "old": "        let mut end = budget.min(raw.len());\n        while end > 0 && !raw.is_char_boundary(end) {\n            end -= 1;\n        }",
+      "new": "        let end = budget.min(raw.len());",
+      "test_target": "terminal_vocabulary"
+    },
+    {
+      "id": "T06",
+      "law": "A watchdog cancel settles as NoProgressTimeout: nobody interrupted anything, the stream stalled",
+      "package": "grapt-runtime",
+      "file": "crates/grapt-runtime/src/supervisor/attempt_loop.rs",
+      "test": "attempt_admission::tests::step_policy::terminal_vocabulary_policy_defaults::a_watchdog_stall_is_not_an_interruption_at_the_attempt_level",
+      "old": "                AttemptCancelCause::NoProgress => AttemptFailure::new(\n                    AttemptTerminalReason::ProviderFailure {\n                        class: TerminalClass::NoProgressTimeout,",
+      "new": "                AttemptCancelCause::NoProgress => AttemptFailure::new(\n                    AttemptTerminalReason::Interrupted {\n                        by: InterruptionSource::User,"
+    },
+    {
+      "id": "T07",
+      "law": "The driver's interrupt arm reports an INTERRUPT, not a stall: the two causes are chosen at the seam, not guessed downstream",
+      "package": "grapt-runtime",
+      "file": "crates/grapt-runtime/src/step.rs",
+      "test": "attempt_admission::tests::step_policy::terminal_vocabulary_policy_defaults::an_interrupted_attempt_names_its_source",
+      "old": "                                    interrupt.interrupt(AttemptCancelCause::Interrupted { by });",
+      "new": "                                    let _ = by;\n                                    interrupt.interrupt(AttemptCancelCause::NoProgress);"
+    },
+    {
+      "id": "T08",
+      "law": "PolicyLimit names the version of the policy that actually fired, not a constant identity",
+      "package": "grapt-runtime",
+      "file": "crates/grapt-runtime/src/step/classification.rs",
+      "test": "attempt_admission::tests::step_policy::terminal_vocabulary_policy_defaults::a_policy_limit_carries_the_version_of_the_policy_that_fired",
+      "old": "        if exhausted {\n            return AttemptDecision::Stop {\n                reason: StepTerminalReason::PolicyLimit {\n                    policy: policy.version.clone(),\n                },\n            };\n        }\n        return AttemptDecision::Retry {\n            after: policy.delay_for(attempts_used, &ProviderFailureClass::Transport),\n        };",
+      "new": "        if exhausted {\n            return AttemptDecision::Stop {\n                reason: StepTerminalReason::PolicyLimit {\n                    policy: StepPolicy::ruled_default()\n                        .map(|ruled| ruled.version.clone())\n                        .unwrap_or_else(|_| policy.version.clone()),\n                },\n            };\n        }\n        return AttemptDecision::Retry {\n            after: policy.delay_for(attempts_used, &ProviderFailureClass::Transport),\n        };"
+    },
+    {
+      "id": "T09",
+      "law": "A truncated stream is refused, never settled as a complete drain",
+      "package": "grapt-runtime",
+      "file": "crates/grapt-runtime/src/application.rs",
+      "test": "attempt_admission::tests::session_application::runtime_and_harness::finish_disposition::a_truncated_stream_is_not_settled_as_a_complete_drain",
+      "old": "                NormalizedFinish::Completed {\n                    completion: ProviderCompletionDisposition::Truncated,\n                } => Err(failure(format!(",
+      "new": "                NormalizedFinish::Completed {\n                    completion: ProviderCompletionDisposition::Truncated,\n                } => Ok(RunOutcome::Idle),\n                #[allow(unreachable_patterns)]\n                NormalizedFinish::Completed {\n                    completion: ProviderCompletionDisposition::Truncated,\n                } => Err(failure(format!("
+    },
+    {
+      "id": "T10",
+      "law": "An interrupt is routed by its TYPED reason; this is the site that compared against a bare `aborted` literal",
+      "package": "grapt-runtime",
+      "file": "crates/grapt-runtime/src/application.rs",
+      "test": "attempt_admission::tests::session_application::runtime_and_harness::steer_interrupt_and_store_failures::an_interrupt_ends_the_drain_with_no_further_promotion_and_no_loss",
+      "old": "                if matches!(step.reason(), StepTerminalReason::Interrupted { .. }) =>",
+      "new": "                if matches!(step.reason(), StepTerminalReason::DurabilityFailure) =>"
+    },
+    {
+      "id": "T11",
+      "law": "AssertedContinue continues the chain: the model asked for tools and the results must be fed back",
+      "package": "grapt-runtime",
+      "file": "crates/grapt-runtime/src/application.rs",
+      "test": "attempt_admission::tests::session_application::runtime_and_harness::attempts_and_continuation::a_chain_that_keeps_calling_tools_stops_at_its_allowance_rather_than_looping",
+      "old": "                NormalizedFinish::Completed {\n                    completion: ProviderCompletionDisposition::AssertedContinue,\n                } => {",
+      "new": "                NormalizedFinish::Completed {\n                    completion: ProviderCompletionDisposition::AssertedContinue,\n                } => Ok(RunOutcome::Idle),\n                #[allow(unreachable_patterns)]\n                NormalizedFinish::Completed {\n                    completion: ProviderCompletionDisposition::AssertedContinue,\n                } => {"
+    },
+    {
+      "id": "T12",
+      "law": "An unstated finish keeps the no-unsettled-work fallback and is not swept into the truncation refusal",
+      "package": "grapt-runtime",
+      "file": "crates/grapt-runtime/src/application.rs",
+      "test": "attempt_admission::tests::session_application::runtime_and_harness::finish_disposition::an_unstated_finish_still_uses_the_no_unsettled_work_fallback",
+      "old": "                NormalizedFinish::Completed {\n                    completion: ProviderCompletionDisposition::Unstated,\n                } => Ok(RunOutcome::Idle),",
+      "new": "                NormalizedFinish::Completed {\n                    completion: ProviderCompletionDisposition::Unstated,\n                } => Err(failure(format!(\"step {index} finished without a stated reason\"))),"
+    },
+    {
+      "id": "T13",
+      "law": "A retryable failure after visible output keeps the provider's OWN class; the string carrier discarded it",
+      "package": "grapt-runtime",
+      "file": "crates/grapt-runtime/src/step/classification.rs",
+      "test": "attempt_admission::tests::step_policy::preflight_failure_retry_cap::visible_output_failure_is_not_retried_and_keeps_partial_truth",
+      "old": "            reason: StepTerminalReason::ProviderFailure {\n                class: detail.class.to_terminal(),\n            },",
+      "new": "            reason: StepTerminalReason::ProviderFailure {\n                class: TerminalClass::Transport,\n            },"
+    },
+    {
+      "id": "T14",
+      "law": "A stall that produced output is a provider failure of the stall's own class, not a policy limit",
+      "package": "grapt-runtime",
+      "file": "crates/grapt-runtime/src/step/classification.rs",
+      "test": "attempt_admission::tests::step_policy::cancellation_watchdogs::a_mid_step_stall_times_out_one_window_after_the_last_commit",
+      "old": "                reason: StepTerminalReason::ProviderFailure {\n                    class: TerminalClass::NoProgressTimeout,\n                },",
+      "new": "                reason: StepTerminalReason::PolicyLimit {\n                    policy: policy.version.clone(),\n                },"
+    },
+    {
+      "id": "T15",
+      "law": "A failed compaction is CompactionFailed, distinct from compaction that ran and reclaimed nothing",
+      "package": "grapt-runtime",
+      "file": "crates/grapt-runtime/src/step.rs",
+      "test": "attempt_admission::tests::step_policy::admission_compaction_overflow::a_failed_compaction_opens_no_further_stream",
+      "old": "                        let (failure, reason) = error.into_terminal();",
+      "new": "                        let (_, reason) = error.into_terminal();\n                        let failure = ContextFailure::CompactionNoProgress;"
+    },
+    {
+      "id": "T16",
+      "law": "A reload that does not advance the generation is CompactionNoProgress, not a compaction failure",
+      "package": "grapt-runtime",
+      "file": "crates/grapt-runtime/src/step.rs",
+      "test": "attempt_admission::tests::step_policy::generation_dropped_handle_timing::a_reload_that_does_not_advance_the_generation_opens_no_new_stream",
+      "old": "                                    failure: StepFailure::new(\n                                        StepTerminalReason::ContextFailure {\n                                            failure: ContextFailure::CompactionNoProgress,\n                                        },",
+      "new": "                                    failure: StepFailure::new(\n                                        StepTerminalReason::ContextFailure {\n                                            failure: ContextFailure::CompactionFailed,\n                                        },"
+    },
+    {
+      "id": "T17",
+      "law": "An interrupt during retry backoff is an interruption carrying its source, not a stall or a policy stop",
+      "package": "grapt-runtime",
+      "file": "crates/grapt-runtime/src/step.rs",
+      "test": "attempt_admission::tests::step_policy::cancellation_watchdogs::an_interrupt_during_retry_backoff_completes_without_another_attempt",
+      "old": "                            failure: StepFailure::new(\n                                StepTerminalReason::Interrupted { by },\n                                \"interrupted during retry backoff\",\n                            ),",
+      "new": "                            failure: StepFailure::new(\n                                StepTerminalReason::ProviderFailure {\n                                    class: TerminalClass::NoProgressTimeout,\n                                },\n                                \"interrupted during retry backoff\",\n                            ),"
+    },
+    {
+      "id": "T18",
+      "law": "An interrupt during compaction stops with its source named, distinct from a compaction that failed",
+      "package": "grapt-runtime",
+      "file": "crates/grapt-runtime/src/step.rs",
+      "test": "attempt_admission::tests::step_policy::receipt_dedup_interrupt::an_interrupt_during_compaction_stops_before_reload_or_a_new_attempt",
+      "old": "                                failure: StepFailure::new(\n                                    StepTerminalReason::Interrupted { by },\n                                    \"interrupted during compaction\",\n                                ),",
+      "new": "                                failure: StepFailure::new(\n                                    StepTerminalReason::ContextFailure {\n                                        failure: ContextFailure::CompactionFailed,\n                                    },\n                                    \"interrupted during compaction\",\n                                ),"
+    },
+    {
+      "id": "Q01",
+      "law": "The private advisory encoding is tagged SEMADV1 and cannot drift into an unnamed or public wire shape",
+      "package": "grapt-runtime",
+      "file": "crates/grapt-runtime/src/mailbox_advisory.rs",
+      "test": "mailbox_advisory::tests::semadv1_hostile_maxima_are_exact",
+      "old": "const SEMADV1_TAG: &[u8; 7] = b\"SEMADV1\";",
+      "new": "const SEMADV1_TAG: &[u8; 7] = b\"SEMADV0\";"
+    },
+    {
+      "id": "Q02",
+      "law": "Discovered, Handled, and RescanRequired have distinct fixed phase discriminators",
+      "package": "grapt-runtime",
+      "file": "crates/grapt-runtime/src/mailbox_advisory.rs",
+      "test": "mailbox_advisory::tests::semadv1_hostile_maxima_are_exact",
+      "old": "const HANDLED_DISCRIMINATOR: u8 = 2;",
+      "new": "const HANDLED_DISCRIMINATOR: u8 = 1;"
+    },
+    {
+      "id": "Q03",
+      "law": "Every SEMADV1 string length counts exact UTF-8 bytes, not Unicode scalar values",
+      "package": "grapt-runtime",
+      "file": "crates/grapt-runtime/src/mailbox_advisory.rs",
+      "test": "mailbox_advisory::tests::semadv1_lengths_count_utf8_bytes_and_preserve_nuls",
+      "old": "    let length = u32::try_from(raw.len()).map_err(|_| MailboxAdvisoryFault::AccountingOverflow)?;",
+      "new": "    let length = u32::try_from(raw.chars().count())\n        .map_err(|_| MailboxAdvisoryFault::AccountingOverflow)?;"
+    },
+    {
+      "id": "Q04",
+      "law": "A recipient sink retains no more than 64 distinct stable keys",
+      "package": "grapt-runtime",
+      "file": "crates/grapt-runtime/src/mailbox_advisory.rs",
+      "test": "count_overflow_is_sticky_coalesced_and_does_not_block_consumption",
+      "old": "        if self.entries.len() >= MAX_RETAINED_MAILBOX_ADVISORIES {",
+      "new": "        if self.entries.len() > MAX_RETAINED_MAILBOX_ADVISORIES {",
+      "test_target": "mailbox_advisory"
+    },
+    {
+      "id": "Q05",
+      "law": "The encoded-byte bound is independent of the retained-key count and caps hostile frames",
+      "package": "grapt-runtime",
+      "file": "crates/grapt-runtime/src/mailbox_advisory.rs",
+      "test": "hostile_byte_overflow_reserves_one_max_rescan_and_does_not_block_consumption",
+      "old": "        if with_rescan_reserve > MAX_RETAINED_MAILBOX_ADVISORY_BYTES {",
+      "new": "        if false && with_rescan_reserve > MAX_RETAINED_MAILBOX_ADVISORY_BYTES {",
+      "test_target": "mailbox_advisory"
+    },
+    {
+      "id": "Q06",
+      "law": "A new key reserves the hostile maximum RescanRequired frame before byte admission",
+      "package": "grapt-runtime",
+      "file": "crates/grapt-runtime/src/mailbox_advisory.rs",
+      "test": "byte_limit_reserves_rescan_before_admitting_a_new_key",
+      "old": "            match with_entry.checked_add(MAX_RESCAN_REQUIRED_MAILBOX_ADVISORY_BYTES) {",
+      "new": "            match with_entry.checked_add(0) {",
+      "test_target": "mailbox_advisory"
+    },
+    {
+      "id": "Q07",
+      "law": "Handled advances a retained Discovered key in place instead of leaving a stale phase",
+      "package": "grapt-runtime",
+      "file": "crates/grapt-runtime/src/mailbox_advisory.rs",
+      "test": "stable_key_coalesces_and_advances_in_place_without_regression",
+      "old": "            self.entries[index].phase = wanted;",
+      "new": "            self.entries[index].phase = current;",
+      "test_target": "mailbox_advisory"
+    },
+    {
+      "id": "Q08",
+      "law": "A late Discovered offer cannot regress a stable key already retained as Handled",
+      "package": "grapt-runtime",
+      "file": "crates/grapt-runtime/src/mailbox_advisory.rs",
+      "test": "stable_key_coalesces_and_advances_in_place_without_regression",
+      "old": "            if current == wanted || current == MailboxAdvisoryPhase::Handled {",
+      "new": "            if current == wanted {",
+      "test_target": "mailbox_advisory"
+    },
+    {
+      "id": "Q09",
+      "law": "Handled is offered only after the local consumed marker commits",
+      "package": "grapt-runtime",
+      "file": "crates/grapt-runtime/src/mailbox.rs",
+      "test": "consume_failure_never_offers_handled",
+      "old": "        store\n            .consume_mailbox_message(recipient, message.id())\n            .map_err(|source| MailboxDrainError::Consume {\n                message: message.id().clone(),\n                consumed_before_failure: consumed_messages,\n                source,\n            })?;\n        let _ = sink.offer(MailboxAdvisory::Handled {\n            recipient: message.recipient(),\n            message: message.id(),\n        });",
+      "new": "        let _ = sink.offer(MailboxAdvisory::Handled {\n            recipient: message.recipient(),\n            message: message.id(),\n        });\n        store\n            .consume_mailbox_message(recipient, message.id())\n            .map_err(|source| MailboxDrainError::Consume {\n                message: message.id().clone(),\n                consumed_before_failure: consumed_messages,\n                source,\n            })?;",
+      "test_target": "mailbox_advisory"
+    },
+    {
+      "id": "Q10",
+      "law": "Discovered presentation is derived from the fixed typed kind and never body or headline parsing",
+      "package": "grapt-runtime",
+      "file": "crates/grapt-runtime/src/mailbox.rs",
+      "test": "handler_failure_retains_discovered_without_handled_or_consumption",
+      "old": "            kind: message.kind(),",
+      "new": "            kind: grapt_types::SeatMessageKind::TaskPointer,",
+      "test_target": "mailbox_advisory"
+    },
+    {
+      "id": "Q11",
+      "law": "Advisory sink loss never skips the handler or durable local consumption",
+      "package": "grapt-runtime",
+      "file": "crates/grapt-runtime/src/mailbox.rs",
+      "test": "disconnected_sink_loss_never_changes_handler_or_consumption",
+      "old": "        let _ = sink.offer(MailboxAdvisory::Discovered {\n            recipient: message.recipient(),\n            message: message.id(),\n            sender: message.sender(),\n            kind: message.kind(),\n        });",
+      "new": "        if !matches!(\n            sink.offer(MailboxAdvisory::Discovered {\n                recipient: message.recipient(),\n                message: message.id(),\n                sender: message.sender(),\n                kind: message.kind(),\n            }),\n            crate::mailbox_advisory::MailboxAdvisoryOffer::Retained\n        ) {\n            continue;\n        }",
+      "test_target": "mailbox_advisory"
+    },
+    {
+      "id": "Q12",
+      "law": "Overflow sets one sticky coalesced RescanRequired state until the consumer takes it",
+      "package": "grapt-runtime",
+      "file": "crates/grapt-runtime/src/mailbox_advisory.rs",
+      "test": "count_overflow_is_sticky_coalesced_and_does_not_block_consumption",
+      "old": "    fn set_overflow(&mut self, outcome: MailboxAdvisoryOffer) -> MailboxAdvisoryOffer {\n        self.rescan_required = true;\n        outcome\n    }",
+      "new": "    fn set_overflow(&mut self, outcome: MailboxAdvisoryOffer) -> MailboxAdvisoryOffer {\n        self.rescan_required = false;\n        outcome\n    }",
+      "test_target": "mailbox_advisory"
+    },
+    {
+      "id": "TD01",
+      "law": "ToolCalled commits before local tool dispatch",
+      "package": "grapt-runtime",
+      "file": "crates/grapt-runtime/src/supervisor/attempt_loop.rs",
+      "test": "attempt_admission::tests::step::a_refused_tool_call_never_launches_the_tool",
+      "old": "                        commit_or_stop!(DurableFact::Fragment { fragment: Box::new(fragment) });",
+      "new": "                        let _ = &fragment;"
+    },
+    {
+      "id": "TD02",
+      "law": "Missing authority yields typed refusal and zero dispatch",
+      "package": "grapt-runtime",
+      "file": "crates/grapt-runtime/src/tool_protocol.rs",
+      "test": "tool_protocol::tests::public_runner_refuses_without_authority_and_invokes_zero_executor_calls",
+      "old": "        Box::pin(async {\n            ToolTerminalOutcome::Failed {\n                reason: ToolFailureReason::AuthorityUnavailable,\n                detail: None,\n            }\n        })",
+      "new": "        Box::pin(async {\n            ToolTerminalOutcome::Failed {\n                reason: ToolFailureReason::EffectFailed,\n                detail: None,\n            }\n        })"
+    },
+    {
+      "id": "TD03",
+      "law": "The public authorized entry consumes AuthorityLease before its private continuation",
+      "package": "grapt-runtime",
+      "file": "crates/grapt-runtime/src/tool_protocol.rs",
+      "test": "public_authorized_entry_consumes_the_owned_lease_before_continuation",
+      "old": "        let capability = lease.consume();\n        self.run_post_authority(capability, call, input, progress, cancellation)",
+      "new": "        let _ = (lease, call, input, progress, cancellation);\n        Box::pin(async {\n            ToolTerminalOutcome::Failed {\n                reason: ToolFailureReason::AuthorityUnavailable,\n                detail: None,\n            }\n        })",
+      "test_target": "attempt_tool_durable_boundary"
+    },
+    {
+      "id": "TD04",
+      "law": "The mandatory artifact writer captures executor output as CapturedOutput",
+      "package": "grapt-runtime",
+      "file": "crates/grapt-runtime/src/tool_protocol.rs",
+      "test": "tool_protocol::tests::private_continuation_accepts_only_writer_minted_artifact_provenance",
+      "old": "            kind: ArtifactKind::CapturedOutput,",
+      "new": "            kind: ArtifactKind::Diagnostic,"
+    },
+    {
+      "id": "TD05",
+      "law": "Bounded progress has its own ruled capacity independent of terminals",
+      "package": "grapt-runtime",
+      "file": "crates/grapt-runtime/src/tool_protocol.rs",
+      "test": "tool_protocol::tests::first_overflow_is_counted_and_latest_progress_is_retained",
+      "old": "        let (tx, rx) = mpsc::channel(TOOL_PROGRESS_CAPACITY);",
+      "new": "        let (tx, rx) = mpsc::channel(1);"
+    },
+    {
+      "id": "TD06",
+      "law": "Progress saturation coalesces without blocking terminal capacity",
+      "package": "grapt-runtime",
+      "file": "crates/grapt-runtime/src/tool_protocol.rs",
+      "test": "tool_protocol::tests::first_overflow_is_counted_and_latest_progress_is_retained",
+      "old": "                if pending.is_none()\n                    || pending\n                        .as_ref()\n                        .is_some_and(|current| current.call == progress.call)\n                {\n                    *pending = Some(progress);\n                    self.state.coalesced.fetch_add(1, Ordering::Relaxed);\n                    Ok(ProgressOffer::Coalesced)\n                } else {",
+      "new": "                if false {\n                    *pending = Some(progress);\n                    self.state.coalesced.fetch_add(1, Ordering::Relaxed);\n                    Ok(ProgressOffer::Coalesced)\n                } else {"
+    },
+    {
+      "id": "TD07",
+      "law": "Cancellation propagates to and joins every spawned tool task",
+      "package": "grapt-runtime",
+      "file": "crates/grapt-runtime/src/supervisor/attempt_loop.rs",
+      "test": "attempt_admission::tests::supervision::saturated_provider_plus_interrupt_settles_every_tool_before_step_failed",
+      "old": "            joined = tasks.join_next() => {",
+      "new": "            joined = std::future::pending::<Option<Result<(), tokio::task::JoinError>>>() => {"
+    },
+    {
+      "id": "TD08",
+      "law": "Cancellation maps to its typed terminal and never success",
+      "package": "grapt-runtime",
+      "file": "crates/grapt-runtime/src/supervisor/task_drivers.rs",
+      "test": "attempt_admission::tests::step::interrupt_after_a_clean_provider_terminal_still_settles_as_aborted",
+      "old": "    ToolOutcome::Cancelled { by }",
+      "new": "    let _ = by;\n    ToolOutcome::Completed { output: None }"
+    },
+    {
+      "id": "TD09",
+      "law": "Fixture 7 settles a started local tool before provider failure",
+      "package": "grapt-runtime",
+      "file": "crates/grapt-runtime/src/supervisor/attempt_loop.rs",
+      "test": "supervisor::attempt_loop::tests::fixture_7_local_tool_provider_failure_joins_and_settles_before_failure",
+      "old": "                commit_or_stop!(DurableFact::ToolTerminal { call, outcome });",
+      "new": "                let _ = (call, outcome);"
+    },
+    {
+      "id": "TD10",
+      "law": "Fixture 8 hosted EOF settles ResultMissing before attempt failure",
+      "package": "grapt-runtime",
+      "file": "crates/grapt-runtime/src/supervisor/attempt_loop.rs",
+      "test": "supervisor::attempt_loop::tests::fixture_8_hosted_eof_settles_result_missing_before_attempt_failure",
+      "old": "                    outcome: ToolOutcome::ResultMissing,",
+      "new": "                    outcome: ToolOutcome::Failed { reason: ToolFailureReason::EffectFailed, detail: None },"
+    },
+    {
+      "id": "TD11",
+      "law": "Completed output is a writer-captured artifact rather than raw or absent data",
+      "package": "grapt-runtime",
+      "file": "crates/grapt-runtime/src/tool_protocol.rs",
+      "test": "tool_protocol::tests::private_continuation_accepts_only_writer_minted_artifact_provenance",
+      "old": "            output: output.map(|captured| captured.0),",
+      "new": "            output: None,"
+    },
+    {
+      "id": "TD12",
+      "law": "Failure detail is a writer-captured artifact rather than a raw string",
+      "package": "grapt-runtime",
+      "file": "crates/grapt-runtime/src/tool_protocol.rs",
+      "test": "tool_protocol::tests::failed_detail_is_writer_captured_and_never_a_raw_string",
+      "old": "            detail: detail.map(|captured| captured.0),",
+      "new": "            detail: None,"
+    },
+    {
+      "id": "TD13",
+      "law": "Capture disposition survives into the closed terminal artifact",
+      "package": "grapt-runtime",
+      "file": "crates/grapt-runtime/src/tool_protocol.rs",
+      "test": "tool_protocol::tests::capture_disposition_survives_the_closed_execution_terminal",
+      "old": "        ToolTerminalArtifact::new(captured.reference().clone(), captured.disposition())",
+      "new": "        ToolTerminalArtifact::new(captured.reference().clone(), grapt_types::CaptureDisposition::Complete)"
+    },
+    {
+      "id": "TD14",
+      "law": "Artifact capture commits before terminal artifact construction",
+      "package": "grapt-runtime",
+      "file": "crates/grapt-runtime/src/tool_protocol.rs",
+      "test": "tool_protocol::tests::private_continuation_accepts_only_writer_minted_artifact_provenance",
+      "old": "        ToolTerminalArtifact::new(captured.reference().clone(), captured.disposition())\n            .map(CapturedToolArtifact)\n            .ok_or(ToolFailureReason::CaptureFailed)",
+      "new": "        let _ = captured;\n        Err(ToolFailureReason::CaptureFailed)"
+    },
+    {
+      "id": "TD15",
+      "law": "An exact terminal retry for the same attempt and call is idempotent",
+      "package": "grapt-runtime",
+      "file": "crates/grapt-runtime/src/settlement.rs",
+      "test": "settlement::tests::reused_call_token_is_scoped_by_physical_attempt_and_same_pair_is_idempotent",
+      "old": "        if !self.tool_coordinates.contains_key(&key) {",
+      "new": "        if true {"
+    },
+    {
+      "id": "TD16",
+      "law": "A changed terminal retry under the same stable identity diverges",
+      "package": "grapt-store",
+      "file": "crates/grapt-store/src/tool_terminal.rs",
+      "test": "exact_retry_is_idempotent_changed_payload_diverges_and_replay_is_closed",
+      "old": "    let payload = session_tool_terminal::encode(fact);",
+      "new": "    let payload = serde_json::json!({\"attempt\":\"att_fixed\",\"call\":\"call_fixed\",\"outcome\":{\"kind\":\"result-missing\"}});",
+      "test_target": "tool_terminal_fact"
+    },
+    {
+      "id": "TD17",
+      "law": "Replay yields a closed terminal and cannot resurrect a running tool",
+      "package": "grapt-event",
+      "file": "crates/grapt-event/src/session_tool_terminal.rs",
+      "test": "session_tool_terminal::tests::every_closed_terminal_round_trips_canonically",
+      "old": "        \"result-missing\" => {\n            reject_unknown(out, AT_OUTCOME, &[\"kind\"])?;\n            ToolTerminalOutcome::ResultMissing\n        }",
+      "new": "        \"result-missing\" => {\n            reject_unknown(out, AT_OUTCOME, &[\"kind\"])?;\n            ToolTerminalOutcome::Completed { output: None }\n        }"
+    },
+    {
+      "id": "TD18",
+      "law": "Every hosted tool terminal is durable before the enclosing attempt terminal",
+      "package": "grapt-runtime",
+      "file": "crates/grapt-runtime/src/supervisor/attempt_loop.rs",
+      "test": "supervisor::attempt_loop::tests::hosted_result_commits_fragment_before_exactly_one_terminal",
+      "old": "                                commit_or_stop!(DurableFact::ToolTerminal {\n                                    call,\n                                    outcome: outcome.clone(),\n                                });",
+      "new": "                                let _ = call;"
+    },
+    {
+      "id": "TD19",
+      "law": "Hostile Retry-After contribution is capped by the ruled ceiling",
+      "package": "grapt-runtime",
+      "file": "crates/grapt-runtime/src/step.rs",
+      "test": "hostile_retry_after_is_capped_by_policy",
+      "old": "        desired.min(self.max_retry_delay)",
+      "new": "        desired",
+      "test_target": "step_policy"
+    },
+    {
+      "id": "TD20",
+      "law": "Same-block deltas coalesce within the emitted byte cap",
+      "package": "grapt-provider",
+      "file": "crates/grapt-provider/src/fragment.rs",
+      "test": "fragment::tests::same_block_deltas_coalesce_with_latest_state_and_exact_bytes",
+      "old": "                Self::TextDelta {\n                    block: next_block,\n                    text: next_text,\n                    state: next_state,\n                },\n            ) if *current_block == next_block\n                && current_text",
+      "new": "                Self::TextDelta {\n                    block: next_block,\n                    text: next_text,\n                    state: next_state,\n                },\n            ) if false && *current_block == next_block\n                && current_text"
+    },
+    {
+      "id": "TD21",
+      "law": "Block boundaries refuse provider-delta coalescing",
+      "package": "grapt-provider",
+      "file": "crates/grapt-provider/src/fragment.rs",
+      "test": "fragment::tests::coalescing_never_crosses_a_boundary",
+      "old": "            (Self::TextDelta { block: a, .. }, Self::TextDelta { block: b, .. }) => a == b,",
+      "new": "            (Self::TextDelta { .. }, Self::TextDelta { .. }) => true,"
+    },
+    {
+      "id": "TD22",
+      "law": "Tool terminal usage and failure boundaries never coalesce",
+      "package": "grapt-provider",
+      "file": "crates/grapt-provider/src/fragment.rs",
+      "test": "fragment::tests::coalescing_never_crosses_a_boundary",
+      "old": "            (Self::ReasoningDelta { block: a, .. }, Self::ReasoningDelta { block: b, .. }) => {\n                a == b\n            }\n            _ => false,",
+      "new": "            (Self::ReasoningDelta { block: a, .. }, Self::ReasoningDelta { block: b, .. }) => {\n                a == b\n            }\n            _ => true,"
+    },
+    {
+      "id": "TD23",
+      "law": "The coalesced provider-fragment diagnostic count is exact",
+      "package": "grapt-runtime",
+      "file": "crates/grapt-runtime/src/supervisor/task_drivers.rs",
+      "test": "supervisor::attempt_loop::tests::same_block_provider_deltas_report_one_exact_coalesced_fragment",
+      "old": "                    shared\n                        .provider_fragments_coalesced\n                        .fetch_add(1, Ordering::Relaxed);",
+      "new": "                    shared\n                        .provider_fragments_coalesced\n                        .fetch_add(2, Ordering::Relaxed);"
+    },
+    {
+      "id": "TD24",
+      "law": "Typed attempt refusal prevents reader-factory creation",
+      "package": "grapt-runtime",
+      "file": "crates/grapt-runtime/src/attempt_admission.rs",
+      "test": "attempt_admission::boundary_tests::a_refusal_carrying_an_unopened_attempt_invokes_zero_reader_factories",
+      "old": "            AttemptAdmission::Refused(refusal) => Err((owner, refusal)),",
+      "new": "            AttemptAdmission::Refused(refusal) => {\n                if let Some(unopened) = preparation.unopened {\n                    let (_attempt, factory) = unopened.into_parts();\n                    let _reader = factory();\n                }\n                Err((owner, refusal))\n            }"
+    },
+    {
+      "id": "TD27",
+      "law": "An over-limit tool call refuses before its durable ToolCalled opening",
+      "package": "grapt-runtime",
+      "file": "crates/grapt-runtime/src/supervisor/attempt_loop.rs",
+      "test": "supervisor::attempt_loop::tests::over_limit_tool_call_is_refused_before_durable_opening",
+      "old": "                        if call_admission_failed {\n                            break;\n                        }",
+      "new": "                        if false {\n                            break;\n                        }"
+    },
+    {
+      "id": "TD28",
+      "law": "Provider failure aborts and drains a never-returning local tool before attempt failure",
+      "package": "grapt-runtime",
+      "file": "crates/grapt-runtime/src/supervisor/attempt_loop.rs",
+      "test": "supervisor::attempt_loop::tests::provider_failure_aborts_never_returning_tool_before_attempt_failure",
+      "old": "    if cancelled.is_some() || refused || provider_ending.is_err() || queued_violation {",
+      "new": "    if cancelled.is_some() || refused {"
+    },
+    {
+      "id": "PA01",
+      "law": "One physical stream identity is minted exactly once from the injected IdAuthority, and a retry rebuild receives a distinct identity",
+      "package": "grapt-runtime",
+      "file": "crates/grapt-runtime/src/physical_attempt_owner.rs",
+      "test": "physical_attempt_owner::tests::supervisor_handoff_reserves_permits_opens_once_and_ends_once",
+      "old": "    let token = ids.mint();",
+      "new": "    let _discarded = ids.mint();\n    let token = ids.mint();"
+    },
+    {
+      "id": "PA02",
+      "law": "One injected AttemptRecordCeiling independently refuses over-bound attempt, session, and whole durable record before effects",
+      "package": "grapt-runtime",
+      "file": "crates/grapt-runtime/src/physical_attempt_owner.rs",
+      "test": "physical_attempt_owner::tests::one_ceiling_refuses_attempt_session_and_whole_record_before_effects",
+      "old": "    let durable_ceiling = ceiling;",
+      "new": "    let durable_ceiling = AttemptRecordCeiling::new(NonZeroU32::MAX);"
+    },
+    {
+      "id": "PA03",
+      "law": "Durable receipt reserve commits before the private supervisor handoff can open",
+      "package": "grapt-runtime",
+      "file": "crates/grapt-runtime/src/physical_attempt_owner.rs",
+      "test": "physical_attempt_owner::tests::supervisor_handoff_reserves_permits_opens_once_and_ends_once",
+      "old": "fn reserve_permit_handoff<R>(\n    store: &mut EventStore,\n    input: PhysicalAttemptOpenInput<'_, R>,\n) -> Result<PermittedAttempt<R>, PhysicalAttemptOwnerError> {\n    let PhysicalAttemptOpenInput {\n        ids,\n        ceiling,\n        session,\n        step,\n        ordinal,\n        reserved,\n        send_permit,\n        terminal,\n        opener,\n    } = input;\n    let maximum = match NonZeroU32::new(ceiling.get()) {\n        Some(value) => value,\n        None => return Err(PhysicalAttemptOwnerError::ZeroCeiling),\n    };\n    let token = ids.mint();\n    let attempt = match PhysicalAttemptId::new(token.as_str()) {\n        Some(value) => value,\n        None => return Err(PhysicalAttemptOwnerError::EmptyIdToken),\n    };\n    let bounded_attempt = BoundedAttemptId::new(attempt.clone(), maximum)\n        .map_err(PhysicalAttemptOwnerError::AttemptBound)?;\n    let bounded_session = BoundedSessionId::new(session.clone(), maximum)\n        .map_err(PhysicalAttemptOwnerError::SessionBound)?;\n    let durable_ceiling = ceiling;\n    let receipt =\n        DurableAttemptReceipt::reserved(bounded_attempt, bounded_session, step, ordinal, reserved);\n    let aggregate = AggregateId::Session(session.clone());\n    let writer = store.fencing_token(&aggregate)?;\n    store.reserve_attempt_receipt(&ReserveInput {\n        receipt: &receipt,\n        writer,\n        terminal,\n        ceiling: durable_ceiling,\n    })?;\n    let writer = store.fencing_token(&aggregate)?;\n    let transaction = store.governed_transaction().map_err(WriteError::from)?;\n    EventStore::permit_attempt_send_within(\n        &transaction,\n        &attempt,\n        writer,\n        durable_ceiling,\n        send_permit,\n    )?;\n    transaction.commit().map_err(WriteError::from)?.discard();\n    Ok(PermittedAttempt { attempt, opener })\n}",
+      "new": "fn reserve_permit_handoff<R>(\n    store: &mut EventStore,\n    input: PhysicalAttemptOpenInput<'_, R>,\n) -> Result<PermittedAttempt<R>, PhysicalAttemptOwnerError> {\n    let PhysicalAttemptOpenInput {\n        ids,\n        ceiling,\n        session,\n        step,\n        ordinal,\n        reserved,\n        send_permit,\n        terminal,\n        opener,\n    } = input;\n    let maximum = match NonZeroU32::new(ceiling.get()) {\n        Some(value) => value,\n        None => return Err(PhysicalAttemptOwnerError::ZeroCeiling),\n    };\n    let token = ids.mint();\n    let attempt = match PhysicalAttemptId::new(token.as_str()) {\n        Some(value) => value,\n        None => return Err(PhysicalAttemptOwnerError::EmptyIdToken),\n    };\n    let bounded_attempt = BoundedAttemptId::new(attempt.clone(), maximum)\n        .map_err(PhysicalAttemptOwnerError::AttemptBound)?;\n    let bounded_session = BoundedSessionId::new(session.clone(), maximum)\n        .map_err(PhysicalAttemptOwnerError::SessionBound)?;\n    let durable_ceiling = ceiling;\n    let _ = (\n        store,\n        bounded_attempt,\n        bounded_session,\n        step,\n        ordinal,\n        reserved,\n        send_permit,\n        terminal,\n        ceiling,\n        durable_ceiling,\n    );\n    Ok(PermittedAttempt { attempt, opener })\n}"
+    },
+    {
+      "id": "PA04",
+      "law": "The durable request-sent permit commits before the private supervisor handoff can open",
+      "package": "grapt-runtime",
+      "file": "crates/grapt-runtime/src/physical_attempt_owner.rs",
+      "test": "physical_attempt_owner::tests::supervisor_handoff_reserves_permits_opens_once_and_ends_once",
+      "old": "fn reserve_permit_handoff<R>(\n    store: &mut EventStore,\n    input: PhysicalAttemptOpenInput<'_, R>,\n) -> Result<PermittedAttempt<R>, PhysicalAttemptOwnerError> {\n    let PhysicalAttemptOpenInput {\n        ids,\n        ceiling,\n        session,\n        step,\n        ordinal,\n        reserved,\n        send_permit,\n        terminal,\n        opener,\n    } = input;\n    let maximum = match NonZeroU32::new(ceiling.get()) {\n        Some(value) => value,\n        None => return Err(PhysicalAttemptOwnerError::ZeroCeiling),\n    };\n    let token = ids.mint();\n    let attempt = match PhysicalAttemptId::new(token.as_str()) {\n        Some(value) => value,\n        None => return Err(PhysicalAttemptOwnerError::EmptyIdToken),\n    };\n    let bounded_attempt = BoundedAttemptId::new(attempt.clone(), maximum)\n        .map_err(PhysicalAttemptOwnerError::AttemptBound)?;\n    let bounded_session = BoundedSessionId::new(session.clone(), maximum)\n        .map_err(PhysicalAttemptOwnerError::SessionBound)?;\n    let durable_ceiling = ceiling;\n    let receipt =\n        DurableAttemptReceipt::reserved(bounded_attempt, bounded_session, step, ordinal, reserved);\n    let aggregate = AggregateId::Session(session.clone());\n    let writer = store.fencing_token(&aggregate)?;\n    store.reserve_attempt_receipt(&ReserveInput {\n        receipt: &receipt,\n        writer,\n        terminal,\n        ceiling: durable_ceiling,\n    })?;\n    let writer = store.fencing_token(&aggregate)?;\n    let transaction = store.governed_transaction().map_err(WriteError::from)?;\n    EventStore::permit_attempt_send_within(\n        &transaction,\n        &attempt,\n        writer,\n        durable_ceiling,\n        send_permit,\n    )?;\n    transaction.commit().map_err(WriteError::from)?.discard();\n    Ok(PermittedAttempt { attempt, opener })\n}",
+      "new": "fn reserve_permit_handoff<R>(\n    store: &mut EventStore,\n    input: PhysicalAttemptOpenInput<'_, R>,\n) -> Result<PermittedAttempt<R>, PhysicalAttemptOwnerError> {\n    let PhysicalAttemptOpenInput {\n        ids,\n        ceiling,\n        session,\n        step,\n        ordinal,\n        reserved,\n        send_permit,\n        terminal,\n        opener,\n    } = input;\n    let maximum = match NonZeroU32::new(ceiling.get()) {\n        Some(value) => value,\n        None => return Err(PhysicalAttemptOwnerError::ZeroCeiling),\n    };\n    let token = ids.mint();\n    let attempt = match PhysicalAttemptId::new(token.as_str()) {\n        Some(value) => value,\n        None => return Err(PhysicalAttemptOwnerError::EmptyIdToken),\n    };\n    let bounded_attempt = BoundedAttemptId::new(attempt.clone(), maximum)\n        .map_err(PhysicalAttemptOwnerError::AttemptBound)?;\n    let bounded_session = BoundedSessionId::new(session.clone(), maximum)\n        .map_err(PhysicalAttemptOwnerError::SessionBound)?;\n    let durable_ceiling = ceiling;\n    let receipt =\n        DurableAttemptReceipt::reserved(bounded_attempt, bounded_session, step, ordinal, reserved);\n    let aggregate = AggregateId::Session(session.clone());\n    let writer = store.fencing_token(&aggregate)?;\n    store.reserve_attempt_receipt(&ReserveInput {\n        receipt: &receipt,\n        writer,\n        terminal,\n        ceiling: durable_ceiling,\n    })?;\n    let _ = send_permit;\n    Ok(PermittedAttempt { attempt, opener })\n}"
+    },
+    {
+      "id": "PA05",
+      "law": "A parsed PhysicalAttemptId cannot construct the externally reachable UnopenedAttempt continuation",
+      "package": "grapt-runtime",
+      "file": "crates/grapt-runtime/src/attempt_admission.rs",
+      "test": "runtime_probes_are_rejected_by_the_compiler",
+      "old": "    pub(crate) fn new(\n        attempt: PhysicalAttemptId,",
+      "new": "    pub fn new(\n        attempt: PhysicalAttemptId,",
+      "test_target": "compile_fail"
+    },
+    {
+      "id": "PA06",
+      "law": "Ordinary public attempt composition refuses before a hostile private unopened factory can run",
+      "package": "grapt-runtime",
+      "file": "crates/grapt-runtime/src/attempt_admission.rs",
+      "test": "attempt_admission::tests::hostile_private_refusal_invokes_zero_reader_factories",
+      "old": "            AttemptAdmission::Refused(refusal) => Err((owner, refusal)),",
+      "new": "            AttemptAdmission::Refused(_refusal) => {\n                let Some(unopened) = preparation.unopened else {\n                    return Err((owner, AttemptAdmissionRefusal::NoIssuer));\n                };\n                let (_attempt, factory) = unopened.into_parts();\n                let _reader = factory();\n                Err((owner, AttemptAdmissionRefusal::NoIssuer))\n            },"
+    },
+    {
+      "id": "PA07",
+      "law": "Reserve-only recovery classifies as NoneInitiated and does not open an adapter",
+      "package": "grapt-runtime",
+      "file": "crates/grapt-runtime/src/physical_attempt_owner.rs",
+      "test": "physical_attempt_owner::tests::supervisor_handoff_reserves_permits_opens_once_and_ends_once",
+      "old": "        ReceiptDisposition::Lost(LostEffect::NoneInitiated) => {\n            PhysicalAttemptRecovery::NoneInitiated\n        }",
+      "new": "        ReceiptDisposition::Lost(LostEffect::NoneInitiated) => PhysicalAttemptRecovery::AmbiguousProcessLoss,"
+    },
+    {
+      "id": "PA08",
+      "law": "Permit-without-terminal recovery classifies as AmbiguousProcessLoss and is not replayed automatically",
+      "package": "grapt-runtime",
+      "file": "crates/grapt-runtime/src/physical_attempt_owner.rs",
+      "test": "physical_attempt_owner::tests::supervisor_handoff_reserves_permits_opens_once_and_ends_once",
+      "old": "        ReceiptDisposition::Lost(LostEffect::Ambiguous { .. }) => {\n            PhysicalAttemptRecovery::AmbiguousProcessLoss\n        }",
+      "new": "        ReceiptDisposition::Lost(LostEffect::Ambiguous { .. }) => PhysicalAttemptRecovery::NoneInitiated,"
+    },
+    {
+      "id": "PA09",
+      "law": "A retry rebuild cannot reuse a preceding physical-attempt identity",
+      "package": "grapt-runtime",
+      "file": "crates/grapt-runtime/src/physical_attempt_owner.rs",
+      "test": "physical_attempt_owner::tests::supervisor_handoff_reserves_permits_opens_once_and_ends_once",
+      "old": "    let attempt = match PhysicalAttemptId::new(token.as_str()) {",
+      "new": "    let attempt = match PhysicalAttemptId::new(\"attempt-fixed\") {"
+    },
+    {
+      "id": "PA10",
+      "law": "Conservative process-loss recovery uses the existing atomic terminal-plus-settled path",
+      "package": "grapt-runtime",
+      "file": "crates/grapt-runtime/src/physical_attempt_owner.rs",
+      "test": "physical_attempt_owner::tests::supervisor_handoff_reserves_permits_opens_once_and_ends_once",
+      "old": "    transaction.commit().map_err(WriteError::from)?.discard();\n    Ok(settlement)",
+      "new": "    drop(transaction);\n    Ok(settlement)"
+    },
+    {
+      "id": "PA11",
+      "law": "The raw provider-running AttemptProtocol continuation is not a public downstream surface",
+      "package": "grapt-runtime",
+      "file": "crates/grapt-runtime/src/attempt_admission.rs",
+      "test": "runtime_probes_are_rejected_by_the_compiler",
+      "old": "    pub(crate) fn prepare<R, T, O>(",
+      "new": "    pub fn prepare<R, T, O>(",
+      "test_target": "compile_fail"
+    },
+    {
+      "id": "DL01",
+      "law": "A reconnecting subscriber re-lists strictly AFTER its own cursor, so the event at the watermark is never delivered a second time",
+      "package": "grapt-runtime",
+      "file": "crates/grapt-runtime/tests/durable_vs_live_fixture.rs",
+      "test": "a_deaf_subscriber_converges_by_re_listing_while_the_live_path_stays_short",
+      "old": "        \"SELECT seq FROM event\n         WHERE aggregate_family = ?1 AND aggregate_id = ?2 AND seq > ?3\n         ORDER BY seq ASC\",",
+      "new": "        \"SELECT seq FROM event\n         WHERE aggregate_family = ?1 AND aggregate_id = ?2 AND seq >= ?3\n         ORDER BY seq ASC\",",
+      "test_target": "durable_vs_live_fixture"
+    },
+    {
+      "id": "DL02",
+      "law": "A from-scratch replay targets an EMPTY database, so every replayed row COMMITS instead of reconciling idempotently against the log it came from",
+      "package": "grapt-runtime",
+      "file": "crates/grapt-runtime/tests/durable_vs_live_fixture.rs",
+      "test": "a_from_scratch_replay_into_a_fresh_database_reproduces_the_log_and_the_fold",
+      "old": "    // The replay target is a SECOND, EMPTY database. Pointing this at `source`\n    // would make the comparison below trivially true.\n    let (mut fresh, fresh_aggregate) = store_with_elected_writer(&session)?;",
+      "new": "    // The replay target is a SECOND, EMPTY database. Pointing this at `source`\n    // would make the comparison below trivially true.\n    let (mut fresh, fresh_aggregate) = (source, source_aggregate);",
+      "test_target": "durable_vs_live_fixture"
+    },
+    {
+      "id": "DL03",
+      "law": "The folded admission sequence is the durable event's OWN sequence, which is exactly what the oracle stores as session_pending.admitted_seq",
+      "package": "grapt-runtime",
+      "file": "crates/grapt-runtime/tests/durable_vs_live_fixture.rs",
+      "test": "a_deaf_subscriber_converges_by_re_listing_while_the_live_path_stays_short",
+      "old": "            self.fold.apply(inbox, event.seq.value());",
+      "new": "            self.fold.apply(inbox, event.seq.value().saturating_sub(1));",
+      "test_target": "durable_vs_live_fixture"
+    },
+    {
+      "id": "DL04",
+      "law": "The disconnected batch publishes NO advisory notice, so the live-only consumer is genuinely missing the facts it never received",
+      "package": "grapt-runtime",
+      "file": "crates/grapt-runtime/tests/durable_vs_live_fixture.rs",
+      "test": "a_deaf_subscriber_converges_by_re_listing_while_the_live_path_stays_short",
+      "old": "    for event in &log[3..] {\n        let (appended, notices) = append_frozen(&mut store, &aggregate, event)?;\n        assert!(matches!(appended, Appended::Committed { .. }));\n        notices.discard();\n    }",
+      "new": "    for event in &log[3..] {\n        let (appended, notices) = append_frozen(&mut store, &aggregate, event)?;\n        assert!(matches!(appended, Appended::Committed { .. }));\n        notices.publish(&mut live);\n    }",
+      "test_target": "durable_vs_live_fixture"
+    },
+    {
+      "id": "DL05",
+      "law": "The advisory buffer is driven PAST MAX_PENDING_NOTICES, so the bounded drop is observed rather than assumed",
+      "package": "grapt-runtime",
+      "file": "crates/grapt-runtime/tests/durable_vs_live_fixture.rs",
+      "test": "an_overflowed_advisory_buffer_reports_its_drops_and_durable_truth_still_converges",
+      "old": "    let total = MAX_PENDING_NOTICES + OVERFLOW;",
+      "new": "    let total = MAX_PENDING_NOTICES - OVERFLOW;",
+      "test_target": "durable_vs_live_fixture"
+    },
+    {
+      "id": "DL06",
+      "law": "SYNTHETIC tool terminal: a CHANGED payload at a committed coordinate is a typed divergence; an unchanged one would only reconcile and prove nothing",
+      "package": "grapt-runtime",
+      "file": "crates/grapt-runtime/tests/durable_vs_live_fixture.rs",
+      "test": "a_synthetic_tool_terminal_replays_by_strict_decode_into_a_fresh_database",
+      "old": "    let changed = ToolTerminalFact::new(\n        attempt,\n        call,\n        ToolTerminalOutcome::Completed { output: None },\n    );",
+      "new": "    let changed = ToolTerminalFact::new(attempt, call, ToolTerminalOutcome::ResultMissing);",
+      "test_target": "durable_vs_live_fixture"
+    },
+    {
+      "id": "DL07",
+      "law": "SYNTHETIC tool terminal: serialization for replay is KIND-BLIND, so a from-scratch replay carries every durable fact and not only the kinds its own projector understands",
+      "package": "grapt-runtime",
+      "file": "crates/grapt-runtime/tests/durable_vs_live_fixture.rs",
+      "test": "a_synthetic_tool_terminal_replays_by_strict_decode_into_a_fresh_database",
+      "old": "        \"SELECT id, seq, created, type, data FROM event\n         WHERE aggregate_family = ?1 AND aggregate_id = ?2\n         ORDER BY seq ASC\",",
+      "new": "        \"SELECT id, seq, created, type, data FROM event\n         WHERE aggregate_family = ?1 AND aggregate_id = ?2\n           AND type LIKE 'session.input.%'\n         ORDER BY seq ASC\",",
+      "test_target": "durable_vs_live_fixture"
+    },
+    {
+      "id": "SE01",
+      "law": "A finish that normalizes to a failure never settles as an ending: the attempt terminal is classified before it is written, not after",
+      "package": "grapt-runtime",
+      "file": "crates/grapt-runtime/src/supervisor/attempt_loop.rs",
+      "test": "supervisor::attempt_loop::tests::a_content_policy_finish_settles_as_failure_not_as_an_ending",
+      "old": "            Some(finish) => match finish.normalize() {\n                NormalizedFinish::Completed { .. } => Ok(finish),\n                NormalizedFinish::Failed { class } => Err(AttemptFailure::new(\n                    AttemptTerminalReason::ProviderFailure { class },\n                    format!(\"provider finish {finish:?} is a failure wearing a terminal's shape\"),\n                )),\n            },\n",
+      "new": "            Some(finish) => Ok(finish),\n"
+    },
+    {
+      "id": "SE05",
+      "law": "The Step SUCCESS terminal is dispatched to the durable store seam, not delegated to the in-memory inner owner: a Step that succeeds writes a durable fact rather than one that dies with the process",
+      "package": "grapt-runtime",
+      "file": "crates/grapt-runtime/src/settlement.rs",
+      "test": "settlement::tests::a_successful_step_writes_a_durable_success_terminal",
+      "old": "            DurableFact::StepEnded { finish } => self.commit_ended(*finish),\n",
+      "new": "            DurableFact::StepEnded { .. } => self.inner.commit(fact),\n"
+    },
+    {
+      "id": "SE06",
+      "law": "The durability boundary refuses a failure-shaped finish instead of encoding it as a disposition: a content-policy refusal never becomes a durable success terminal, stated at the write end as well as at the attempt arm",
+      "package": "grapt-runtime",
+      "file": "crates/grapt-runtime/src/settlement.rs",
+      "test": "settlement::tests::a_failure_shaped_finish_is_refused_rather_than_written_as_a_success",
+      "old": "            NormalizedFinish::Failed { class } => {\n                return Err(OwnerError {\n                    reason: format!(\n                        \"StepEndedV2 refused: finish {finish:?} normalizes to a provider failure ({class:?}), which is not a success terminal\"\n                    ),\n                })\n            }\n",
+      "new": "            NormalizedFinish::Failed { .. } => {\n                grapt_types::ProviderCompletionDisposition::Unstated\n            }\n"
+    },
+    {
+      "id": "IGP01",
+      "law": "Custody deletion: the custody the opener yielded is HELD in the ledger from reserve until its receipt settles; a source that drops it at prepare leaves the reserved receipt unsettleable and the hold count witnesses it",
+      "package": "grapt-runtime",
+      "file": "crates/grapt-runtime/src/provider_source.rs",
+      "test": "provider_source::tests::prepare_reserves_and_the_step_ended_commit_settles_and_releases",
+      "old": "        let (custody, reader) = opened.into_parts();\n        self.ledger.hold(attempt.clone(), custody);",
+      "new": "        let (custody, reader) = opened.into_parts();\n        drop(custody);"
+    },
+    {
+      "id": "IGP02",
+      "law": "A clean Step terminal settles every reserved attempt receipt INSIDE its own transaction; deleting the success-half settlement leaves the durable receipt standing and custody held after the Step ended",
+      "package": "grapt-runtime",
+      "file": "crates/grapt-runtime/src/settlement.rs",
+      "test": "provider_source::tests::a_clean_transcript_settles_receipt_and_custody_at_the_step_ended_commit",
+      "old": "            // Same discipline as the failure half: receipts settle in the\n            // terminal's own transaction, custody releases after its commit.\n            let settled = match &self.receipts {\n                Some(receipts) => receipts\n                    .settle_within(&tx, self.context.writer, self.context.clock.now_ms())\n                    .map_err(|error| OwnerError {\n                        reason: format!(\"attempt receipt settlement refused: {error}\"),\n                    })?,\n                None => Vec::new(),\n            };",
+      "new": "            let settled: Vec<PhysicalAttemptId> = Vec::new();"
+    },
+    {
+      "id": "IGP03",
+      "law": "Error and cancellation terminals settle receipts too: deleting the failure-half settlement leaves the failed attempt's durable receipt standing after the Step failed",
+      "package": "grapt-runtime",
+      "file": "crates/grapt-runtime/src/settlement.rs",
+      "test": "provider_source::tests::visible_output_then_rate_limit_fails_without_a_second_provider_call",
+      "old": "            // Every reserved attempt receipt settles in the SAME transaction\n            // as the terminal it names \u00e2\u20ac\u201d the store's atomic path. Custody is\n            // released only after the commit below succeeds.\n            let settled = match &self.receipts {\n                Some(receipts) => receipts\n                    .settle_within(&tx, self.context.writer, self.context.clock.now_ms())\n                    .map_err(|error| OwnerError {\n                        reason: format!(\"attempt receipt settlement refused: {error}\"),\n                    })?,\n                None => Vec::new(),\n            };",
+      "new": "            let settled: Vec<PhysicalAttemptId> = Vec::new();"
+    },
+    {
+      "id": "IGP04",
+      "law": "visible-output-no-retry: a retryable provider failure AFTER visible output fails the Step with no second provider call; deleting the guard retries into the queued second response",
+      "package": "grapt-runtime",
+      "file": "crates/grapt-runtime/src/step/classification.rs",
+      "test": "provider_source::tests::visible_output_then_rate_limit_fails_without_a_second_provider_call",
+      "old": "    // A retryable failure that already produced output stops the Step, and the\n    // Step keeps the provider's OWN class. The string carrier discarded it:\n    // every such stop read `retryable-failure-after-output`, so a rate limit\n    // and a transport drop were indistinguishable downstream.\n    if report.diagnostics.visible_output {\n        return AttemptDecision::Stop {\n            reason: StepTerminalReason::ProviderFailure {\n                class: detail.class.to_terminal(),\n            },\n        };\n    }\n",
+      "new": ""
+    },
+    {
+      "id": "IGP05",
+      "law": "Raw-FinishReason resurrection on the POST-OPENING forward: once the opening decision is made every later fragment passes through untouched, so the production reader cannot fabricate a success terminal from a provider failure; rewriting a forwarded ProviderFailure into ProviderTerminal(Stop) turns a retryable failure into a one-attempt clean end and the retry witness refuses it. Anchored past the opening decision on purpose, so it cannot reach the synthetic first-fragment refusal that IGP12 owns",
+      "package": "grapt-runtime",
+      "file": "crates/grapt-runtime/src/provider_source.rs",
+      "test": "provider_source::tests::a_pre_output_retry_settles_both_receipts_at_the_one_step_terminal",
+      "old": "            if self.opening_decided {\n                return fragment;\n            }",
+      "new": "            if self.opening_decided {\n                return match fragment {\n                    Some(AttemptFragment::ProviderFailure { .. }) => {\n                        Some(AttemptFragment::ProviderTerminal {\n                            finish: grapt_provider::FinishReason::Stop,\n                            usage: None,\n                            state: AdapterState::none(),\n                        })\n                    }\n                    other => other,\n                };\n            }"
+    },
+    {
+      "id": "IGP06",
+      "law": "Unbounded-channel resurrection: an unbounded queue constructor reappearing beside the bounded provider handoff is caught by the architecture gate",
+      "package": "grapt-runtime",
+      "file": "crates/grapt-runtime/src/supervisor/attempt_loop.rs",
+      "test": "no_unbounded_channel_constructor_appears_in_this_crate",
+      "test_target": "no_unbounded_channels",
+      "old": "    let (fragment_tx, mut fragment_rx) =\n        mpsc::channel::<AttemptFragment>(PROVIDER_CHANNEL_CAPACITY);",
+      "new": "    let (fragment_tx, mut fragment_rx) =\n        mpsc::channel::<AttemptFragment>(PROVIDER_CHANNEL_CAPACITY);\n    let _resurrected = tokio::sync::mpsc::unbounded_channel::<AttemptFragment>();"
+    },
+    {
+      "id": "IGP07",
+      "law": "Tool terminals are durable facts written before the Step terminal; routing them to the in-memory owner erases the durable rows and their committed advisories",
+      "package": "grapt-runtime",
+      "file": "crates/grapt-runtime/src/settlement.rs",
+      "test": "settlement::tests::reused_call_token_is_scoped_by_physical_attempt_and_same_pair_is_idempotent",
+      "old": "            DurableFact::ToolTerminal { call, outcome } => self.commit_tool_terminal(call, outcome),",
+      "new": "            DurableFact::ToolTerminal { .. } => {\n                let _ = Self::commit_tool_terminal;\n                self.inner.commit(fact)\n            }"
+    },
+    {
+      "id": "IGP08",
+      "law": "Receipts settle AFTER the terminal append inside one transaction, proven by terminal read-back; settling before the append cannot prove the terminal and the clean vertical refuses it",
+      "package": "grapt-runtime",
+      "file": "crates/grapt-runtime/src/settlement.rs",
+      "test": "provider_source::tests::a_clean_transcript_settles_receipt_and_custody_at_the_step_ended_commit",
+      "old": "            let appended = grapt_store::step_ended::record_observed(\n                &tx,\n                &self.context.session,\n                &self.context.event_id,\n                self.context.writer,\n                self.context.created_ms,\n                &fact,\n                &mut [],\n            )\n            .map_err(|error| OwnerError {\n                reason: format!(\"StepEndedV2 append refused: {error}\"),\n            })?;\n            // Same discipline as the failure half: receipts settle in the\n            // terminal's own transaction, custody releases after its commit.\n            let settled = match &self.receipts {\n                Some(receipts) => receipts\n                    .settle_within(&tx, self.context.writer, self.context.clock.now_ms())\n                    .map_err(|error| OwnerError {\n                        reason: format!(\"attempt receipt settlement refused: {error}\"),\n                    })?,\n                None => Vec::new(),\n            };",
+      "new": "            let settled = match &self.receipts {\n                Some(receipts) => receipts\n                    .settle_within(&tx, self.context.writer, self.context.clock.now_ms())\n                    .map_err(|error| OwnerError {\n                        reason: format!(\"attempt receipt settlement refused: {error}\"),\n                    })?,\n                None => Vec::new(),\n            };\n            let appended = grapt_store::step_ended::record_observed(\n                &tx,\n                &self.context.session,\n                &self.context.event_id,\n                self.context.writer,\n                self.context.created_ms,\n                &fact,\n                &mut [],\n            )\n            .map_err(|error| OwnerError {\n                reason: format!(\"StepEndedV2 append refused: {error}\"),\n            })?;"
+    },
+    {
+      "id": "IGP09",
+      "law": "The endpoint's route is the opener's CONFIGURED identity, independent of the target; re-deriving it from the target makes EndpointServesAnotherRoute a comparison of a value with itself and the wrong-route witness refuses it",
+      "package": "grapt-provider",
+      "file": "crates/grapt-provider/src/opener.rs",
+      "test": "opener::tests::an_opener_configured_for_another_route_refuses_the_binding",
+      "old": "        // Issued from the opener's own CONFIGURED route \u00e2\u20ac\u201d the independent\n        // identity the carrier's route check compares against the target's.\n        let endpoint = self.issue_endpoint()?;",
+      "new": "        let endpoint = {\n            let _ = Self::issue_endpoint;\n            match &self.base {\n                OpenerBase::Https(base) => EndpointConfig::new()\n                    .with_attempt_override(base)\n                    .resolve(self.family)?\n                    .bind(self.family, authority.model().route().clone()),\n                #[cfg(any(test, feature = \"loopback-testkit\"))]\n                OpenerBase::Loopback(base) => ProviderEndpoint::loopback(\n                    base,\n                    self.family,\n                    authority.model().route().clone(),\n                ),\n            }\n        };"
+    },
+    {
+      "id": "IGP10",
+      "law": "Custody survives every post-custody refusal: a transport failure after from_carrier returns the custody inside its refusal, and a mutant that destroys it is refused by the post-custody witness",
+      "package": "grapt-provider",
+      "file": "crates/grapt-provider/src/opener.rs",
+      "test": "opener::tests::a_post_custody_refusal_returns_the_custody",
+      "old": "                    match adapter.open(input.attempt().clone()) {\n                        Ok(stream) => stream,\n                        Err(error) => {\n                            return Err(AttemptOpenRefusal::Deterministic {\n                                custody: Box::new(custody),\n                                reason: error.to_string(),\n                            })\n                        }\n                    }",
+      "new": "                    match adapter.open(input.attempt().clone()) {\n                        Ok(stream) => stream,\n                        Err(error) => {\n                            let _ = error;\n                            drop(custody);\n                            return Err(AttemptOpenRefusal::Carrier(\n                                CarrierRefusal::StaleIssuance {\n                                    issued_at: 0,\n                                    current: 0,\n                                },\n                            ));\n                        }\n                    }"
+    },
+    {
+      "id": "IGP11",
+      "law": "Reserve and send permit are ONE transaction: a permit refusal after the reserve rolls the reservation back, so no durable receipt survives an admission-refused Step; a mutant that splits the commit leaves the reserved receipt behind and the permit-refusal witness refuses it",
+      "package": "grapt-runtime",
+      "file": "crates/grapt-runtime/src/provider_source.rs",
+      "test": "provider_source::tests::a_permit_refusal_after_reserve_leaves_no_receipt_and_no_provider_call",
+      "old": "        EventStore::permit_attempt_send_within(&tx, attempt, writer, self.ceiling, permit)",
+      "new": "        tx.commit().map_err(|error| format!(\"split reserve commit: {error}\"))?.discard();\n        let tx = store.governed_transaction().map_err(|error| format!(\"split permit transaction: {error}\"))?;\n        EventStore::permit_attempt_send_within(&tx, attempt, writer, self.ceiling, permit)"
+    },
+    {
+      "id": "IGP12",
+      "law": "Opening suppression is POSITIONAL, never first-sighting: the first inner fragment MUST be AttemptOpened, and anything else there means the stream never opened, which outranks whatever class it claimed. A permissive first fragment lets an unopened stream settle as a clean Stop, because the supervisor opens the validator itself and nothing downstream can notice the adapter's opening never arrived",
+      "package": "grapt-runtime",
+      "file": "crates/grapt-runtime/src/provider_source.rs",
+      "test": "provider_source::tests::a_stream_that_does_not_open_first_is_refused_and_a_reopening_is_not_swallowed",
+      "old": "            self.opening_decided = true;\n            match fragment {\n                // `continue`, never a direct await of the next fragment: every\n                // fragment after the decision must leave through the ONE\n                // forward above, or a mutant of that forward is unreachable\n                // for the first content fragment and its row survives green.\n                Some(AttemptFragment::AttemptOpened) => continue,\n                Some(_) => {\n                    return Some(AttemptFragment::ProviderFailure {\n                        class: ProviderFailureClass::InvalidProviderOutput,\n                        classification: None,\n                        message:\n                            \"provider stream did not open: first fragment was not AttemptOpened\"\n                                .to_owned(),\n                        state: AdapterState::none(),\n                    })\n                }\n                None => return None,\n            }",
+      "new": "            self.opening_decided = true;\n            match fragment {\n                Some(AttemptFragment::AttemptOpened) => continue,\n                other => return other,\n            }"
+    },
+    {
+      "id": "IGP13",
+      "law": "A failure that arrives BEFORE any stream fragment keeps the adapter's OWN typed class. The staged Codex arm must yield AttemptOpened first and hand its typed ProviderFailure over unchanged, because the consumer's opening law is positional: a failure arriving at position one is refused as InvalidProviderOutput, which overwrites the real class and with it retry eligibility, so a 429 or a transport drop would arrive terminal and never be retried",
+      "package": "grapt-runtime",
+      "file": "crates/grapt-provider/src/opener.rs",
+      "test": "provider_source::tests::a_pre_stream_transport_failure_keeps_its_class_and_still_retries",
+      "old": "                        self.state = ReaderState::Failing(Box::new(fragment));\n                        return Some(AttemptFragment::AttemptOpened);",
+      "new": "                        self.state = ReaderState::Failing(Box::new(fragment));"
+    },
+    {
+      "id": "DR01",
+      "law": "A request-sent receipt recovered after process loss is settled through the store's exact preallocated ProcessLoss terminal; skipping settlement cannot advance into reclaim or provider replay",
+      "package": "grapt-runtime",
+      "file": "crates/grapt-runtime/src/recovery.rs",
+      "test": "recovery::tests::sent_attempt_restart_settles_without_replay_and_resurrection_cannot_duplicate",
+      "old": "            let mut projectors = [];\n            let settlement = settle_process_loss_recovery(\n                store,\n                &attempt,\n                ceiling,\n                SettledMarker::new(clock.now()),\n                &mut projectors,\n            )\n            .map_err(|error| ProcessLossRecoveryError::Attempt(error.to_string()))?;",
+      "new": "            let settlement = AttemptSettlement::AlreadySettled;"
+    },
+    {
+      "id": "DR02",
+      "law": "Resurrection closure: after proving or appending the exact terminal, recovery reclaims the live receipt so a later restart has no attempt to resurrect",
+      "package": "grapt-runtime",
+      "file": "crates/grapt-runtime/src/recovery.rs",
+      "test": "recovery::tests::sent_attempt_restart_settles_without_replay_and_resurrection_cannot_duplicate",
+      "old": "            EventStore::reclaim_attempt_receipt_within(&transaction, &attempt, writer, ceiling)?;",
+      "new": "            let _ = (&transaction, &attempt, writer, ceiling);"
+    },
+    {
+      "id": "DR03",
+      "law": "An untrustworthy receipt is moved to durable quarantine before the recovery cursor advances; it is never skipped into absence or given a fabricated terminal",
+      "package": "grapt-runtime",
+      "file": "crates/grapt-runtime/src/recovery.rs",
+      "test": "recovery::tests::row_outside_the_injected_ceiling_is_quarantined_without_a_terminal",
+      "old": "            EventStore::quarantine_attempt_receipt_within(\n                &transaction,\n                &attempt,\n                writer,\n                reason,\n                clock.now(),\n            )?;",
+      "new": "            let _ = (&transaction, &attempt, writer, reason, clock.now());"
+    },
+    {
+      "id": "DR04",
+      "law": "Acceptance-corpus counterexample: executing process-loss recovery has no provider boundary, so a runner that records a second provider call must disagree with the pinned no-replay outcome",
+      "package": "grapt-runtime",
+      "test_target": "d1_recovery_corpus",
+      "file": "crates/grapt-runtime/tests/d1_recovery_corpus.rs",
+      "test": "language_neutral_d1_scenarios_execute_and_match_durable_and_public_outcomes",
+      "old": "    let report = recover_process_loss_attempts(state.inbox.store_mut(), &clock, ceiling(row)?)\n        .map_err(|error| error.to_string())?;\n    state.recovery_reports.push(report);",
+      "new": "    state.provider_call_count = state.provider_call_count.saturating_add(1);\n    let report = recover_process_loss_attempts(state.inbox.store_mut(), &clock, ceiling(row)?)\n        .map_err(|error| error.to_string())?;\n    state.recovery_reports.push(report);"
+    },
+    {
+      "id": "DR05",
+      "law": "Acceptance-corpus resurrection: the second recovery observation must report the exact durable terminal count unchanged; inflating only the later observation to two terminals must redden the semantic comparison",
+      "package": "grapt-runtime",
+      "test_target": "d1_recovery_corpus",
+      "file": "crates/grapt-runtime/tests/d1_recovery_corpus.rs",
+      "test": "language_neutral_d1_scenarios_execute_and_match_durable_and_public_outcomes",
+      "old": "        \"terminal count\",\n    )?;\n    // This exact durable count is the resurrection witness. A semantic mutant",
+      "new": "        \"terminal count\",\n    )?;\n    let terminal_count = terminal_count.saturating_add(\n        if state.recovery_reports.len() > 1 { 1 } else { 0 },\n    );\n    // This exact durable count is the resurrection witness. A semantic mutant"
+    }
+  ]
+}

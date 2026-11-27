@@ -1,0 +1,15 @@
+error[E0061]: this function takes 2 arguments but 0 arguments were supplied
+ --> tests/probes/11_ambient_authority.rs:8:24
+  |
+8 |     let _authorities = DeterministicAuthorities::new();
+  |                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^-- two arguments of type `&dyn ClockAuthority` and `&dyn IdAuthority` are missing
+  |
+note: associated function defined here
+ --> src/authority/determinism.rs
+  |
+  |     pub fn new(clock: &'a dyn ClockAuthority, ids: &'a dyn IdAuthority) -> Self {
+  |            ^^^
+help: provide the arguments
+  |
+8 |     let _authorities = DeterministicAuthorities::new(/* &dyn ClockAuthority */, /* &dyn IdAuthority */);
+  |                                                      +++++++++++++++++++++++++++++++++++++++++++++++++

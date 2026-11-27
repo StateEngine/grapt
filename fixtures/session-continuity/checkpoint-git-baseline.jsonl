@@ -1,0 +1,19 @@
+{"op":"git-init","seq":1}
+{"op":"write","seq":2,"value":"before"}
+{"op":"git-commit","seq":3,"message":"checkpoint baseline"}
+{"op":"capture","seq":4,"operation":"capture-git"}
+{"op":"mutate","seq":5,"value":"after"}
+{"op":"plan","seq":6,"operation":"restore-moved","expected_writes":1,"expected_deletes":0,"expected_bytes":6}
+{"op":"git-commit","seq":7,"message":"head moved after planning"}
+{"op":"apply","seq":8,"expected":"refused"}
+{"op":"vcs-read","seq":9,"expected":"last-commit"}
+{"op":"read","seq":10,"expected":"after"}
+{"op":"plan","seq":11,"operation":"restore-exact","expected_writes":1,"expected_deletes":0,"expected_bytes":6}
+{"op":"apply","seq":12,"expected":"ambiguous"}
+{"op":"restart","seq":13}
+{"op":"recover","seq":14,"operation":"restore-exact","expected":"applied"}
+{"op":"read","seq":15,"expected":"before"}
+{"op":"vcs-read","seq":16,"expected":"last-commit"}
+{"op":"negotiate","seq":17,"version":"999","expected":"refused"}
+{"op":"corrupt-journal","seq":18,"operation":"restore-exact"}
+{"op":"recover","seq":19,"operation":"restore-exact","expected":"corrupt"}

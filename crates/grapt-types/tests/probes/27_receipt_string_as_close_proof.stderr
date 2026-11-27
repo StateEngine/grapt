@@ -1,0 +1,5 @@
+error[E0599]: no method named `into_handle` found for struct `ProviderToolInputKey` in the current scope
+  --> tests/probes/27_receipt_string_as_close_proof.rs:20:64
+   |
+20 |     let _durable = ProviderToolInputKey::new("acc-1").unwrap().into_handle(
+   |                    --------------------------------------------^^^^^^^^^^^ method not found in `ProviderToolInputKey`

@@ -1,0 +1,39 @@
+{
+  "version": "1.18.35",
+  "binary_sha256": "77b2cfe4b97df6f15c3673b22100b9f79c711f25ecb9bf513bb82526b15d24fa",
+  "network_disabled": true,
+  "credentials_mounted": false,
+  "provider_calls": 0,
+  "models": {
+    "openai/gpt-6-luna": {
+      "configured_model_sha256": "5c52e71fe9b1ea05843fe93e95a1ed9ec5687f0c981db43280a6ea0a4dae6409",
+      "resolved_limit": {
+        "context": 272000,
+        "input": 922000,
+        "output": 32768
+      },
+      "witness_sha256": "d4a0806d0a66d179e7109db93894753e9193c0dd2da93d3cca7126f1edb64cbb"
+    },
+    "openrouter/anthropic/claude-sonnet-5.5": {
+      "configured_model_sha256": "3bc310e23091dfd31e6bef276c62f21caff8cb7aedfd671a6aa01a8ae370a1ea",
+      "resolved_limit": {
+        "context": 1000000,
+        "output": 128000
+      },
+      "witness_sha256": "60642645af2c1149ba5febe8042e9a6de1d62da4459feaadf64ab18cb194c0b0"
+    },
+    "openrouter/anthropic/claude-haiku-5.5": {
+      "configured_model_sha256": "c315bc87eb78a783acfcbd9739b291449ff63be6e5ec1c3801b3e416f91971fa",
+      "resolved_limit": {
+        "context": 1000000,
+        "input": 1000000,
+        "output": 128000
+      },
+      "witness_sha256": "88d7ceaac66eb349ee8d614c3ad4948396b88f5d254d56241d87157b125bc936",
+      "limit_source": "https://platform.claude.com/docs/en/build-with-claude/context-windows"
+    }
+  },
+  "formula_source": "https://raw.githubusercontent.com/anomalyco/opencode/v1.18.35/packages/opencode/src/session/overflow.ts",
+  "formula_source_sha256": "fa0d52e8a59b737e8129d6473f9f6416567cd765c6068f854e4ea0dd3d351d10",
+  "method": "Network-isolated native models <provider> --verbose --pure, with captured provider metadata and no credentials. Haiku input bound explicitly configured from Anthropic context-overflow documentation; context and output preserved."
+}

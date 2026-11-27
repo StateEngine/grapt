@@ -1,0 +1,179 @@
+{
+  "purpose": "R4D-1 evidence for `grapt-service`. QD01-QD17 each name one load-bearing law of the engine-selection receipt, the exact source edit that removes it, and the witness that must turn red once it is gone. Every mutation is applied inside its own disposable git worktree checked out at the exact candidate commit, so no mutant is ever written into the calling worktree.",
+  "run": "python crates/grapt-service/mutations/run.py",
+  "prefix": "QD",
+  "isolation": "Every mutation is applied inside its own disposable git worktree checked out at the exact candidate commit. No mutant is ever written into the calling worktree, so there is no restore step that could leave a stale build behind.",
+  "scope_note": "`QD` is exclusive to this crate. Four live tokens share the letter Q — `Q` in grapt-runtime, `QA` in grapt-api, `QL` in grapt-location and `QD` here — so the runner selects on a whole-token `re.fullmatch` and `--self-test` proves all four separations. A `str.startswith('Q')` selector would sweep every one of them into a single lane's evidence.",
+  "mutations": [
+    {
+      "id": "QD01",
+      "law": "A selection receipt's instant comes from the injected clock, never from a constant or ambient time",
+      "package": "grapt-service",
+      "file": "crates/grapt-service/src/receipt.rs",
+      "test": "selection_contract::selected_at_comes_from_the_clock_and_nowhere_else",
+      "test_target": "integration",
+      "old": "            selected_at: clock.now(),",
+      "new": "            selected_at: grapt_types::authority::Timestamp::from_millis(0),"
+    },
+    {
+      "id": "QD02",
+      "law": "A recorded attachment is held by owner IDENTITY, so a reused PID never inherits it",
+      "package": "grapt-service",
+      "file": "crates/grapt-service/src/receipt.rs",
+      "test": "selection_contract::a_reused_pid_does_not_inherit_the_attachment",
+      "test_target": "integration",
+      "old": "        if self.owner.is_same_owner(observed) {",
+      "new": "        if self.owner.pid() == observed.pid() {"
+    },
+    {
+      "id": "QD03",
+      "law": "A different owner makes the recorded attachment stale rather than reusable",
+      "package": "grapt-service",
+      "file": "crates/grapt-service/src/receipt.rs",
+      "test": "selection_contract::a_stale_selection_is_refused_against_a_different_owner",
+      "test_target": "integration",
+      "old": "            Err(AttachmentRefusal::NotTheRecordedOwner)\n        }\n    }",
+      "new": "            Ok(())\n        }\n    }"
+    },
+    {
+      "id": "QD04",
+      "law": "A differential whose two sides name one owner is one engine measured twice, not a comparison",
+      "package": "grapt-service",
+      "file": "crates/grapt-service/src/receipt.rs",
+      "test": "selection_contract::a_differential_over_one_owner_is_refused",
+      "test_target": "integration",
+      "old": "        if left.owner().is_same_owner(right.owner()) {\n            return Err(AttachmentRefusal::SameOwnerOnBothSides);\n        }\n",
+      "new": ""
+    },
+    {
+      "id": "QD05",
+      "law": "A differential whose two sides name one engine is not a comparison either",
+      "package": "grapt-service",
+      "file": "crates/grapt-service/src/receipt.rs",
+      "test": "selection_contract::a_differential_over_one_engine_selection_is_refused",
+      "test_target": "integration",
+      "old": "        if left.selection() == right.selection() {\n            return Err(AttachmentRefusal::SameSelectionOnBothSides);\n        }\n",
+      "new": ""
+    },
+    {
+      "id": "QD06",
+      "law": "Reverting the selector is total, so the switch is never one-way",
+      "package": "grapt-service",
+      "file": "crates/grapt-service/src/receipt.rs",
+      "test": "selection_contract::the_selector_reverts_from_every_state",
+      "test_target": "integration",
+      "old": "    pub fn revert(self) -> Self {\n        SelectorState::Retained\n    }",
+      "new": "    pub fn revert(self) -> Self {\n        self\n    }"
+    },
+    {
+      "id": "QD07",
+      "law": "A health-only answer is refused as unattributed, by that exact name",
+      "package": "grapt-service",
+      "file": "crates/grapt-service/src/receipt.rs",
+      "test": "selection_contract::a_health_only_answer_cannot_produce_a_receipt",
+      "test_target": "integration",
+      "old": "            ProbeOutcome::HealthyUnattributed => return Err(AttachmentRefusal::Unattributed),",
+      "new": "            ProbeOutcome::HealthyUnattributed => {\n                return Err(AttachmentRefusal::NotTheRecordedOwner)\n            }"
+    },
+    {
+      "id": "QD08",
+      "law": "An unknown engine label is refused rather than defaulted to an engine",
+      "package": "grapt-service",
+      "file": "crates/grapt-service/src/selection.rs",
+      "test": "selection_contract::an_unknown_label_is_refused_rather_than_defaulted",
+      "test_target": "integration",
+      "old": "            _ => None,",
+      "new": "            _ => Some(EngineSelection::Retained),"
+    },
+    {
+      "id": "QD09",
+      "law": "The recorded refusal vocabulary is stable for ALL FOUR labels, so a projection cannot silently change word; every label reaches expected/state.json",
+      "package": "grapt-service",
+      "file": "crates/grapt-service/src/receipt.rs",
+      "test": "attachment_corpus::every_recorded_refusal_word_is_the_models_own_label",
+      "test_target": "integration",
+      "old": "            AttachmentRefusal::Unattributed => \"unattributed\",",
+      "new": "            AttachmentRefusal::Unattributed => \"no-owner\","
+    },
+    {
+      "id": "QD10",
+      "law": "The durable row's engine label is stable, so an admitted receipt keeps its meaning",
+      "package": "grapt-service",
+      "file": "crates/grapt-service/src/selection.rs",
+      "test": "attachment_corpus::the_corpus_replays_through_the_model_and_matches_every_expected_surface",
+      "test_target": "integration",
+      "old": "            EngineSelection::Rust => \"rust\",",
+      "new": "            EngineSelection::Rust => \"rust-engine\","
+    },
+    {
+      "id": "QD11",
+      "law": "The same-selection refusal label is recorded too — the fourth word now reaches a surface rather than none",
+      "package": "grapt-service",
+      "file": "crates/grapt-service/src/receipt.rs",
+      "test": "attachment_corpus::every_recorded_refusal_word_is_the_models_own_label",
+      "test_target": "integration",
+      "old": "            AttachmentRefusal::SameSelectionOnBothSides => \"same-selection-on-both-sides\",",
+      "new": "            AttachmentRefusal::SameSelectionOnBothSides => \"same-engine\","
+    },
+    {
+      "id": "QD12",
+      "law": "The real manifest is gated: an upward workspace edge added to this crate is refused",
+      "package": "grapt-service",
+      "file": "crates/grapt-service/Cargo.toml",
+      "test": "grapt_service_depends_only_on_allowed_lower_crates",
+      "test_target": "dependency_direction",
+      "old": "[dev-dependencies]\n# Integration tests do not inherit normal dependencies.\ngrapt-types = { path = \"../grapt-types\" }",
+      "new": "[dev-dependencies]\n# Integration tests do not inherit normal dependencies.\ngrapt-types = { path = \"../grapt-types\" }\ngrapt-runtime = { path = \"../grapt-runtime\" }"
+    },
+    {
+      "id": "QD13",
+      "law": "An entry whose identity cannot be established is REFUSED, never assumed to be its own key",
+      "package": "grapt-service",
+      "file": "crates/grapt-service/tests/dependency_direction.rs",
+      "test": "an_unresolvable_workspace_inheritance_is_refused_not_assumed",
+      "test_target": "dependency_direction",
+      "old": "            let Some(inherited) = workspace.get(key) else {\n                return Err(format!(\n                    \"inherits `{key}`, which [workspace.dependencies] does not define\"\n                ));\n            };",
+      "new": "            let Some(inherited) = workspace.get(key) else {\n                return Ok(key.to_owned());\n            };"
+    },
+    {
+      "id": "QD14",
+      "law": "The allowlist admits exactly one workspace crate; widening it silently is what the gate exists to stop",
+      "package": "grapt-service",
+      "file": "crates/grapt-service/tests/dependency_direction.rs",
+      "test": "the_gate_catches_every_back_edge_form",
+      "test_target": "dependency_direction",
+      "old": "const ALLOWED: &[&str] = &[\"grapt-types\"];",
+      "new": "const ALLOWED: &[&str] = &[\"grapt-types\", \"grapt-runtime\"];"
+    },
+    {
+      "id": "QD15",
+      "law": "The manifest validates against the ACTUAL ratified schema file, whose $schema const is the independent oracle — not a literal restated inside this lane",
+      "package": "grapt-service",
+      "file": "fixtures/rust-reconstruction/r4-desktop-attachment/manifest.json",
+      "test": "schema_conformance::the_manifest_validates_against_the_actual_ratified_schema",
+      "test_target": "integration",
+      "old": "\"$schema\": \"../oracle-receipt-manifest.schema.json\",",
+      "new": "\"$schema\": \"https://secode.local/fixtures/rust-reconstruction/oracle-receipt-manifest.schema.json\","
+    },
+    {
+      "id": "QD16",
+      "law": "The evaluator REFUSES any assertion keyword it does not implement, so it can never report a pass it did not perform",
+      "package": "grapt-service",
+      "file": "crates/grapt-service/tests/schema_conformance.rs",
+      "test": "schema_conformance::an_unimplemented_assertion_keyword_is_refused_rather_than_skipped",
+      "test_target": "integration",
+      "old": "            other => panic!(\n                \"the ratified schema uses `{other}` at {path}, which this evaluator does not \\\n                 implement. Refusing to report a pass it did not check: implement the keyword \\\n                 rather than ignoring it.\"\n            ),\n",
+      "new": "            _ => {}\n"
+    },
+    {
+      "id": "QD17",
+      "law": "A type constraint actually separates a matching instance from a violating one; an arm that answers true for everything checks nothing",
+      "package": "grapt-service",
+      "file": "crates/grapt-service/tests/schema_conformance.rs",
+      "test": "schema_conformance::every_type_arm_separates_a_matching_instance_from_a_violating_one",
+      "test_target": "integration",
+      "old": "        \"object\" => instance.is_object(),",
+      "new": "        \"object\" => true,"
+    }
+  ]
+}

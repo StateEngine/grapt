@@ -1,0 +1,99 @@
+error[E0308]: mismatched types
+  --> tests/probes/12_checkpoint_ref_confusion.rs:27:23
+   |
+27 |         plan.restores(&commit);
+   |              -------- ^^^^^^^ expected `&WorkspaceCheckpointRef`, found `&GitCommitId`
+   |              |
+   |              arguments to this method are incorrect
+   |
+   = note: expected reference `&WorkspaceCheckpointRef`
+              found reference `&GitCommitId`
+note: method defined here
+  --> src/checkpoint/restore_plan.rs
+   |
+   |     pub fn restores(&self, checkpoint: &WorkspaceCheckpointRef) -> bool {
+   |            ^^^^^^^^
+
+error[E0308]: mismatched types
+  --> tests/probes/12_checkpoint_ref_confusion.rs:30:23
+   |
+30 |         plan.restores(&artifact);
+   |              -------- ^^^^^^^^^ expected `&WorkspaceCheckpointRef`, found `&ArtifactId`
+   |              |
+   |              arguments to this method are incorrect
+   |
+   = note: expected reference `&WorkspaceCheckpointRef`
+              found reference `&ArtifactId`
+note: method defined here
+  --> src/checkpoint/restore_plan.rs
+   |
+   |     pub fn restores(&self, checkpoint: &WorkspaceCheckpointRef) -> bool {
+   |            ^^^^^^^^
+
+error[E0308]: mismatched types
+  --> tests/probes/12_checkpoint_ref_confusion.rs:33:23
+   |
+33 |         plan.restores(&compaction);
+   |              -------- ^^^^^^^^^^^ expected `&WorkspaceCheckpointRef`, found `&CompactionId`
+   |              |
+   |              arguments to this method are incorrect
+   |
+   = note: expected reference `&WorkspaceCheckpointRef`
+              found reference `&CompactionId`
+note: method defined here
+  --> src/checkpoint/restore_plan.rs
+   |
+   |     pub fn restores(&self, checkpoint: &WorkspaceCheckpointRef) -> bool {
+   |            ^^^^^^^^
+
+error[E0308]: mismatched types
+  --> tests/probes/12_checkpoint_ref_confusion.rs:36:23
+   |
+36 |         plan.restores(&fork);
+   |              -------- ^^^^^ expected `&WorkspaceCheckpointRef`, found `&SessionId`
+   |              |
+   |              arguments to this method are incorrect
+   |
+   = note: expected reference `&WorkspaceCheckpointRef`
+              found reference `&SessionId`
+note: method defined here
+  --> src/checkpoint/restore_plan.rs
+   |
+   |     pub fn restores(&self, checkpoint: &WorkspaceCheckpointRef) -> bool {
+   |            ^^^^^^^^
+
+error[E0308]: mismatched types
+  --> tests/probes/12_checkpoint_ref_confusion.rs:40:23
+   |
+40 |         plan.restores(&restore_plan);
+   |              -------- ^^^^^^^^^^^^^ expected `&WorkspaceCheckpointRef`, found `&CheckpointRestorePlanId`
+   |              |
+   |              arguments to this method are incorrect
+   |
+   = note: expected reference `&WorkspaceCheckpointRef`
+              found reference `&CheckpointRestorePlanId`
+note: method defined here
+  --> src/checkpoint/restore_plan.rs
+   |
+   |     pub fn restores(&self, checkpoint: &WorkspaceCheckpointRef) -> bool {
+   |            ^^^^^^^^
+
+error[E0061]: this function takes 5 arguments but 4 arguments were supplied
+  --> tests/probes/12_checkpoint_ref_confusion.rs:51:5
+   |
+51 |     SettledRestorePlan::apply(head, rescue, lease, authorities)
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^ ----          -----  ----------- argument #4 of type `CheckpointRestoreAuthorityLease` is missing
+   |                               |             |
+   |                               |             expected `PlanPreconditionObservation`, found `AuthorityLease`
+   |                               expected `SettledRestorePlan`, found `CheckpointHeadId`
+   |
+note: method defined here
+  --> src/checkpoint/restore_admission.rs
+   |
+   |     pub fn apply(
+   |            ^^^^^
+help: provide the argument
+   |
+51 -     SettledRestorePlan::apply(head, rescue, lease, authorities)
+51 +     SettledRestorePlan::apply(/* SettledRestorePlan */, rescue, /* PlanPreconditionObservation */, /* CheckpointRestoreAuthorityLease */, authorities)
+   |

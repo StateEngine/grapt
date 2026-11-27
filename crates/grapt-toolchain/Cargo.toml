@@ -1,0 +1,15 @@
+[package]
+name = "grapt-toolchain"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+description = "The verified tool-binary activation boundary: typed pin/identity contract, bounded tar decode, staged atomic activation with re-cut refusal and identity-write rollback (security-continuity row 1)."
+
+[dependencies]
+grapt-types = { path = "../grapt-types" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+
+[lints]
+workspace = true

@@ -1,0 +1,15 @@
+error[E0382]: borrow of moved value: `builder`
+  --> tests/probes/06_sealed_router_admits_no_further_route.rs:25:17
+   |
+23 |     let mut builder = ApiRouterBuilder::new(bound);
+   |         ----------- move occurs because `builder` has type `ApiRouterBuilder`, which does not implement the `Copy` trait
+24 |     let _sealed = builder.seal();
+   |                           ------ `builder` moved due to this method call
+25 |     let _late = builder.register(RouteMethod::Get, path, ok);
+   |                 ^^^^^^^ value borrowed here after move
+   |
+note: `ApiRouterBuilder::seal` takes ownership of the receiver `self`, which moves `builder`
+  --> src/router.rs
+   |
+   |     pub fn seal(self) -> ApiRouter {
+   |                 ^^^^

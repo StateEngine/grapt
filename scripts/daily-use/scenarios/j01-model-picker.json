@@ -1,0 +1,30 @@
+{
+  "name": "J01 configured providers in the retained model picker",
+  "steps": [
+    {"expect": {"retained": "Select a project"}, "polls": 120},
+    {"key": "i"},
+    {"expect": {"retained": "ctrl+x tab agents"}, "polls": 120},
+    {"key": "Enter"},
+    {"key": "Control+x"},
+    {"key": "m"},
+    {"expect": {"retained": "Select model"}, "polls": 120},
+    {"capture": "configured model picker"},
+    {"paste": "North Mini"},
+    {"expect": {"retained": "North Mini Code (free)"}, "polls": 120},
+    {"capture": "OpenRouter model search"},
+    {"key": "Escape"},
+    {"key": "Control+x"},
+    {"key": "m"},
+    {"paste": "GPT-5.6 Sol"},
+    {"expect": {"retained": "GPT-5.6 Sol"}, "polls": 120},
+    {"capture": "OpenAI model search"},
+    {"key": "Enter"},
+    {"expect": {"retained": "Select variant"}, "polls": 120},
+    {"key": "Enter"},
+    {"paste": "Reply exactly PICKER_OPENAI_OK. Do not use tools."},
+    {"key": "Enter", "submission": true},
+    {"expect": {"retained": "PICKER_OPENAI_OK"}, "polls": 240},
+    {"capture": "OpenAI prompt submitted after picker selection"},
+    {"key": "Control+c"}
+  ]
+}

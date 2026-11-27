@@ -1,0 +1,236 @@
+{
+  "schema": 1,
+  "prefix": "NMD",
+  "rows": [
+    {
+      "id": "NMD01",
+      "path": "crates/grapt-store/src/mailbox/remote.rs",
+      "before": "if &input.scope != expected {",
+      "after": "if false {",
+      "witness": "foreign_scope_and_changed_ack_coordinates_cannot_settle_or_consume",
+      "law": "Separate authenticated incoming scope",
+      "target": "remote_mailbox",
+      "crate": "grapt-store"
+    },
+    {
+      "id": "NMD02",
+      "path": "crates/grapt-store/src/mailbox/remote.rs",
+      "before": "if record.scope() != scope {",
+      "after": "if false {",
+      "witness": "foreign_scope_and_changed_ack_coordinates_cannot_settle_or_consume",
+      "law": "Separate authenticated settlement/consumption scope",
+      "target": "remote_mailbox",
+      "crate": "grapt-store"
+    },
+    {
+      "id": "NMD03",
+      "path": "crates/grapt-store/src/mailbox/remote.rs",
+      "before": "|| immutable_bytes(&original.message, &original.metadata)\n                    != immutable_bytes(&message, &metadata)",
+      "after": "|| false",
+      "witness": "conflicting_body_ref_order_timestamp_or_supersedes_refuses_without_a_new_admission",
+      "law": "Immutable message bytes reconcile or refuse",
+      "target": "remote_mailbox",
+      "crate": "grapt-store"
+    },
+    {
+      "id": "NMD04",
+      "path": "crates/grapt-store/src/mailbox/remote.rs",
+      "before": "metadata.ack = original.metadata.ack;",
+      "after": "let _ = original.metadata.ack;",
+      "witness": "reopen_after_admission_replays_original_ack_coordinates_on_new_binding",
+      "law": "Restart/rebind retains original ten ACK coordinates",
+      "target": "remote_mailbox",
+      "crate": "grapt-store"
+    },
+    {
+      "id": "NMD05",
+      "path": "crates/grapt-store/src/mailbox/remote.rs",
+      "before": "if !record.ack().is_exact_repeat_of(ack) {",
+      "after": "if false {",
+      "witness": "foreign_scope_and_changed_ack_coordinates_cannot_settle_or_consume",
+      "law": "Every ACK settlement coordinate must match",
+      "target": "remote_mailbox",
+      "crate": "grapt-store"
+    },
+    {
+      "id": "NMD06",
+      "path": "crates/grapt-store/src/mailbox/remote.rs",
+      "before": "first_pending.unwrap_or(i64::MAX).min(",
+      "after": "first_pending.map(|_| i64::MAX).unwrap_or(i64::MAX).min(",
+      "witness": "a_later_ack_cannot_advance_checkpoint_past_an_earlier_debt",
+      "law": "Checkpoint cannot lead pending admission",
+      "target": "remote_mailbox",
+      "crate": "grapt-store"
+    },
+    {
+      "id": "NMD07",
+      "path": "crates/grapt-store/src/mailbox/remote.rs",
+      "before": "UPDATE mailbox_message SET record_bytes = ?1 WHERE message_id = ?2",
+      "after": "UPDATE mailbox_message SET record_bytes = ?1, consumed = 0 WHERE message_id = ?2",
+      "witness": "archived_superseded_and_consumed_replays_cannot_resurrect_work",
+      "law": "Replay cannot clear notification consumption",
+      "target": "remote_mailbox",
+      "crate": "grapt-store"
+    },
+    {
+      "id": "NMD08",
+      "path": "crates/grapt-store/src/mailbox/remote.rs",
+      "before": "metadata.archive = original.metadata.archive;",
+      "after": "let _ = original.metadata.archive;",
+      "witness": "archived_superseded_and_consumed_replays_cannot_resurrect_work",
+      "law": "Old active projection cannot resurrect archived work",
+      "target": "remote_mailbox",
+      "crate": "grapt-store"
+    },
+    {
+      "id": "NMD09",
+      "path": "crates/grapt-store/src/mailbox/remote.rs",
+      "before": "metadata.superseded_by = original.metadata.superseded_by.clone();",
+      "after": "let _ = original.metadata.superseded_by.clone();",
+      "witness": "archived_superseded_and_consumed_replays_cannot_resurrect_work",
+      "law": "Old projection cannot resurrect superseded work",
+      "target": "remote_mailbox",
+      "crate": "grapt-store"
+    },
+    {
+      "id": "NMD10",
+      "path": "crates/grapt-store/src/mailbox/remote/codec.rs",
+      "before": "_ => return Err(\"unknown remote attention\".into()),",
+      "after": "_ => MailAttention::Quiet,",
+      "witness": "malformed_metadata_and_column_disagreement_refuse_before_scope_or_attention_filtering",
+      "law": "Unknown attention cannot become silent omission",
+      "target": "remote_mailbox",
+      "crate": "grapt-store"
+    },
+    {
+      "id": "NMD11",
+      "path": "crates/grapt-store/src/mailbox/remote.rs",
+      "before": "Some(SecondaryProjectionState::Refused | SecondaryProjectionState::Unreadable)",
+      "after": "Some(SecondaryProjectionState::Refused)",
+      "witness": "secondary_projection_debt_does_not_erase_primary_delivery_or_read_attention",
+      "law": "Unreadable secondary projection retains repair debt",
+      "target": "remote_mailbox",
+      "crate": "grapt-store"
+    },
+    {
+      "id": "NMD12",
+      "path": "crates/grapt-store/src/mailbox/remote/codec.rs",
+      "before": "reader.finish()?;",
+      "after": "let _ = reader;",
+      "witness": "malformed_metadata_and_column_disagreement_refuse_before_scope_or_attention_filtering",
+      "law": "Trailing metadata refuses",
+      "target": "remote_mailbox",
+      "crate": "grapt-store"
+    },
+    {
+      "id": "NMD13",
+      "path": "crates/grapt-store/src/mailbox/remote/codec.rs",
+      "before": "|| digest(&message, &metadata).map_err(|e| e.to_string())?\n            != *metadata.ack.canonical_message_digest()",
+      "after": "|| false",
+      "witness": "malformed_metadata_and_column_disagreement_refuse_before_scope_or_attention_filtering",
+      "law": "Canonical immutable digest detects changed body",
+      "target": "remote_mailbox",
+      "crate": "grapt-store"
+    },
+    {
+      "id": "NMD14",
+      "path": "crates/grapt-store/src/mailbox/remote.rs",
+      "before": "|| (acknowledged == 1) != metadata.primary_witnessed",
+      "after": "|| false",
+      "witness": "malformed_metadata_and_column_disagreement_refuse_before_scope_or_attention_filtering",
+      "law": "Primary marker and debt metadata agree",
+      "target": "remote_mailbox",
+      "crate": "grapt-store"
+    },
+    {
+      "id": "NMD15",
+      "path": "crates/grapt-store/src/mailbox.rs",
+      "before": "    if stored.record_bytes.starts_with(remote::TAG) {\n        return Err(WriteError::RemoteMailbox {\n            reason: \"remote mail requires scoped delivery/consumption APIs\".into(),\n        });\n    }\n    let acknowledged:",
+      "after": "    let acknowledged:",
+      "witness": "quiet_done_and_explicit_action_done_keep_provider_attention_separate_from_kind",
+      "law": "Legacy ACK cannot bypass remote proof",
+      "target": "remote_mailbox",
+      "crate": "grapt-store"
+    },
+    {
+      "id": "NMD16",
+      "path": "crates/grapt-store/src/mailbox.rs",
+      "before": "    if stored.record_bytes.starts_with(remote::TAG) {\n        return Err(WriteError::RemoteMailbox {\n            reason: \"remote mail requires scoped delivery/consumption APIs\".into(),\n        });\n    }\n    let consumed:",
+      "after": "    let consumed:",
+      "witness": "quiet_done_and_explicit_action_done_keep_provider_attention_separate_from_kind",
+      "law": "Legacy consume cannot bypass remote scope/attention",
+      "target": "remote_mailbox",
+      "crate": "grapt-store"
+    },
+    {
+      "id": "NMD17",
+      "path": "crates/grapt-store/src/mailbox/remote.rs",
+      "before": "candidate = Some(record.ack().source_cursor().clone());",
+      "after": "return Ok(RemoteMailboxCheckpointPage { candidate: Some(record.ack().source_cursor().clone()), next_before: None, decoded_bytes });",
+      "witness": "checkpoint_does_not_skip_a_corrupt_earlier_settled_body",
+      "law": "Checkpoint requires complete prefix validation",
+      "target": "remote_mailbox",
+      "crate": "grapt-store"
+    },
+    {
+      "id": "NMD18",
+      "path": "crates/grapt-store/src/mailbox/remote/codec.rs",
+      "before": "    let mut bytes = b\"secode-remote-mail-identity-v1\".to_vec();\n    bytes.extend_from_slice(&scope_bytes(scope));",
+      "after": "    let mut bytes = b\"secode-remote-mail-identity-v1\".to_vec();\n    let _ = scope;",
+      "witness": "project_pairs_with_the_same_remote_id_remain_distinct",
+      "law": "Paired projects/principal/recipient scope local identity",
+      "target": "remote_mailbox",
+      "crate": "grapt-store"
+    },
+    {
+      "id": "NMD19",
+      "path": "crates/grapt-store/src/mailbox/remote.rs",
+      "before": "&& !self.superseded_locally",
+      "after": "&& true",
+      "witness": "a_new_backward_supersession_excludes_its_target_without_refetching_the_old_dto",
+      "law": "Verified backward source edges suppress their targets",
+      "target": "remote_mailbox",
+      "crate": "grapt-store"
+    },
+    {
+      "id": "NMD20",
+      "path": "crates/grapt-store/src/mailbox.rs",
+      "before": "        if target_row.record_bytes.starts_with(remote::TAG) {\n            return Err(WriteError::RemoteMailbox {\n                reason: \"local mail cannot supersede scoped remote mail\".into(),\n            });\n        }\n        if target_row.recipient",
+      "after": "        if target_row.recipient",
+      "witness": "ordinary_local_mail_cannot_supersede_scoped_remote_mail",
+      "law": "Legacy authority cannot suppress scoped remote work",
+      "target": "remote_mailbox",
+      "crate": "grapt-store"
+    },
+    {
+      "id": "NMD21",
+      "path": "crates/grapt-store/src/mailbox/remote.rs",
+      "before": "        decode_row(&successor)?;",
+      "after": "        let _ = &successor;",
+      "witness": "a_corrupt_successor_cannot_silently_hide_a_valid_mailbox_target",
+      "law": "Supersession index must match canonical successor before filtering",
+      "target": "remote_mailbox",
+      "crate": "grapt-store"
+    },
+    {
+      "id": "NMD22",
+      "path": "crates/grapt-store/src/mailbox/remote.rs",
+      "before": "sender_address(expected, &input.sender)?",
+      "after": "SeatRecipientId::try_new(input.sender.as_str()).map_err(|error| refusal(error.to_string()))?",
+      "witness": "exact_foreign_sender_is_preserved_without_assuming_it_is_a_local_seat_address",
+      "law": "Foreign principal is not a local address; preserve exact source sender",
+      "target": "remote_mailbox",
+      "crate": "grapt-store"
+    },
+    {
+      "id": "NMD23",
+      "path": "crates/grapt-store/src/mailbox/remote.rs",
+      "before": "!self.metadata.primary_witnessed",
+      "after": "self.metadata.projection.is_none()",
+      "witness": "witnessed_primary_with_unmeasured_fake_projection_is_not_pending_or_fabricated",
+      "law": "Unavailable secondary measurement is distinct from primary delivery debt",
+      "target": "remote_mailbox",
+      "crate": "grapt-store"
+    }
+  ]
+}

@@ -1,0 +1,1 @@
+| `crates/secode-worktree/src/lib.rs`, `crates/secode-worktree/src/git.rs` | `openai/codex`, `codex-rs/worktree/src/lib.rs`, `codex-rs/worktree/src/git.rs` | `092d3acd6bec3e3a14bdc7e7a2810ab628ab759d` | Modified: explicit destination, bounded asynchronous Git I/O, no cleanup or ownership metadata. |

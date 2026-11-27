@@ -1,0 +1,4 @@
+{"op":"git-init","seq":1}
+{"op":"write","seq":2,"value":"before"}
+{"op":"capture","seq":3,"operation":"capture-unborn","expected":"refused"}
+{"op":"read","seq":4,"expected":"before"}

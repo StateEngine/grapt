@@ -1,0 +1,1 @@
+| `crates/secode-product/src/dogfood/tools/shadow.rs` | `openai/codex` | `codex-rs/core/src/tools/code_mode/telemetry.rs`, `codex-rs/core/src/tools/code_mode/delegate.rs` | `bb64b894fd67158be0f874872e6d7bfe717e7368` | Apache-2.0 | Adapted lifecycle observation and abandonment semantics; uses Grapt's existing bounded diagnostic writer and closed redacted fields. |

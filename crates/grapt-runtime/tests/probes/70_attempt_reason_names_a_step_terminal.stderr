@@ -1,0 +1,13 @@
+error[E0308]: mismatched types
+  --> tests/probes/70_attempt_reason_names_a_step_terminal.rs:23:30
+   |
+23 |     let _ = StepFailure::new(attempt_reason, "interrupted");
+   |             ---------------- ^^^^^^^^^^^^^^ expected `StepTerminalReason`, found `AttemptTerminalReason`
+   |             |
+   |             arguments to this function are incorrect
+   |
+note: associated function defined here
+  --> src/owner.rs
+   |
+   |     pub fn new(reason: StepTerminalReason, detail: impl Into<BoundedDetail>) -> Self {
+   |            ^^^

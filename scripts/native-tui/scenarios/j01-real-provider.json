@@ -1,0 +1,101 @@
+{
+  "name": "J01 MW-AUTHOR — the native client against a real product and a real provider",
+  "about": [
+    "The acceptance J01 actually owes: launch the SHIPPED native terminal client",
+    "against the accepted Rust product, select project, agent and model before",
+    "chatting, stream a REAL external response, and reopen the same Session.",
+    "",
+    "The product here is configured against the campaign's real provider, in a",
+    "service root of this campaign's own — no fixture provider, no contract",
+    "double, no other campaign's preserved store.",
+    "",
+    "The prompt is deliberately small and tool-free. It is a real completion,",
+    "billed like any other, and the acceptance is that the client streams it and",
+    "can reopen it, not that the model says anything in particular.",
+    "",
+    "`expect` waits are generous here because a real provider takes real time,",
+    "and they are still a bounded count of fixed polls with no clock read.",
+    "",
+    "The waits target `[text]` — the transcript's own slice marker — and never",
+    "the prompt words. An earlier revision waited for `canary`, which the",
+    "COMPOSER also contains while the prompt is being typed, so the run passed",
+    "on its own echo before the model had answered. An expectation a screen can",
+    "satisfy without the product doing anything is not an expectation."
+  ],
+  "steps": [
+    {
+      "expect": "PROJECTS"
+    },
+    {
+      "capture": "the project gateway, read from the real product"
+    },
+    {
+      "key": "Enter"
+    },
+    {
+      "expect": "AGENTS"
+    },
+    {
+      "capture": "the real product's agent roster"
+    },
+    {
+      "key": "Enter"
+    },
+    {
+      "expect": "MODELS"
+    },
+    {
+      "capture": "the real product's model catalogue"
+    },
+    {
+      "key": "Enter"
+    },
+    {
+      "expect": "SESSIONS"
+    },
+    {
+      "capture": "project, agent and model chosen before any prompt exists"
+    },
+    {
+      "key": "n"
+    },
+    {
+      "expect": "TRANSCRIPT"
+    },
+    {
+      "capture": "a session created against that selection"
+    },
+    {
+      "paste": "Reply with exactly: native tui canary acknowledged. Do not use tools."
+    },
+    {
+      "capture": "the prompt, composed"
+    },
+    {
+      "key": "Enter"
+    },
+    {
+      "expect": "[text] native tui canary",
+      "polls": 240
+    },
+    {
+      "capture": "a real external response streamed into the native transcript"
+    },
+    {
+      "key": "Escape"
+    },
+    {
+      "key": "Enter"
+    },
+    {
+      "expect": "[text] native tui canary",
+      "polls": 60
+    },
+    {
+      "capture": "the same Session reopened, with its durable history"
+    },
+    {
+      "key": "Control+q"
+    }
+  ]
+}

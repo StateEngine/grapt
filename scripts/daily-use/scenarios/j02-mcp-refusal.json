@@ -1,0 +1,81 @@
+{
+  "name": "J02 counterexample - a refused MCP call never reaches the server",
+  "about": [
+    "J02 counterexample - REFUSING the ask, and proving the tool did not run.",
+    "",
+    "WHY THE POSITIVE JOURNEY IS NOT ENOUGH ALONE. That an allowed call runs",
+    "cannot distinguish a product that genuinely gates on the permission from",
+    "one whose prompt is decorative and whose call dispatches regardless. This",
+    "is the other half, and it is the half that makes the approval mean",
+    "something.",
+    "",
+    "THE EVIDENCE IS AN ABSENCE, SO IT IS TAKEN WHERE ABSENCE IS MEANINGFUL.",
+    "A screen not showing the token proves very little - a slow render, a",
+    "scrolled view or a still-streaming row all look the same. The load-bearing",
+    "claim is made OUTSIDE the client, against the server's own transcript:",
+    "after a refusal it must contain NO `tools/call` entry for this run. The",
+    "server records every inbound line, so a dispatch that happened could not",
+    "be missing from it.",
+    "",
+    "That check is performed by the correlation step after the run, not by this",
+    "scenario, and this file does not pretend the on-screen absence is the",
+    "proof. What the scenario establishes is that the ask was drawn, refused",
+    "through the client's own binding, and dismissed.",
+    "",
+    "REFUSAL USES THE CLIENT'S OWN BINDING. The retained Prompt declares its",
+    "escape key as reject, so Escape selects Reject rather than a key this",
+    "scenario invented.",
+    "",
+    "A DIFFERENT ARGUMENT THAN THE POSITIVE JOURNEY. The text is `refused-call`",
+    "rather than `daily-use`, so the two runs' transcripts and screens can never",
+    "satisfy each other's assertions, and a stale transcript from the approval",
+    "run cannot be mistaken for this one's.",
+    "",
+    "THE TOKEN MUST NOT APPEAR. It is asserted absent on screen as a supporting",
+    "signal only. Its real weight is that ZULUQUEBEC7731 exists solely in the",
+    "server's source: if it were rendered here, the call would have run despite",
+    "the refusal, which is the defect this scenario is looking for."
+  ],
+  "steps": [
+    {
+      "expect": { "retained": "Select a project" },
+      "polls": 240
+    },
+    { "capture": "the opening screen" },
+    { "key": { "retained": "i" } },
+    {
+      "expect": { "retained": "ctrl+x tab agents" },
+      "polls": 240
+    },
+    { "key": { "retained": "Enter" } },
+    {
+      "absent": { "retained": "Allow once" },
+      "polls": 240
+    },
+    {
+      "absent": { "retained": "ZULUQUEBEC7731" },
+      "polls": 120
+    },
+    { "capture": "before the ask, with no server token anywhere" },
+    {
+      "paste": "Call the journey_echo tool with the text refused-call and then report, character for character, the exact text the tool returned."
+    },
+    { "key": "Enter" },
+    {
+      "expect": { "retained": "Allow once" },
+      "polls": 960
+    },
+    { "capture": "the ask, before it is refused" },
+    { "key": { "retained": "Escape" } },
+    {
+      "absent": { "retained": "Allow once" },
+      "polls": 480
+    },
+    {
+      "absent": { "retained": "ZULUQUEBEC7731" },
+      "polls": 480
+    },
+    { "capture": "refused, and the server's token never appeared" },
+    { "key": { "retained": "Control+c" } }
+  ]
+}

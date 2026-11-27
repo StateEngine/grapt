@@ -1,0 +1,11 @@
+error[E0599]: no associated function or constant named `admitted` found for struct `AttemptPreparation<R>` in the current scope
+  --> tests/probes/75_public_attempt_source_mints_identity.rs:25:29
+   |
+25 |         AttemptPreparation::admitted()
+   |                             ^^^^^^^^ associated function or constant not found in `AttemptPreparation<_>`
+   |
+note: if you're trying to build a new `AttemptPreparation<_>`, consider using `AttemptPreparation::<R>::refused` which returns `AttemptPreparation<_>`
+  --> src/attempt_admission.rs
+   |
+   |     pub fn refused(refusal: AttemptAdmissionRefusal) -> Self {
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

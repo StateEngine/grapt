@@ -1,0 +1,180 @@
+{
+  "schema": "grapt.session-continuity.acceptance.v1",
+  "campaign": "SESSION-CONTINUITY-01@r1",
+  "base": "6fe79ddf09272aab309d5ce14276af8db3c15da8",
+  "oracle": "42e4888cc0",
+  "charter_blob": "86320335d92670848f30e42e5b70e0daa0bc805c",
+  "law_pack": {
+    "revision": 9,
+    "sha256": "d33d1592c27845f9a0f7ab9c4f721106b2437dbbbc1b725b45355c4ce99e08d8"
+  },
+  "sources": {
+    "docs/reports/SECODE_RUST_RECONSTRUCTION_DISPOSITION_2026-08-07.md": "cca761d01667451dbac9bda6a8c6424ce6c25313fdc4457882f41fc10b2a70fc",
+    "specs/secode-rust-agency-continuity-amendment-r1-2026-08-08.md": "97c14bd84ac1c742721865b66259d718bb4125b50fa429976ad4467e1c15c581"
+  },
+  "scenarios": [
+    {
+      "id": "CONT-J01-TWO-COMPACTIONS",
+      "acceptance": "J01",
+      "kind": "positive",
+      "carrier": {
+        "path": "crates/grapt-product/tests/dogfood_headless/compaction_continuity.rs",
+        "test": "successive_compactions_refresh_instructions_and_replay_exactly"
+      },
+      "claim": "Two successive production compactions with changed AGENTS.md refresh instructions, publish live and history rows with distinct windows and epoch+1, and replay byte-identically after restart."
+    },
+    {
+      "id": "CONT-J01-PUBLISHED-CANCEL",
+      "acceptance": "J01",
+      "kind": "counterexample",
+      "carrier": {
+        "path": "crates/grapt-product/src/dogfood/continuation/compaction.rs",
+        "test": "an_interrupt_after_publication_does_not_disown_the_published_descriptor"
+      },
+      "claim": "An interrupt observed after the descriptor commits cannot report the durable compaction as interrupted; an unpublished one is the interruption."
+    },
+    {
+      "id": "CONT-J01-NO-PROGRESS",
+      "acceptance": "J01",
+      "kind": "counterexample",
+      "carrier": {
+        "path": "crates/grapt-product/tests/dogfood_headless/sustained_allowance.rs",
+        "test": "swr_c02_no_progress_summary_is_refused_before_publication"
+      },
+      "claim": "A summary that does not reduce context is refused before publication and the previous descriptor stays in effect."
+    },
+    {
+      "id": "CONT-J02-CLI-CRASH-RESUME",
+      "acceptance": "J02",
+      "kind": "positive",
+      "carrier": {
+        "path": "crates/grapt-product/tests/dogfood_headless/cli_continuity.rs",
+        "test": "a_crashed_session_resumes_through_the_shipped_cli_and_refuses_named_mismatches"
+      },
+      "claim": "The shipped CLI creates and works a Session, the product is killed mid-attempt, and after restart attach --resume and a resumed run preserve identity with exactly one process-loss terminal."
+    },
+    {
+      "id": "CONT-J02-STALE-CURSOR",
+      "acceptance": "J02",
+      "kind": "counterexample",
+      "carrier": {
+        "path": "crates/grapt-product/src/dogfood/history.rs",
+        "test": "retained_message_order_and_bidirectional_cursors_preserve_the_timeline"
+      },
+      "claim": "A well-formed cursor naming no message in the Session refuses instead of returning an empty page."
+    },
+    {
+      "id": "CONT-J02-NAMED-MISMATCHES",
+      "acceptance": "J02",
+      "kind": "counterexample",
+      "carrier": {
+        "path": "crates/grapt-product/tests/dogfood_headless/cli_continuity.rs",
+        "test": "a_crashed_session_resumes_through_the_shipped_cli_and_refuses_named_mismatches"
+      },
+      "claim": "Wrong project, wrong service root, stale cursor, a newer engine migration and a corrupt store each refuse actionably without mutating the store."
+    },
+    {
+      "id": "CONT-J03-SUBAGENT-SUCCESSOR",
+      "acceptance": "J03",
+      "kind": "positive",
+      "carrier": {
+        "path": "crates/grapt-product/tests/dogfood_headless/subagent_continuity.rs",
+        "test": "a_lost_child_settles_once_and_a_successor_child_delivers_to_the_same_parent"
+      },
+      "claim": "After a child is lost with its runtime, a successor child completes under the new generation and delivers to the same parent with lineage intact."
+    },
+    {
+      "id": "CONT-J03-STALE-CHILD",
+      "acceptance": "J03",
+      "kind": "counterexample",
+      "carrier": {
+        "path": "crates/grapt-product/tests/dogfood_headless/subagent_continuity.rs",
+        "test": "a_lost_child_settles_once_and_a_successor_child_delivers_to_the_same_parent"
+      },
+      "claim": "The lost child settles once as process loss, is never replayed, and its stale Session refuses late prompts so no escaped delivery settles the parent."
+    },
+    {
+      "id": "CONT-J03-PARENT-INTERRUPT",
+      "acceptance": "J03",
+      "kind": "positive",
+      "carrier": {
+        "path": "crates/grapt-product/tests/dogfood_headless/subagent_settlement.rs",
+        "test": "interrupting_a_parent_cancels_the_child_it_is_waiting_on"
+      },
+      "claim": "A scoped parent interrupt cancels its running child without recording an answer (landed witness consumed)."
+    },
+    {
+      "id": "CONT-J03-PLUGIN-INTERRUPT",
+      "acceptance": "J03",
+      "kind": "positive",
+      "carrier": {
+        "path": "crates/grapt-product/tests/dogfood_headless/plugin_tool.rs",
+        "test": "interrupting_a_running_plugin_tool_aborts_it_in_the_bridge_and_settles_durably"
+      },
+      "claim": "A session interrupt reaches a running plugin tool and settles a cancelled durable terminal (landed witness consumed)."
+    },
+    {
+      "id": "CONT-J03-CHECKPOINT-GIT",
+      "acceptance": "J03",
+      "kind": "positive",
+      "carrier": {
+        "path": "crates/grapt-product/tests/checkpoint_compatibility.rs",
+        "test": "git_backed_checkpoint_recovery_preserves_the_exact_vcs_baseline"
+      },
+      "claim": "A Git-backed checkpoint pins its exact commit, survives restart through interrupted-restore recovery, refuses a restore after HEAD moves without moving Git, and refuses an unsupported provider and a corrupt journal."
+    },
+    {
+      "id": "CONT-J03-UNBORN-BASELINE",
+      "acceptance": "J03",
+      "kind": "counterexample",
+      "carrier": {
+        "path": "crates/grapt-product/tests/checkpoint_compatibility.rs",
+        "test": "an_unborn_git_root_refuses_capture_instead_of_pinning_a_missing_baseline"
+      },
+      "claim": "An unborn Git root refuses capture instead of pinning a missing baseline."
+    },
+    {
+      "id": "CONT-J04-INTEGRATED-JOURNEY",
+      "acceptance": "J04",
+      "kind": "positive",
+      "carrier": {
+        "path": "crates/grapt-product/tests/dogfood_headless/continuity_journey.rs",
+        "test": "create_work_compact_crash_resume_and_delegate_through_one_product_root"
+      },
+      "claim": "One disposable headless product root: CLI create, compaction, a subagent lost with the process, restart, CLI attach --resume and a resumed run whose successor child delivers."
+    },
+    {
+      "id": "CONT-J04-DETERMINISTIC-CLI",
+      "acceptance": "J04",
+      "kind": "positive",
+      "carrier": {
+        "path": "crates/grapt-product/tests/product_root.rs",
+        "test": "a_deterministic_run_converges_through_the_shipped_cli"
+      },
+      "claim": "Every durable live event of a deterministic run announces its own committed fact, so the shipped CLI converges instead of refusing a repeated sequence."
+    }
+  ],
+  "deferrals": [
+    {
+      "id": "stateengine-adapter",
+      "reason": "No ratified public StateEngine checkpoint/resume contract exists; amendment section 5 stays DEFER-LEAF with rich checkpoint UI."
+    },
+    {
+      "id": "background-subagents",
+      "reason": "The product composes only foreground subagents; grapt-subagent background claim/deliver has no product caller, so background delivery is not claimed."
+    },
+    {
+      "id": "checkpoint-session-binding",
+      "reason": "The product checkpoint boundary is exercised directly; no Session-level checkpoint API exists and none is invented."
+    },
+    {
+      "id": "compaction-failure-event",
+      "reason": "Compaction failure remains a typed Step failure; the Rust event model has no session.compaction.failed fact and this campaign does not own grapt-event."
+    }
+  ],
+  "pinned": {
+    "mutants.json": "ebf22d5178352e15ff5f17d26a24c18cc756d0ca1b1e4cefa3d84f2f41112aa2",
+    "checkpoint-git-baseline.jsonl": "502e6f7306750278432df862a984cfa6d2d0a617e77d54b72926eaeec792fc17",
+    "checkpoint-unborn-baseline.jsonl": "62e4750c1f6d7e3da700b08564ce2b87cb539882c3250ec163909dc0f7a0a024"
+  }
+}

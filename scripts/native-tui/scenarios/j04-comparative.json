@@ -1,0 +1,392 @@
+{
+  "name": "J04 — the same journey, both clients, one product",
+  "about": [
+    "Identical actions against the same running product: reach a place where a",
+    "prompt can be sent, compose one with a paste, send it, watch a real",
+    "external response stream, and interrupt a second one.",
+    "",
+    "The ACTIONS are identical and the EXPECTATIONS are per client, because the",
+    "two clients draw different screens. A shared expectation would make one",
+    "client wait on the other's vocabulary, which measures nothing.",
+    "",
+    "The retained client is entered with `i` on its opening project screen — the",
+    "runbook's route to the launch folder that does NOT bind a live fleet seat.",
+    "The oracle observation is explicit that only Grapt and the operator's own",
+    "identity may be navigated in the real registry, and this journey navigates",
+    "neither.",
+    "",
+    "Timings are end to end and measured outside both clients. They compare a",
+    "felt experience; they do not attribute a difference to any one layer.",
+    "",
+    "Observed and recorded rather than smoothed over: after `i` the retained",
+    "client goes STRAIGHT to a composer with the location's default agent and",
+    "model already applied, while the native client requires the user to choose a",
+    "model before a prompt is accepted. That is a real difference in steps and in",
+    "discoverability, and it is the point of comparing rather than a flaw in the",
+    "scenario. J01 requires the explicit selection, so the native behaviour is the",
+    "required one; the comparison records what it costs.",
+    "",
+    "The reply wait counts occurrences PER CLIENT, because the reason for",
+    "counting is a property of one client's screen. The retained client draws no",
+    "marker that separates its transcript from its composer, and the composer",
+    "still holds the prompt — which contains the same words — so waiting for the",
+    "first occurrence would be satisfied by the client echoing back what was",
+    "typed, before the model had answered. The second occurrence is the reply.",
+    "",
+    "The native client needs no such compensation: it prefixes transcript entries",
+    "with their role, so the awaited `[text] comparative canary` cannot match the",
+    "user's own `[you] ...` line and appears exactly once. Waiting for two was a",
+    "measurement fault of the first run — the reply was on screen, correct and",
+    "streamed, and the harness reported a timeout anyway.",
+    "",
+    "INTERRUPTION is compared at the end, because it is the one action whose",
+    "cost is felt rather than measured: a client that takes two seconds to stop",
+    "a runaway answer is a different product from one that stops at once. The",
+    "request is deliberately long so there is something real to interrupt.",
+    "",
+    "Only the native side asserts an interruption marker. The retained client's",
+    "a guess into an expectation would either fail for the wrong reason or, if I",
+    "guessed a substring that happens to appear, pass for the wrong reason. It",
+    "captures instead, and the expectation is added once the capture says what",
+    "the screen actually reads.",
+    "",
+    "The streaming wait uses the same prefixed-marker discipline as the canary:",
+    "`STARTING` is asked for so the answer has a first word to wait on, the",
+    "native side waits for `[text] STARTING` which its own role prefix makes",
+    "unambiguous, and the retained side counts two because its transcript shows",
+    "the request as well. A bare digit would have matched anything already on",
+    "screen and passed before the model had said a word.",
+    "",
+    "",
+    "The request counts to two thousand because the first attempt did not: the",
+    "answer had ALREADY SETTLED before the interrupt landed — `durable",
+    "succeeded`, 406 output tokens — so `interrupted` could never appear and the",
+    "step measured nothing at all. There is also no capture between the marker",
+    "and the interrupt now, because that capture spent seconds of the very",
+    "streaming window the interrupt needs to land inside.",
+    "",
+    "THE INTERRUPT COMPARES AN ACTION, NOT A KEYSTROKE, and an earlier revision",
+    "of this file got that wrong. It sent Ctrl+C to both clients and recorded",
+    "that the retained one exited — but Ctrl+C is that client's EXIT binding.",
+    "The frozen oracle is explicit: packages/tui/src/config/v1/keybind.ts has",
+    "app_exit `ctrl+c,ctrl+d,<leader>q` at :48, session_interrupt `escape` at",
+    ":96, and input_clear `ctrl+c` at :162. So the run had pressed quit and then",
+    "reported it as a failure to interrupt. Each client is now driven through",
+    "its own configured binding — Ctrl+C for the native client, Escape for the",
+    "retained one — and the same is done for leaving the client.",
+    "",
+    "The stream must be OBSERVED ACTIVE before the interrupt, not assumed to be:",
+    "the first attempt interrupted a turn that had already settled (`durable",
+    "succeeded`, 406 output tokens), so nothing could be interrupted and the",
+    "step measured nothing. The answer counts to two thousand, and the native",
+    "side waits to see the execution still `running` before acting.",
+    "",
+    "The native side waits on the RUNNING EXECUTION, not on a line of the",
+    "answer. A slice's label is a single row, and once the multi-line layout",
+    "landed a long answer scrolls its own `[text] STARTING` header out of the",
+    "transcript window within a poll or two — so waiting for it timed out while",
+    "the answer was on screen, counting, in front of the harness. The status",
+    "line says `running` for as long as the execution actually is, which is the",
+    "condition the interrupt needs and the one worth waiting on.",
+    "",
+    "The request counts to three hundred rather than two thousand. At two",
+    "thousand the NATIVE side reported `durable failed` with the durable history",
+    "`incomplete (page whole, 1 unreadable)` while the retained client answered",
+    "the same request on the same product without complaint. That is a real",
+    "difference and it is being tracked as its own question; it is not the",
+    "interrupt, and leaving it inside this step would mean the interrupt",
+    "dimension could never be measured at all. Three hundred lines still streams",
+    "for long enough to be interrupted while genuinely running.",
+    "",
+    "THE RETAINED INTERRUPT TAKES TWO PRESSES, and an earlier revision sent one",
+    "and called it done. The frozen implementation is explicit",
+    "(packages/tui/src/mini/footer.ts:960-979): the first press only ARMS,",
+    "showing `again to interrupt`, and a second press within five seconds fires",
+    "it. So a one-press scenario proved the binding existed and nothing about",
+    "the action completing — a `failure: null` from it was not interrupt parity.",
+    "",
+    "What the three retained steps prove, precisely: the hint APPEARING proves",
+    "the first press registered and the client is armed; the second press lands",
+    "well inside the window (the harness sends it in under a second, so a",
+    "five-second timeout cannot explain what follows); the hint going AWAY",
+    "proves the armed state ended. Present-then-absent is a transition, which a",
+    "bare absence check would not be — that would pass against a client that had",
+    "never drawn the hint at all.",
+    "",
+    "BOTH CLIENTS RUN THE SAME MODEL, and an earlier revision did not. The",
+    "native side took the first row of its picker — GPT-6 Astra — while the",
+    "retained side used the location's default, GPT-5.6 Sol. Every timing and",
+    "resource figure from that pairing describes two different models doing two",
+    "different pieces of work, so it cannot support a client comparison however",
+    "carefully it was measured.",
+    "",
+    "The native picker is now filtered to `Sol` and the selection is verified on",
+    "BOTH sides before anything is compared. Selecting a model is not the same",
+    "as having selected it: the assertion is what makes this a controlled",
+    "comparison rather than a hope.",
+    "",
+    "THE HINT GOING AWAY IS NOT THE INTERRUPT LANDING. `footer.ts:973-978`",
+    "clears the armed state and sets its notice BEFORE calling `onInterrupt`,",
+    "and the call is OPTIONAL, so a missing or failing callback would still",
+    "clear the hint and satisfy a check that stopped there.",
+    "",
+    "ASSERT THE SURFACE THAT ACTUALLY SHIPS. An earlier revision waited for",
+    "`assistant interrupted` from `mini/entry.body.ts:214`. That module is not",
+    "the active frontend and the string never appears: an attended run sat in",
+    "timeout while the retained client was displaying its interrupt correctly.",
+    "Reading a plausible module is not reading the product.",
+    "",
+    "The live route is `routes/session/index.tsx`. At 1518 it derives",
+    "`interrupted` from `props.message.error?.message === \"Step interrupted\"`,",
+    "at 1545-1546 it renders that as a trailing metadata word on the message",
+    "row, and at 1522 it SUPPRESSES the error box for that case — so an",
+    "interrupt is deliberately not shown as an error there.",
+    "",
+    "The assertion is the metadata word rather than the `·` separator that",
+    "precedes it, to keep the expectation ASCII through the screen capture; the",
+    "separator adds no discrimination that the transition below does not",
+    "already provide.",
+    "",
+    "THE NATIVE SIDE NEEDS THE SAME CARE, and it is asserted on the `saw` row",
+    "rather than on the settled outcome. An earlier revision of this file asked",
+    "for TWO occurrences of `interrupted`, reasoning that `view.rs:445` renders",
+    "the settled outcome as `<id> interrupted` and `view.rs:496` renders the",
+    "observation row as `saw <id> interrupted`, so two could only be both.",
+    "",
+    "AN ATTENDED RUN REFUTED THAT, and the product was right. The settled row",
+    "read `durable failed` while the `saw` row was present, because after any",
+    "reconciliation the terminal comes from the DURABLE re-list, and the U3a",
+    "contract cannot say `interrupted`: `SessionMessageAssistantDtoFinish` has",
+    "stop / length / tool-calls / content-filter / error / unknown and no",
+    "interrupted member, and the assistant DTO carries no interrupted flag. So",
+    "`apply_durable` settles with NO execution id and a coarser outcome.",
+    "",
+    "Refusing to paint that rebuilt terminal as the interrupt is DELIBERATE and",
+    "is itself witnessed: `a_stale_interrupt_never_resurrects_over_a_later",
+    "_terminal` in client/tests.rs exists because a revision that did carry the",
+    "interrupt across a rebuild would show a LATER execution's success as an",
+    "earlier one's interrupt. Absence cannot establish sameness.",
+    "",
+    "So the honest native witness is the `saw` row, which `view.rs:494` renders",
+    "ONLY when `interrupted_observed` is set, and `projection.rs:389` sets that",
+    "ONLY from a live terminal whose outcome is `Interrupted`.",
+    "",
+    "PRESENCE ALONE WOULD NOT BE ENOUGH, because `interrupted_observed` is set",
+    "and never cleared. A row left by an EARLIER interrupt would satisfy a bare",
+    "`expect` without this scenario interrupting anything, which is the stale",
+    "annotation the assertion has to exclude.",
+    "",
+    "It is excluded by a TRANSITION rather than by presence. The row is asserted",
+    "ABSENT while this scenario's execution is confirmed `running`, and present",
+    "only after the interrupt key — so the row on screen at the end cannot be",
+    "one that predates the step, and something in between created it.",
+    "",
+    "BOTH CLIENTS TAKE THAT TRANSITION, for the same reason. The retained word",
+    "is rendered per MESSAGE, so an interrupted turn earlier in the transcript",
+    "would satisfy a bare presence check just as a stale `saw` row would. Absent",
+    "while this execution runs and present after this interrupt is what makes it",
+    "THIS turn's interrupt on both sides.",
+    "",
+    "That binds it to THIS execution. The only writer of the field is a live",
+    "terminal whose outcome is `Interrupted`, set in the SAME branch that",
+    "settles the execution and from the SAME observed id, and a terminal naming",
+    "an execution other than the running one is refused outright as",
+    "`TerminalAttributionMismatch`. Absent while THIS execution runs, present",
+    "after THIS interrupt, and unable to name any other execution: that is the",
+    "correlated live terminal, and it is the strongest claim this contract can",
+    "support without repainting durable history.",
+    "",
+    "Likewise the model: a filter naming `Sol` proves a search box has text in",
+    "it. The SELECTION line — `model openai/GPT-5.6 Sol` — is what proves the",
+    "client is running that model, and it is asserted after the choice is made."
+  ],
+  "steps": [
+    {
+      "expect": {
+        "native": "PROJECTS",
+        "retained": "Select a project"
+      },
+      "polls": 240
+    },
+    {
+      "capture": "the opening screen"
+    },
+    {
+      "key": {
+        "native": "Enter",
+        "retained": "i"
+      }
+    },
+    {
+      "expect": {
+        "native": "AGENTS",
+        "retained": "ctrl+x tab agents"
+      },
+      "polls": 240
+    },
+    {
+      "capture": "after choosing where to work"
+    },
+    {
+      "key": {
+        "native": "Enter",
+        "retained": "Enter"
+      }
+    },
+    {
+      "expect": {
+        "native": "MODELS"
+      },
+      "polls": 240
+    },
+    {
+      "paste": {
+        "native": "Sol"
+      }
+    },
+    {
+      "expect": {
+        "native": "Sol"
+      },
+      "polls": 240
+    },
+    {
+      "capture": "the model choice, where the two clients differ most"
+    },
+    {
+      "key": {
+        "native": "Enter"
+      }
+    },
+    {
+      "expect": {
+        "native": "model openai/GPT-5.6 Sol"
+      },
+      "polls": 240
+    },
+    {
+      "key": {
+        "native": "n"
+      }
+    },
+    {
+      "expect": {
+        "native": "TRANSCRIPT"
+      },
+      "polls": 240
+    },
+    {
+      "expect": {
+        "retained": "Sol"
+      },
+      "polls": 240
+    },
+    {
+      "capture": "ready to compose"
+    },
+    {
+      "paste": "Reply with exactly: comparative canary. Do not use tools."
+    },
+    {
+      "capture": "the prompt, composed by paste"
+    },
+    {
+      "key": "Enter"
+    },
+    {
+      "expect": {
+        "native": "[text] comparative canary",
+        "retained": "comparative canary"
+      },
+      "polls": 480,
+      "times": {
+        "native": 1,
+        "retained": 2
+      }
+    },
+    {
+      "capture": "a real external response, streamed"
+    },
+    {
+      "paste": "Reply with the word STARTING and then count slowly from one to three hundred, one number per line, with no other commentary."
+    },
+    {
+      "capture": "a long request, composed"
+    },
+    {
+      "key": "Enter"
+    },
+    {
+      "expect": {
+        "retained": "STARTING"
+      },
+      "polls": 480,
+      "times": {
+        "retained": 2
+      }
+    },
+    {
+      "expect": {
+        "native": "running"
+      },
+      "polls": 480
+    },
+    {
+      "absent": {
+        "native": "saw ",
+        "retained": "interrupted"
+      },
+      "polls": 240
+    },
+    {
+      "key": {
+        "native": "Control+c",
+        "retained": "Escape"
+      }
+    },
+    {
+      "expect": {
+        "retained": "again to interrupt"
+      },
+      "polls": 240
+    },
+    {
+      "key": {
+        "retained": "Escape"
+      }
+    },
+    {
+      "absent": {
+        "retained": "again to interrupt"
+      },
+      "polls": 240
+    },
+    {
+      "expect": {
+        "retained": "interrupted"
+      },
+      "polls": 480
+    },
+    {
+      "expect": {
+        "native": "saw "
+      },
+      "polls": 240
+    },
+    {
+      "expect": {
+        "native": "interrupted"
+      },
+      "polls": 240
+    },
+    {
+      "capture": "the interrupt, through each client's own binding"
+    },
+    {
+      "key": {
+        "native": "Control+q",
+        "retained": "Control+c"
+      }
+    }
+  ]
+}

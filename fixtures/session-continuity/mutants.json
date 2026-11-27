@@ -1,0 +1,575 @@
+{
+  "schema_version": 1,
+  "prefix": "CONTINUITY",
+  "mutants": [
+    {
+      "id": "CONTINUITY-PUBLISHED-CANCEL",
+      "law": "J01: an interrupt that arrives after a compaction descriptor is published cannot disown the durable compaction.",
+      "edits": [
+        {
+          "path": "crates/grapt-product/src/dogfood/continuation/compaction.rs",
+          "before": "        (Ok(()), _) => Ok(Ok(())),\n        (Err(_), Some(by)) => Err(by),",
+          "after": "        (_, Some(by)) => Err(by),\n        (Ok(()), None) => Ok(Ok(())),"
+        }
+      ],
+      "command": [
+        "cargo",
+        "+1.97.1",
+        "test",
+        "-p",
+        "grapt-product",
+        "--lib",
+        "--no-fail-fast",
+        "--locked",
+        "-j",
+        "2",
+        "--",
+        "dogfood::continuation::compaction::settle_tests::an_interrupt_after_publication_does_not_disown_the_published_descriptor",
+        "--exact",
+        "--nocapture"
+      ],
+      "red_contains": [
+        "a published compaction was reported as interrupted"
+      ]
+    },
+    {
+      "id": "CONTINUITY-INSTRUCTION-FRESHNESS",
+      "law": "J01: every request rebuilt after compaction re-reads the applicable current instructions.",
+      "edits": [
+        {
+          "path": "crates/grapt-product/src/dogfood/instructions.rs",
+          "before": "        let event: EventId = format!(\"evt_{}\", self.ids.mint().as_str())\n            .parse()\n            .map_err(|error| format!(\"instruction event identity: {error}\"))?;",
+          "after": "        let stale = InstructionService::current(inbox.store(), &self.session)\n            .ok()\n            .flatten()\n            .is_some();\n        let event: EventId = format!(\"evt_{}\", self.ids.mint().as_str())\n            .parse()\n            .map_err(|error| format!(\"instruction event identity: {error}\"))?;"
+        },
+        {
+          "path": "crates/grapt-product/src/dogfood/instructions.rs",
+          "before": "                    ambient.source,\n",
+          "after": "                    if stale {\n                        SourceObservation::Unavailable {\n                            key: key(\"core/instructions\")?,\n                        }\n                    } else {\n                        ambient.source\n                    },\n"
+        }
+      ],
+      "command": [
+        "cargo",
+        "+1.97.1",
+        "test",
+        "-p",
+        "grapt-product",
+        "--features",
+        "loopback-provider-testkit",
+        "--test",
+        "dogfood_headless",
+        "--no-fail-fast",
+        "--locked",
+        "-j",
+        "2",
+        "--",
+        "compaction_continuity::successive_compactions_refresh_instructions_and_replay_exactly",
+        "--exact",
+        "--nocapture",
+        "--test-threads=1"
+      ],
+      "red_contains": [
+        "after the instruction change carried stale instructions"
+      ]
+    },
+    {
+      "id": "CONTINUITY-PUBLIC-HISTORY",
+      "law": "J01: every committed compaction descriptor is projected into public Session history.",
+      "edits": [
+        {
+          "path": "crates/grapt-product/src/dogfood/history.rs",
+          "before": "        rows.extend(self.compaction_rows(session, SESSION_PAGE_ROWS)?);\n",
+          "after": ""
+        }
+      ],
+      "command": [
+        "cargo",
+        "+1.97.1",
+        "test",
+        "-p",
+        "grapt-product",
+        "--features",
+        "loopback-provider-testkit",
+        "--test",
+        "dogfood_headless",
+        "--no-fail-fast",
+        "--locked",
+        "-j",
+        "2",
+        "--",
+        "compaction_continuity::successive_compactions_refresh_instructions_and_replay_exactly",
+        "--exact",
+        "--nocapture",
+        "--test-threads=1"
+      ],
+      "red_contains": [
+        "public history omitted a committed compaction"
+      ]
+    },
+    {
+      "id": "CONTINUITY-LIVE-NOTICE",
+      "law": "J01: a committed compaction is announced live after its durable commit.",
+      "edits": [
+        {
+          "path": "crates/grapt-product/src/dogfood/continuation/compaction.rs",
+          "before": "                if self.hub.publish(&notice).is_err() {",
+          "after": "                if true {"
+        }
+      ],
+      "command": [
+        "cargo",
+        "+1.97.1",
+        "test",
+        "-p",
+        "grapt-product",
+        "--features",
+        "loopback-provider-testkit",
+        "--test",
+        "dogfood_headless",
+        "--no-fail-fast",
+        "--locked",
+        "-j",
+        "2",
+        "--",
+        "compaction_continuity::successive_compactions_refresh_instructions_and_replay_exactly",
+        "--exact",
+        "--nocapture",
+        "--test-threads=1"
+      ],
+      "red_contains": [
+        "event stream carried no \"type\":\"session.compaction.ended\""
+      ]
+    },
+    {
+      "id": "CONTINUITY-STALE-CURSOR",
+      "law": "J02: a well-formed history cursor that names no message in the Session refuses instead of reading as the end of history.",
+      "edits": [
+        {
+          "path": "crates/grapt-product/src/dogfood/history.rs",
+          "before": "            let index = anchor.ok_or(PageRefusal::StaleCursor)?;",
+          "after": "            let Some(index) = anchor else {\n                return Ok(\"{\\\"data\\\":[],\\\"cursor\\\":{}}\".to_owned());\n            };"
+        }
+      ],
+      "command": [
+        "cargo",
+        "+1.97.1",
+        "test",
+        "-p",
+        "grapt-product",
+        "--lib",
+        "--no-fail-fast",
+        "--locked",
+        "-j",
+        "2",
+        "--",
+        "dogfood::history::tests::retained_message_order_and_bidirectional_cursors_preserve_the_timeline",
+        "--exact",
+        "--nocapture"
+      ],
+      "red_contains": [
+        "a cursor naming no message in this Session returned a page"
+      ]
+    },
+    {
+      "id": "CONTINUITY-WRONG-PROJECT",
+      "law": "J02: a CLI Session selection bound to a project refuses a Session of another project.",
+      "edits": [
+        {
+          "path": "crates/grapt-cli/src/run.rs",
+          "before": "                    if found != requested {",
+          "after": "                    if false {"
+        }
+      ],
+      "build": [
+        [
+          "cargo",
+          "+1.97.1",
+          "build",
+          "-p",
+          "grapt-cli",
+          "--bin",
+          "grapt",
+          "--locked",
+          "-j",
+          "2"
+        ]
+      ],
+      "command": [
+        "cargo",
+        "+1.97.1",
+        "test",
+        "-p",
+        "grapt-product",
+        "--features",
+        "loopback-provider-testkit",
+        "--test",
+        "dogfood_headless",
+        "--no-fail-fast",
+        "--locked",
+        "-j",
+        "2",
+        "--",
+        "cli_continuity::a_crashed_session_resumes_through_the_shipped_cli_and_refuses_named_mismatches",
+        "--exact",
+        "--nocapture",
+        "--test-threads=1"
+      ],
+      "red_contains": [
+        "a wrong project was not refused actionably"
+      ]
+    },
+    {
+      "id": "CONTINUITY-RESUME-RECEIPT",
+      "law": "J02: CLI JSONL output ends with the run receipt naming the exact Session acted on.",
+      "edits": [
+        {
+          "path": "crates/grapt-cli/src/executor.rs",
+          "before": "    if matches!(output.mode(), OutputMode::Jsonl) {",
+          "after": "    if false {"
+        }
+      ],
+      "build": [
+        [
+          "cargo",
+          "+1.97.1",
+          "build",
+          "-p",
+          "grapt-cli",
+          "--bin",
+          "grapt",
+          "--locked",
+          "-j",
+          "2"
+        ]
+      ],
+      "command": [
+        "cargo",
+        "+1.97.1",
+        "test",
+        "-p",
+        "grapt-product",
+        "--features",
+        "loopback-provider-testkit",
+        "--test",
+        "dogfood_headless",
+        "--no-fail-fast",
+        "--locked",
+        "-j",
+        "2",
+        "--",
+        "cli_continuity::a_crashed_session_resumes_through_the_shipped_cli_and_refuses_named_mismatches",
+        "--exact",
+        "--nocapture",
+        "--test-threads=1"
+      ],
+      "red_contains": [
+        "the JSONL stream did not end with its run receipt"
+      ]
+    },
+    {
+      "id": "CONTINUITY-PROCESS-LOSS",
+      "law": "J02: startup settles a Physical Attempt lost with its process exactly once as process loss, never success.",
+      "edits": [
+        {
+          "path": "crates/grapt-product/src/dogfood/mod.rs",
+          "before": "        recover_process_loss_attempts(\n            &mut store,\n            clock.as_ref(),\n            AttemptRecordCeiling::new(receipt_bytes),\n        )\n        .map_err(|error| DogfoodRefusal::Compose(error.to_string()))?;\n",
+          "after": "        let _ = (&receipt_bytes, &mut store);\n"
+        }
+      ],
+      "build": [
+        [
+          "cargo",
+          "+1.97.1",
+          "build",
+          "-p",
+          "grapt-cli",
+          "--bin",
+          "grapt",
+          "--locked",
+          "-j",
+          "2"
+        ]
+      ],
+      "command": [
+        "cargo",
+        "+1.97.1",
+        "test",
+        "-p",
+        "grapt-product",
+        "--features",
+        "loopback-provider-testkit",
+        "--test",
+        "dogfood_headless",
+        "--no-fail-fast",
+        "--locked",
+        "-j",
+        "2",
+        "--",
+        "cli_continuity::a_crashed_session_resumes_through_the_shipped_cli_and_refuses_named_mismatches",
+        "--exact",
+        "--nocapture",
+        "--test-threads=1"
+      ],
+      "red_contains": [
+        "the lost attempt did not settle exactly once as process loss"
+      ]
+    },
+    {
+      "id": "CONTINUITY-CHILD-PROCESS-LOSS",
+      "law": "J03: a subagent child lost with its runtime settles once as process loss under the dead generation and is never replayed.",
+      "edits": [
+        {
+          "path": "crates/grapt-product/src/dogfood/subagent.rs",
+          "before": "    SubagentService::settle_dead_generation_on(held.store_mut(), generation, now_ms)\n        .map_err(|error| error.to_string())?;\n",
+          "after": "    let _ = now_ms;\n"
+        }
+      ],
+      "command": [
+        "cargo",
+        "+1.97.1",
+        "test",
+        "-p",
+        "grapt-product",
+        "--features",
+        "loopback-provider-testkit",
+        "--test",
+        "dogfood_headless",
+        "--no-fail-fast",
+        "--locked",
+        "-j",
+        "2",
+        "--",
+        "subagent_continuity::a_lost_child_settles_once_and_a_successor_child_delivers_to_the_same_parent",
+        "--exact",
+        "--nocapture",
+        "--test-threads=1"
+      ],
+      "red_contains": [
+        "the lost child did not settle as process loss"
+      ]
+    },
+    {
+      "id": "CONTINUITY-STALE-CHILD-PROMPT",
+      "law": "J03: a stale child Session accepts no further prompt, so no late or escaped answer can settle its parent.",
+      "edits": [
+        {
+          "path": "crates/grapt-product/src/dogfood/subagent.rs",
+          "before": "        CasOutcome::AlreadyTerminal => Err(format!(",
+          "after": "        CasOutcome::AlreadyTerminal if true => Ok(()),\n        CasOutcome::AlreadyTerminal => Err(format!("
+        }
+      ],
+      "command": [
+        "cargo",
+        "+1.97.1",
+        "test",
+        "-p",
+        "grapt-product",
+        "--features",
+        "loopback-provider-testkit",
+        "--test",
+        "dogfood_headless",
+        "--no-fail-fast",
+        "--locked",
+        "-j",
+        "2",
+        "--",
+        "subagent_continuity::a_lost_child_settles_once_and_a_successor_child_delivers_to_the_same_parent",
+        "--exact",
+        "--nocapture",
+        "--test-threads=1"
+      ],
+      "red_contains": [
+        "a stale child Session accepted a late prompt"
+      ]
+    },
+    {
+      "id": "CONTINUITY-VCS-PRECONDITION",
+      "law": "J03: a restore planned against an exact Git baseline refuses once HEAD moves, and never moves Git.",
+      "edits": [
+        {
+          "path": "crates/grapt-checkpoint/src/engine.rs",
+          "before": "                    if current.baseline() == baseline {",
+          "after": "                    if true {"
+        }
+      ],
+      "command": [
+        "cargo",
+        "+1.97.1",
+        "test",
+        "-p",
+        "grapt-product",
+        "--features",
+        "checkpoint-fixture",
+        "--test",
+        "checkpoint_compatibility",
+        "--no-fail-fast",
+        "--locked",
+        "-j",
+        "2",
+        "--",
+        "git_backed_checkpoint_recovery_preserves_the_exact_vcs_baseline",
+        "--exact",
+        "--nocapture"
+      ],
+      "red_contains": [
+        "StepOutcome { seq: 8 }"
+      ]
+    },
+    {
+      "id": "CONTINUITY-GIT-BASELINE",
+      "law": "J03: a Git root is observed as its exact baseline, so an unborn branch refuses capture instead of pinning a missing baseline.",
+      "edits": [
+        {
+          "path": "crates/grapt-product/src/checkpoint_fixture/git.rs",
+          "before": "    if !git.exists() {",
+          "after": "    if true {"
+        }
+      ],
+      "command": [
+        "cargo",
+        "+1.97.1",
+        "test",
+        "-p",
+        "grapt-product",
+        "--features",
+        "checkpoint-fixture",
+        "--test",
+        "checkpoint_compatibility",
+        "--no-fail-fast",
+        "--locked",
+        "-j",
+        "2",
+        "--",
+        "an_unborn_git_root_refuses_capture_instead_of_pinning_a_missing_baseline",
+        "--exact",
+        "--nocapture"
+      ],
+      "red_contains": [
+        "StepOutcome { seq: 3 }"
+      ]
+    },
+    {
+      "id": "CONTINUITY-LATE-ADVISORY",
+      "law": "J04/H2: a live advisory that arrives after a later one is skipped in favour of durable truth instead of failing the CLI run.",
+      "edits": [
+        {
+          "path": "crates/grapt-cli/src/convergence.rs",
+          "before": "                if record.sequence <= settled && !contiguous {",
+          "after": "                if false {"
+        }
+      ],
+      "command": [
+        "cargo",
+        "+1.97.1",
+        "test",
+        "-p",
+        "grapt-cli",
+        "--test",
+        "contracts",
+        "--no-fail-fast",
+        "--locked",
+        "-j",
+        "2",
+        "--",
+        "a_late_advisory_is_skipped_while_durable_pages_stay_strictly_ordered",
+        "--exact",
+        "--nocapture"
+      ],
+      "red_contains": [
+        "a late live advisory failed the run instead of deferring to durable truth"
+      ]
+    },
+    {
+      "id": "CONTINUITY-RESUME-TOP-LEVEL",
+      "law": "J04/H7: `--resume` selects the newest user Session, never a subagent child.",
+      "edits": [
+        {
+          "path": "crates/grapt-cli/src/client.rs",
+          "before": "            \"api/session?parentID=null&order=desc\",",
+          "after": "            \"api/session\","
+        }
+      ],
+      "build": [
+        [
+          "cargo",
+          "+1.97.1",
+          "build",
+          "-p",
+          "grapt-cli",
+          "--bin",
+          "grapt",
+          "--locked",
+          "-j",
+          "2"
+        ]
+      ],
+      "command": [
+        "cargo",
+        "+1.97.1",
+        "test",
+        "-p",
+        "grapt-product",
+        "--features",
+        "loopback-provider-testkit",
+        "--test",
+        "dogfood_headless",
+        "--no-fail-fast",
+        "--locked",
+        "-j",
+        "2",
+        "--",
+        "continuity_journey::create_work_compact_crash_resume_and_delegate_through_one_product_root",
+        "--exact",
+        "--nocapture",
+        "--test-threads=1"
+      ],
+      "red_contains": [
+        "attach --resume selected another Session after restart"
+      ]
+    },
+    {
+      "id": "CONTINUITY-DETERMINISTIC-SEQUENCE",
+      "law": "J04/H2: each durable live event announces its own committed fact; a started and ended slice never share a sequence.",
+      "edits": [
+        {
+          "path": "crates/grapt-product/src/dogfood/deterministic.rs",
+          "before": "            durable_ref(session, opened_seq)?,",
+          "after": "            durable_ref(session, ended_seq)?,"
+        }
+      ],
+      "build": [
+        [
+          "cargo",
+          "+1.97.1",
+          "build",
+          "-p",
+          "grapt-cli",
+          "--bin",
+          "grapt",
+          "--locked",
+          "-j",
+          "2"
+        ]
+      ],
+      "command": [
+        "cargo",
+        "+1.97.1",
+        "test",
+        "-p",
+        "grapt-product",
+        "--test",
+        "product_root",
+        "--no-fail-fast",
+        "--locked",
+        "-j",
+        "2",
+        "--",
+        "a_deterministic_run_converges_through_the_shipped_cli",
+        "--exact",
+        "--nocapture"
+      ],
+      "red_contains": [
+        "a deterministic run did not converge through the CLI"
+      ]
+    }
+  ]
+}

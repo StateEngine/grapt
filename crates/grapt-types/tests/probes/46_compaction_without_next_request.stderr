@@ -1,0 +1,5 @@
+error[E0063]: missing field `next_request` in initializer of `CompactionDescriptorParts`
+  --> tests/probes/46_compaction_without_next_request.rs:25:18
+   |
+25 |     let _parts = CompactionDescriptorParts {
+   |                  ^^^^^^^^^^^^^^^^^^^^^^^^^ missing `next_request`

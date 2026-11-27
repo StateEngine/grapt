@@ -1,0 +1,1 @@
+| `crates/secode-product/src/dogfood/tools/terminal/windows_process.rs` | `openai/codex`: `codex-rs/utils/pty/src/pty.rs; codex-rs/utils/pty/src/process.rs` | `bb64b894fd67158be0f874872e6d7bfe717e7368` | Modified: safe Windows ConPTY APIs, raw cmd quoting, canonical workdir spelling and owned process/I/O handles. |

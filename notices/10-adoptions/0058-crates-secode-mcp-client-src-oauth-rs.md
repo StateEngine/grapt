@@ -1,0 +1,1 @@
+| `crates/secode-mcp-client/src/oauth.rs`, `oauth/callback.rs` | `openai/codex`, `codex-rs/rmcp-client/src/oauth_callback.rs`, `oauth/issuer_binding.rs` | `092d3acd6bec3e3a14bdc7e7a2810ab628ab759d` | Modified: bounded exact issuer/callback parsing, fresh injected PKCE/state entropy and an owned loopback listener. |

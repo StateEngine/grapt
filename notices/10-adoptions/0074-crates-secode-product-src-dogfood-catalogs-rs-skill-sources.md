@@ -1,0 +1,1 @@
+| `crates/secode-product/src/dogfood/catalogs.rs::skill_sources` | `openai/codex`, `codex-rs/ext/skills/src/host_roots.rs` | `bb64b894fd67158be0f874872e6d7bfe717e7368` | Modified: bound automatic project skill sources to the existing repository resolver; retain explicit global/config roots and configured sources. Apache-2.0, Copyright 2025 OpenAI. |

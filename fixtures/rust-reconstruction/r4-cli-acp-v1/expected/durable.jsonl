@@ -1,0 +1,8 @@
+{"case":"main-bounded-diagnostic","outcome":"refused","authority":"bounded-stderr"}
+{"case":"executor-acp-frames","outcome":"remote-refused","authority":"committed-acp-state"}
+{"case":"acp-two-phase-admission","outcome":"effect-refused-state-preserved","authority":"two-phase-admission"}
+{"case":"server-cancellation-race","outcome":"already-terminal","authority":"session-active"}
+{"case":"server-convergence-refusal","outcome":"refused","authority":"durable-cursor-convergence"}
+{"case":"spawned-child-owner","outcome":"refused","authority":"child-pid-and-registration-owner"}
+{"case":"atomic-output-receipt","outcome":"partial-failure-accounted","authority":"bounded-output-receipt"}
+{"case":"run-output-exit-class","outcome":"output","authority":"typed-run-error"}

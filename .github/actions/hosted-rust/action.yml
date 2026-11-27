@@ -1,0 +1,80 @@
+name: Hosted Rust tools
+description: Repository-pinned Rust, nextest and plugin fixture runtime
+outputs:
+  feature-key:
+    description: Selected packages and exact acceptance feature arguments
+    value: ${{ steps.features.outputs.key }}
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+      if: runner.os != 'Linux'
+      with:
+        python-version: '3.12'
+    - name: Select the build interpreter
+      shell: bash
+      run: |
+        set -euo pipefail
+        if [[ "$RUNNER_OS" == Linux ]]; then
+          build_python=$(command -v python3)
+          # MCP and PTY fixtures clear loader variables before starting Python.
+          env -i "$build_python" -c 'import sys'
+        else
+          build_python=$(command -v python)
+        fi
+        printf 'CI_PYTHON=%s\n' "$build_python" >> "$GITHUB_ENV"
+    - name: Load the repository toolchain
+      shell: bash
+      run: |
+        rustup show active-toolchain
+        rustc --version
+        cargo --version
+    - name: Identify the selected feature set
+      id: features
+      shell: bash
+      run: |
+        "$CI_PYTHON" - <<'PYCODE'
+        import hashlib, json, os, sys
+        sys.path.insert(0, 'scripts/build')
+        import test_features
+        packages = json.loads(os.environ['CI_PACKAGES'])
+        features = test_features.arguments(None if packages == ['*'] else packages)
+        signature = json.dumps([packages, features], sort_keys=True).encode()
+        with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as output:
+            output.write('key=' + hashlib.sha256(signature).hexdigest()[:16] + '\n')
+        PYCODE
+    - name: Install pinned frozen corpus input
+      shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: '"$CI_PYTHON" scripts/ci/frozen_fixtures.py'
+    - uses: taiki-e/install-action@3a3daafd3b7f23b8f65d9f5ba2db203fb59b79e2 # v2
+      with:
+        tool: cargo-nextest@0.9.143
+    - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+      with:
+        node-version: '24.21.0'
+        check-latest: false
+        package-manager-cache: false
+    - name: Select the plugin fixture runtime
+      shell: bash
+      run: |
+        "$CI_PYTHON" - <<'PY'
+        import os, shutil
+        node = shutil.which('node')
+        if not node:
+            raise SystemExit('Node runtime is unavailable')
+        with open(os.environ['GITHUB_ENV'], 'a', encoding='utf-8') as output:
+            output.write('NODE=' + node + '\n')
+        PY
+    - name: Record the actual Windows runner identity
+      if: runner.os == 'Windows'
+      shell: pwsh
+      run: |
+        $ErrorActionPreference = 'Stop'
+        New-Item -ItemType Directory -Path ci-results -Force | Out-Null
+        $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
+        $principal = [Security.Principal.WindowsPrincipal]::new($identity)
+        @{sid=$identity.User.Value; admin=$principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+          standard_user_security_qualified=$false; os_build=[Environment]::OSVersion.Version.ToString()} |
+          ConvertTo-Json | Set-Content -Encoding utf8 "ci-results/identity-$($env:GITHUB_JOB).json"

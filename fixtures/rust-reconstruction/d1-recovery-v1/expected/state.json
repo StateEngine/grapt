@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "observations": [
+    {
+      "scenario": "request-sent-restart-settlement",
+      "observation": "after-restart",
+      "public_history": [
+        {
+          "type": "user",
+          "id": "msg_d1_corpus_settlement",
+          "text": "survive restart",
+          "durable_seq": 1
+        }
+      ]
+    },
+    {
+      "scenario": "untrustworthy-receipt-quarantine",
+      "observation": "after-quarantine",
+      "public_history": []
+    },
+    {
+      "scenario": "second-restart-no-resurrection",
+      "observation": "after-first-recovery",
+      "public_history": []
+    },
+    {
+      "scenario": "second-restart-no-resurrection",
+      "observation": "after-second-recovery",
+      "public_history": []
+    }
+  ]
+}

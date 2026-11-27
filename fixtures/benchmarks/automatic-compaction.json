@@ -1,0 +1,29 @@
+{
+  "version": 2,
+  "profile": "controlled-native-automatic-compaction",
+  "tasks": [
+    {
+      "id": "C04",
+      "category": "compaction",
+      "held_out": false,
+      "prompt": "Implement migrate(rows) in app.py. Initial agreed requirements: every output row has exactly tenant_key and value; tenant_key copies tenant verbatim and must be a non-empty string (do not strip it); absent or null value becomes None; preserve input order and never mutate inputs. Return fresh output dictionaries and a fresh list. Reject malformed rows with ValueError. protected_bridge.py must remain byte-identical. Begin by making migrate callable and run public tests; later review stages will ask you to finish the migration. Do not commit.",
+      "files": {
+        "app.py": "def migrate(rows):\n    return rows\n",
+        "protected_bridge.py": "COMPATIBILITY_VERSION = 7\n",
+        "test_public.py": "import unittest\nimport app\n\nclass Public(unittest.TestCase):\n    def test_callable(self):\n        self.assertTrue(callable(app.migrate))\n    def test_empty(self):\n        self.assertEqual(app.migrate([]), [])\n\nif __name__ == \"__main__\":\n    unittest.main()\n"
+      },
+      "hidden_tests": "import copy\nfrom pathlib import Path\nimport unittest\nimport app\n\nclass Hidden(unittest.TestCase):\n    def test_values_and_order(self):\n        rows = [{\"tenant\":\"z\", \"value\":None}, {\"tenant\":\" a \",\"value\":4}, {\"tenant\":\"b\"}]\n        original = copy.deepcopy(rows)\n        result = app.migrate(rows)\n        self.assertEqual(result,[{\"tenant_key\":\"z\",\"value\":None},{\"tenant_key\":\" a \",\"value\":4},{\"tenant_key\":\"b\",\"value\":None}])\n        self.assertEqual(rows,original)\n        self.assertIsNot(result,rows)\n        self.assertTrue(all(a is not b for a,b in zip(result,rows)))\n    def test_invalid(self):\n        for row in [{}, {\"tenant\":\"\"}, {\"tenant\":3}, None, [\"x\"]]:\n            with self.subTest(row=row):\n                with self.assertRaises(ValueError): app.migrate([row])\n    def test_empty_is_fresh(self):\n        rows=[]\n        self.assertIsNot(app.migrate(rows),rows)\n    def test_protected(self):\n        self.assertEqual(Path(\"protected_bridge.py\").read_bytes(),b\"COMPATIBILITY_VERSION = 7\\n\")\n    def test_new_stage_values_order_and_preservation(self):\n        batches = [[{\"tenant\":\"z\",\"value\":None}], [], [{\"tenant\":\" a \",\"value\":4},{\"tenant\":\"b\"}]]\n        original = copy.deepcopy(batches)\n        result = app.migrate_many(batches)\n        self.assertEqual(result,[{\"tenant_key\":\"z\",\"value\":None},{\"tenant_key\":\" a \",\"value\":4},{\"tenant_key\":\"b\",\"value\":None}])\n        self.assertEqual(batches,original)\n        self.assertIsNot(result,batches)\n        self.assertTrue(all(all(item is not old for batch in batches for old in batch) for item in result))\n    def test_new_stage_invalid_row(self):\n        for row in [{}, {\"tenant\":\"\"}, {\"tenant\":3}, None, [\"x\"]]:\n            with self.subTest(row=row):\n                with self.assertRaises(ValueError): app.migrate_many([[{\"tenant\":\"valid\"}],[row]])\n    def test_new_stage_empty_is_fresh(self):\n        batches=[]\n        self.assertIsNot(app.migrate_many(batches),batches)\n        self.assertEqual(app.migrate_many([[],[]]),[])\n",
+      "automatic_compaction": {
+        "threshold_tokens": 32000,
+        "archive_blocks": 12,
+        "archive_block_bytes": 24576,
+        "final_prompt": "Add a NEW migrate_many(batches) function in app.py. It accepts a list of row batches and returns one flat output list in batch order. Apply the initial agreed migration rules to every row, including invalid inputs and preservation boundaries; keep migrate(rows) working. Run python3 -m unittest test_public.py. Make the smallest correct change and do not commit.",
+        "minimum_completed_auto_compactions": 1,
+        "attempt_seconds": 600,
+        "paid_row_stop_usd": 2.5,
+        "paid_total_stop_usd": 5,
+        "final_stage_symbol": "migrate_many"
+      }
+    }
+  ]
+}

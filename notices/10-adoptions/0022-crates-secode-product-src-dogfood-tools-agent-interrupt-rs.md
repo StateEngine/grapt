@@ -1,0 +1,1 @@
+| `crates/secode-product/src/dogfood/tools/agent_interrupt.rs` | `openai/codex`, `codex-rs/core/src/tools/handlers/multi_agents_v2/interrupt_agent.rs` | `092d3acd6bec3e3a14bdc7e7a2810ab628ab759d` | **Modified**: bounded typed child address, parent-scoped durable lookup, existing execution owner, previous-status response. |

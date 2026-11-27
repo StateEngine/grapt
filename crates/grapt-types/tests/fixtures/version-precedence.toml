@@ -1,0 +1,121 @@
+# Service registration version precedence corpus (R4D-2V).
+#
+# The law table for `ServiceRegistrationVersion`'s semantic precedence, kept
+# outside the code that implements it so a reviewer can corrupt the FIXTURE and
+# watch the witness fail. `version_precedence_corpus.rs` owns it, asserts these
+# exact row counts, and refuses a corpus whose sections do not all execute.
+#
+# TOML rather than JSON only because `toml` is already a dev-dependency of this
+# crate: the corpus adds no dependency to the foundation crate.
+
+schema_version = 1
+id = "service-registration-version-precedence"
+owner = "grapt-types::service::ServiceRegistrationVersion"
+
+# One strictly ascending chain. The test checks EVERY pair, not just adjacent
+# ones, so the chain also asserts transitivity.
+#
+# `0.9.0` before `0.10.0`, the two above-u64 numeric pre-releases, and the three
+# arbitrary-length core values are cases a machine integer or lexicographic
+# byte order cannot carry. The SemVer 2.0.0 §11 worked example remains intact.
+ascending = [
+    "0.0.1",
+    "0.1.0",
+    "0.9.0",
+    "0.10.0",
+    "1.0.0-18446744073709551615",
+    "1.0.0-18446744073709551616",
+    "1.0.0-alpha",
+    "1.0.0-alpha.1",
+    "1.0.0-alpha.beta",
+    "1.0.0-beta",
+    "1.0.0-beta.2",
+    "1.0.0-beta.11",
+    "1.0.0-rc.1",
+    "1.0.0",
+    "1.0.1",
+    "1.1.0",
+    "2.0.0",
+    "9.0.0",
+    "10.0.0",
+    "18446744073709551615.0.0",
+    "18446744073709551616.0.0",
+    "18446744073709551617.0.0",
+]
+
+# Pairs that semantic precedence deliberately cannot tell apart. `exactly_equal`
+# records the SEPARATE exact-equality compatibility answer for the same pair:
+# where it is false, the two rules disagree, which is the whole point of keeping
+# them apart.
+[[equal_precedence]]
+left = "1.0.0"
+right = "1.0.0+build.1"
+exactly_equal = false
+
+[[equal_precedence]]
+left = "1.0.0+build.1"
+right = "1.0.0+build.2"
+exactly_equal = false
+
+[[equal_precedence]]
+left = "1.0.0+build.1"
+right = "1.0.0+build.1"
+exactly_equal = true
+
+[[equal_precedence]]
+left = "18446744073709551616.0.0+build.1"
+right = "18446744073709551616.0.0+build.2"
+exactly_equal = false
+
+# Values the oracle may legitimately record but which have no precedence. Each
+# names the exact refusal, so a parser that refuses everything for one blanket
+# reason cannot pass this section.
+[[unorderable]]
+value = "nightly"
+reason = "MalformedCore"
+detail = "1"
+
+[[unorderable]]
+value = "1.0"
+reason = "MalformedCore"
+detail = "2"
+
+[[unorderable]]
+value = "1.0.0.0"
+reason = "MalformedCore"
+detail = "4"
+
+[[unorderable]]
+value = "1.x.0"
+reason = "InvalidCoreField"
+detail = "minor"
+
+[[unorderable]]
+value = "1.01.0"
+reason = "InvalidCoreField"
+detail = "minor"
+
+[[unorderable]]
+value = "1.0.0-"
+reason = "InvalidPreRelease"
+detail = "0"
+
+[[unorderable]]
+value = "1.0.0-alpha..1"
+reason = "InvalidPreRelease"
+detail = "1"
+
+[[unorderable]]
+value = "1.0.0-alpha.01"
+reason = "InvalidPreRelease"
+detail = "1"
+
+[[unorderable]]
+value = "1.0.0+"
+reason = "InvalidBuild"
+detail = "0"
+
+[[unorderable]]
+value = "1.0.0+build..1"
+reason = "InvalidBuild"
+detail = "1"

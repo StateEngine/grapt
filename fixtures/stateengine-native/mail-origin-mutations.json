@@ -1,0 +1,166 @@
+{
+  "schema": 1,
+  "prefix": "NMO",
+  "rows": [
+    {
+      "id": "NMO01",
+      "path": "crates/grapt-runtime/src/mailbox/remote/snapshot.rs",
+      "before": "scope: expected.for_origin(message.projects().source().clone()),",
+      "after": "scope: expected.clone(),",
+      "witness": "mailbox::remote::tests::origin::mixed_origin_equal_ids_admit_ack_and_present_once",
+      "crate": "grapt-runtime",
+      "target": "lib",
+      "law": "J5/J8 preserve original source in durable identity and exact ACK"
+    },
+    {
+      "id": "NMO02",
+      "path": "crates/grapt-store/src/mailbox/remote.rs",
+      "before": "Self::Binding => expected.same_recipient_binding(actual),",
+      "after": "Self::Binding => expected == actual,",
+      "witness": "origin::mixed_origins_keep_equal_ids_distinct_and_binding_reads_bounded",
+      "crate": "grapt-store",
+      "target": "remote_mailbox",
+      "law": "Receiving binding reads every legitimate original project without collapsing exact-origin queries"
+    },
+    {
+      "id": "NMO03",
+      "path": "crates/grapt-store/src/mailbox/remote.rs",
+      "before": "&& self.principal == other.principal",
+      "after": "&& true",
+      "witness": "presentation::origin::foreign_recipient_authority_cannot_enter_mixed_origin_capture",
+      "crate": "grapt-store",
+      "target": "remote_mailbox",
+      "law": "Mixed origin does not weaken authenticated principal"
+    },
+    {
+      "id": "NMO04",
+      "path": "crates/grapt-store/src/mailbox/remote.rs",
+      "before": "self.projects.target() == other.projects.target()",
+      "after": "true",
+      "witness": "presentation::origin::foreign_recipient_authority_cannot_enter_mixed_origin_capture",
+      "crate": "grapt-store",
+      "target": "remote_mailbox",
+      "law": "Mixed origin does not weaken authenticated target project"
+    },
+    {
+      "id": "NMO05",
+      "path": "crates/grapt-store/src/mailbox/remote.rs",
+      "before": "&& self.recipient == other.recipient",
+      "after": "&& true",
+      "witness": "presentation::origin::foreign_recipient_authority_cannot_enter_mixed_origin_capture",
+      "crate": "grapt-store",
+      "target": "remote_mailbox",
+      "law": "Mixed origin does not weaken exact recipient"
+    },
+    {
+      "id": "NMO06",
+      "path": "crates/grapt-runtime/src/mailbox/remote/snapshot.rs",
+      "before": "|| message.projects().target() != self.expected.projects.target()",
+      "after": "|| false",
+      "witness": "mailbox::remote::tests::origin::foreign_page_coordinates_refuse_the_whole_page_before_admission",
+      "crate": "grapt-runtime",
+      "target": "lib",
+      "law": "Every page target validates before its first local admission"
+    },
+    {
+      "id": "NMO07",
+      "path": "crates/grapt-runtime/src/mailbox/remote/snapshot.rs",
+      "before": "&self.expected.for_origin(ack.projects().source().clone()),",
+      "after": "&self.expected,",
+      "witness": "mailbox::remote::tests::origin::mixed_origin_equal_ids_admit_ack_and_present_once",
+      "crate": "grapt-runtime",
+      "target": "lib",
+      "law": "Settlement retains original row provenance rather than binding source"
+    },
+    {
+      "id": "NMO08",
+      "path": "crates/grapt-runtime/src/mailbox/remote/snapshot.rs",
+      "before": ".read_remote_mailbox_for_binding(",
+      "after": ".read_remote_mailbox(",
+      "witness": "mailbox::remote::tests::origin::cross_origin_reconnect_repairs_original_debt_before_new_snapshot",
+      "crate": "grapt-runtime",
+      "target": "lib",
+      "law": "Recovery replays every original-origin debt before fresh enumeration"
+    },
+    {
+      "id": "NMO09",
+      "path": "crates/grapt-runtime/src/mailbox/remote/snapshot.rs",
+      "before": ".remote_mailbox_checkpoint_page_for_binding(",
+      "after": ".remote_mailbox_checkpoint_page(",
+      "witness": "mailbox::remote::tests::origin::cross_origin_reconnect_repairs_original_debt_before_new_snapshot",
+      "crate": "grapt-runtime",
+      "target": "lib",
+      "law": "Checkpoint covers all settled origins in the authenticated receiving binding"
+    },
+    {
+      "id": "NMO10",
+      "path": "crates/grapt-store/src/mailbox/remote.rs",
+      "before": "UPDATE mailbox_message SET record_bytes = ?1 WHERE message_id = ?2",
+      "after": "UPDATE mailbox_message SET record_bytes = ?1, consumed = 0 WHERE message_id = ?2",
+      "witness": "origin::mixed_origin_debt_reopen_checkpoint_and_consumption_keep_original_provenance",
+      "crate": "grapt-store",
+      "target": "remote_mailbox",
+      "law": "Rebind/replay cannot resurrect consumed original-origin work"
+    },
+    {
+      "id": "NMO11",
+      "path": "crates/grapt-store/src/mailbox/remote/presentation.rs",
+      "before": "let record = require_bound(conn, expected, &reference.local_message)?;",
+      "after": "let record = require(conn, expected, &reference.local_message)?;",
+      "witness": "presentation::origin::captured_mixed_origins_survive_reopen_without_resurrection",
+      "crate": "grapt-store",
+      "target": "remote_mailbox",
+      "law": "History replays canonical bodies from every origin in the same captured binding"
+    },
+    {
+      "id": "NMO12",
+      "path": "crates/grapt-runtime/src/mailbox/remote/presentation.rs",
+      "before": "record.scope().projects.source().as_str()",
+      "after": "\"source\"",
+      "witness": "mailbox::remote::tests::origin::mixed_origin_equal_ids_admit_ack_and_present_once",
+      "crate": "grapt-runtime",
+      "target": "lib",
+      "law": "Native notification displays actual origin without rewriting it to receiving floor"
+    },
+    {
+      "id": "NMO13",
+      "path": "crates/grapt-event/src/mail_presented.rs",
+      "before": "        let mut local = std::collections::BTreeSet::new();\n        let mut previous = 0;\n        for message in &messages {\n            if message.local_admission.value() <= previous || !local.insert(&message.local_message)",
+      "after": "        let mut local = std::collections::BTreeSet::new();\n        let mut source = std::collections::BTreeSet::new();\n        let mut previous = 0;\n        for message in &messages {\n            if message.local_admission.value() <= previous || !local.insert(&message.local_message) || !source.insert(&message.source_message)",
+      "witness": "mail_presented::tests::equal_remote_ids_keep_distinct_local_admissions_and_duplicate_guards",
+      "crate": "grapt-event",
+      "target": "lib",
+      "law": "Equal remote IDs from distinct original projects may coexist under distinct canonical local identities"
+    },
+    {
+      "id": "NMO14",
+      "path": "crates/grapt-event/src/mail_presented.rs",
+      "before": "!local.insert(&message.local_message)",
+      "after": "{ let _ = local.insert(&message.local_message); false }",
+      "witness": "mail_presented::tests::equal_remote_ids_keep_distinct_local_admissions_and_duplicate_guards",
+      "crate": "grapt-event",
+      "target": "lib",
+      "law": "Duplicate canonical local identities remain refused"
+    },
+    {
+      "id": "NMO15",
+      "path": "crates/grapt-event/src/mail_presented.rs",
+      "before": "message.local_admission.value() <= previous",
+      "after": "message.local_admission.value() < previous",
+      "witness": "mail_presented::tests::equal_remote_ids_keep_distinct_local_admissions_and_duplicate_guards",
+      "crate": "grapt-event",
+      "target": "lib",
+      "law": "Capture admission order remains strictly ascending, never equal"
+    },
+    {
+      "id": "NMO16",
+      "path": "crates/grapt-runtime/examples/native_mail_probe.rs",
+      "before": ".read_remote_mailbox_for_binding(",
+      "after": ".read_remote_mailbox(",
+      "witness": "tests::selected_readout_counts_all_origins_without_unbounded_output_or_missing_evidence",
+      "crate": "grapt-runtime",
+      "target": "example:native_mail_probe",
+      "law": "Bounded witness counts every admitted origin and fails if required selected evidence is missing"
+    }
+  ]
+}

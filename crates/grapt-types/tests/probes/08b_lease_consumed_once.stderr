@@ -1,0 +1,15 @@
+error[E0382]: use of moved value: `lease`
+  --> tests/probes/08b_lease_consumed_once.rs:22:18
+   |
+20 | fn run_two_effects_on_one_authorization(lease: AuthorityLease) -> (CapabilityId, CapabilityId) {
+   |                                         ----- move occurs because `lease` has type `AuthorityLease`, which does not implement the `Copy` trait
+21 |     let first = lease.consume();
+   |                       --------- `lease` moved due to this method call
+22 |     let second = lease.consume();
+   |                  ^^^^^ value used here after move
+   |
+note: `AuthorityLease::consume` takes ownership of the receiver `self`, which moves `lease`
+  --> src/capability.rs
+   |
+   |     pub fn consume(self) -> CapabilityId {
+   |                    ^^^^

@@ -1,0 +1,5 @@
+error[E0599]: no method named `session_grant` found for struct `PermissionSettlement` in the current scope
+  --> tests/probes/30_settlement_mints_session_authority.rs:56:33
+   |
+56 |     let _authority = settlement.session_grant(session);
+   |                                 ^^^^^^^^^^^^^ method not found in `PermissionSettlement`

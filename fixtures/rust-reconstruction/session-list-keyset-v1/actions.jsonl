@@ -1,0 +1,14 @@
+{"ordinal":1,"actor":"migration-harness","kind":"harness.session-list.import","source_domain":"typescript-session-v1@42e4888cc0"}
+{"ordinal":2,"actor":"list-reader","kind":"harness.session-list.page","order":"ascending","direction":"next","page_size":2}
+{"ordinal":3,"actor":"session-runtime","kind":"harness.append","session":"ses_legacy_a","event":"evt_usage","type":"session.usage.recorded","version":1,"created_ms":15000,"expect_recency":"preserved"}
+{"ordinal":4,"actor":"session-runtime","kind":"harness.append","session":"ses_legacy_a","event":"evt_rename","type":"session.renamed","version":1,"created_ms":20000,"data":{"sessionID":"ses_legacy_a","title":"renamed"}}
+{"ordinal":5,"actor":"fixture-loader","kind":"harness.session-list.seed-ties","updated_ms":30000,"sessions":["ses_tie_a","ses_tie_b","ses_tie_c","ses_tie_d"]}
+{"ordinal":6,"actor":"list-reader","kind":"harness.session-list.page","order":"ascending","direction":"next","page_size":2,"anchor":{"updated_ms":30000,"session_id":"ses_tie_b"}}
+{"ordinal":7,"actor":"list-reader","kind":"harness.session-list.page","order":"ascending","direction":"previous","page_size":2,"anchor":{"updated_ms":30000,"session_id":"ses_tie_c"}}
+{"ordinal":8,"actor":"list-reader","kind":"harness.session-list.page","scope":{"directory":"/work/a","workspace":"ws_a"},"title_contains":"needle","parent":"root","order":"ascending","direction":"next","page_size":10,"compatibility_subpath":"display/ignored","seed_match":{"session":"ses_scope_root","updated_ms":40000,"project":"prj_a","directory":"/work/a","workspace":"ws_a","title":"a needle here"}}
+{"ordinal":9,"actor":"list-reader","kind":"harness.session-list.page","order":"descending","direction":"next","page_size":129,"expect_error":"PageLimitExceeded"}
+{"ordinal":10,"actor":"list-reader","kind":"harness.session-list.page","order":"descending","direction":"next","page_size":1,"search_utf8_bytes":1025,"expect_error":"SearchLimitExceeded"}
+{"ordinal":11,"actor":"corruption-harness","kind":"harness.session-list.inject-oversize-title","session":"ses_oversize","title_bytes":262145,"expect_error":"ProjectionCorrupt","revert_injection":true}
+{"ordinal":12,"actor":"crash-harness","kind":"harness.session-list.project-with-failure","session":"ses_atomic","cut":"before-commit","expect":{"event_rows":0,"projection_rows":0,"watermarks":0,"notices":0}}
+{"ordinal":13,"actor":"restart-harness","kind":"harness.session-list.catch-up","session":"ses_restart","event":"evt_restart","created_ms":25000,"durable_head":0,"initial_watermark":null,"expect_watermark":0}
+{"ordinal":14,"actor":"race-harness","kind":"harness.session-list.page-local-race","writer":"moves-key-between-pages","session":"ses_tie_d","moved_updated_ms":50000,"allowed_observations":["writer-before-page-snapshot","writer-after-page-snapshot"],"cross_page_snapshot_promised":false}

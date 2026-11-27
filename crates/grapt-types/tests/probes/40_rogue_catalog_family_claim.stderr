@@ -1,0 +1,10 @@
+error[E0624]: method `same_family` is private
+  --> tests/probes/40_rogue_catalog_family_claim.rs:58:29
+   |
+58 |     let _may_cross = parent.same_family(&child);
+   |                             ^^^^^^^^^^^ private method
+   |
+  ::: src/model/reference.rs
+   |
+   |     pub(crate) fn same_family(&self, other: &ModelRef) -> bool {
+   |     ---------------------------------------------------------- private method defined here

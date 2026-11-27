@@ -1,0 +1,13 @@
+error[E0624]: associated function `new` is private
+ --> tests/probes/76_public_unopened_attempt_constructor.rs:6:36
+  |
+6 |       let _ = UnopenedAttempt::<()>::new;
+  |                                      ^^^ private associated function
+  |
+ ::: src/attempt_admission.rs
+  |
+  | /     pub(crate) fn new(
+  | |         attempt: PhysicalAttemptId,
+  | |         factory: impl FnOnce() -> R + Send + 'static,
+  | |     ) -> Self {
+  | |_____________- private associated function defined here

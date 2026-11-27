@@ -1,0 +1,11 @@
+error[E0423]: cannot initialize a tuple struct which contains private fields
+  --> tests/probes/56_contribution_id_minted_from_bytes.rs:12:13
+   |
+12 |     let _ = grapt_policy::ContributionId([0u8; 32]);
+   |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+note: constructor is not visible here due to private fields
+  --> $WORKSPACE/crates/grapt-policy/src/authority.rs
+   |
+   | pub struct ContributionId([u8; 32]);
+   |                           ^^^^^^^^ private field

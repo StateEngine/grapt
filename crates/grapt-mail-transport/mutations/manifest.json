@@ -1,0 +1,287 @@
+{
+ "purpose": "R3b-2A resurrection witnesses for remote-seat-mail-transport/v1. Each row removes one load-bearing behaviour and names the witness that must turn red without it. The ten contract vectors passed on their first run, which proves nothing on its own; these rows are what shows them failing for their own named reasons.",
+ "run": "python crates/grapt-mail-transport/mutations/run.py",
+ "prefix": "RM",
+ "prefix_allocation": "Whole token RM allocated to R3b-2A by the coordinator in the approved contract after refusing Q, which the live R3c1 candidate c851d63c already owns (Q01-Q12). L is R3c2-D's; PL and Z remain active claims. Re-inventoried immediately before this manifest's first commit: 200 manifests across every author root under C:\\fixtures plus canonical dev at be1c33c2 -- zero RM rows.",
+ "guard_disclosure": "run.py carries TWO guards by ruling. The allocation guard refuses any row whose id is not a whole-token RM[0-9]+; the selection guard refuses a --prefix that is not exactly RM, rather than silently matching nothing and exiting zero. The manifest also fails closed when unreadable, malformed, empty, missing a required key, or carrying a duplicate id.",
+ "isolation": "Every mutation is applied inside its own disposable git worktree at the exact candidate commit. No mutant is written into the calling worktree, so there is no restore step that could leave a stale build behind.",
+ "scope_note": "R3b-2A owns the transport half only. Rows for local admission, ack-debt and checkpoint advancement (R3b-2B), the coalesced wake bit, reconnect scheduling and the Live declaration (R3b-2C), and end-to-end crash cuts (R3b-2I) are deliberately ABSENT rather than approximated here.",
+ "uncovered_by_design": "The admission packet's resurrection list includes mutants this lane cannot carry because their subject does not exist in this crate: advancing a checkpoint before ack-debt settlement, erasing debt after a lost response, inferring progress from local consumed rows, clearing a signal received during catch-up, allowing a second catch-up owner, replacing the capacity-one signal with an unbounded queue, and reconnecting forever. Each belongs to B or C and is recorded here rather than silently dropped.",
+ "j2_note": "The admission packet's 'allow a second catch-up owner' mutant is not merely out of scope, it is SUPERSEDED. Ruling J2 removed leases and fences, so a second opener is legitimate; RM15 witnesses the replacement law instead -- a takeover that fails to name whom it displaced.",
+ "mutations": [
+  {
+   "id": "RM01",
+   "law": "J5: the transport vocabulary is SEVEN kinds; Ruling has its own",
+   "file": "crates/grapt-mail-transport/src/message.rs",
+   "test": "message::tests::the_kind_vocabulary_has_seven_variants_and_round_trips",
+   "old": "    pub const ALL: [RemoteSeatMailKind; 7] = [\n        RemoteSeatMailKind::TaskPointer,\n        RemoteSeatMailKind::Question,\n        RemoteSeatMailKind::Blocker,\n        RemoteSeatMailKind::Done,\n        RemoteSeatMailKind::Handoff,\n        RemoteSeatMailKind::RulingRequest,\n        RemoteSeatMailKind::Ruling,\n    ];",
+   "new": "    pub const ALL: [RemoteSeatMailKind; 6] = [\n        RemoteSeatMailKind::TaskPointer,\n        RemoteSeatMailKind::Question,\n        RemoteSeatMailKind::Blocker,\n        RemoteSeatMailKind::Done,\n        RemoteSeatMailKind::Handoff,\n        RemoteSeatMailKind::RulingRequest,\n    ];"
+  },
+  {
+   "id": "RM02",
+   "law": "J5: a settled Ruling may not be relabelled as a RulingRequest",
+   "file": "crates/grapt-mail-transport/src/message.rs",
+   "test": "message::tests::ruling_is_its_own_kind_and_is_never_a_ruling_request",
+   "old": "            RemoteSeatMailKind::Ruling => \"ruling\",",
+   "new": "            RemoteSeatMailKind::Ruling => \"ruling-request\","
+  },
+  {
+   "id": "RM03",
+   "law": "one floor: the transport and local kind vocabularies stay identical",
+   "file": "crates/grapt-mail-transport/src/message.rs",
+   "test": "message::tests::the_transport_and_local_vocabularies_are_label_identical",
+   "old": "            RemoteSeatMailKind::Handoff => \"handoff\",",
+   "new": "            RemoteSeatMailKind::Handoff => \"hand-off\","
+  },
+  {
+   "id": "RM04",
+   "law": "J5: neither supersession edge may point at its own message",
+   "file": "crates/grapt-mail-transport/src/message.rs",
+   "test": "message::tests::a_supersession_refuses_self_reference_in_either_direction",
+   "old": "        if supersedes.as_ref() == Some(message) || superseded_by.as_ref() == Some(message) {",
+   "new": "        if supersedes.as_ref() == Some(message) && superseded_by.as_ref() == Some(message) {"
+  },
+  {
+   "id": "RM05",
+   "law": "J5: one neighbour cannot be both predecessor and successor",
+   "file": "crates/grapt-mail-transport/src/message.rs",
+   "test": "message::tests::a_supersession_refuses_a_two_way_edge_to_one_neighbour",
+   "old": "            if back == forward {",
+   "new": "            if back != forward {"
+  },
+  {
+   "id": "RM06",
+   "law": "refs are positional evidence and keep source order",
+   "file": "crates/grapt-mail-transport/src/message.rs",
+   "test": "message::tests::refs_keep_their_source_order_and_are_not_deduplicated",
+   "old": "        Ok(BoundedOrderedMailRefs(refs))",
+   "new": "        Ok(BoundedOrderedMailRefs({\n            let mut refs = refs;\n            refs.sort();\n            refs\n        }))"
+  },
+  {
+   "id": "RM07",
+   "law": "the ref COUNT bound is enforced before the collection is retained",
+   "file": "crates/grapt-mail-transport/src/message.rs",
+   "test": "message::tests::refs_refuse_count_and_aggregate_bounds_separately",
+   "old": "        if count > max_count {",
+   "new": "        if count > u32::MAX {"
+  },
+  {
+   "id": "RM08",
+   "law": "the aggregate ref BYTE bound is simultaneous with the count bound",
+   "file": "crates/grapt-mail-transport/src/message.rs",
+   "test": "message::tests::refs_refuse_count_and_aggregate_bounds_separately",
+   "old": "        if aggregate > max_aggregate_bytes {",
+   "new": "        if aggregate > usize::MAX {"
+  },
+  {
+   "id": "RM09",
+   "law": "J6: a body is checked against the SETTLED bound, not the ceiling",
+   "file": "crates/grapt-mail-transport/src/message.rs",
+   "test": "message::tests::a_body_inside_the_ceiling_is_still_refused_above_the_settled_bound",
+   "old": "        let max = limits.body_utf8_bytes();",
+   "new": "        let max = crate::limits::GRAPT_MAX_BODY_BYTES;"
+  },
+  {
+   "id": "RM10",
+   "law": "J6: settlement clamps a larger provider profile to the Grapt ceiling",
+   "file": "crates/grapt-mail-transport/src/limits.rs",
+   "test": "limits::tests::a_larger_provider_profile_is_clamped_to_the_se_code_ceiling",
+   "old": "            body_utf8_bytes: body.min(GRAPT_MAX_BODY_BYTES),",
+   "new": "            body_utf8_bytes: body.max(GRAPT_MAX_BODY_BYTES),"
+  },
+  {
+   "id": "RM11",
+   "law": "J6: Grapt numbers are ceilings, so a smaller provider profile wins",
+   "file": "crates/grapt-mail-transport/src/limits.rs",
+   "test": "limits::tests::a_smaller_provider_profile_wins_because_ceilings_are_not_minima",
+   "old": "            messages_per_page: msgs.min(GRAPT_MAX_MESSAGES_PER_PAGE),",
+   "new": "            messages_per_page: msgs.max(GRAPT_MAX_MESSAGES_PER_PAGE),"
+  },
+  {
+   "id": "RM12",
+   "law": "J8: both project halves survive even when they are equal",
+   "file": "crates/grapt-types/src/remote_mail.rs",
+   "source_move": "Same ProjectPair implementation moved to shared lowest vocabulary; original mail identity witness unchanged.",
+   "test": "identity::tests::a_same_project_pair_still_carries_both_halves",
+   "old": "    pub fn is_same_project(&self) -> bool {\n        self.source.as_str() == self.target.as_str()\n    }",
+   "new": "    pub fn is_same_project(&self) -> bool {\n        false\n    }"
+  },
+  {
+   "id": "RM13",
+   "law": "the verified binding decides the recipient; a message field cannot",
+   "file": "crates/grapt-mail-transport/src/binding.rs",
+   "test": "binding::tests::a_wrong_recipient_project_or_protocol_refuses_before_any_mail",
+   "old": "        if request.expected_recipient() != self.receipt.local_recipient() {\n            return Err(OpenFailure::RecipientMismatch);\n        }",
+   "new": "        if false {\n            return Err(OpenFailure::RecipientMismatch);\n        }"
+  },
+  {
+   "id": "RM14",
+   "law": "an unsupported protocol version is refused, never adapted",
+   "file": "crates/grapt-mail-transport/src/binding.rs",
+   "test": "binding::tests::a_wrong_recipient_project_or_protocol_refuses_before_any_mail",
+   "old": "        if request.requested_protocol() != self.receipt.protocol() {\n            return Err(OpenFailure::ProtocolVersionUnsupported);\n        }",
+   "new": "        if false {\n            return Err(OpenFailure::ProtocolVersionUnsupported);\n        }"
+  },
+  {
+   "id": "RM15",
+   "law": "J2: a takeover NAMES whom it displaced; silence is the old failure",
+   "file": "crates/grapt-mail-transport/src/binding.rs",
+   "test": "binding::tests::a_second_opener_succeeds_and_names_who_it_displaced",
+   "old": "    pub fn took_over(generation: BindingGeneration, displaced: DisplacedOwner) -> Self {\n        TakeoverReceipt {\n            generation,\n            displaced: Some(displaced),\n        }\n    }",
+   "new": "    pub fn took_over(generation: BindingGeneration, displaced: DisplacedOwner) -> Self {\n        let _ = displaced;\n        TakeoverReceipt {\n            generation,\n            displaced: None,\n        }\n    }"
+  },
+  {
+   "id": "RM16",
+   "law": "J4: invalidation without a safe origin BLOCKS; it is never replayable",
+   "file": "crates/grapt-mail-transport/src/cursor.rs",
+   "test": "cursor::tests::invalidation_is_never_end_of_stream_and_says_so",
+   "old": "    pub fn is_replayable(&self) -> bool {\n        matches!(self.recovery, CursorRecovery::ReplayFrom(_))\n    }",
+   "new": "    pub fn is_replayable(&self) -> bool {\n        true\n    }"
+  },
+  {
+   "id": "RM17",
+   "law": "a bounded page and an exhausted snapshot are different facts",
+   "file": "crates/grapt-mail-transport/src/cursor.rs",
+   "test": "cursor::tests::a_bounded_page_and_an_exhausted_page_are_different_facts",
+   "old": "        RemoteMailPage {\n            messages,\n            next_after: Some(next_after),\n        }",
+   "new": "        RemoteMailPage {\n            messages,\n            next_after: {\n                let _ = next_after;\n                None\n            },\n        }"
+  },
+  {
+   "id": "RM18",
+   "law": "zero is not a generation; 'unbound' cannot be confused with the first",
+   "file": "crates/grapt-mail-transport/src/cursor.rs",
+   "test": "cursor::tests::a_subscription_generation_refuses_zero_and_refuses_to_wrap",
+   "old": "    pub fn new(value: u64) -> Option<Self> {\n        if value == 0 {\n            None\n        } else {\n            Some(SubscriptionGeneration(value))\n        }\n    }",
+   "new": "    pub fn new(value: u64) -> Option<Self> {\n        Some(SubscriptionGeneration(value))\n    }"
+  },
+  {
+   "id": "RM19",
+   "law": "an oversize advisory token is dropped, never carried",
+   "file": "crates/grapt-mail-transport/src/signal.rs",
+   "test": "signal::tests::an_oversize_token_is_dropped_rather_than_costing_the_wake",
+   "old": "        let token = if token.is_empty() || token.len() > MAX_CHANGE_TOKEN_BYTES {",
+   "new": "        let token = if token.is_empty() {"
+  },
+  {
+   "id": "RM20",
+   "law": "J1: an empty bulk dismiss is refused, not receipted as an action",
+   "file": "crates/grapt-mail-transport/src/signal.rs",
+   "test": "signal::tests::a_bulk_dismiss_refuses_to_be_empty",
+   "old": "        if messages.is_empty() {\n            return Err(DismissError::Empty);\n        }",
+   "new": "        if false {\n            return Err(DismissError::Empty);\n        }"
+  },
+  {
+   "id": "RM21",
+   "law": "a shortened diagnostic records the length it was shortened from",
+   "file": "crates/grapt-mail-transport/src/failure.rs",
+   "test": "failure::tests::a_local_diagnostic_truncates_on_a_character_boundary_and_records_the_original",
+   "old": "            truncated_from: Some(original),",
+   "new": "            truncated_from: {\n                let _ = original;\n                None\n            },",
+   "repin_note": "Re-pinned, not re-scoped. The test was renamed when BoundedDiagnostic gained the local/within split; the law it witnesses is unchanged."
+  },
+  {
+   "id": "RM22",
+   "law": "a reconnect carrying a checkpoint must not resume cold",
+   "file": "crates/grapt-mail-transport/src/port.rs",
+   "test": "vector_07_a_disconnect_mid_page_resumes_after_the_settled_prefix",
+   "old": "    pub fn is_cold(&self) -> bool {\n        self.from_checkpoint.is_none()\n    }",
+   "new": "    pub fn is_cold(&self) -> bool {\n        true\n    }",
+   "test_target": "contract_vectors"
+  },
+  {
+   "id": "RM23",
+   "law": "a restart resumes strictly after its durable checkpoint",
+   "file": "crates/grapt-mail-transport/src/cursor.rs",
+   "test": "vector_09_a_restart_rebinds_from_the_checkpoint_and_takes_over_visibly",
+   "old": "    pub fn start_after(&self) -> Option<&ExclusiveSourceCursor> {\n        self.start_after.as_ref()\n    }",
+   "new": "    pub fn start_after(&self) -> Option<&ExclusiveSourceCursor> {\n        None\n    }",
+   "test_target": "contract_vectors"
+  },
+  {
+   "id": "RM24",
+   "law": "B1: a MailBinding cannot be constructed outside this crate",
+   "file": "crates/grapt-mail-transport/src/binding.rs",
+   "test": "a_binding_cannot_be_constructed_outside_this_crate",
+   "old": "    pub(crate) fn new(receipt: MailBindingReceipt) -> Self {",
+   "new": "    pub fn new(receipt: MailBindingReceipt) -> Self {",
+   "note": "Re-opens the exact hole the R1 review compiled: probe 03 forges a binding naming an arbitrary verified_principal with no adapter at all. With `new` public the probe COMPILES, so trybuild reports a probe that should have been rejected.",
+   "test_target": "compile_fail",
+   "repin_note": "test_target added: the witness is the trybuild harness in the compile_fail INTEGRATION binary, and the runner defaults to --lib. Without it the filter matched nothing -- caught by the runner's ran_at_least_one_test guard, which is exactly the 'a cargo filter matching no test exits 0' hole that guard exists to close."
+  },
+  {
+   "id": "RM25",
+   "law": "B1: the port cannot be implemented outside this crate",
+   "file": "crates/grapt-mail-transport/src/port.rs",
+   "test": "the_transport_port_cannot_be_implemented_outside_this_crate",
+   "old": "pub trait RemoteSeatMailTransportV1: Sealed {",
+   "new": "pub trait RemoteSeatMailTransportV1 {",
+   "note": "Removes the private supertrait. Probe 04 implements all seven methods precisely so that E0046 cannot mask this: unsealed, the probe compiles and trybuild fails.",
+   "test_target": "compile_fail",
+   "repin_note": "test_target added: the witness is the trybuild harness in the compile_fail INTEGRATION binary, and the runner defaults to --lib. Without it the filter matched nothing -- caught by the runner's ran_at_least_one_test guard, which is exactly the 'a cargo filter matching no test exits 0' hole that guard exists to close."
+  },
+  {
+   "id": "RM26",
+   "law": "Advisory B: the diagnostic bound settles to the SMALLER side",
+   "file": "crates/grapt-mail-transport/src/limits.rs",
+   "test": "limits::tests::a_smaller_provider_diagnostic_bound_wins_over_the_se_code_ceiling",
+   "old": "            diagnostic_bytes: diag.min(GRAPT_MAX_DIAGNOSTIC_BYTES),",
+   "new": "            diagnostic_bytes: diag.max(GRAPT_MAX_DIAGNOSTIC_BYTES),",
+   "note": "min -> max. A provider that can carry only 64 diagnostic bytes is handed 4,096. Attributed to the diagnostic arm alone: the body, page and aggregate arms are untouched, so RM10/RM11 stay green and only the diagnostic witnesses fire."
+  },
+  {
+   "id": "RM27",
+   "law": "Advisory B: a post-open diagnostic uses the SETTLED bound, not the ceiling",
+   "file": "crates/grapt-mail-transport/src/failure.rs",
+   "test": "failure::tests::a_post_open_diagnostic_obeys_the_smaller_provider_bound",
+   "old": "        Self::bound(raw.into(), limits.diagnostic_bytes())",
+   "new": "        Self::bound(raw.into(), GRAPT_MAX_DIAGNOSTIC_BYTES)",
+   "note": "The R1 defect itself: `max_diagnostic_bytes` is advertised, mandatory, negotiated and then ignored in favour of the hardcoded ceiling. This is the mutant that would have been GREEN against the previous candidate, because the previous candidate had no other behaviour."
+  },
+  {
+   "id": "RM28",
+   "law": "Advisory B: truncation lands on a UTF-8 boundary at the NEGOTIATED bound",
+   "file": "crates/grapt-mail-transport/src/failure.rs",
+   "test": "failure::tests::a_settled_bound_that_splits_a_character_truncates_below_it",
+   "old": "        while end > 0 && !raw.is_char_boundary(end) {",
+   "new": "        while false && !raw.is_char_boundary(end) {",
+   "note": "Stops walking down to a character boundary. `String::truncate` panics rather than producing invalid UTF-8, so the witness fires on the panic — the law is still 'never split a character', and the language enforces the consequence."
+  },
+  {
+   "id": "RM29",
+   "law": "B2: settling consults the provider's own measurement, not a constant",
+   "file": "crates/grapt-mail-transport/src/limits.rs",
+   "test": "limits::tests::a_smaller_provider_profile_wins_because_ceilings_are_not_minima",
+   "old": "        let body = self.parts.max_body_utf8_bytes.get();",
+   "new": "        let body = GRAPT_MAX_BODY_BYTES;",
+   "note": "Replaces a measured provider value with the local ceiling. This is the shape B2 removed the unreachable `LimitError` in favour of: the profile is complete by type, so the only way to break it is to stop READING it."
+  },
+  {
+   "id": "RM30",
+   "law": "Advisory D / J8: a dismiss carries the pair ITS BINDING authenticated",
+   "file": "crates/grapt-mail-transport/src/signal.rs",
+   "test": "signal::tests::a_dismiss_cannot_be_pointed_at_a_pair_its_binding_never_authenticated",
+   "old": "            projects: binding.receipt().projects().clone(),",
+   "new": "            projects: match (\n                crate::identity::SourceProjectId::new(\"stateengine\"),\n                crate::identity::TargetProjectId::new(\"secode\"),\n            ) {\n                (Some(source), Some(target)) => ProjectPair::new(source, target),\n                _ => binding.receipt().projects().clone(),\n            },",
+   "note": "Resurrects the caller-authored pair: the request stops reading the binding and asserts a fixed pair instead. Two bindings over DIFFERENT project pairs then produce requests that agree, which is exactly the authority confusion J8 forbids."
+  },
+  {
+   "id": "RM31",
+   "law": "Advisory C: an exact repeat is EVERY coordinate, not just the ack id",
+   "file": "crates/grapt-types/src/remote_mail/ack.rs",
+   "test": "ack::tests::a_different_digest_or_message_is_not_an_exact_repeat",
+   "old": "        self == other",
+   "new": "        self.ack_id == other.ack_id",
+   "note": "Collapses identity onto one coordinate, so a DIFFERENT message or digest reconciles as an exact retry — a lost response would then silently accept a different fact under the original receipt. ack.rs carried zero RM rows at R1 despite owning this law."
+  },
+  {
+   "id": "RM32",
+   "law": "Advisory C: an exact retry is not a first record",
+   "file": "crates/grapt-mail-transport/src/ack.rs",
+   "test": "ack::tests::an_exact_retry_returns_the_original_receipt_and_creates_no_second_fact",
+   "old": "        matches!(self, DeliveryAckOutcome::Recorded(_))",
+   "new": "        matches!(self, DeliveryAckOutcome::Recorded(_) | DeliveryAckOutcome::ExactRetry(_))",
+   "note": "Makes a retry claim it created the record. The delivery count then inflates once per lost response, which is the duplicate-fact defect the ExactRetry variant exists to prevent."
+  }
+ ],
+ "r2_correction_note": "R2 correction under the R1 HOLD. RM24-RM32 are FRESH ids for the new laws: the two seals (B1), the settled diagnostic bound and its UTF-8 boundary (Advisory B), provider-measurement readback (B2), the dismiss pair (Advisory D), and the two rows ack.rs owed (Advisory C). No existing id was deleted, renumbered or repurposed. RM21 was RE-PINNED to its renamed witness, which changes where the row points and not what it means."
+}

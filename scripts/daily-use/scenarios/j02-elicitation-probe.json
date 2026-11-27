@@ -1,0 +1,98 @@
+{
+  "name": "J02 elicitation probe - what happens when a server asks the client a question",
+  "about": [
+    "AN OBSERVATION, NOT AN ASSERTION OF SUCCESS.",
+    "",
+    "The frozen oracle answers MCP elicitation and raises a form",
+    "(packages/core/src/mcp/index.ts:363-380, kind `mcp-elicitation`). The",
+    "reconstruction has McpElicitationId and FormOwner::Global in its types and",
+    "NO elicitation handling anywhere in grapt-mcp or the dogfood surface.",
+    "",
+    "Reading `decode_reply` predicts a CorrelationMismatch: it requires the next",
+    "frame to carry the id of the request in flight, and a server-initiated",
+    "`elicitation/create` carries its own. A prediction is not a measurement, and",
+    "mine have been wrong three times this campaign, so this scenario exists to",
+    "OBSERVE rather than to confirm.",
+    "",
+    "It therefore asserts only what must be true either way: the ask appears and",
+    "is approved. Everything after that is captured and read from the durable",
+    "record and the server transcript, so the run reports what the product did",
+    "instead of failing on an expectation I invented."
+  ],
+  "steps": [
+    {
+      "expect": {
+        "retained": "Select a project"
+      },
+      "polls": 240
+    },
+    {
+      "capture": "the opening screen"
+    },
+    {
+      "key": {
+        "retained": "i"
+      }
+    },
+    {
+      "expect": {
+        "retained": "ctrl+x tab agents"
+      },
+      "polls": 240
+    },
+    {
+      "capture": "after choosing where to work"
+    },
+    {
+      "key": {
+        "retained": "Enter"
+      }
+    },
+    {
+      "absent": {
+        "retained": "Allow once"
+      },
+      "polls": 240
+    },
+    {
+      "capture": "the transcript before any ask"
+    },
+    {
+      "paste": "Call the journey_echo tool with the text daily-use and then report, character for character, the exact text the tool returned."
+    },
+    {
+      "key": "Enter"
+    },
+    {
+      "expect": {
+        "retained": "Allow once"
+      },
+      "polls": 960
+    },
+    {
+      "capture": "the MCP permission ask, before it is answered"
+    },
+    {
+      "key": {
+        "retained": "Enter"
+      }
+    },
+    {
+      "absent": {
+        "retained": "Allow once"
+      },
+      "polls": 480
+    },
+    {
+      "capture": "the server's own answer on screen"
+    },
+    {
+      "capture": "after the elicitation was sent, whatever the client did with it"
+    },
+    {
+      "key": {
+        "retained": "Control+c"
+      }
+    }
+  ]
+}

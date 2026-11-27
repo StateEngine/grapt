@@ -1,0 +1,15 @@
+warning: unreachable statement
+  --> tests/probes/05_dto_cannot_carry_a_principal.rs:14:5
+   |
+13 |     let envelope: RequestEnvelope = todo!();
+   |                                     ------- any code following this expression is unreachable
+14 |     let _identity = envelope.principal();
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ unreachable statement
+   |
+   = note: `#[warn(unreachable_code)]` (part of `#[warn(unused)]`) on by default
+
+error[E0599]: no method named `principal` found for struct `RequestEnvelope` in the current scope
+  --> tests/probes/05_dto_cannot_carry_a_principal.rs:14:30
+   |
+14 |     let _identity = envelope.principal();
+   |                              ^^^^^^^^^ method not found in `RequestEnvelope`

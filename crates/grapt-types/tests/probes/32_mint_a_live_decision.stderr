@@ -1,0 +1,23 @@
+error[E0624]: associated function `mint` is private
+  --> tests/probes/32_mint_a_live_decision.rs:17:45
+   |
+17 |       let _decision = LivePermissionDecision::mint(todo!(), todo!());
+   |                                               ^^^^ private associated function
+   |
+  ::: src/authority/live.rs
+   |
+   | /     pub(crate) fn mint(
+   | |         parts: LivePermissionDecisionParts,
+   | |         authorities: &DeterministicAuthorities<'_>,
+   | |     ) -> Option<Self> {
+   | |_____________________- private associated function defined here
+
+warning: unreachable expression
+  --> tests/probes/32_mint_a_live_decision.rs:17:59
+   |
+17 |     let _decision = LivePermissionDecision::mint(todo!(), todo!());
+   |                                                  -------  ^^^^^^^ unreachable expression
+   |                                                  |
+   |                                                  any code following this expression is unreachable
+   |
+   = note: `#[warn(unreachable_code)]` (part of `#[warn(unused)]`) on by default

@@ -1,0 +1,131 @@
+{
+  "purpose": "L2 MODEL-REGISTRY-ISSUANCE. Every row attacks one of the three catalog properties this lane owns: S1 a monotonic CatalogGeneration compared at issue AND at use, S2 a typed stale refusal that is a THIRD case distinct from unavailable and incapable, S3 a CatalogReissuanceReceipt proving same coordinates, same base model, same family and a new generation. The lane mints NO new provenance value: R-b as restated rules that the mechanism is the Arc-identity snapshot L1 already landed, so no row attacks a provenance mint, because there is none to attack. MR12 is the FOREIGN witness required by R-g and the AUTH precedent: it mutates grapt-types and dies against a grapt-policy test, which proves the staleness law is carried across the crate boundary rather than merely described inside the crate that states it.",
+  "run": "python crates/grapt-types/mutations/run.py --prefix MR",
+  "isolation": "Every mutation is applied in its own disposable worktree at the exact committed candidate. The calling worktree remains unchanged. The engine, the isolation, the anchor preflight, the NO TEST RAN and compile-kill refusals, the duplicate-evidence check and the checked cleanup are the shared runner, not a second copy.",
+  "scope_note": "This manifest owns five files: model/issuance.rs carries seven rows, model/catalog.rs one, model/reference.rs one, subagent.rs two, and model/target.rs one for the foreign row. No row pins model.rs: after L1R that file is a facade of re-exports, and a mutation there would either not compile or not be a law. One law deliberately receives NO row, and the omission is recorded here rather than left as a gap. That the generation is excluded from the EffectiveGraph receipt preimage cannot be attacked by a compiling mutant, because contributor.rs lowers a ModelRef and never sees a generation at all, so a mutant that fed one in would not compile and the harness correctly refuses a mutant that does not compile. It is witnessed positively instead, by the capability-form witness and by the two-release receipt equality in the restored graph_receipt.rs.",
+  "prefix_note": "MR is allocated to this lane in ruling R-g and was confirmed free by a whole-token live-plus-tombstone census REPRODUCED at this lane exact base rather than carried forward from any earlier packet: 25 mutation-bearing manifests, 936 live rows plus 7 tombstones for 943 qualified ids, 48 distinct whole-token prefixes, and MR absent from all of them. MR and MC do not collide under fullmatch, and neither is swept by --prefix M: the selector token of MR01 is the whole run MR, never M with a suffix.",
+  "mutations": [
+    {
+      "id": "MR01",
+      "package": "grapt-types",
+      "file": "crates/grapt-types/src/model/catalog.rs",
+      "test": "model::tests::issuance::an_issuance_is_current_until_its_release_is_superseded",
+      "law": "A snapshot is current only while its generation IS the lineage current one (S1)",
+      "old": "        self.generation == self.lineage.current()",
+      "new": "        true",
+      "red": "Every issuance answers current, so superseding retires nothing and the assertion that a withdrawn release no longer vouches for its targets fails. This is the defect S1 exists to close: pointer identity distinguishes two snapshots and cannot retire one."
+    },
+    {
+      "id": "MR02",
+      "package": "grapt-types",
+      "file": "crates/grapt-types/src/model/issuance.rs",
+      "test": "model::tests::issuance::an_issuance_is_current_until_its_release_is_superseded",
+      "law": "Superseding PUBLISHES the new generation to the shared lineage (S1)",
+      "old": "        self.catalog.snapshot().publish(generation);",
+      "new": "        let _ = generation;",
+      "red": "The successor is installed but the lineage never advances, so the retired generation still equals current and the outstanding target stays live. A supersede that does not publish is a rename."
+    },
+    {
+      "id": "MR03",
+      "package": "grapt-types",
+      "file": "crates/grapt-types/src/model/issuance.rs",
+      "test": "model::tests::issuance::a_generation_orders_numerically_and_not_as_text",
+      "law": "succ ADVANCES; it is monotonic, not idempotent (S1)",
+      "old": "        self.0.checked_add(1).map(Self)",
+      "new": "        Some(Self(self.0))",
+      "red": "Nine successive advances leave the generation at one, so the assertion that nine.get() is 9 fails. A generation that does not advance makes every later release compare equal to the first."
+    },
+    {
+      "id": "MR04",
+      "package": "grapt-types",
+      "file": "crates/grapt-types/src/model/issuance.rs",
+      "test": "model::tests::issuance::a_retired_registry_refuses_to_mint_anything_new",
+      "law": "Issue-time staleness gate: a retired release mints nothing (S1 and S2)",
+      "old": "        if !snapshot.is_current() {",
+      "new": "        if false {",
+      "red": "A registry whose catalog has been superseded mints new targets against the retired generation, so the expected Stale refusal never arrives and the equality on the refusal fails."
+    },
+    {
+      "id": "MR05",
+      "package": "grapt-types",
+      "file": "crates/grapt-types/src/model/issuance.rs",
+      "test": "model::tests::issuance::staleness_is_a_third_case_and_not_unavailable_or_incapable",
+      "law": "Staleness is a THIRD refusal, never collapsed into unavailable (S2, master 7.5)",
+      "old": "            return Err(IssuanceRefusal::Stale {\n                issued_at: snapshot.generation(),\n                current: snapshot.current_generation(),\n            });",
+      "new": "            return Err(IssuanceRefusal::Unavailable);",
+      "red": "The exhaustive match takes the Unavailable arm and panics with the message that a retired release still CARRIES the row. Master 7.5 turns on this distinction: availability is a property of the target, staleness of the issuance."
+    },
+    {
+      "id": "MR06",
+      "package": "grapt-types",
+      "file": "crates/grapt-types/src/model/issuance.rs",
+      "test": "model::tests::issuance::a_reload_that_moves_the_family_mints_no_receipt",
+      "law": "A re-issuance receipt proves same base model and same family (S3)",
+      "old": "        if !carried_ref.declares_same_catalog_facts(successor_row) {",
+      "new": "        if false {",
+      "red": "A reload that reassigns the model to another family mints a receipt anyway, so the refusal assertion fails. The direction is what matters: that receipt would carry a user selection straight across the boundary agent default may not cross."
+    },
+    {
+      "id": "MR07",
+      "package": "grapt-types",
+      "file": "crates/grapt-types/src/model/reference.rs",
+      "test": "model::tests::issuance::a_reload_that_moves_the_family_mints_no_receipt",
+      "law": "The catalog-facts proof compares the FAMILY, not only the base model (S3)",
+      "old": "        self.record.base_model() == row.base_model() && self.record.family() == row.family()",
+      "new": "        self.record.base_model() == row.base_model()",
+      "red": "The base model is held equal in that fixture and only the family moves, so dropping the family conjunct makes the proof succeed and a receipt is minted for a cross-family reload."
+    },
+    {
+      "id": "MR08",
+      "package": "grapt-types",
+      "file": "crates/grapt-types/src/model/issuance.rs",
+      "test": "model::tests::issuance::an_unrelated_catalog_is_substitution_not_carry_forward",
+      "law": "A carry-forward stays inside ONE lineage; across lineages it is substitution (S3)",
+      "old": "        if !carried_snapshot.is_same_lineage(current) {",
+      "new": "        if false {",
+      "red": "A separately loaded release re-issues a target it never vouched for, so the refusal assertion fails. Substitution is precisely the act master 7.5 forbids a stale refusal from licensing."
+    },
+    {
+      "id": "MR09",
+      "package": "grapt-types",
+      "file": "crates/grapt-types/src/model/issuance.rs",
+      "test": "model::tests::issuance::a_generation_that_did_not_advance_mints_no_receipt",
+      "law": "A receipt requires a NEW generation; nothing advanced means nothing to carry (S3)",
+      "old": "        if from >= to {",
+      "new": "        if false {",
+      "red": "A registry that has not been superseded mints a receipt for a reissuance that never happened, so the refusal assertion fails. That receipt would then carry a selection nothing had disturbed."
+    },
+    {
+      "id": "MR10",
+      "package": "grapt-types",
+      "file": "crates/grapt-types/src/subagent.rs",
+      "test": "subagent::tests::carry_forward::a_genuine_receipt_cannot_carry_a_different_target",
+      "law": "A receipt binds to the target it was issued for; possession is not authority (S3)",
+      "old": "        if self.target != reissued {",
+      "new": "        if false {",
+      "red": "A genuine receipt minted for the opus row carries a haiku selection, so the NotThisTarget refusal never arrives. This is the non-binding-credential defect: a value that verifies by mere possession answers whether something was ever issued instead of whether it was issued for this target."
+    },
+    {
+      "id": "MR11",
+      "package": "grapt-types",
+      "file": "crates/grapt-types/src/subagent.rs",
+      "test": "subagent::tests::carry_forward::a_receipt_that_starts_elsewhere_cannot_carry",
+      "law": "A receipt must START at the generation the selection was issued at (S3)",
+      "old": "        if receipt.from_generation() != self.target.issuance_generation() {",
+      "new": "        if false {",
+      "red": "A receipt describing one-to-two is replayed against a selection already at generation two, so the NotThisIssuance refusal never arrives and an old receipt becomes reusable."
+    },
+    {
+      "id": "MR12",
+      "package": "grapt-policy",
+      "test_target": "integration",
+      "file": "crates/grapt-types/src/model/target.rs",
+      "test": "graph_contributors::a_superseded_issuance_cannot_enter_an_authority_graph",
+      "law": "FOREIGN WITNESS. Use-time staleness is carried into the authority graph, not merely stated in the crate that defines it (S1 and S2)",
+      "old": "        self.model.snapshot().is_current()",
+      "new": "        true",
+      "red": "Mutating grapt-types makes every target claim to be current, so the grapt-policy SnapshotBuilder admits a superseded issuance and the expected StaleModelIssuance refusal never arrives. It dies in ANOTHER crate, which is what proves the law is carried across the boundary rather than described inside it."
+    }
+  ],
+  "tombstones": []
+}

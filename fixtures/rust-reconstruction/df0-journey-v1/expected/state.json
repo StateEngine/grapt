@@ -1,0 +1,25 @@
+{
+ "cases": [
+  "authenticated-start",
+  "catalog-issued-provider-model",
+  "durable-relist-after-sse-gap",
+  "interrupt-exactly-one-terminal",
+  "prompt-reaches-provider",
+  "restart-replay-zero-repeat-call",
+  "session-create",
+  "sse-checkpoints-one-terminal"
+ ],
+ "count": 8,
+ "by_disposition": {
+  "implemented": [
+   "authenticated-start",
+   "catalog-issued-provider-model",
+   "durable-relist-after-sse-gap",
+   "interrupt-exactly-one-terminal",
+   "prompt-reaches-provider",
+   "restart-replay-zero-repeat-call",
+   "session-create",
+   "sse-checkpoints-one-terminal"
+  ]
+ }
+}

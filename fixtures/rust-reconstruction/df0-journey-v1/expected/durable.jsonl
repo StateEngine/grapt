@@ -1,0 +1,8 @@
+{"case":"authenticated-start","outcome":"closed","disposition":"implemented","note":"GET /api/health is served by the IA0-1R product root today; the law and both its counterexamples execute."}
+{"case":"catalog-issued-provider-model","outcome":"closed","disposition":"implemented","note":"The shipped process publishes the live catalog target and issues that target to the provider runtime."}
+{"case":"session-create","outcome":"closed","disposition":"implemented","note":"The real-process headless witness creates and drives one typed ses_* identity."}
+{"case":"prompt-reaches-provider","outcome":"closed","disposition":"implemented","note":"The controlled provider observes the bearer credential, account header, model and admitted prompt exactly once; exact retry makes no request."}
+{"case":"sse-checkpoints-one-terminal","outcome":"closed","disposition":"implemented","note":"The real SSE stream carries connected, reasoning, text, usage and one success terminal."}
+{"case":"durable-relist-after-sse-gap","outcome":"closed","disposition":"implemented","note":"The witness establishes cursorless SSE, drops it before prompt execution, and recovers reasoning, text and provider-reported usage only through durable re-list."}
+{"case":"restart-replay-zero-repeat-call","outcome":"closed","disposition":"implemented","note":"A distinct successor process re-lists byte-equal durable truth without another provider request."}
+{"case":"interrupt-exactly-one-terminal","outcome":"closed","disposition":"implemented","note":"The stalled stream is interrupted over HTTP; authentication rejection and malformed SSE also produce typed failures."}

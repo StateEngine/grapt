@@ -1,0 +1,72 @@
+{
+  "schema": "grapt.toolchain-activation.workspace-final-receipt.v1",
+  "campaign": "TOOLCHAIN-ACTIVATION-01",
+  "candidate": "188ea36a08be4e07ca991ce74ecc11a026259957",
+  "host": {
+    "platform": "windows",
+    "arch": "x86_64"
+  },
+  "sections": {
+    "candidate": {
+      "status": "passed",
+      "head": "188ea36a08be4e07ca991ce74ecc11a026259957",
+      "named": "188ea36a08be4e07ca991ce74ecc11a026259957"
+    },
+    "integrity": {
+      "status": "passed",
+      "battery_receipt": "fixtures/toolchain-activation/receipts/tma-fe4e3fa6-battery.json",
+      "battery_candidate": "fe4e3fa6d57d82af50fe36c344773b565ad43ea0",
+      "red_rows": 7,
+      "zero_executable_change": true
+    },
+    "tm01": {
+      "status": "passed",
+      "binary_sha256": "434d02b37cd3e34995461403e818ab12035fb1cf445e3a6b5e645a1ab8cb2a57",
+      "host": {
+        "platform": "windows",
+        "arch": "x86_64"
+      },
+      "native_target": "x86_64-pc-windows-msvc",
+      "receipt": {
+        "schema": "grapt.toolchain-activation.tm01-witness-receipt.v1",
+        "witness": "TM01",
+        "campaign": "TOOLCHAIN-ACTIVATION-01",
+        "host": {
+          "platform": "windows",
+          "arch": "x86_64"
+        },
+        "native_target": "x86_64-pc-windows-msvc",
+        "binary_sha256": "434d02b37cd3e34995461403e818ab12035fb1cf445e3a6b5e645a1ab8cb2a57",
+        "journeys": [
+          {
+            "id": "install",
+            "status": "passed",
+            "checks": 29
+          },
+          {
+            "id": "reuse",
+            "status": "passed",
+            "checks": 14
+          },
+          {
+            "id": "recut",
+            "status": "passed",
+            "checks": 11
+          },
+          {
+            "id": "target-removed",
+            "status": "passed",
+            "checks": 12
+          },
+          {
+            "id": "rollback",
+            "status": "passed",
+            "checks": 12
+          }
+        ],
+        "outcome": "all-passed"
+      }
+    }
+  },
+  "outcome": "passed"
+}

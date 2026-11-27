@@ -1,0 +1,557 @@
+{
+  "lane": "R4D-2C",
+  "prefix": "SV",
+  "crate": "grapt-service",
+  "run": "python crates/grapt-service/mutations/sv/run.py",
+  "isolation": "Every mutation is applied inside its own disposable git worktree checked out at the exact candidate commit. No mutant is ever written into the calling worktree, so there is no restore step that could leave a stale build behind.",
+  "scope_note": "`SV` is exclusive to this lane, re-walked in this correction from accepted base eefea222: 21 manifests and 833 ids counting tombstones, including this manifest's 55 rows. THREE live tokens share the letter S — bare `S` with 8 rows, `SC` with 32, and `SV` here with 55 — so the runner selects on a whole-token re.fullmatch. A str.startswith('S') selector would sweep 40 rows belonging to two other lanes into this battery's evidence. R4D-1's `QD` one directory up and R4D-2A's `QS` alongside are untouched by this lane.",
+  "anchor_archaeology": "Review HOLD H1/H2/H4 replaced the raw store/controller shapes at held tip 1b19d9b. SV11, SV13, SV22, SV23 and SV30 were retained in place and narrowly repointed because their exact old anchors no longer existed after capability authority, derived-path and bounded decoder reconstruction; their law, id and witness remain unchanged.",
+  "note": "One row per load-bearing behaviour of the elected service controller. Each names the exact edit that removes the behaviour and the witness that must turn red once it is gone. Witnesses are separate named tests rather than rows of one table, because two rows of a table share a source line and the duplicate-evidence guard would then read two laws as one record.",
+  "mutations": [
+    {
+      "id": "SV01",
+      "law": "An unattributed candidate probe is refused: a 2xx proves liveness, not which engine answered.",
+      "package": "grapt-service",
+      "file": "crates/grapt-service/src/controller/registration.rs",
+      "old": "        let attributed = candidate.attributed()?;",
+      "new": "        let attributed = candidate.attributed().unwrap_or(declared);",
+      "test": "controller_contract::an_unattributed_candidate_probe_is_refused_with_r4d1s_own_vocabulary",
+      "test_target": "integration"
+    },
+    {
+      "id": "SV02",
+      "law": "The probe must attribute the candidate itself, not merely some owner.",
+      "package": "grapt-service",
+      "file": "crates/grapt-service/src/controller/registration.rs",
+      "old": "        if !declared.is_same_owner(attributed) {",
+      "new": "        if false && !declared.is_same_owner(attributed) {",
+      "test": "controller_contract::a_probe_that_attributed_another_owner_is_refused",
+      "test_target": "integration"
+    },
+    {
+      "id": "SV03",
+      "law": "A matching instance PID is a SEPARATE condition from owner identity, because is_same_owner deliberately excludes the PID.",
+      "package": "grapt-service",
+      "file": "crates/grapt-service/src/controller/registration.rs",
+      "old": "        if declared.pid() != attributed.pid() {",
+      "new": "        if false && declared.pid() != attributed.pid() {",
+      "test": "controller_contract::owner_identity_matching_does_not_excuse_a_mismatched_process_id",
+      "test_target": "integration"
+    },
+    {
+      "id": "SV04",
+      "law": "The candidate must hold an independent ephemeral port before the switch.",
+      "package": "grapt-service",
+      "file": "crates/grapt-service/src/controller/registration.rs",
+      "old": "                if incumbent.endpoint() == candidate.declared().endpoint() {",
+      "new": "                if false && incumbent.endpoint() == candidate.declared().endpoint() {",
+      "test": "controller_contract::a_candidate_on_the_incumbents_endpoint_is_refused",
+      "test_target": "integration"
+    },
+    {
+      "id": "SV05",
+      "law": "The candidate needs a private registration: the incumbent cannot replace itself.",
+      "package": "grapt-service",
+      "file": "crates/grapt-service/src/controller/registration.rs",
+      "old": "                if incumbent.is_same_owner(candidate.declared()) {",
+      "new": "                if false && incumbent.is_same_owner(candidate.declared()) {",
+      "test": "controller_contract::the_incumbent_cannot_replace_itself",
+      "test_target": "integration"
+    },
+    {
+      "id": "SV06",
+      "law": "The environment receipt is checked BEFORE the switch, not after it.",
+      "package": "grapt-service",
+      "file": "crates/grapt-service/src/controller/registration.rs",
+      "old": "        if declared.environment() != &self.environment {",
+      "new": "        if false && declared.environment() != &self.environment {",
+      "test": "controller_contract::a_candidate_carrying_another_environments_receipt_is_refused",
+      "test_target": "integration"
+    },
+    {
+      "id": "SV07",
+      "law": "A candidate is never registered into a slot it did not name.",
+      "package": "grapt-service",
+      "file": "crates/grapt-service/src/controller/registration.rs",
+      "old": "        if declared.slot() != &self.slot {",
+      "new": "        if false && declared.slot() != &self.slot {",
+      "test": "controller_contract::a_candidate_naming_another_slot_is_refused",
+      "test_target": "integration"
+    },
+    {
+      "id": "SV08",
+      "law": "A candidate does not choose its own generation; a non-successor is refused, not corrected.",
+      "package": "grapt-service",
+      "file": "crates/grapt-service/src/controller/registration.rs",
+      "old": "        if declared.generation() != required_generation {",
+      "new": "        if false && declared.generation() != required_generation {",
+      "test": "controller_contract::a_candidate_that_declares_a_non_successor_generation_is_refused",
+      "test_target": "integration"
+    },
+    {
+      "id": "SV09",
+      "law": "Ownership transfer ADVANCES the generation by exactly one and never reuses the incumbent's.",
+      "package": "grapt-service",
+      "file": "crates/grapt-service/src/controller/registration.rs",
+      "old": "                let next = incumbent\n                    .generation()\n                    .next()\n                    .ok_or(ControlRefusal::GenerationExhausted)?;",
+      "new": "                let next = incumbent.generation();",
+      "test": "controller_contract::succeeding_an_incumbent_advances_the_generation_by_exactly_one",
+      "test_target": "integration"
+    },
+    {
+      "id": "SV10",
+      "law": "A generation that cannot advance is refused rather than wrapped back to the first.",
+      "package": "grapt-service",
+      "file": "crates/grapt-service/src/controller/registration.rs",
+      "old": "                    .ok_or(ControlRefusal::GenerationExhausted)?;",
+      "new": "                    .unwrap_or(ServiceGeneration::FIRST);",
+      "test": "controller_contract::a_slot_whose_generation_cannot_advance_is_refused_rather_than_wrapped",
+      "test_target": "integration"
+    },
+    {
+      "id": "SV11",
+      "law": "The file store's compare-and-swap really compares the slot's contents; without it two concurrent starters both commit.",
+      "package": "grapt-service",
+      "file": "crates/grapt-service/src/store.rs",
+      "old": "        if observed.as_deref() != expected {",
+      "new": "        if false && observed.as_deref() != expected {",
+      "test": "registration_durability::two_threads_racing_through_the_real_lock_produce_exactly_one_winner",
+      "test_target": "integration"
+    },
+    {
+      "id": "SV12",
+      "law": "The in-memory slot compares contents too, so the deterministic double cannot report a linearizability the real store would not give.",
+      "package": "grapt-service",
+      "file": "crates/grapt-service/src/store.rs",
+      "old": "        if state.contents.as_deref() != expected {",
+      "new": "        if false && state.contents.as_deref() != expected {",
+      "test": "controller_contract::two_starters_racing_produce_exactly_one_winner_and_a_typed_lost_race",
+      "test_target": "integration"
+    },
+    {
+      "id": "SV13",
+      "law": "The lock path is DERIVED from the registration, so two stores over one slot cannot hold two different locks.",
+      "package": "grapt-service",
+      "file": "crates/grapt-service/src/store.rs",
+      "old": "        let lock = suffixed(&registration, \".lock\");",
+      "new": "        let lock = suffixed(&registration, \".other-lock\");",
+      "test": "registration_durability::the_lock_path_is_derived_from_the_registration_rather_than_supplied",
+      "test_target": "integration"
+    },
+    {
+      "id": "SV14",
+      "law": "Releasing a slot REMOVES the registration; an empty file would decode as a refusal rather than as an unclaimed slot.",
+      "package": "grapt-service",
+      "file": "crates/grapt-service/src/store.rs",
+      "old": "            None => self.remove()?,",
+      "new": "            None => self.write_atomically(b\"\")?,",
+      "test": "registration_durability::claiming_and_releasing_a_slot_round_trips_through_absence",
+      "test_target": "integration"
+    },
+    {
+      "id": "SV15",
+      "law": "A write that fails AFTER its compare succeeded is never reported as committed.",
+      "package": "grapt-service",
+      "file": "crates/grapt-service/src/store.rs",
+      "old": "        if core::mem::take(&mut state.fail_next_write) {",
+      "new": "        if false && core::mem::take(&mut state.fail_next_write) {",
+      "test": "controller_contract::a_write_that_fails_after_its_compare_is_never_reported_as_committed",
+      "test_target": "integration"
+    },
+    {
+      "id": "SV16",
+      "law": "A post-commit retirement that did not happen is a success WITH WARNING, never a rollback.",
+      "package": "grapt-service",
+      "file": "crates/grapt-service/src/controller/registration.rs",
+      "old": "                    Retirement::TimedOut | Retirement::Failed { .. } => {\n                        ReplacementOutcome::ReplacedRetirePending\n                    }",
+      "new": "                    Retirement::TimedOut | Retirement::Failed { .. } => {\n                        ReplacementOutcome::RolledBack\n                    }",
+      "test": "controller_contract::a_retirement_that_timed_out_is_a_success_with_warning_not_a_rollback",
+      "test_target": "integration"
+    },
+    {
+      "id": "SV17",
+      "law": "A rollback receipt reports RolledBack; conflating it with FailedAfterCommit would deny that the incumbent kept the slot.",
+      "package": "grapt-service",
+      "file": "crates/grapt-service/src/controller/registration.rs",
+      "old": "    pub fn outcome(&self) -> ReplacementOutcome {\n        ReplacementOutcome::RolledBack\n    }",
+      "new": "    pub fn outcome(&self) -> ReplacementOutcome {\n        ReplacementOutcome::FailedAfterCommit\n    }",
+      "test": "controller_contract::a_rollback_leaves_the_slot_byte_identical_and_the_incumbent_owning_it",
+      "test_target": "integration"
+    },
+    {
+      "id": "SV18",
+      "law": "A switch that never committed cannot claim a post-commit failure.",
+      "package": "grapt-service",
+      "file": "crates/grapt-service/src/controller/registration.rs",
+      "old": "        if !self.committed() {",
+      "new": "        if false && !self.committed() {",
+      "test": "controller_contract::a_switch_that_lost_its_race_cannot_claim_a_post_commit_failure",
+      "test_target": "integration"
+    },
+    {
+      "id": "SV19",
+      "law": "A registration whose owner no probe attributed is STALE, not healthy.",
+      "package": "grapt-service",
+      "file": "crates/grapt-service/src/controller/discovery.rs",
+      "old": "        let Some(observation) = incumbent else {\n            return stale;\n        };",
+      "new": "        let Some(observation) = incumbent else {\n            return EnsureOutcome::ReusedIncumbent {\n                owner: record.owner().clone(),\n            };\n        };",
+      "test": "controller_contract::a_registration_no_probe_attributed_is_stale_rather_than_healthy",
+      "test_target": "integration"
+    },
+    {
+      "id": "SV20",
+      "law": "Reuse is decided by owner IDENTITY, so a different instance that inherited the incumbent's PID does not inherit its slot. Distinct from R4D-1's QD02, which mutates the ATTACHMENT receipt one layer up in receipt.rs; this mutates the CONTROLLER's ensure path, and the two fail in different files at different lines.",
+      "package": "grapt-service",
+      "file": "crates/grapt-service/src/controller/discovery.rs",
+      "old": "        if !record.owner().is_same_owner(attributed) {",
+      "new": "        if record.owner().pid() != attributed.pid() {",
+      "test": "controller_contract::a_reused_pid_does_not_let_a_different_instance_reuse_the_slot",
+      "test_target": "integration"
+    },
+    {
+      "id": "SV21",
+      "law": "Version compatibility is judged after the owner is recognised, and a mismatch is reported as its own reason rather than folded into staleness.",
+      "package": "grapt-service",
+      "file": "crates/grapt-service/src/controller/discovery.rs",
+      "old": "        if record.version() != required_version {",
+      "new": "        if false && record.version() != required_version {",
+      "test": "controller_contract::an_incumbent_of_the_wrong_version_is_replaced_rather_than_reused",
+      "test_target": "integration"
+    },
+    {
+      "id": "SV22",
+      "law": "Only the registered owner may release a slot.",
+      "package": "grapt-service",
+      "file": "crates/grapt-service/src/controller/registration.rs",
+      "old": "        if record.owner() != owner {",
+      "new": "        if false && record.owner() != owner {",
+      "test": "controller_contract::stop_refuses_to_release_a_slot_held_by_somebody_else",
+      "test_target": "integration"
+    },
+    {
+      "id": "SV23",
+      "law": "A release compares the exact discovered bytes, so a slot that changed hands is not evicted.",
+      "package": "grapt-service",
+      "file": "crates/grapt-service/src/controller/registration.rs",
+      "old": "        match self.authority.compare_and_swap(\n            self.authority.mutation_permit(),\n            discovered.bytes.as_deref(),\n            None,\n        )? {",
+      "new": "        match self.authority.compare_and_swap(\n            self.authority.mutation_permit(),\n            self.authority.read_registration()?.as_deref(),\n            None,\n        )? {",
+      "test": "controller_contract::stop_that_lost_its_race_leaves_the_new_owner_registered",
+      "test_target": "integration"
+    },
+    {
+      "id": "SV24",
+      "law": "Bytes that decode to no record are their own slot state; reading them as EMPTY would let a candidate take a slot a live incumbent still serves.",
+      "package": "grapt-service",
+      "file": "crates/grapt-service/src/controller/discovery.rs",
+      "old": "                Err(error) => SlotState::Unreadable(error),",
+      "new": "                Err(_) => SlotState::Empty,",
+      "test": "controller_contract::an_unreadable_registration_refuses_an_ordinary_replacement",
+      "test_target": "integration"
+    },
+    {
+      "id": "SV25",
+      "law": "Reclaim applies ONLY to an unreadable slot; admitting a readable one would let a candidate skip the generation successor rule.",
+      "package": "grapt-service",
+      "file": "crates/grapt-service/src/controller/registration.rs",
+      "old": "        let SlotState::Unreadable(error) = discovered.state() else {\n            return Err(ControlRefusal::NothingToReclaim);\n        };",
+      "new": "        let error = match discovered.state() {\n            SlotState::Unreadable(error) => error.clone(),\n            _ => RegistrationDecodeError::NotUtf8,\n        };\n        let error = &error;",
+      "test": "controller_contract::reclaim_refuses_a_slot_that_is_merely_readable_or_empty",
+      "test_target": "integration"
+    },
+    {
+      "id": "SV26",
+      "law": "A prepared candidate is bound to the controller that admitted it.",
+      "package": "grapt-service",
+      "file": "crates/grapt-service/src/controller/registration.rs",
+      "old": "        if prepared.slot != self.slot {",
+      "new": "        if false && prepared.slot != self.slot {",
+      "test": "controller_contract::a_candidate_prepared_for_one_slot_cannot_be_committed_into_another",
+      "test_target": "integration"
+    },
+    {
+      "id": "SV27",
+      "law": "The registration's instant comes from the injected clock, never a constant or ambient time.",
+      "package": "grapt-service",
+      "file": "crates/grapt-service/src/controller/registration.rs",
+      "old": "            self.clock.now(),",
+      "new": "            grapt_types::authority::Timestamp::from_millis(0),",
+      "test": "controller_contract::the_registrations_instant_comes_from_the_injected_clock",
+      "test_target": "integration"
+    },
+    {
+      "id": "SV28",
+      "law": "A carriage return is refused by offset; under a byte compare-and-swap a CRLF-rewritten record would stop matching itself.",
+      "package": "grapt-service",
+      "file": "crates/grapt-service/src/registration.rs",
+      "old": "        if let Some(at) = bytes.iter().position(|byte| *byte == b'\\r') {\n            return Err(RegistrationDecodeError::CarriageReturn { at });\n        }",
+      "new": "",
+      "test": "registration::tests::a_carriage_return_is_refused_by_offset_rather_than_as_a_mismatch"
+    },
+    {
+      "id": "SV29",
+      "law": "A numeral spelled in a way this encoder would not produce is refused, so one record has exactly one byte spelling and byte-CAS equals record-CAS.",
+      "package": "grapt-service",
+      "file": "crates/grapt-service/src/registration.rs",
+      "old": "            if canonical != value {",
+      "new": "            if false && canonical != value {",
+      "test": "registration::tests::non_canonical_spellings_of_the_same_values_are_refused"
+    },
+    {
+      "id": "SV30",
+      "law": "A record with a missing or extra field is refused rather than partially read.",
+      "package": "grapt-service",
+      "file": "crates/grapt-service/src/registration.rs",
+      "old": "        if found_lines != expected_lines {",
+      "new": "        if false && found_lines != expected_lines {",
+      "test": "registration::tests::every_corruption_refuses_rather_than_naming_a_different_owner"
+    },
+    {
+      "id": "SV31",
+      "law": "A record without its trailing terminator may be a truncated write and is never read as a shorter record.",
+      "package": "grapt-service",
+      "file": "crates/grapt-service/src/registration.rs",
+      "old": "        let Some(body) = text.strip_suffix('\\n') else {\n            return Err(RegistrationDecodeError::MissingTrailingNewline);\n        };",
+      "new": "        let body = text.strip_suffix('\\n').unwrap_or(text);",
+      "test": "registration_durability::a_registration_corrupted_on_disk_is_unreadable_and_never_a_different_owner",
+      "test_target": "integration"
+    },
+    {
+      "id": "SV32",
+      "law": "An ensure that reuses the incumbent classifies as ReplacementOutcome::Reused, and the committed corpus is the fixed point that catches it changing its mind.",
+      "package": "grapt-service",
+      "file": "crates/grapt-service/src/controller/transition.rs",
+      "old": "            EnsureOutcome::ReusedIncumbent { .. } => Some(ReplacementOutcome::Reused),",
+      "new": "            EnsureOutcome::ReusedIncumbent { .. } => None,",
+      "test": "controller_corpus::the_corpus_replays_through_the_model_and_matches_every_expected_surface",
+      "test_target": "integration"
+    },
+    {
+      "id": "SV33",
+      "law": "Upgrade admission accepts the strictly greater semantic-precedence branch.",
+      "package": "grapt-service",
+      "file": "crates/grapt-service/src/controller/registration.rs",
+      "old": "            UpgradeDisposition::Upgrade => {}",
+      "new": "            UpgradeDisposition::Upgrade => {\n                return Err(UpgradeTransitionRefusal::SamePrecedence {\n                    incumbent: incumbent_version,\n                    candidate: candidate_version,\n                })\n            }",
+      "test": "controller_contract::a_strictly_greater_semantic_version_commits_as_a_typed_upgrade",
+      "test_target": "integration"
+    },
+    {
+      "id": "SV34",
+      "law": "Equal semantic precedence, including build-metadata-only change, never enters the upgrade CAS.",
+      "package": "grapt-service",
+      "file": "crates/grapt-service/src/controller/registration.rs",
+      "old": "            UpgradeDisposition::SamePrecedence => {\n                return Err(UpgradeTransitionRefusal::SamePrecedence {\n                    incumbent: incumbent_version,\n                    candidate: candidate_version,\n                })\n            }",
+      "new": "            UpgradeDisposition::SamePrecedence => {}",
+      "test": "controller_contract::a_build_metadata_only_change_is_equal_precedence_not_an_upgrade",
+      "test_target": "integration"
+    },
+    {
+      "id": "SV35",
+      "law": "A lower candidate is refused as a named downgrade, never admitted as upgrade.",
+      "package": "grapt-service",
+      "file": "crates/grapt-service/src/controller/registration.rs",
+      "old": "            UpgradeDisposition::Downgrade => {\n                return Err(UpgradeTransitionRefusal::Downgrade {\n                    incumbent: incumbent_version,\n                    candidate: candidate_version,\n                })\n            }",
+      "new": "            UpgradeDisposition::Downgrade => {}",
+      "test": "controller_contract::a_lower_candidate_is_a_named_downgrade_refusal",
+      "test_target": "integration"
+    },
+    {
+      "id": "SV36",
+      "law": "An empty slot is a named no-incumbent upgrade refusal, not a fabricated predecessor.",
+      "package": "grapt-service",
+      "file": "crates/grapt-service/src/controller/refusal.rs",
+      "old": "            UpgradeTransitionRefusal::NoIncumbent => \"upgrade-no-incumbent\",",
+      "new": "            UpgradeTransitionRefusal::NoIncumbent => \"upgrade-downgrade\",",
+      "test": "controller_contract::upgrade_requires_a_readable_incumbent",
+      "test_target": "integration"
+    },
+    {
+      "id": "SV37",
+      "law": "An unreadable registration remains unreadable in the upgrade transition and never collapses to absence.",
+      "package": "grapt-service",
+      "file": "crates/grapt-service/src/controller/registration.rs",
+      "old": "            SlotState::Empty => return Err(UpgradeTransitionRefusal::NoIncumbent),\n            SlotState::Unreadable(error) => {\n                return Err(ControlRefusal::UnreadableRegistration {\n                    source: error.clone(),\n                }\n                .into())\n            }",
+      "new": "            SlotState::Empty => return Err(UpgradeTransitionRefusal::NoIncumbent),\n            SlotState::Unreadable(_) => {\n                return Err(UpgradeTransitionRefusal::NoIncumbent)\n            }",
+      "test": "controller_contract::upgrade_does_not_turn_an_unreadable_registration_into_absence",
+      "test_target": "integration"
+    },
+    {
+      "id": "SV38",
+      "law": "An unorderable incumbent is labeled on the incumbent side.",
+      "package": "grapt-service",
+      "file": "crates/grapt-service/src/controller/refusal.rs",
+      "old": "            UpgradeTransitionRefusal::Version(VersionUpgradeRefusal::Incumbent(_)) => {\n                \"upgrade-incumbent-version-unorderable\"\n            }",
+      "new": "            UpgradeTransitionRefusal::Version(VersionUpgradeRefusal::Incumbent(_)) => {\n                \"upgrade-candidate-version-unorderable\"\n            }",
+      "test": "controller_contract::an_unorderable_incumbent_remains_a_side_specific_typed_refusal",
+      "test_target": "integration"
+    },
+    {
+      "id": "SV39",
+      "law": "An unorderable candidate is labeled on the candidate side.",
+      "package": "grapt-service",
+      "file": "crates/grapt-service/src/controller/refusal.rs",
+      "old": "            UpgradeTransitionRefusal::Version(VersionUpgradeRefusal::Candidate(_)) => {\n                \"upgrade-candidate-version-unorderable\"\n            }",
+      "new": "            UpgradeTransitionRefusal::Version(VersionUpgradeRefusal::Candidate(_)) => {\n                \"upgrade-incumbent-version-unorderable\"\n            }",
+      "test": "controller_contract::an_unorderable_candidate_remains_a_side_specific_typed_refusal",
+      "test_target": "integration"
+    },
+    {
+      "id": "SV40",
+      "law": "Strict version precedence does not bypass the ordinary candidate identity, environment, PID, endpoint, and generation laws.",
+      "package": "grapt-service",
+      "file": "crates/grapt-service/src/controller/registration.rs",
+      "old": "        let prepared = self.prepare(discovered, candidate)?;",
+      "new": "        let prepared = self\n            .prepare(discovered, candidate)\n            .map_err(|_| UpgradeTransitionRefusal::NoIncumbent)?;",
+      "test": "controller_contract::upgrade_preserves_candidate_precondition_refusals",
+      "test_target": "integration"
+    },
+    {
+      "id": "SV41",
+      "law": "The typed upgrade receipt preserves the exact candidate registration string.",
+      "package": "grapt-service",
+      "file": "crates/grapt-service/src/controller/registration.rs",
+      "old": "impl UpgradeReceipt {\n    pub fn outcome(&self) -> ReplacementOutcome {\n        self.switch.outcome()\n    }\n\n    pub fn committed_owner(&self) -> Option<&OwnerReceipt> {\n        self.switch.committed_owner()\n    }\n\n    pub fn incumbent_version(&self) -> &ServiceRegistrationVersion {\n        &self.incumbent_version\n    }\n\n    pub fn candidate_version(&self) -> &ServiceRegistrationVersion {\n        &self.candidate_version\n    }",
+      "new": "impl UpgradeReceipt {\n    pub fn outcome(&self) -> ReplacementOutcome {\n        self.switch.outcome()\n    }\n\n    pub fn committed_owner(&self) -> Option<&OwnerReceipt> {\n        self.switch.committed_owner()\n    }\n\n    pub fn incumbent_version(&self) -> &ServiceRegistrationVersion {\n        &self.incumbent_version\n    }\n\n    pub fn candidate_version(&self) -> &ServiceRegistrationVersion {\n        &self.incumbent_version\n    }",
+      "test": "controller_contract::the_typed_upgrade_receipt_preserves_the_exact_candidate_version_string",
+      "test_target": "integration"
+    },
+    {
+      "id": "SV42",
+      "law": "The typed upgrade receipt preserves the exact incumbent registration string.",
+      "package": "grapt-service",
+      "file": "crates/grapt-service/src/controller/registration.rs",
+      "old": "    pub fn incumbent_version(&self) -> &ServiceRegistrationVersion {\n        &self.incumbent_version\n    }\n\n    pub fn candidate_version(&self) -> &ServiceRegistrationVersion {\n        &self.candidate_version\n    }\n\n    pub fn switch_receipt(&self) -> &SwitchReceipt {\n        &self.switch\n    }",
+      "new": "    pub fn incumbent_version(&self) -> &ServiceRegistrationVersion {\n        &self.candidate_version\n    }\n\n    pub fn candidate_version(&self) -> &ServiceRegistrationVersion {\n        &self.candidate_version\n    }\n\n    pub fn switch_receipt(&self) -> &SwitchReceipt {\n        &self.switch\n    }",
+      "test": "controller_contract::the_typed_upgrade_receipt_preserves_the_exact_incumbent_version_string",
+      "test_target": "integration"
+    },
+    {
+      "id": "SV43",
+      "law": "Upgrade commit preserves the caller's retirement observation, including success-with-warning.",
+      "package": "grapt-service",
+      "file": "crates/grapt-service/src/controller/registration.rs",
+      "old": "        let switch = self.commit(prepared, retirement)?;",
+      "new": "        let switch = self.commit(prepared, Retirement::NoIncumbent)?;",
+      "test": "controller_contract::upgrade_commit_preserves_the_retirement_observation",
+      "test_target": "integration"
+    },
+    {
+      "id": "SV44",
+      "law": "The distinct upgrade receipt reports a lost registration CAS as LostRace rather than claiming replacement.",
+      "package": "grapt-service",
+      "file": "crates/grapt-service/src/controller/registration.rs",
+      "old": "impl UpgradeReceipt {\n    pub fn outcome(&self) -> ReplacementOutcome {\n        self.switch.outcome()\n    }",
+      "new": "impl UpgradeReceipt {\n    pub fn outcome(&self) -> ReplacementOutcome {\n        ReplacementOutcome::Replaced\n    }",
+      "test": "controller_contract::an_upgrade_that_loses_its_cas_reports_lost_race_without_writing",
+      "test_target": "integration"
+    },
+    {
+      "id": "SV45",
+      "law": "H1: an external dependent cannot obtain the elected controller's mutation permit and invoke raw-store CAS.",
+      "package": "grapt-service",
+      "file": "crates/grapt-service/src/store.rs",
+      "old": "    pub(crate) fn mutation_permit(&self) -> &RegistrationMutationPermit {",
+      "new": "    pub fn mutation_permit(&self) -> &RegistrationMutationPermit {",
+      "test": "a_rollback_after_a_commit_is_rejected_by_the_compiler",
+      "test_target": "compile_fail"
+    },
+    {
+      "id": "SV46",
+      "law": "H2: lock contention ends in the typed finite-budget exhaustion outcome after the declared number of attempts.",
+      "package": "grapt-service",
+      "file": "crates/grapt-service/src/store.rs",
+      "old": "            Err(std::fs::TryLockError::WouldBlock) => {\n                return Err(StoreError::LockBudgetExhausted {\n                    path: path.to_path_buf(),\n                    attempts: policy.maximum(),\n                });\n            }",
+      "new": "            Err(std::fs::TryLockError::WouldBlock) => {\n                return Err(StoreError::Lock {\n                    path: path.to_path_buf(),\n                    source: std::io::Error::new(std::io::ErrorKind::WouldBlock, \"mutant erased the exhausted budget\"),\n                });\n            }",
+      "test": "registration_durability::election_lock_contention_exhausts_the_declared_finite_attempt_budget",
+      "test_target": "integration"
+    },
+    {
+      "id": "SV47",
+      "law": "H3: construction rejects record-delimiter bytes so every constructible registration has one canonical decodable encoding.",
+      "package": "grapt-service",
+      "file": "crates/grapt-service/src/registration.rs",
+      "old": "    if let Some((at, byte)) = reserved_byte(value) {\n        return Err(RegistrationBuildError::ReservedFieldByte { field, byte, at });\n    }",
+      "new": "",
+      "test": "registration::tests::every_constructible_record_round_trips_and_reserved_bytes_are_unconstructible"
+    },
+    {
+      "id": "SV48",
+      "law": "H4: stop authority is the exact current generation and receipt, never stale same-owner identity.",
+      "package": "grapt-service",
+      "file": "crates/grapt-service/src/controller/registration.rs",
+      "old": "        if record.owner() != owner {",
+      "new": "        if !record.owner().is_same_owner(owner) {",
+      "test": "controller_contract::a_stale_same_owner_generation_cannot_release_the_current_generation",
+      "test_target": "integration"
+    },
+    {
+      "id": "SV49",
+      "law": "H5: authenticated health attribution equals the declared candidate endpoint.",
+      "package": "grapt-service",
+      "file": "crates/grapt-service/src/controller/registration.rs",
+      "old": "        if declared.endpoint() != attributed.endpoint() {",
+      "new": "        if false && declared.endpoint() != attributed.endpoint() {",
+      "test": "controller_contract::authenticated_health_must_attribute_the_declared_candidate_endpoint",
+      "test_target": "integration"
+    },
+    {
+      "id": "SV50",
+      "law": "H6: a durable record is bound to the controller's exact slot before any transition can act on it.",
+      "package": "grapt-service",
+      "file": "crates/grapt-service/src/controller/discovery.rs",
+      "old": "                    if record.owner().slot() != &self.slot {",
+      "new": "                    if false && record.owner().slot() != &self.slot {",
+      "test": "controller_contract::discovery_refuses_a_durable_record_bound_to_another_slot_or_environment",
+      "test_target": "integration"
+    },
+    {
+      "id": "SV51",
+      "law": "H7: an authenticated observed version that differs from durable registration is typed and never ReusedIncumbent.",
+      "package": "grapt-service",
+      "file": "crates/grapt-service/src/controller/discovery.rs",
+      "old": "        if observation.version() != record.version() {",
+      "new": "        if false && observation.version() != record.version() {",
+      "test": "controller_contract::ensure_never_reuses_when_authenticated_observation_version_disagrees",
+      "test_target": "integration"
+    },
+    {
+      "id": "SV52",
+      "law": "H8: a failure after the registration bytes changed remains a committed outcome carrying unlock-warning evidence.",
+      "package": "grapt-service",
+      "file": "crates/grapt-service/src/store.rs",
+      "old": "        let unlock_warning =\n            core::mem::take(&mut state.fail_next_unlock).then(|| PostCommitUnlockWarning {\n                path: PathBuf::from(\"isolated-memory.lock\"),\n                error_kind: std::io::ErrorKind::Other,\n            });",
+      "new": "        let _ = core::mem::take(&mut state.fail_next_unlock);\n        let unlock_warning = None;",
+      "test": "controller_contract::post_write_unlock_failure_is_a_committed_warning_and_never_a_store_failure",
+      "test_target": "integration"
+    },
+    {
+      "id": "SV53",
+      "law": "H2: registration reads reject oversized metadata before allocation and retain a finite read cap even when metadata changes.",
+      "package": "grapt-service",
+      "file": "crates/grapt-service/src/store.rs",
+      "old": "        if advertised > MAX_REGISTRATION_BYTES_U64 {\n            return Err(StoreError::RegistrationTooLarge {\n                path: self.registration.clone(),\n                maximum: MAX_REGISTRATION_BYTES,\n                found: advertised,\n            });\n        }\n        let capacity =\n            usize::try_from(advertised).map_err(|_| StoreError::RegistrationTooLarge {\n                path: self.registration.clone(),\n                maximum: MAX_REGISTRATION_BYTES,\n                found: advertised,\n            })?;\n        let mut bytes = Vec::with_capacity(capacity);\n        file.take(MAX_REGISTRATION_BYTES_U64 + 1)\n            .read_to_end(&mut bytes)\n            .map_err(|source| StoreError::Read {\n                path: self.registration.clone(),\n                source,\n            })?;\n        if bytes.len() > MAX_REGISTRATION_BYTES {\n            return Err(StoreError::RegistrationTooLarge {\n                path: self.registration.clone(),\n                maximum: MAX_REGISTRATION_BYTES,\n                found: usize_as_u64(bytes.len()),\n            });\n        }",
+      "new": "        let capacity = usize::try_from(advertised).unwrap_or(0);\n        let mut bytes = Vec::with_capacity(capacity);\n        file.take(u64::MAX).read_to_end(&mut bytes).map_err(|source| StoreError::Read {\n            path: self.registration.clone(),\n            source,\n        })?;",
+      "test": "registration_durability::oversized_registration_is_refused_before_unbounded_read_allocation",
+      "test_target": "integration"
+    },
+    {
+      "id": "SV54",
+      "law": "H2/H3: every textual field is rejected before it exceeds the declared pre-allocation and encoding byte bound.",
+      "package": "grapt-service",
+      "file": "crates/grapt-service/src/registration.rs",
+      "old": "    if value.len() > MAX_REGISTRATION_FIELD_BYTES {\n        return Err(RegistrationBuildError::FieldTooLong {\n            field,\n            maximum: MAX_REGISTRATION_FIELD_BYTES,\n            found: value.len(),\n        });\n    }",
+      "new": "",
+      "test": "registration::tests::construction_refuses_a_field_before_it_exceeds_the_declared_byte_bound"
+    },
+    {
+      "id": "SV55",
+      "law": "H6: a durable record is bound to the controller's exact environment before ensure, prepare or stop.",
+      "package": "grapt-service",
+      "file": "crates/grapt-service/src/controller/discovery.rs",
+      "old": "                    if record.owner().environment() != &self.environment {",
+      "new": "                    if false && record.owner().environment() != &self.environment {",
+      "test": "controller_contract::discovery_refuses_a_durable_record_bound_to_another_slot_or_environment",
+      "test_target": "integration"
+    }
+  ]
+}

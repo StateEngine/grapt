@@ -1,0 +1,298 @@
+{
+  "purpose": "R4CA CLI/noninteractive/ACP mutation evidence. Every row deletes one load-bearing refusal and must turn its named exact witness red. R4CA03 is the required visible-output-plus-retry compound mutant; R4CA04 is the required cancel-plus-terminal compound mutant. R4CA33 restores connection-before-complete-ACP-admission at the single shared ingress owner.",
+  "run": "python crates/grapt-cli/mutations/r4ca/run.py",
+  "prefix": "R4CA",
+  "isolation": "Every mutant is applied once in a disposable detached worktree at the immutable candidate SHA.",
+  "mutations": [
+    {
+      "id": "R4CA01",
+      "law": "Visible output permanently closes the retry door.",
+      "file": "crates/grapt-cli/src/run.rs",
+      "test": "visible_output_and_non_idempotent_operations_are_never_retried",
+      "old": "        !visible && idempotent && completed_attempts < self.maximum_attempts",
+      "new": "        idempotent && completed_attempts < self.maximum_attempts"
+    },
+    {
+      "id": "R4CA02",
+      "law": "Non-idempotent prompt admission is never retried before or after output.",
+      "file": "crates/grapt-cli/src/run.rs",
+      "test": "visible_output_and_non_idempotent_operations_are_never_retried",
+      "old": "        !visible && idempotent && completed_attempts < self.maximum_attempts",
+      "new": "        !visible && completed_attempts < self.maximum_attempts"
+    },
+    {
+      "id": "R4CA03",
+      "law": "COMPOUND visible-output plus retry resurrection is refused.",
+      "file": "crates/grapt-cli/src/run.rs",
+      "test": "compound_visible_output_plus_retry_is_impossible",
+      "old": "        !visible && idempotent && completed_attempts < self.maximum_attempts",
+      "new": "        completed_attempts < self.maximum_attempts"
+    },
+    {
+      "id": "R4CA04",
+      "law": "COMPOUND cancellation plus terminal resurrection is refused.",
+      "file": "crates/grapt-cli/src/run.rs",
+      "test": "cancellation_and_terminal_truth_cannot_both_settle",
+      "old": "    pub fn settle_cancel(&mut self, cause: CancellationCause) -> Result<(), RunError> {\n        if !matches!(self, Self::Pending) {\n            return Err(RunError::CancellationRace);\n        }\n        *self = Self::Cancelled(cause);\n        Ok(())\n    }",
+      "new": "    pub fn settle_cancel(&mut self, cause: CancellationCause) -> Result<(), RunError> {\n        *self = Self::Cancelled(cause);\n        Ok(())\n    }"
+    },
+    {
+      "id": "R4CA05",
+      "law": "Any visible stdout prefix is represented honestly even when the record later fails.",
+      "file": "crates/grapt-cli/src/output.rs",
+      "test_target": "public_seams",
+      "test": "partial_stdout_and_stderr_failures_preserve_honest_receipts",
+      "old": "                    *visible = true;",
+      "new": "                    *visible = false;"
+    },
+    {
+      "id": "R4CA06",
+      "law": "Broken pipe is a distinct terminal output class.",
+      "file": "crates/grapt-cli/src/output.rs",
+      "test_target": "public_seams",
+      "test": "partial_stdout_and_stderr_failures_preserve_honest_receipts",
+      "old": "            Err(error) if error.kind() == io::ErrorKind::BrokenPipe => {",
+      "new": "            Err(error) if error.kind() != io::ErrorKind::BrokenPipe => {"
+    },
+    {
+      "id": "R4CA07",
+      "law": "Production remote endpoints are HTTPS-only.",
+      "file": "crates/grapt-cli/src/client.rs",
+      "test": "remote_endpoint_refuses_plaintext_credentials_and_non_root_paths",
+      "old": "        ClientMode::RemoteTls if url.scheme() == \"https\" => {}",
+      "new": "        ClientMode::RemoteTls if url.scheme() == \"http\" => {}"
+    },
+    {
+      "id": "R4CA08",
+      "law": "ACP operations require the versioned handshake.",
+      "file": "crates/grapt-cli/src/acp.rs",
+      "test": "acp_requires_handshake_refuses_unknown_fields_and_cancel_is_terminal",
+      "old": "            _ if !self.initialized => Err(AcpError::HandshakeRequired),",
+      "new": "            _ if false => Err(AcpError::HandshakeRequired),"
+    },
+    {
+      "id": "R4CA09",
+      "law": "An ACP cancellation makes later prompt admission inert.",
+      "file": "crates/grapt-cli/src/acp.rs",
+      "test_target": "public_seams",
+      "test": "acp_post_cancel_prompt_is_inert_at_public_api_boundary",
+      "old": "                    .insert(session.clone(), AcpSessionState::Cancelled);",
+      "new": "                    .insert(session.clone(), AcpSessionState::Open);"
+    },
+    {
+      "id": "R4CA10",
+      "law": "A durable sequence gap is refused.",
+      "file": "crates/grapt-cli/src/convergence.rs",
+      "test": "convergence_reconciles_exact_duplicates_and_refuses_gap_conflict_and_reuse",
+      "old": "                if contiguous && record.sequence != expected {",
+      "new": "                if record.sequence == expected {"
+    },
+    {
+      "id": "R4CA11",
+      "law": "A duplicate durable sequence with different canonical bytes is refused.",
+      "file": "crates/grapt-cli/src/convergence.rs",
+      "test": "convergence_reconciles_exact_duplicates_and_refuses_gap_conflict_and_reuse",
+      "old": "                if existing != &record {",
+      "new": "                if existing == &record {"
+    },
+    {
+      "id": "R4CA12",
+      "law": "The stdout record count bound fires before another record is written.",
+      "file": "crates/grapt-cli/src/output.rs",
+      "test": "output_becomes_visible_only_after_a_complete_bounded_record",
+      "old": "        if next_records > values.stdout_records {",
+      "new": "        if next_records < values.stdout_records {"
+    },
+    {
+      "id": "R4CA13",
+      "law": "Duplicate value options are refused instead of last-value-wins.",
+      "file": "crates/grapt-cli/src/command.rs",
+      "test": "command_grammar_refuses_mixed_connection_and_session_modes",
+      "old": "    if slot.replace(value).is_some() {",
+      "new": "    if slot.replace(value).is_none() {"
+    },
+    {
+      "id": "R4CA14",
+      "law": "Unknown ACP fields are refused rather than ignored.",
+      "file": "crates/grapt-cli/src/acp.rs",
+      "test": "acp_requires_handshake_refuses_unknown_fields_and_cancel_is_terminal",
+      "old": "#[serde(tag = \"type\", rename_all = \"snake_case\", deny_unknown_fields)]",
+      "new": "#[serde(tag = \"type\", rename_all = \"snake_case\")]"
+    },
+    {
+      "id": "R4CA15",
+      "law": "Every advisory live event triggers reconciliation from durable truth.",
+      "file": "crates/grapt-cli/src/events.rs",
+      "test": "advisory_sse_is_typed_and_requires_durable_relist",
+      "old": "    pub const fn requires_durable_relist(&self) -> bool {\n        true\n    }",
+      "new": "    pub const fn requires_durable_relist(&self) -> bool {\n        false\n    }"
+    },
+    {
+      "id": "R4CA16",
+      "law": "An oversized SSE frame is refused before decode.",
+      "file": "crates/grapt-cli/src/events.rs",
+      "test": "advisory_sse_refuses_oversized_frames_before_decode",
+      "old": "        if frame.is_empty() || frame.len() > maximum {",
+      "new": "        if frame.is_empty() {"
+    },
+    {
+      "id": "R4CA17",
+      "law": "Provider-shaped and unknown event kinds cannot enter the CLI event closure.",
+      "file": "crates/grapt-cli/src/events.rs",
+      "test": "advisory_sse_is_typed_and_requires_durable_relist",
+      "old": "            _ => return Err(AdvisoryError::EventKind),",
+      "new": "            _ => false,"
+    },
+    {
+      "id": "R4CA18",
+      "law": "Explicit null does not collapse into an absent SSE durable reference.",
+      "file": "crates/grapt-cli/src/events.rs",
+      "test": "advisory_sse_is_typed_and_requires_durable_relist",
+      "old": "            (_, Presence::Value(created), Presence::Missing) if !durable_kind => {",
+      "new": "            (_, Presence::Value(created), Presence::Null | Presence::Missing) if !durable_kind => {"
+    },
+    {
+      "id": "R4CA19",
+      "law": "ACP admission is validated before any remote effect.",
+      "file": "crates/grapt-cli/src/acp.rs",
+      "test_target": "public_seams",
+      "test": "acp_admission_precedes_effect_and_failed_effect_does_not_commit",
+      "old": "    let admission = machine.validate(request)?;\n    match &admission.request {",
+      "new": "    let admission = AcpAdmission { request, generation: machine.generation };\n    match &admission.request {"
+    },
+    {
+      "id": "R4CA20",
+      "law": "A successful ACP effect is committed through the validated admission.",
+      "file": "crates/grapt-cli/src/acp.rs",
+      "test_target": "public_seams",
+      "test": "acp_admission_precedes_effect_and_failed_effect_does_not_commit",
+      "old": "    Ok(machine.commit(admission)?)",
+      "new": "    Err(AcpExecutionError::Protocol(AcpError::StaleAdmission))"
+    },
+    {
+      "id": "R4CA21",
+      "law": "Child discovery carries the expected spawned PID into attribution.",
+      "file": "crates/grapt-cli/src/discovery.rs",
+      "test_target": "public_seams",
+      "test": "child_owner_verification_refuses_stale_daemon_identity",
+      "old": "        self.discover_inner(Some(expected_pid)).await",
+      "new": "        self.discover_inner(None).await"
+    },
+    {
+      "id": "R4CA22",
+      "law": "Embedded client construction refuses a discovered owner other than its retained child.",
+      "file": "crates/grapt-cli/src/client.rs",
+      "test_target": "public_seams",
+      "test": "child_owner_verification_refuses_stale_daemon_identity",
+      "old": "        if expected != found {\n            return Err(ApiClientError::EmbeddedOwnerMismatch { expected, found });\n        }",
+      "new": "        if false && expected != found {\n            return Err(ApiClientError::EmbeddedOwnerMismatch { expected, found });\n        }"
+    },
+    {
+      "id": "R4CA23",
+      "law": "Runner propagates convergence refusal instead of resetting or swallowing it.",
+      "file": "crates/grapt-cli/src/run.rs",
+      "test_target": "public_seams",
+      "test": "runner_refuses_advisory_conflict_without_emitting_advisory_truth",
+      "old": "                                convergence.admit_advisory(page)?;",
+      "new": "                                let _ignored_convergence = convergence.admit_advisory(page);"
+    },
+    {
+      "id": "R4CA24",
+      "law": "Advisory events never become user-visible terminal truth.",
+      "file": "crates/grapt-cli/src/run.rs",
+      "test_target": "public_seams",
+      "test": "runner_refuses_advisory_conflict_without_emitting_advisory_truth",
+      "old": "                            // Advisory bytes never become terminal or user-visible\n                            // truth. They only trigger authoritative durable reads.",
+      "new": "                            emit(output, &event, &format!(\"event {}\", event.kind()))?;\n                            // MUTATED: advisory bytes became output."
+    },
+    {
+      "id": "R4CA25",
+      "law": "Cancellation checks terminal server truth before issuing interrupt.",
+      "file": "crates/grapt-cli/src/run.rs",
+      "test_target": "public_seams",
+      "test": "runner_cancel_reconciles_terminal_truth_across_interrupt_race",
+      "old": "        if !self.client.session_active(&session).await? {\n            return Ok(cancellation_receipt(",
+      "new": "        if false && !self.client.session_active(&session).await? {\n            return Ok(cancellation_receipt("
+    },
+    {
+      "id": "R4CA26",
+      "law": "An interrupt error is reconciled against terminal server truth before it is returned.",
+      "file": "crates/grapt-cli/src/run.rs",
+      "test_target": "public_seams",
+      "test": "runner_cancel_reconciles_terminal_truth_across_interrupt_race",
+      "old": "        if let Err(interrupt_error) = self.client.interrupt(&session).await {\n            if !self.client.session_active(&session).await? {",
+      "new": "        if let Err(interrupt_error) = self.client.interrupt(&session).await {\n            if false && !self.client.session_active(&session).await? {"
+    },
+    {
+      "id": "R4CA27",
+      "law": "A successful interrupt is not terminal until durable active truth settles.",
+      "file": "crates/grapt-cli/src/run.rs",
+      "test_target": "public_seams",
+      "test": "runner_cancel_waits_for_terminal_after_interrupt_success",
+      "old": "        for _poll in 0..MAX_CANCELLATION_POLLS {",
+      "new": "        for _poll in 0..0 {"
+    },
+    {
+      "id": "R4CA28",
+      "law": "Every successfully written prefix byte advances the honest output receipt.",
+      "file": "crates/grapt-cli/src/output.rs",
+      "test_target": "public_seams",
+      "test": "partial_stdout_and_stderr_failures_preserve_honest_receipts",
+      "old": "                *count = count.saturating_add(amount);",
+      "new": "                *count = count.saturating_add(0);"
+    },
+    {
+      "id": "R4CA29",
+      "law": "A partial record never increments the complete stdout record count.",
+      "file": "crates/grapt-cli/src/output.rs",
+      "test": "output_becomes_visible_only_after_a_complete_bounded_record",
+      "old": "        self.receipt.stdout_records = next_records;",
+      "new": "        self.receipt.stdout_records = next_records.saturating_add(1);"
+    },
+    {
+      "id": "R4CA30",
+      "law": "Attach and run preserve Output as a distinct exit class.",
+      "file": "crates/grapt-cli/src/run.rs",
+      "test_target": "public_seams",
+      "test": "acceptance_corpus_executes_public_operations",
+      "old": "            Self::Output(_) => ExitClass::Output,",
+      "new": "            Self::Output(_) => ExitClass::Remote,"
+    },
+    {
+      "id": "R4CA31",
+      "law": "Main diagnostics traverse the bounded stderr owner.",
+      "file": "crates/grapt-cli/src/executor.rs",
+      "test_target": "public_seams",
+      "test": "binary_main_routes_usage_diagnostics_through_bounded_stderr",
+      "old": "    if output.diagnostic(&format!(\"grapt: {error}\")).is_err() {",
+      "new": "    if false {"
+    },
+    {
+      "id": "R4CA32",
+      "law": "Rejected stdin settles before connection or embedded child effects.",
+      "file": "crates/grapt-cli/src/executor.rs",
+      "test_target": "public_seams",
+      "test": "binary_run_refuses_invalid_stdin_before_embedded_connection_effects",
+      "old": "                PromptSource::Stdin => match read_stdin(limits).await {\n                    Ok(prompt) => prompt,\n                    Err(message) => return diagnostic_exit(&mut sink, ExitClass::Usage, &message),\n                },",
+      "new": "                PromptSource::Stdin => match read_stdin(limits).await {\n                    Ok(prompt) => prompt,\n                    Err(message) => {\n                        let _eager_connection = connect(connection.clone(), limits).await;\n                        return diagnostic_exit(&mut sink, ExitClass::Usage, &message);\n                    }\n                },"
+    },
+    {
+      "id": "R4CA33",
+      "law": "Complete bounded ACP stdin admission settles before connection or embedded child effects.",
+      "file": "crates/grapt-cli/src/executor.rs",
+      "test_target": "public_seams",
+      "test": "binary_acp_refuses_invalid_records_before_embedded_connection_effects",
+      "old": "            let requests = match admit_acp_frames(&bytes, limits) {\n                Ok(requests) => requests,\n                Err(error) => return diagnostic_exit(&mut sink, ExitClass::Usage, &error),\n            };\n            if let Err(error) = preflight_acp_requests(&requests, limits) {\n                return diagnostic_exit(&mut sink, ExitClass::Usage, &error);\n            }\n            match connect(connection, limits).await {\n                Ok(client) => execute_acp_requests(&client, requests, &mut sink, limits).await,\n                Err((class, message)) => diagnostic_exit(&mut sink, class, &message),\n            }",
+      "new": "            match connect(connection, limits).await {\n                Ok(client) => execute_acp_frames(&client, &bytes, &mut sink, limits).await,\n                Err((class, message)) => diagnostic_exit(&mut sink, class, &message),\n            }"
+    },
+    {
+      "id": "R4CA34",
+      "law": "Locally decidable ACP protocol sequencing settles before connection or embedded child effects.",
+      "file": "crates/grapt-cli/src/executor.rs",
+      "test_target": "public_seams",
+      "test": "binary_acp_refuses_locally_invalid_sequences_before_embedded_connection_effects",
+      "old": "            if let Err(error) = preflight_acp_requests(&requests, limits) {\n                return diagnostic_exit(&mut sink, ExitClass::Usage, &error);\n            }\n            match connect(connection, limits).await {\n                Ok(client) => execute_acp_requests(&client, requests, &mut sink, limits).await,\n                Err((class, message)) => diagnostic_exit(&mut sink, class, &message),\n            }",
+      "new": "            match connect(connection, limits).await {\n                Ok(client) => {\n                    if let Err(error) = preflight_acp_requests(&requests, limits) {\n                        diagnostic_exit(&mut sink, ExitClass::Usage, &error)\n                    } else {\n                        execute_acp_requests(&client, requests, &mut sink, limits).await\n                    }\n                }\n                Err((class, message)) => diagnostic_exit(&mut sink, class, &message),\n            }"
+    }
+  ]
+}

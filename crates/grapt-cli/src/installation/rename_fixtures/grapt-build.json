@@ -1,0 +1,40 @@
+{
+  "schema": "secode.release.build.v1",
+  "source_commit": "1111111111111111111111111111111111111111",
+  "target": "x86_64-unknown-linux-gnu",
+  "tree_dirty": false,
+  "profile": "debug",
+  "commands": [
+    {
+      "produces": [
+        "grapt-server",
+        "grapt",
+        "grapt-engined",
+        "grapt-migrate",
+        "grapt-tui"
+      ]
+    }
+  ],
+  "outputs": {
+    "grapt-server": {
+      "bytes": 139,
+      "sha256": "4a6ca13d53fac130c4f2a639ddb75249a996e58376ca30ec58e64909f7cec9e6"
+    },
+    "grapt": {
+      "bytes": 139,
+      "sha256": "4a6ca13d53fac130c4f2a639ddb75249a996e58376ca30ec58e64909f7cec9e6"
+    },
+    "grapt-engined": {
+      "bytes": 139,
+      "sha256": "4a6ca13d53fac130c4f2a639ddb75249a996e58376ca30ec58e64909f7cec9e6"
+    },
+    "grapt-migrate": {
+      "bytes": 139,
+      "sha256": "4a6ca13d53fac130c4f2a639ddb75249a996e58376ca30ec58e64909f7cec9e6"
+    },
+    "grapt-tui": {
+      "bytes": 139,
+      "sha256": "4a6ca13d53fac130c4f2a639ddb75249a996e58376ca30ec58e64909f7cec9e6"
+    }
+  }
+}

@@ -1,0 +1,5 @@
+error[E0463]: can't find crate for `grapt_store`
+ --> tests/probes/02_store_is_unreachable.rs:7:1
+  |
+7 | extern crate grapt_store;
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^ can't find crate

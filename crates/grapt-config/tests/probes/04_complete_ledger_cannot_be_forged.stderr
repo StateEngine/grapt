@@ -1,0 +1,5 @@
+error[E0451]: field `ledger` of struct `CompleteLedger` is private
+  --> tests/probes/04_complete_ledger_cannot_be_forged.rs:16:30
+   |
+16 |     let _ = CompleteLedger { ledger };
+   |                              ^^^^^^ private field

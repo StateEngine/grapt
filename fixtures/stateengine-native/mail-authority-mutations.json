@@ -1,0 +1,69 @@
+{
+  "schema": 1,
+  "prefix": "NMAIL",
+  "rows": [
+    {
+      "id": "NMAIL-A01",
+      "path": "crates/grapt-mail-transport/src/http/decode.rs",
+      "before": "if text(v, \"verified_principal\")? != request.expected_recipient().as_str() {",
+      "after": "if false {",
+      "witness": "http::tests::exact_authenticated_principal_cannot_be_replaced_by_recipient_or_project",
+      "target": "lib",
+      "law": "authenticated exact principal"
+    },
+    {
+      "id": "NMAIL-A02",
+      "path": "crates/grapt-mail-transport/src/http/operations.rs",
+      "before": "if value[\"primary_delivery\"][\"witnessed\"] != Value::Bool(true) {",
+      "after": "if false {",
+      "witness": "http::tests::primary_delivery_proof_survives_secondary_failure_but_never_missing_proof",
+      "target": "lib",
+      "law": "primary delivery proof before receipt"
+    },
+    {
+      "id": "NMAIL-A03",
+      "path": "crates/grapt-mail-transport/src/http/mod.rs",
+      "before": ".redirect(reqwest::redirect::Policy::none())",
+      "after": "",
+      "witness": "http::wire_tests::redirects_cannot_move_an_authenticated_request_to_another_listener",
+      "target": "lib",
+      "law": "authenticated endpoint cannot follow redirects"
+    },
+    {
+      "id": "NMAIL-A04",
+      "path": "crates/grapt-mail-transport/src/http/mod.rs",
+      "before": "failure::decode(&value[\"failure\"], write).map_err(|_| malformed(write))?",
+      "after": "failure::decode(&value[\"failure\"], write).map_err(|_| malformed(false))?",
+      "witness": "http::wire_tests::missing_or_malformed_write_reply_keeps_exact_retry_effect",
+      "target": "lib",
+      "law": "unreadable write reply cannot clear uncertainty"
+    },
+    {
+      "id": "NMAIL-A05",
+      "path": "crates/grapt-mail-transport/src/port.rs",
+      "before": "pub trait RemoteSeatMailTransportV1: Sealed {",
+      "after": "pub trait RemoteSeatMailTransportV1 {",
+      "witness": "the_transport_port_cannot_be_implemented_outside_this_crate",
+      "target": "compile_fail",
+      "law": "external callers cannot mint authenticated bindings"
+    },
+    {
+      "id": "NMAIL-A06",
+      "path": "crates/grapt-mail-transport/src/http/decode.rs",
+      "before": "MailAttention::parse(text(v, \"attention\")?).ok_or_else(|| malformed(false))?",
+      "after": "MailAttention::parse(text(v, \"attention\")?).unwrap_or(MailAttention::Quiet)",
+      "witness": "http::tests::attention_is_mandatory_closed_and_never_inferred_from_kind_or_body",
+      "target": "lib",
+      "law": "unknown attention cannot silently become quiet"
+    },
+    {
+      "id": "NMAIL-A07",
+      "path": "crates/grapt-mail-transport/src/http/mod.rs",
+      "before": "self.binding.as_ref() != Some(binding.receipt())",
+      "after": "self.binding.as_ref().map(|receipt| receipt.binding_id()) != Some(binding.receipt().binding_id())",
+      "witness": "http::tests::a_matching_binding_id_cannot_substitute_foreign_receipt_coordinates",
+      "target": "lib",
+      "law": "authenticated binding attaches its whole verified receipt, not only an ID"
+    }
+  ]
+}

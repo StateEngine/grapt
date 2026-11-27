@@ -1,0 +1,15 @@
+error[E0624]: method `mint` is private
+  --> tests/probes/58_contribution_authority_public_mint.rs:12:50
+   |
+12 |       let _ = grapt_policy::ContributionAuthority::mint;
+   |                                                    ^^^^ private method
+   |
+  ::: $WORKSPACE/crates/grapt-policy/src/authority.rs
+   |
+   | /     pub(crate) fn mint(
+   | |         &self,
+   | |         class: ContributionClass,
+   | |         coordinate: &str,
+   | |         material: &Secret,
+   | |     ) -> ContributionId {
+   | |_______________________- private method defined here

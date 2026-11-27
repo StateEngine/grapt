@@ -1,0 +1,15 @@
+error[E0308]: mismatched types
+  --> tests/probes/03_mint_refuses_an_incomplete_ledger.rs:16:25
+   |
+16 |     let _ = mint_layers(&ledger, authority);
+   |             ----------- ^^^^^^^ expected `&CompleteLedger`, found `&ConfigLedger`
+   |             |
+   |             arguments to this function are incorrect
+   |
+   = note: expected reference `&CompleteLedger`
+              found reference `&ConfigLedger`
+note: function defined here
+  --> src/layer.rs
+   |
+   | pub fn mint_layers(ledger: &CompleteLedger, authority: &ContributionAuthority) -> Vec<ConfigLayer> {
+   |        ^^^^^^^^^^^

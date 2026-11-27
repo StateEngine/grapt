@@ -1,0 +1,1 @@
+| `crates/secode-worktree/src/path.rs` | `openai/codex`, `codex-rs/utils/absolute-path/src/lib.rs` (`normalize_windows_device_path`) | `bb64b894fd67158be0f874872e6d7bfe717e7368` | **Modified**: Git drive/UNC argument spelling; refuse verbatim-only names instead of aliasing a different destination. Apache-2.0, Copyright 2025 OpenAI. |

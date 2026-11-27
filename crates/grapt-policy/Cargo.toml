@@ -1,0 +1,32 @@
+[package]
+name = "grapt-policy"
+autotests = false
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+description = "Effective-authority foundation: an immutable typed physical-attempt authority snapshot and a content-addressed EffectiveGraph receipt over a versioned, domain-separated, length-delimited canonical encoding. Carries fingerprints/digests, never secret material or live handles."
+
+[[test]]
+name = "integration"
+path = "tests/integration/main.rs"
+
+# Trybuild probes keep their own harness.
+[[test]]
+name = "compile_fail"
+path = "tests/compile_fail.rs"
+
+[dependencies]
+grapt-types = { path = "../grapt-types" }
+sha2 = "0.10"
+thiserror = "2"
+
+[dev-dependencies]
+# Used by the secret-material witness, which hashes candidate material to prove
+# no digest of it reaches the receipt or any Debug. The pending-witness
+# integrity gate that this comment used to name was retired with the pending
+# manifest when L2 restored the twelve witnesses through the real path.
+sha2 = "0.10"
+trybuild = "1.0.120"
+
+[lints]
+workspace = true

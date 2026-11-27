@@ -1,0 +1,18 @@
+[package]
+name = "grapt-worktree"
+version = "0.1.0"
+edition.workspace = true
+license = "MIT OR Apache-2.0"
+description = "Bounded detached Git worktree creation shared by Grapt clients and product."
+
+[dependencies]
+tokio = { version = "1", default-features = false, features = ["io-util", "macros", "process", "time"] }
+
+[target.'cfg(unix)'.dependencies]
+rustix = { version = "=1.1.6", default-features = false, features = ["fs", "std"] }
+
+[dev-dependencies]
+tokio = { version = "1", default-features = false, features = ["macros", "rt-multi-thread"] }
+
+[lints]
+workspace = true

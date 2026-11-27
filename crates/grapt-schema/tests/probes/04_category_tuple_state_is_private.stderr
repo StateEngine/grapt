@@ -1,0 +1,19 @@
+error[E0423]: cannot initialize a tuple struct which contains private fields
+ --> tests/probes/04_category_tuple_state_is_private.rs:8:13
+  |
+8 |     let _ = Optional(Some(true));
+  |             ^^^^^^^^
+  |
+note: constructor is not visible here due to private fields
+ --> src/presence.rs
+  |
+  | pub struct Optional<T>(Option<T>);
+  |                        ^^^^^^^^^ private field
+help: you might have meant to use an associated function to build this type
+  |
+8 -     let _ = Optional(Some(true));
+8 +     let _ = Optional::absent();
+  |
+8 -     let _ = Optional(Some(true));
+8 +     let _ = Optional::present(_);
+  |

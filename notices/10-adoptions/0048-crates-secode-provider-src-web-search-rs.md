@@ -1,0 +1,1 @@
+| `crates/secode-provider/src/web_search.rs` | `openai/codex`, `codex-rs/core/src/tools/hosted_spec.rs` | `092d3acd6bec3e3a14bdc7e7a2810ab628ab759d` | Modified: bounded typed hosted web-search specification, cached/live access and canonical domain filters. |

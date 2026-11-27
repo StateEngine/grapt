@@ -1,0 +1,427 @@
+{
+ "comment": "Exact workspace dependencies of every crate, as Cargo resolves them. deps covers normal and build dependencies; dev covers dev-only ones. Adding a crate or an edge is a reviewed edit here; drop an edge when the code stops using it.",
+ "crates": {
+  "grapt-client-transport": {
+   "deps": [
+    "grapt-api",
+    "grapt-schema",
+    "grapt-types"
+   ],
+   "dev": []
+  },
+  "grapt-tui-forms": {
+   "deps": [
+    "grapt-tui-transcript",
+    "grapt-client"
+   ],
+   "dev": []
+  },
+  "grapt-tui-transcript": {
+   "deps": [
+    "grapt-api",
+    "grapt-client"
+   ],
+   "dev": []
+  },
+  "grapt-api": {
+   "deps": [
+    "grapt-auth-basic",
+    "grapt-location",
+    "grapt-schema",
+    "grapt-stream",
+    "grapt-types",
+    "grapt-window-lease"
+   ],
+   "dev": []
+  },
+  "grapt-artifact": {
+   "deps": [
+    "grapt-types"
+   ],
+   "dev": []
+  },
+  "grapt-auth-basic": {
+   "deps": [],
+   "dev": []
+  },
+  "grapt-checkpoint": {
+   "deps": [
+    "grapt-types"
+   ],
+   "dev": []
+  },
+  "grapt-cli": {
+   "deps": [
+    "grapt-api",
+    "grapt-connections",
+    "grapt-image",
+    "grapt-login",
+    "grapt-schema",
+    "grapt-service",
+    "grapt-types",
+    "grapt-worktree"
+   ],
+   "dev": []
+  },
+  "grapt-client": {
+   "deps": [
+    "grapt-client-transport",
+    "grapt-api",
+    "grapt-schema",
+    "grapt-types"
+   ],
+   "dev": []
+  },
+  "grapt-codemode": {
+   "deps": [
+    "grapt-types"
+   ],
+   "dev": []
+  },
+  "grapt-config": {
+   "deps": [
+    "grapt-policy"
+   ],
+   "dev": []
+  },
+  "grapt-connections": {
+   "deps": [
+    "grapt-config",
+    "grapt-login",
+    "grapt-types"
+   ],
+   "dev": []
+  },
+  "grapt-console": {
+   "deps": [],
+   "dev": []
+  },
+  "grapt-context": {
+   "deps": [
+    "grapt-event",
+    "grapt-provider",
+    "grapt-session",
+    "grapt-types"
+   ],
+   "dev": []
+  },
+  "grapt-diagnostics": {
+   "deps": [],
+   "dev": []
+  },
+  "grapt-engined": {
+   "deps": [
+    "grapt-api",
+    "grapt-location",
+    "grapt-service",
+    "grapt-types"
+   ],
+   "dev": []
+  },
+  "grapt-event": {
+   "deps": [
+    "grapt-types"
+   ],
+   "dev": []
+  },
+  "grapt-form": {
+   "deps": [
+    "grapt-store",
+    "grapt-types"
+   ],
+   "dev": []
+  },
+  "grapt-image": {
+   "deps": [],
+   "dev": []
+  },
+  "grapt-inbox": {
+   "deps": [
+    "grapt-store",
+    "grapt-types"
+   ],
+   "dev": []
+  },
+  "grapt-instruction": {
+   "deps": [
+    "grapt-event",
+    "grapt-store",
+    "grapt-types"
+   ],
+   "dev": []
+  },
+  "grapt-location": {
+   "deps": [],
+   "dev": []
+  },
+  "grapt-login": {
+   "deps": [
+    "grapt-types"
+   ],
+   "dev": []
+  },
+  "grapt-mail-transport": {
+   "deps": [
+    "grapt-diagnostics",
+    "grapt-types"
+   ],
+   "dev": []
+  },
+  "grapt-mcp": {
+   "deps": [],
+   "dev": []
+  },
+  "grapt-mcp-client": {
+   "deps": [
+    "grapt-mcp",
+    "grapt-types"
+   ],
+   "dev": []
+  },
+  "grapt-mcp-host": {
+   "deps": [
+    "grapt-diagnostics",
+    "grapt-form",
+    "grapt-mcp",
+    "grapt-mcp-client",
+    "grapt-provider"
+   ],
+   "dev": []
+  },
+  "grapt-permission": {
+   "deps": [
+    "grapt-store",
+    "grapt-types"
+   ],
+   "dev": []
+  },
+  "grapt-platform": {
+   "deps": [
+    "grapt-config",
+    "grapt-connections",
+    "grapt-login",
+    "grapt-provider",
+    "grapt-store",
+    "grapt-types"
+   ],
+   "dev": []
+  },
+  "grapt-plugin": {
+   "deps": [
+    "grapt-diagnostics",
+    "grapt-sandbox",
+    "grapt-types"
+   ],
+   "dev": []
+  },
+  "grapt-policy": {
+   "deps": [
+    "grapt-types"
+   ],
+   "dev": []
+  },
+  "grapt-product": {
+   "deps": [
+    "grapt-api",
+    "grapt-artifact",
+    "grapt-auth-basic",
+    "grapt-checkpoint",
+    "grapt-codemode",
+    "grapt-config",
+    "grapt-connections",
+    "grapt-context",
+    "grapt-diagnostics",
+    "grapt-event",
+    "grapt-form",
+    "grapt-image",
+    "grapt-inbox",
+    "grapt-instruction",
+    "grapt-location",
+    "grapt-login",
+    "grapt-mail-transport",
+    "grapt-mcp",
+    "grapt-mcp-client",
+    "grapt-mcp-host",
+    "grapt-permission",
+    "grapt-platform",
+    "grapt-plugin",
+    "grapt-policy",
+    "grapt-provider",
+    "grapt-release",
+    "grapt-runtime",
+    "grapt-sandbox",
+    "grapt-schema",
+    "grapt-service",
+    "grapt-service-state",
+    "grapt-session",
+    "grapt-shell",
+    "grapt-stateengine-api",
+    "grapt-store",
+    "grapt-subagent",
+    "grapt-toolchain",
+    "grapt-tools-local",
+    "grapt-types",
+    "grapt-web",
+    "grapt-worktree"
+   ],
+   "dev": [
+    "grapt-client",
+    "grapt-tui-driver"
+   ]
+  },
+  "grapt-provider": {
+   "deps": [
+    "grapt-diagnostics",
+    "grapt-policy",
+    "grapt-types"
+   ],
+   "dev": []
+  },
+  "grapt-release": {
+   "deps": [
+    "grapt-permission",
+    "grapt-store",
+    "grapt-types"
+   ],
+   "dev": []
+  },
+  "grapt-runtime": {
+   "deps": [
+    "grapt-artifact",
+    "grapt-diagnostics",
+    "grapt-event",
+    "grapt-inbox",
+    "grapt-mail-transport",
+    "grapt-provider",
+    "grapt-session",
+    "grapt-store",
+    "grapt-types"
+   ],
+   "dev": []
+  },
+  "grapt-sandbox": {
+   "deps": [
+    "grapt-types"
+   ],
+   "dev": []
+  },
+  "grapt-schema": {
+   "deps": [],
+   "dev": [
+    "grapt-types"
+   ]
+  },
+  "grapt-service": {
+   "deps": [
+    "grapt-types"
+   ],
+   "dev": []
+  },
+  "grapt-service-state": {
+   "deps": [
+    "grapt-event",
+    "grapt-session",
+    "grapt-store",
+    "grapt-types"
+   ],
+   "dev": []
+  },
+  "grapt-session": {
+   "deps": [
+    "grapt-event",
+    "grapt-session-history",
+    "grapt-store",
+    "grapt-types"
+   ],
+   "dev": []
+  },
+  "grapt-session-history": {
+   "deps": [
+    "grapt-event",
+    "grapt-store",
+    "grapt-types"
+   ],
+   "dev": []
+  },
+  "grapt-shell": {
+   "deps": [
+    "grapt-store"
+   ],
+   "dev": []
+  },
+  "grapt-stateengine-api": {
+   "deps": [],
+   "dev": []
+  },
+  "grapt-store": {
+   "deps": [
+    "grapt-event",
+    "grapt-types"
+   ],
+   "dev": []
+  },
+  "grapt-stream": {
+   "deps": [
+    "grapt-types"
+   ],
+   "dev": []
+  },
+  "grapt-subagent": {
+   "deps": [
+    "grapt-artifact",
+    "grapt-inbox",
+    "grapt-store",
+    "grapt-types"
+   ],
+   "dev": []
+  },
+  "grapt-toolchain": {
+   "deps": [
+    "grapt-types"
+   ],
+   "dev": []
+  },
+  "grapt-tools-local": {
+   "deps": [],
+   "dev": []
+  },
+  "grapt-tui": {
+   "deps": [
+    "grapt-tui-forms",
+    "grapt-tui-transcript",
+    "grapt-api",
+    "grapt-cli",
+    "grapt-client",
+    "grapt-connections",
+    "grapt-console",
+    "grapt-image",
+    "grapt-plugin",
+    "grapt-schema",
+    "grapt-types"
+   ],
+   "dev": []
+  },
+  "grapt-tui-driver": {
+   "deps": [],
+   "dev": []
+  },
+  "grapt-types": {
+   "deps": [],
+   "dev": []
+  },
+  "grapt-web": {
+   "deps": [],
+   "dev": []
+  },
+  "grapt-window-lease": {
+   "deps": [
+    "grapt-types"
+   ],
+   "dev": []
+  },
+  "grapt-worktree": {
+   "deps": [],
+   "dev": []
+  }
+ }
+}

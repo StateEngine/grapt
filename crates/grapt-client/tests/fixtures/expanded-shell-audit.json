@@ -1,0 +1,41 @@
+{
+  "audit_source": "e819444e355940e887e77ffed6370027ae228336",
+  "frame": "run-04/frames/06-long-shell-scroll-down.txt",
+  "before_rows": [
+    "    │  output {\"cleanup\":\"complete\",\"containment\":\"process_group\",\"done\":true,\"exit_code\":0,\"has_more_output\":false,\"n │",
+    "    │otice\":\"Processes that leave this command's process group (setsid, daemons) may outlive it.\",\"omitted_bytes\":0,\"o │",
+    "    │utput\":\"Build validation log\\ncheck_000: passed — signed arithmetic validation\\ncheck_001: passed — signed arithm │",
+    "    │etic validation\\ncheck_002: passed — signed arithmetic validation\\ncheck_003: passed — signed arithmetic validati █",
+    "    │on\\ncheck_004: passed — signed arithmetic validation\\ncheck_005: passed — signed arithmetic validation\\ncheck_006 █"
+  ],
+  "tool": {
+    "type": "tool",
+    "id": "audit_long",
+    "name": "exec_command",
+    "state": {
+      "status": "completed",
+      "input": {
+        "cmd": "python3 -c \"print('Build validation log'); [print(f'check_{n:03}: passed — signed arithmetic validation') for n in range(80)]; print('All validation checks completed.')\"",
+        "max_output_tokens": 6000,
+        "timeout_ms": 10000,
+        "workdir": "/srv/grapt/diagnostics/tui-parity-gap-audit-20261029/run-04/workspace",
+        "yield_time_ms": 1000
+      },
+      "content": [
+        {
+          "type": "text",
+          "text": "{\"cleanup\":\"complete\",\"containment\":\"process_group\",\"done\":true,\"exit_code\":0,\"has_more_output\":false,\"notice\":\"Processes that leave this command's process group (setsid, daemons) may outlive it.\",\"omitted_bytes\":0,\"output\":\"Build validation log\\ncheck_000: passed — signed arithmetic validation\\ncheck_001: passed — signed arithmetic validation\\ncheck_002: passed — signed arithmetic validation\\ncheck_003: passed — signed arithmetic validation\\ncheck_004: passed — signed arithmetic validation\\ncheck_005: passed — signed arithmetic validation\\ncheck_006: passed — signed arithmetic validation\\ncheck_007: passed — signed arithmetic validation\\ncheck_008: passed — signed arithmetic validation\\ncheck_009: passed — signed arithmetic validation\\ncheck_010: passed — signed arithmetic validation\\ncheck_011: passed — signed arithmetic validation\\ncheck_012: passed — signed arithmetic validation\\ncheck_013: passed — signed arithmetic validation\\ncheck_014: passed — signed arithmetic validation\\ncheck_015: passed — signed arithmetic validation\\ncheck_016: passed — signed arithmetic validation\\ncheck_017: passed — signed arithmetic validation\\ncheck_018: passed — signed arithmetic validation\\ncheck_019: passed — signed arithmetic validation\\ncheck_020: passed — signed arithmetic validation\\ncheck_021: passed — signed arithmetic validation\\ncheck_022: passed — signed arithmetic validation\\ncheck_023: passed — signed arithmetic validation\\ncheck_024: passed — signed arithmetic validation\\ncheck_025: passed — signed arithmetic validation\\ncheck_026: passed — signed arithmetic validation\\ncheck_027: passed — signed arithmetic validation\\ncheck_028: passed — signed arithmetic validation\\ncheck_029: passed — signed arithmetic validation\\ncheck_030: passed — signed arithmetic validation\\ncheck_031: passed — signed arithmetic validation\\ncheck_032: passed — signed arithmetic validation\\ncheck_033: passed — signed arithmetic validation\\ncheck_034: passed — signed arithmetic validation\\ncheck_035: passed — signed arithmetic validation\\ncheck_036: passed — signed arithmetic validation\\ncheck_037: passed — signed arithmetic validation\\ncheck_038: passed — signed arithmetic validation\\ncheck_039: passed — signed arithmetic validation\\ncheck_040: passed — signed arithmetic validation\\ncheck_041: passed — signed arithmetic validation\\ncheck_042: passed — signed arithmetic validation\\ncheck_043: passed — signed arithmetic validation\\ncheck_044: passed — signed arithmetic validation\\ncheck_045: passed — signed arithmetic validation\\ncheck_046: passed — signed arithmetic validation\\ncheck_047: passed — signed arithmetic validation\\ncheck_048: passed — signed arithmetic validation\\ncheck_049: passed — signed arithmetic validation\\ncheck_050: passed — signed arithmetic validation\\ncheck_051: passed — signed arithmetic validation\\ncheck_052: passed — signed arithmetic validation\\ncheck_053: passed — signed arithmetic validation\\ncheck_054: passed — signed arithmetic validation\\ncheck_055: passed — signed arithmetic validation\\ncheck_056: passed — signed arithmetic validation\\ncheck_057: passed — signed arithmetic validation\\ncheck_058: passed — signed arithmetic validation\\ncheck_059: passed — signed arithmetic validation\\ncheck_060: passed — signed arithmetic validation\\ncheck_061: passed — signed arithmetic validation\\ncheck_062: passed — signed arithmetic validation\\ncheck_063: passed — signed arithmetic validation\\ncheck_064: passed — signed arithmetic validation\\ncheck_065: passed — signed arithmetic validation\\ncheck_066: passed — signed arithmetic validation\\ncheck_067: passed — signed arithmetic validation\\ncheck_068: passed — signed arithmetic validation\\ncheck_069: passed — signed arithmetic validation\\ncheck_070: passed — signed arithmetic validation\\ncheck_071: passed — signed arithmetic validation\\ncheck_072: passed — signed arithmetic validation\\ncheck_073: passed — signed arithmetic validation\\ncheck_074: passed — signed arithmetic validation\\ncheck_075: passed — signed arithmetic validation\\ncheck_076: passed — signed arithmetic validation\\ncheck_077: passed — signed arithmetic validation\\ncheck_078: passed — signed arithmetic validation\\ncheck_079: passed — signed arithmetic validation\\nAll validation checks completed.\\n\",\"output_cursor\":4134,\"pipe\":\"drained\",\"session_id\":\"op_af10162dd6937dfb2144bf9945c44db7x88\",\"status\":\"exited\"}"
+        }
+      ],
+      "metadata": {
+        "durableBytes": 4553,
+        "durableCapture": "complete",
+        "publicBoundBytes": 262144,
+        "publicProjection": "complete"
+      }
+    },
+    "time": {
+      "created": 1793310472767.0
+    }
+  }
+}

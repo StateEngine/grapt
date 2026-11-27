@@ -1,0 +1,25 @@
+warning: unreachable expression
+  --> tests/probes/28_forge_close_proof.rs:16:14
+   |
+15 |         receipt: todo!(),
+   |                  ------- any code following this expression is unreachable
+16 |         key: todo!(),
+   |              ^^^^^^^ unreachable expression
+   |
+   = note: `#[warn(unreachable_code)]` (part of `#[warn(unused)]`) on by default
+
+error[E0451]: fields `receipt`, `key`, `provider`, `account` and `attempt` of struct `AdapterCloseProof` are private
+  --> tests/probes/28_forge_close_proof.rs:15:9
+   |
+14 |     let _forged = AdapterCloseProof {
+   |                   ----------------- in this type
+15 |         receipt: todo!(),
+   |         ^^^^^^^ private field
+16 |         key: todo!(),
+   |         ^^^ private field
+17 |         provider: todo!(),
+   |         ^^^^^^^^ private field
+18 |         account: todo!(),
+   |         ^^^^^^^ private field
+19 |         attempt: todo!(),
+   |         ^^^^^^^ private field

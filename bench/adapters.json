@@ -1,0 +1,115 @@
+{
+  "codex": {
+    "model": "gpt-6-luna",
+    "auth": "chatgpt-oauth",
+    "argv": [
+      "{codex_binary}",
+      "exec",
+      "--json",
+      "--ephemeral",
+      "--ignore-user-config",
+      "--sandbox",
+      "danger-full-access",
+      "-m",
+      "gpt-6-luna",
+      "-"
+    ],
+    "harness": "codex",
+    "cohort": "luna"
+  },
+  "claude": {
+    "model": "claude-haiku-5-5",
+    "auth": "claude-max",
+    "argv": [
+      "claude",
+      "-p",
+      "--output-format",
+      "stream-json",
+      "--verbose",
+      "--model",
+      "claude-haiku-5-5",
+      "--allowedTools",
+      "Read,Edit,Write,Bash",
+      "--setting-sources",
+      "project",
+      "--strict-mcp-config",
+      "--mcp-config",
+      "{\"mcpServers\":{}}",
+      "--no-session-persistence"
+    ],
+    "harness": "claude",
+    "cohort": "haiku"
+  },
+  "opencode": {
+    "model": "openai/gpt-6-luna",
+    "auth": "chatgpt-oauth",
+    "argv": [
+      "{opencode_binary}",
+      "run",
+      "--pure",
+      "--auto",
+      "--format",
+      "json",
+      "--model",
+      "openai/gpt-6-luna",
+      "{prompt}"
+    ],
+    "harness": "opencode",
+    "cohort": "luna"
+  },
+  "grapt": {
+    "model": "openai/gpt-6-luna",
+    "auth": "chatgpt-oauth",
+    "argv": [
+      "/usr/bin/python3",
+      "{grapt_adapter}",
+      "--binary",
+      "{grapt_binary}",
+      "--product",
+      "{product_binary}",
+      "--service",
+      "{service_root}",
+      "--model",
+      "openai/gpt-6-luna"
+    ],
+    "profile_required": true,
+    "harness": "grapt",
+    "cohort": "luna"
+  },
+  "opencode-haiku": {
+    "model": "openrouter/anthropic/claude-haiku-5.5",
+    "auth": "openrouter",
+    "argv": [
+      "{opencode_binary}",
+      "run",
+      "--pure",
+      "--auto",
+      "--format",
+      "json",
+      "--model",
+      "openrouter/anthropic/claude-haiku-5.5",
+      "{prompt}"
+    ],
+    "harness": "opencode",
+    "cohort": "haiku"
+  },
+  "grapt-haiku": {
+    "model": "openrouter/anthropic/claude-haiku-5.5",
+    "auth": "openrouter",
+    "argv": [
+      "/usr/bin/python3",
+      "{grapt_adapter}",
+      "--binary",
+      "{grapt_binary}",
+      "--product",
+      "{product_binary}",
+      "--service",
+      "{service_root}",
+      "--model",
+      "openrouter/anthropic/claude-haiku-5.5"
+    ],
+    "profile_required": true,
+    "harness": "grapt",
+    "cohort": "haiku"
+  }
+}

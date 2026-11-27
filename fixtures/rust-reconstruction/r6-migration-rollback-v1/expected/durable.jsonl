@@ -1,0 +1,4 @@
+{"ordinal":1,"outcome":"ready-for-handoff","checkpoints":8}
+{"ordinal":2,"outcome":"ready-for-handoff","checkpoints":8}
+{"ordinal":3,"outcome":"rollback-restored","rows":2}
+{"ordinal":4,"outcome":"refused-backup-absent","source_unchanged":true}

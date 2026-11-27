@@ -1,0 +1,1 @@
+| `crates/secode-provider/src/routes/request_fingerprint.rs` | OpenAI Codex, `codex-rs/core/src/client.rs`, `responses_request_properties_mismatch` | `bb64b894fd67158be0f874872e6d7bfe717e7368` | **Modified:** bounded, redacted hashes of the final HTTP body; diagnostic comparison only, no WebSocket reuse. |

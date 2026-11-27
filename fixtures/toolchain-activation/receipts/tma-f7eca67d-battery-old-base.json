@@ -1,0 +1,59 @@
+{
+  "schema": "grapt.toolchain-activation.mutation-battery-receipt.v1",
+  "campaign": "TOOLCHAIN-ACTIVATION-01",
+  "candidate": "f7eca67d67eb73bf917127b7e068d3ceeaf8a93a",
+  "mutation_prefix": "TMA",
+  "rows": [
+    {
+      "id": "TMA101",
+      "file": "crates/grapt-toolchain/src/activate.rs",
+      "witness": "refusals_fetch::a_digest_mismatch_refuses_before_anything_is_staged",
+      "accounted": true,
+      "detail": "corpus: expected a refusal, got activated"
+    },
+    {
+      "id": "TMA102",
+      "file": "crates/grapt-toolchain/src/identity.rs",
+      "witness": "identity::tests::the_match_law_requires_every_pin_fact",
+      "accounted": true,
+      "detail": "assertion failed: !identity.matches(&recut, \"windows\", \"x86_64\")"
+    },
+    {
+      "id": "TMA103",
+      "file": "crates/grapt-toolchain/src/identity.rs",
+      "witness": "identity::tests::the_match_law_requires_every_pin_fact",
+      "accounted": true,
+      "detail": "assertion failed: !identity.matches(&rehome, \"windows\", \"x86_64\")"
+    },
+    {
+      "id": "TMA104",
+      "file": "crates/grapt-toolchain/src/activate.rs",
+      "witness": "refusals_activation::an_identity_write_failure_rolls_back",
+      "accounted": true,
+      "detail": "corpus: the unattributable executable is rolled back, not left to run"
+    },
+    {
+      "id": "TMA105",
+      "file": "crates/grapt-toolchain/src/activate.rs",
+      "witness": "refusals_activation::a_held_lock_refuses_activation_in_flight",
+      "accounted": true,
+      "detail": "corpus: expected a refusal, got reused"
+    },
+    {
+      "id": "TMA106",
+      "file": "crates/grapt-toolchain/src/activate.rs",
+      "witness": "activate::tests::a_staged_copy_that_does_not_rehash_refuses_and_is_removed",
+      "accounted": true,
+      "detail": "test: a mismatched staged copy must refuse"
+    },
+    {
+      "id": "TMA107",
+      "file": "crates/grapt-toolchain/src/activate.rs",
+      "witness": "witnesses::a_fresh_install_activates_and_publishes_the_verified_binary",
+      "accounted": true,
+      "detail": "assertion `left == right` failed"
+    }
+  ],
+  "outcome": "all-red",
+  "unaccounted": []
+}

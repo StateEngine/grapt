@@ -1,0 +1,1 @@
+| MCP tool progress | `openai/codex` | `codex-rs/rmcp-client/src/logging_client_handler.rs` (`on_progress`) at `83086188ae0614bd882818ff1aa23f3194962012` | Apache-2.0; Copyright 2025 OpenAI | Adapted the client notification callback into a call-scoped, token-correlated, bounded and throttled live tool display; no persisted progress or model-context changes. |

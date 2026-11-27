@@ -1,0 +1,233 @@
+//! Structural history evidence, without continuation limits or compaction policy.
+use crate::write::EventStore;
+use grapt_types::{EventSeq, SessionId};
+
+mod probes;
+pub use probes::Probe;
+
+fn from_sql(from: Option<EventSeq>) -> Result<i64, String> {
+    from.map(|from| i64::try_from(from.value()))
+        .transpose()
+        .map(|from| from.unwrap_or(i64::MIN))
+        .map_err(|_| "continuation cut exceeds SQLite range".to_owned())
+}
+
+fn decoded(seq: Option<i64>, reason: &str) -> Result<Option<EventSeq>, String> {
+    seq.map(|seq| {
+        u64::try_from(seq)
+            .map(EventSeq::new)
+            .map_err(|_| reason.to_owned())
+    })
+    .transpose()
+}
+
+/// Observe the first row past a caller's bound, without materializing payloads.
+/// Visibility is deliberately ignored: counting hidden rows is conservative.
+pub fn first_over(
+    store: &EventStore,
+    session: &SessionId,
+    from: Option<EventSeq>,
+    probe: Probe,
+    limit: usize,
+) -> Result<Option<EventSeq>, String> {
+    let from = from_sql(from)?;
+    let limit = i64::try_from(limit).map_err(|_| "probe bound exceeds SQLite range")?;
+    let seq = store
+        .connection()
+        .query_row(probe.sql(), (session.as_str(), from, limit), |row| {
+            row.get(0)
+        })
+        .map_err(|error| format!("{} boundary probe failed: {error}", probe.label()))?;
+    decoded(seq, "structural boundary has a negative sequence")
+}
+
+/// The first exchange start at or after `seq`, a promoted input or an
+/// assistant opening: a summary window begins only there, so it holds whole
+/// Steps and never starts between a call and its result.
+pub fn exchange_start_at_or_after(
+    store: &EventStore,
+    session: &SessionId,
+    seq: EventSeq,
+) -> Result<Option<EventSeq>, String> {
+    let seq = i64::try_from(seq.value()).map_err(|_| "window start exceeds SQLite range")?;
+    let found: Option<i64> = store
+        .connection()
+        .query_row(
+            "SELECT MIN(seq) FROM (
+               SELECT seq FROM session_message
+                WHERE session_id = ?1 AND type IN ('user', 'synthetic') AND seq >= ?2
+               UNION ALL
+               SELECT seq FROM event WHERE aggregate_family = 'session' AND aggregate_id = ?1
+                AND type IN ('session.assistant-message.opened.1', 'session.assistant-message.opened.2')
+                AND seq >= ?2)",
+            (session.as_str(), seq),
+            |row| row.get(0),
+        )
+        .map_err(|error| format!("window start probe failed: {error}"))?;
+    decoded(found, "window start has a negative sequence")
+}
+
+pub fn is_promoted(
+    store: &EventStore,
+    session: &SessionId,
+    boundary: EventSeq,
+) -> Result<bool, String> {
+    let boundary =
+        i64::try_from(boundary.value()).map_err(|_| "promoted boundary exceeds SQLite range")?;
+    store
+        .connection()
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM session_message
+                 WHERE session_id = ?1 AND type IN ('user', 'synthetic') AND seq = ?2)",
+            (session.as_str(), boundary),
+            |row| row.get(0),
+        )
+        .map_err(|error| format!("promoted boundary check failed: {error}"))
+}
+
+pub fn latest_assistant_opening(
+    store: &EventStore,
+    session: &SessionId,
+    from: Option<EventSeq>,
+    before: Option<EventSeq>,
+) -> Result<Option<EventSeq>, String> {
+    let from = from_sql(from)?;
+    let before = before
+        .map(|before| i64::try_from(before.value()))
+        .transpose()
+        .map_err(|_| "continuation window exceeds SQLite range")?
+        .unwrap_or(i64::MAX);
+    let seq = store
+        .connection()
+        .query_row(
+            "SELECT MAX(seq) FROM event
+                 WHERE aggregate_family = 'session' AND aggregate_id = ?1
+                   AND seq >= ?2 AND seq < ?3
+                   AND type IN ('session.assistant-message.opened.1',
+                                'session.assistant-message.opened.2')",
+            (session.as_str(), from, before),
+            |row| row.get(0),
+        )
+        .map_err(|error| format!("assistant boundary probe failed: {error}"))?;
+    decoded(seq, "summary cut has a negative sequence")
+}
+
+/// Opening of an exchange whose call is before the cut but output is not.
+pub fn split_exchange_opening(
+    store: &EventStore,
+    session: &SessionId,
+    from: Option<EventSeq>,
+    until: EventSeq,
+) -> Result<Option<EventSeq>, String> {
+    let from = from_sql(from)?;
+    let until =
+        i64::try_from(until.value()).map_err(|_| "structural boundary exceeds SQLite range")?;
+    let seq = store
+        .connection()
+        .query_row(
+            "SELECT MIN(o.seq) FROM event c
+                 JOIN event t ON t.aggregate_family = 'session' AND t.aggregate_id = ?1
+                   AND t.type = 'session.tool.terminal.1' AND t.seq >= ?3
+                   AND json_valid(t.data)
+                   AND json_extract(t.data, '$.call') = json_extract(c.data, '$.item.call')
+                 JOIN event o ON o.aggregate_family = 'session' AND o.aggregate_id = ?1
+                   AND o.seq <= c.seq
+                   AND o.type IN ('session.assistant-message.opened.1',
+                                  'session.assistant-message.opened.2')
+                   AND json_valid(o.data)
+                   AND json_extract(o.data, '$.message') = json_extract(c.data, '$.message')
+                 WHERE c.aggregate_family = 'session' AND c.aggregate_id = ?1
+                   AND c.seq >= ?2 AND c.seq < ?3
+                   AND c.type = 'session.content.appended.1' AND json_valid(c.data)
+                   AND json_extract(c.data, '$.item.kind') = 'tool'",
+            (session.as_str(), from, until),
+            |row| row.get(0),
+        )
+        .map_err(|error| format!("split exchange probe failed: {error}"))?;
+    decoded(seq, "exchange opening has a negative sequence")
+}
+
+/// First position past a declared-payload budget. No artifact is opened.
+/// The caller owns both the per-item charge cap and the total byte ceiling.
+pub fn declared_bytes_over(
+    store: &EventStore,
+    session: &SessionId,
+    from: Option<EventSeq>,
+    until: Option<EventSeq>,
+    cap: usize,
+    limit: usize,
+) -> Result<Option<EventSeq>, String> {
+    // Match the payload reader's saturated range for an out-of-range cut.
+    let at = |seq: EventSeq| i64::try_from(seq.value()).unwrap_or(i64::MAX);
+    let from = from.map_or(i64::MIN, at);
+    let until = until.map(at);
+    let cap_sql = i64::try_from(cap).map_err(|_| "artifact bound")?;
+    let probe = |error: rusqlite::Error| format!("declared content boundary probe failed: {error}");
+    // Messages and content declare their clamped length in SQL. A terminal
+    // declares only what its decoded fact names: an undecodable one is no
+    // evidence of any output and charges nothing.
+    let terminal = crate::stored_terminal::bounded_column("e.data");
+    let mut statement = store
+        .connection()
+        .prepare(&format!(
+            "SELECT seq, bytes, terminal FROM (
+                SELECT seq, min(max(coalesce(length(CAST(text AS BLOB)), 0), 0), ?4) AS bytes,
+                       NULL AS terminal FROM session_message
+                 WHERE session_id = ?1 AND type IN ('user', 'synthetic')
+                   AND (seq >= ?2 OR seq < 0) AND (?3 IS NULL OR seq < ?3)
+                UNION ALL
+                SELECT seq, min(max(coalesce(CASE WHEN json_valid(data)
+                    THEN json_extract(data, '$.item.payload.length') END, 0), 0), ?4), NULL FROM event
+                 WHERE aggregate_family = 'session' AND aggregate_id = ?1
+                   AND (seq >= ?2 OR seq < 0) AND (?3 IS NULL OR seq < ?3)
+                   AND type = 'session.content.appended.1'
+                   AND (json_valid(data) = 0
+                        OR json_extract(data, '$.item.kind') NOT IN ('reasoning', 'opaque'))
+                UNION ALL
+                SELECT e.seq, 0, {terminal} FROM event e
+                 WHERE e.aggregate_family = 'session' AND e.aggregate_id = ?1
+                   AND (e.seq >= ?2 OR e.seq < 0) AND (?3 IS NULL OR e.seq < ?3)
+                   AND e.type = 'session.tool.terminal.1'
+                   AND NOT EXISTS (SELECT 1 FROM event n
+                     WHERE n.aggregate_family = 'session' AND n.aggregate_id = e.aggregate_id
+                       AND n.type = 'session.tool.nested.started.1' AND json_valid(n.data)
+                       AND json_valid(e.data)
+                       AND json_extract(n.data, '$.attempt') = json_extract(e.data, '$.attempt')
+                       AND json_extract(n.data, '$.call') = json_extract(e.data, '$.call')))
+             ORDER BY seq"
+        ))
+        .map_err(probe)?;
+    let mut rows = statement
+        .query((session.as_str(), from, until, cap_sql))
+        .map_err(probe)?;
+    let mut total = 0f64;
+    while let Some(row) = rows.next().map_err(probe)? {
+        let seq: i64 = row.get(0).map_err(probe)?;
+        let terminal = crate::stored_terminal::classify_optional(row, 2).map_err(probe)?;
+        total += match terminal {
+            Some(terminal) => terminal_bytes(terminal).min(cap) as f64,
+            None => row.get::<_, f64>(1).map_err(probe)?,
+        };
+        if total > limit as f64 {
+            return decoded(Some(seq), "structural boundary has a negative sequence");
+        }
+    }
+    Ok(None)
+}
+
+/// The output a stored terminal declares; an unreadable one declares none.
+fn terminal_bytes(terminal: grapt_event::session_tool_terminal::StoredTerminal) -> usize {
+    use grapt_event::session_tool_terminal::StoredTerminal;
+    use grapt_types::ToolTerminalOutcome;
+    let StoredTerminal::Readable(fact) = terminal else {
+        return 0;
+    };
+    let artifact = match fact.outcome() {
+        ToolTerminalOutcome::Completed { output } => output.as_ref(),
+        ToolTerminalOutcome::Failed { detail, .. } => detail.as_ref(),
+        _ => None,
+    };
+    artifact.map_or(0, |artifact| {
+        usize::try_from(artifact.reference().length()).unwrap_or(usize::MAX)
+    })
+}

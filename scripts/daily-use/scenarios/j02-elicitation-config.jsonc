@@ -1,0 +1,24 @@
+{
+  "mcp": {
+    "timeout": {
+      "startup": 15000,
+      "catalog": 15000
+    },
+    "servers": {
+      "journey": {
+        "type": "local",
+        "command": [
+          "node",
+          "{{DAILY_USE}}/journey_mcp_server_eliciting.js",
+          "{{RUN}}/mcp-transcript.jsonl"
+        ],
+        "environment": {
+          "GAMMA_JOURNEY_SENTINEL": "configured-environment-reached-the-child"
+        },
+        "timeout": {
+          "execution": 60000
+        }
+      }
+    }
+  }
+}

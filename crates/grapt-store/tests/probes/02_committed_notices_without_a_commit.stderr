@@ -1,0 +1,9 @@
+error[E0451]: fields `notices` and `dropped` of struct `CommittedNotices` are private
+  --> tests/probes/02_committed_notices_without_a_commit.rs:14:9
+   |
+13 |     let forged = CommittedNotices {
+   |                  ---------------- in this type
+14 |         notices: Vec::new(),
+   |         ^^^^^^^ private field
+15 |         dropped: 0,
+   |         ^^^^^^^ private field

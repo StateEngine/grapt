@@ -1,0 +1,235 @@
+{
+  "schema": 1,
+  "rows": [
+    {
+      "id": "NMC01",
+      "path": "crates/grapt-store/src/mailbox/remote/presentation.rs",
+      "before": "if matches != Some(true) {",
+      "after": "if matches == Some(false) && false {",
+      "witness": "presentation::binding_change_refuses_capture_before_consumption",
+      "law": "Current nonsecret binding is rechecked in the capture transaction",
+      "crate": "grapt-store",
+      "target": "remote_mailbox"
+    },
+    {
+      "id": "NMC02",
+      "path": "crates/grapt-store/src/mailbox/remote/presentation.rs",
+      "before": "presentation.projects != expected.projects",
+      "after": "false",
+      "witness": "presentation::capture_scope_and_original_coordinates_cannot_be_substituted",
+      "law": "The original source and target projects are distinct required coordinates",
+      "crate": "grapt-store",
+      "target": "remote_mailbox"
+    },
+    {
+      "id": "NMC03",
+      "path": "crates/grapt-store/src/mailbox/remote/presentation.rs",
+      "before": "|| presentation.principal != expected.principal",
+      "after": "|| false",
+      "witness": "presentation::capture_scope_and_original_coordinates_cannot_be_substituted",
+      "law": "Captured mail cannot cross the expected principal",
+      "crate": "grapt-store",
+      "target": "remote_mailbox"
+    },
+    {
+      "id": "NMC04",
+      "path": "crates/grapt-store/src/mailbox/remote/presentation.rs",
+      "before": "|| presentation.recipient != expected.recipient",
+      "after": "|| false",
+      "witness": "presentation::capture_scope_and_original_coordinates_cannot_be_substituted",
+      "law": "Captured mail cannot cross the expected recipient",
+      "crate": "grapt-store",
+      "target": "remote_mailbox"
+    },
+    {
+      "id": "NMC05",
+      "path": "crates/grapt-store/src/mailbox/remote/presentation.rs",
+      "before": "|| record.ack().canonical_message_digest() != &reference.digest",
+      "after": "|| false",
+      "witness": "presentation::capture_scope_and_original_coordinates_cannot_be_substituted",
+      "law": "Capture references the original immutable admission digest",
+      "crate": "grapt-store",
+      "target": "remote_mailbox"
+    },
+    {
+      "id": "NMC06",
+      "path": "crates/grapt-store/src/mailbox/remote/presentation.rs",
+      "before": "record.ack().source_message() != &reference.source_message",
+      "after": "false",
+      "witness": "presentation::capture_scope_and_original_coordinates_cannot_be_substituted",
+      "law": "Original source message identity cannot be substituted",
+      "crate": "grapt-store",
+      "target": "remote_mailbox"
+    },
+    {
+      "id": "NMC07",
+      "path": "crates/grapt-store/src/mailbox/remote/presentation.rs",
+      "before": "|| record.ack().local_admission() != reference.local_admission",
+      "after": "|| false",
+      "witness": "presentation::capture_scope_and_original_coordinates_cannot_be_substituted",
+      "law": "Original local admission sequence cannot be substituted",
+      "crate": "grapt-store",
+      "target": "remote_mailbox"
+    },
+    {
+      "id": "NMC08",
+      "path": "crates/grapt-store/src/mailbox/remote/presentation.rs",
+      "before": "receipt.receipt().session() != session",
+      "after": "false",
+      "witness": "presentation::capture_requires_the_exact_permitted_session_step_and_epoch",
+      "law": "A foreign Session receipt does not grant capture",
+      "crate": "grapt-store",
+      "target": "remote_mailbox"
+    },
+    {
+      "id": "NMC09",
+      "path": "crates/grapt-store/src/mailbox/remote/presentation.rs",
+      "before": "|| receipt.receipt().step() != presentation.step",
+      "after": "|| false",
+      "witness": "presentation::capture_requires_the_exact_permitted_session_step_and_epoch",
+      "law": "Capture joins the exact logical Step",
+      "crate": "grapt-store",
+      "target": "remote_mailbox"
+    },
+    {
+      "id": "NMC10",
+      "path": "crates/grapt-store/src/mailbox/remote/presentation.rs",
+      "before": "|| receipt.writer_epoch() != input.writer.epoch()",
+      "after": "|| false",
+      "witness": "presentation::a_new_writer_cannot_adopt_the_old_attempts_capture_permission",
+      "law": "A new elected writer cannot adopt an old attempt permission",
+      "crate": "grapt-store",
+      "target": "remote_mailbox"
+    },
+    {
+      "id": "NMC11",
+      "path": "crates/grapt-store/src/mailbox/remote/presentation.rs",
+      "before": "|| receipt.receipt().request_sent_at().is_none()",
+      "after": "|| false",
+      "witness": "presentation::capture_requires_the_exact_permitted_session_step_and_epoch",
+      "law": "Capture requires the existing send permit in the same transaction",
+      "crate": "grapt-store",
+      "target": "remote_mailbox"
+    },
+    {
+      "id": "NMC12",
+      "path": "crates/grapt-store/src/mailbox/remote/presentation.rs",
+      "before": "if !record.consumed() {",
+      "after": "if record.consumed() && false {",
+      "witness": "presentation::historical_capture_refuses_missing_body_consumption_or_corrupt_reference",
+      "law": "Historical replay requires committed mailbox consumption",
+      "crate": "grapt-store",
+      "target": "remote_mailbox"
+    },
+    {
+      "id": "NMC13",
+      "path": "crates/grapt-store/src/mailbox/remote/presentation.rs",
+      "before": "if !record.actionable() || record.delivery_pending() {",
+      "after": "if record.delivery_pending() {",
+      "witness": "presentation::all_rows_validate_before_the_first_consumption_change",
+      "law": "All rows validate before the first consumption change",
+      "crate": "grapt-store",
+      "target": "remote_mailbox"
+    },
+    {
+      "id": "NMC14",
+      "path": "crates/grapt-store/src/mailbox/remote/presentation.rs",
+      "before": "Self::consume_remote_mailbox_within(tx, record.scope(), &reference.local_message)?;",
+      "after": "let _ = &reference.local_message;",
+      "witness": "presentation::capture_before_commit_rolls_back_mail_event_reservation_and_permit",
+      "law": "Event and consumption commit in the same caller-owned transaction",
+      "crate": "grapt-store",
+      "target": "remote_mailbox"
+    },
+    {
+      "id": "NMC15",
+      "path": "crates/grapt-store/src/mailbox/remote/presentation.rs",
+      "before": "count.saturating_add(presentation.messages().len())",
+      "after": "count.saturating_add(presentation.messages().len()).min(8)",
+      "witness": "presentation::physical_retries_share_one_step_notification_budget",
+      "law": "Physical retries share the same bounded Step notification budget",
+      "crate": "grapt-store",
+      "target": "remote_mailbox"
+    },
+    {
+      "id": "NMC16",
+      "path": "crates/grapt-store/src/mailbox/remote/presentation.rs",
+      "before": "WHEN json_type(data,'$.step') IS NOT 'integer' THEN 1",
+      "after": "WHEN json_type(data,'$.step') IS NOT 'integer' THEN 0",
+      "witness": "presentation::unclassifiable_prior_capture_cannot_disappear_from_the_step_budget",
+      "law": "Unclassifiable prior captures are corrupt evidence, not absent",
+      "crate": "grapt-store",
+      "target": "remote_mailbox"
+    },
+    {
+      "id": "NMC17",
+      "path": "crates/grapt-store/src/write/event_log.rs",
+      "before": "        if input.kind_name == \"session.mail.presented\" {\n            return Err(WriteError::RemoteMailbox {",
+      "after": "        if input.kind_name == \"session.mail.presented\" && false {\n            return Err(WriteError::RemoteMailbox {",
+      "witness": "presentation::public_generic_append_cannot_bypass_atomic_mail_capture",
+      "law": "Public generic appends cannot bypass the atomic capture owner",
+      "crate": "grapt-store",
+      "target": "remote_mailbox"
+    },
+    {
+      "id": "NMC18",
+      "path": "crates/grapt-runtime/src/mailbox/remote/presentation.rs",
+      "before": "if content.len().saturating_add(needed) > byte_room {",
+      "after": "if content.len().saturating_add(needed) > byte_room && false {",
+      "witness": "mailbox::remote::tests::notification_byte_overflow_remains_unconsumed_pending",
+      "law": "Overflow remains pending inside the per-Step byte budget",
+      "crate": "grapt-runtime",
+      "target": "lib"
+    },
+    {
+      "id": "NMC19",
+      "path": "crates/grapt-runtime/src/mailbox/remote/presentation.rs",
+      "before": "if references.len() == room {",
+      "after": "if references.len() > room {",
+      "witness": "mailbox::remote::tests::notification_batch_is_stable_unconsumed_and_bounded_with_overflow_pending",
+      "law": "A notification batch contains at most eight current admissions",
+      "crate": "grapt-runtime",
+      "target": "lib"
+    },
+    {
+      "id": "NMC20",
+      "path": "crates/grapt-runtime/src/mailbox/remote/presentation.rs",
+      "before": "if self.step != step {",
+      "after": "if self.step != step && false {",
+      "witness": "mailbox::remote::tests::notification_batch_is_stable_unconsumed_and_bounded_with_overflow_pending",
+      "law": "A sealed batch cannot be captured under another Step",
+      "crate": "grapt-runtime",
+      "target": "lib"
+    },
+    {
+      "id": "NMC21",
+      "path": "crates/grapt-product/src/dogfood/continuation/mail.rs",
+      "before": "AND seq<?6",
+      "after": "AND (?6 IS NOT NULL)",
+      "witness": "dogfood::continuation::tests::mail::mail_capture_honors_context_window_and_later_user_ceiling",
+      "law": "Later user mail never enters an earlier input's canonical window",
+      "crate": "grapt-product",
+      "target": "lib"
+    },
+    {
+      "id": "NMC22",
+      "path": "crates/grapt-product/src/dogfood/continuation.rs",
+      "before": "mail::rows(inbox.store(), &self.session, from, until, ceiling)? {",
+      "after": "mail::rows(inbox.store(), &self.session, from, until, ceiling)?.into_iter().take(0) {",
+      "witness": "dogfood::continuation::tests::mail::captured_mail_replays_after_tool_results_with_stable_prior_input",
+      "law": "Captured mail must replay once at its real event sequence after tool results",
+      "crate": "grapt-product",
+      "target": "lib"
+    },
+    {
+      "id": "NMC23",
+      "path": "crates/grapt-product/src/dogfood/continuation/mail.rs",
+      "before": ".map_err(|e| format!(\"captured mail history is unreadable: {e}\"))?;",
+      "after": ".unwrap_or_default();",
+      "witness": "dogfood::continuation::tests::mail::corrupt_captured_body_refuses_continuation_without_silent_omission",
+      "law": "Missing canonical bodies refuse continuation rather than silently disappearing",
+      "crate": "grapt-product",
+      "target": "lib"
+    }
+  ]
+}

@@ -1,0 +1,1 @@
+| `crates/secode-product/src/dogfood/tools/codemode.rs` (`definition`) | OpenAI Codex, `codex-rs/core/src/tools/handlers/tool_search_spec.rs` and `codex-rs/core/src/tools/code_mode/tool_definitions.rs` | `bb64b894fd67158be0f874872e6d7bfe717e7368` | **Modified:** fixed CodeMode discovery shell; schemas returned only through bounded guest metadata queries. |

@@ -1,0 +1,61 @@
+{
+  "prefix": "QCU",
+  "mutations": [
+    {
+      "id": "QCU101",
+      "old": "    if entry[\"red\"].get(\"command\", [None])[0] != artifact[\"path\"]:",
+      "new": "    if False:  # QCU101 resurrects an unbound executed binary",
+      "test": "test_stale_executable_path_refuses",
+      "expected_diagnostic": "CustodyError not raised"
+    },
+    {
+      "id": "QCU102",
+      "old": "    if observed is not False:",
+      "new": "    if False:  # QCU102 drops source-change evidence",
+      "test": "test_source_changed_during_run_refuses",
+      "expected_diagnostic": "CustodyError not raised"
+    },
+    {
+      "id": "QCU103",
+      "old": "    if not isinstance(entry[\"diagnostic\"], str) or declared not in entry[\"diagnostic\"]:",
+      "new": "    if False:  # QCU103 scores a wrong mutant diagnostic",
+      "test": "test_wrong_mutant_diagnostic_refuses",
+      "expected_diagnostic": "CustodyError not raised"
+    },
+    {
+      "id": "QCU104",
+      "old": "        if not isinstance(declared, str) or Path(declared).resolve() != expected:",
+      "new": "        if False:  # QCU104 accepts a compiler row for another test target",
+      "test": "test_compiler_json_selects_exact_artifact",
+      "expected_diagnostic": "expected one exact compiler artifact"
+    },
+    {
+      "id": "QCU105",
+      "old": "    if row.get(\"executable\") != artifact[\"path\"]:",
+      "new": "    if False:  # QCU105 discards Cargo's executable identity",
+      "test": "test_compiler_row_executable_mismatch_refuses",
+      "expected_diagnostic": "CustodyError not raised"
+    },
+    {
+      "id": "QCU106",
+      "old": "    if not isinstance(row, dict) or row.get(\"reason\") != \"compiler-artifact\":",
+      "new": "    if False:  # QCU106 accepts a non-artifact Cargo row",
+      "test": "test_compiler_row_reason_refuses",
+      "expected_diagnostic": "CustodyError not raised"
+    },
+    {
+      "id": "QCU107",
+      "old": "    if observed is not False:",
+      "new": "    if observed:  # QCU107 scores an unknown source observation as unchanged",
+      "test": "test_unknown_source_observation_refuses_at_both_levels",
+      "expected_diagnostic": "CustodyError not raised"
+    },
+    {
+      "id": "QCU108",
+      "old": "    declared = row.get(\"expected_diagnostic\")",
+      "new": "    declared = entry[\"expected_diagnostic\"]  # QCU108 trusts the receipt's own expectation",
+      "test": "test_receipt_expectation_is_bound_to_the_pinned_manifest_row",
+      "expected_diagnostic": "CustodyError not raised"
+    }
+  ]
+}

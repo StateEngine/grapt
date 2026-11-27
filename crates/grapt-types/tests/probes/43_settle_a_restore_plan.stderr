@@ -1,0 +1,29 @@
+error[E0599]: no associated function or constant named `settle` found for struct `SettledRestorePlan` in the current scope
+  --> tests/probes/43_settle_a_restore_plan.rs:20:37
+   |
+20 |     let _plan = SettledRestorePlan::settle(todo!(), todo!());
+   |                                     ^^^^^^ associated function or constant not found in `SettledRestorePlan`
+   |
+note: if you're trying to build a new `SettledRestorePlan`, consider using `SettledRestorePlan::settle_at_provider_boundary` which returns `Option<SettledRestorePlan>`
+  --> src/checkpoint/restore_plan.rs
+   |
+   | /     pub fn settle_at_provider_boundary(
+   | |         parts: SettledRestorePlanParts,
+   | |         authorities: &DeterministicAuthorities<'_>,
+   | |     ) -> Option<Self> {
+   | |_____________________^
+help: there is a method `settled_at` with a similar name, but with different arguments
+  --> src/checkpoint/restore_plan.rs
+   |
+   |     pub fn settled_at(&self) -> Timestamp {
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unreachable expression
+  --> tests/probes/43_settle_a_restore_plan.rs:20:53
+   |
+20 |     let _plan = SettledRestorePlan::settle(todo!(), todo!());
+   |                                            -------  ^^^^^^^ unreachable expression
+   |                                            |
+   |                                            any code following this expression is unreachable
+   |
+   = note: `#[warn(unreachable_code)]` (part of `#[warn(unused)]`) on by default

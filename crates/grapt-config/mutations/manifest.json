@@ -1,0 +1,169 @@
+{
+  "purpose": "IA0-2 U1a evidence for the `grapt-config` decoder. IGC is exclusively U1a's prefix; IGL is exclusively reserved for future U1b. The rows present here are exactly IGC07-IGC13 and IGC24-IGC31; no absent IGC id is assigned to any other unit. IGC07 and IGC12 pin two of the four deliberate departures from `jsonc-parser`; IGC26 pins the third and IGC10, IGC24 and IGC25 pin the fourth at each of its three surrogate arms, separately, each driven by its own isolated witness. IGC08, IGC09 and IGC11 pin the three bounds, and IGC31 pins the ORDER of the node charge rather than its presence. IGC13 pins the one law that lives in the value tree rather than in the decoder: a key bound to null is PRESENT. IGC28 and IGC29 pin secret containment at its two sites - the redaction marker and the path renderer - because the same law at a second call site is a second unwitnessed guard. IGC30 pins that duplicate detection covers the whole object. IGC27 is scored through a compile-fail probe: adding Default to the bound macro makes the probe compile and the trybuild test red.",
+  "run": "python crates/grapt-config/mutations/run.py",
+  "prefix": "IGC",
+  "isolation": "Every mutation is applied inside its own disposable git worktree checked out at the exact candidate commit. No mutant is ever written into the calling worktree, so there is no restore step that could leave a stale build behind.",
+  "scope_note": "IGC09 points at `the_depth_bound_refuses_a_document_that_merely_exceeds_it` rather than at the hostile 10,000-deep witness beside it. Deleting the depth check makes the hostile document overflow the stack and abort the test process, which this harness scores as NO TEST RAN rather than as a red witness; a law whose only witness dies that way is unwitnessed. The hostile case stays because its passing is what proves the check runs before the descent. IGC13's witness lives in `jsonc_strictness` because U1a has no ledger; `ConfigValue::defines` reaches the same `get` the mutant edits. IGC30's mutant is a WINDOWED membership check rather than a restored linear rescan. The rescan is quadratic, so its mutant would not fail a test - it would hang one, and a hang scores as NO TEST RAN. The windowed check is the plausible wrong 'bounded' fix and it fails fast on a far-apart duplicate. The earlier claim that the empty-key refusal and the absent Default could not be scored was wrong on both counts and is withdrawn: IGC26 and IGC27 score them. IGC07's anchor was RE-PINNED after H4 rewrote the block it quoted. The row's law, its `new` and its witness are byte-unchanged; only the snippet it matches moved. The runner's own preflight caught it as SNIPPET NOT FOUND before any worktree was built, which is what that check exists for: a rotted anchor witnesses nothing and is indistinguishable from a survivor at the end of a run.",
+  "mutations": [
+    {
+      "id": "IGC07",
+      "law": "A duplicate object key is refused; jsonc-parser keeps the last silently and never tells the author the first line does nothing",
+      "package": "grapt-config",
+      "file": "crates/grapt-config/src/jsonc.rs",
+      "test": "jsonc_strictness::a_duplicate_object_key_is_refused_rather_than_last_wins",
+      "test_target": "integration",
+      "old": "            if !seen.insert(raw_key.clone()) {\n                self.pos = key_start;\n                return Err(self.error(\n                    JsoncErrorKind::DuplicateKey {\n                        key: Redacted::of(raw_key),\n                    },\n                    path,\n                ));\n            }",
+      "new": ""
+    },
+    {
+      "id": "IGC08",
+      "law": "The document byte bound is checked FIRST, against the raw bytes, before UTF-8 validation allocates anything",
+      "package": "grapt-config",
+      "file": "crates/grapt-config/src/jsonc.rs",
+      "test": "jsonc_strictness::the_byte_bound_is_checked_before_decoding_and_names_both_numbers",
+      "test_target": "integration",
+      "old": "    let byte_bound = bounds.document_bytes().value();\n    if raw.len() > byte_bound {\n        return Err(JsoncError {\n            kind: JsoncErrorKind::DocumentTooLarge {\n                actual: raw.len(),\n                bound: byte_bound,\n            },\n            path: ValuePath::root(),\n            offset: byte_bound,\n        });\n    }",
+      "new": ""
+    },
+    {
+      "id": "IGC09",
+      "law": "The value-nesting bound is checked BEFORE descending, so a hostile document refuses instead of exhausting the stack",
+      "package": "grapt-config",
+      "file": "crates/grapt-config/src/jsonc.rs",
+      "test": "jsonc_strictness::the_depth_bound_refuses_a_document_that_merely_exceeds_it",
+      "test_target": "integration",
+      "old": "        if depth > self.bounds.value_depth().value() {\n            return Err(self.error(\n                JsoncErrorKind::DepthExceeded {\n                    bound: self.bounds.value_depth().value(),\n                },\n                path,\n            ));\n        }",
+      "new": ""
+    },
+    {
+      "id": "IGC10",
+      "law": "An UNPAIRED HIGH surrogate is refused and never becomes U+FFFD; silent replacement would let a truncated credential-bearing value decode into something that looks fine",
+      "package": "grapt-config",
+      "file": "crates/grapt-config/src/jsonc.rs",
+      "test": "jsonc_strictness::an_unpaired_high_surrogate_never_becomes_a_replacement_character",
+      "test_target": "integration",
+      "old": "            if self.peek() != Some(b'\\\\') || self.bytes.get(self.pos + 1) != Some(&b'u') {\n                return Err(self.error(JsoncErrorKind::LoneSurrogate, path));\n            }",
+      "new": "            if self.peek() != Some(b'\\\\') || self.bytes.get(self.pos + 1) != Some(&b'u') {\n                return Ok('\\u{FFFD}');\n            }"
+    },
+    {
+      "id": "IGC11",
+      "law": "The document node bound is enforced as nodes are produced, because byte length does not bound node count",
+      "package": "grapt-config",
+      "file": "crates/grapt-config/src/jsonc.rs",
+      "test": "jsonc_strictness::the_node_bound_refuses_a_document_that_is_small_in_bytes_and_large_in_nodes",
+      "test_target": "integration",
+      "old": "        self.nodes += 1;\n        if self.nodes > self.bounds.document_nodes().value() {",
+      "new": "        self.nodes += 1;\n        if false && self.nodes > self.bounds.document_nodes().value() {"
+    },
+    {
+      "id": "IGC12",
+      "law": "Trailing content after the root value is refused; a second document appended to the first is not a longer document",
+      "package": "grapt-config",
+      "file": "crates/grapt-config/src/jsonc.rs",
+      "test": "jsonc_strictness::trailing_content_after_the_root_value_is_refused",
+      "test_target": "integration",
+      "old": "    if decoder.pos < decoder.bytes.len() {\n        return Err(JsoncError {\n            kind: JsoncErrorKind::TrailingContent,\n            path: ValuePath::root(),\n            offset: decoder.pos,\n        });\n    }",
+      "new": ""
+    },
+    {
+      "id": "IGC13",
+      "law": "A key bound to null is PRESENT: missing and explicit null are distinct states under the ratified codec law",
+      "package": "grapt-config",
+      "file": "crates/grapt-config/src/document.rs",
+      "test": "jsonc_strictness::an_explicit_null_is_a_present_value_and_not_an_absence",
+      "test_target": "integration",
+      "old": "            ConfigValue::Object(entries) => entries\n                .iter()\n                .find(|(k, _)| k.value().as_str() == key)\n                .map(|(_, v)| v),",
+      "new": "            ConfigValue::Object(entries) => entries\n                .iter()\n                .find(|(k, v)| {\n                    k.value().as_str() == key && !matches!(v.value(), ConfigValue::Null)\n                })\n                .map(|(_, v)| v),"
+    },
+    {
+      "id": "IGC24",
+      "law": "A high surrogate followed by something that is not a low surrogate is refused; every surrogate arm needs a witness that DRIVES it",
+      "package": "grapt-config",
+      "file": "crates/grapt-config/src/jsonc.rs",
+      "test": "jsonc_strictness::a_high_surrogate_followed_by_a_non_low_surrogate_is_refused",
+      "test_target": "integration",
+      "old": "            if !(0xDC00..0xE000).contains(&second) {\n                return Err(self.error(JsoncErrorKind::LoneSurrogate, path));\n            }",
+      "new": "            if !(0xDC00..0xE000).contains(&second) {\n                return Ok('\\u{FFFD}');\n            }"
+    },
+    {
+      "id": "IGC25",
+      "law": "A BARE LOW surrogate is refused; this is the arm whose first mutant scored GREEN because no witness drove it",
+      "package": "grapt-config",
+      "file": "crates/grapt-config/src/jsonc.rs",
+      "test": "jsonc_strictness::a_bare_low_surrogate_never_becomes_a_replacement_character",
+      "test_target": "integration",
+      "old": "        if (0xDC00..0xE000).contains(&first) {\n            return Err(self.error(JsoncErrorKind::LoneSurrogate, path));\n        }",
+      "new": "        if (0xDC00..0xE000).contains(&first) {\n            return Ok('\\u{FFFD}');\n        }"
+    },
+    {
+      "id": "IGC26",
+      "law": "The empty object key is refused; a key that cannot be named cannot be resolved by name",
+      "package": "grapt-config",
+      "file": "crates/grapt-config/src/document.rs",
+      "test": "jsonc_strictness::the_empty_object_key_is_refused",
+      "test_target": "integration",
+      "old": "        let raw = raw.into();\n        if raw.is_empty() {\n            None\n        } else {\n            Some(Self(raw))\n        }",
+      "new": "        Some(Self(raw.into()))"
+    },
+    {
+      "id": "IGC27",
+      "law": "No bound type implements Default; a bound is a number somebody decided, not one nobody did",
+      "package": "grapt-config",
+      "file": "crates/grapt-config/src/bounds.rs",
+      "test": "config_probes_are_rejected_by_the_compiler",
+      "test_target": "compile_fail",
+      "old": "        $(#[doc = $doc])+\n        #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]\n        pub struct $name(usize);",
+      "new": "        $(#[doc = $doc])+\n        #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord)]\n        pub struct $name(usize);"
+    },
+    {
+      "id": "IGC28",
+      "law": "A redacted fragment renders as a marker and never as the authored bytes it carries",
+      "package": "grapt-config",
+      "file": "crates/grapt-config/src/document.rs",
+      "test": "secret_containment::no_public_rendering_of_a_decode_failure_reveals_authored_bytes",
+      "test_target": "integration",
+      "old": "impl fmt::Display for Redacted {\n    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {\n        f.write_str(\"<redacted>\")\n    }\n}",
+      "new": "impl fmt::Display for Redacted {\n    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {\n        f.write_str(&self.0)\n    }\n}"
+    },
+    {
+      "id": "IGC29",
+      "law": "A key path segment renders as its ordinal; the authored key name never crosses a public rendering",
+      "package": "grapt-config",
+      "file": "crates/grapt-config/src/document.rs",
+      "test": "secret_containment::a_redacted_path_still_locates_the_failure_by_ordinal_and_offset",
+      "test_target": "integration",
+      "old": "                PathSegment::Key { ordinal, .. } => {\n                    out.push_str(\".#\");\n                    out.push_str(&ordinal.to_string());\n                }",
+      "new": "                PathSegment::Key { name, .. } => {\n                    out.push('.');\n                    out.push_str(&name.0);\n                }"
+    },
+    {
+      "id": "IGC30",
+      "law": "Duplicate detection covers the WHOLE object; a bounded-but-windowed check is incomplete, not cheap",
+      "package": "grapt-config",
+      "file": "crates/grapt-config/src/jsonc.rs",
+      "test": "jsonc_strictness::a_duplicate_is_caught_however_far_it_sits_from_its_twin",
+      "test_target": "integration",
+      "old": "            if !seen.insert(raw_key.clone()) {",
+      "new": "            if entries.len() > 8 {\n                seen.clear();\n            }\n            if !seen.insert(raw_key.clone()) {"
+    },
+    {
+      "id": "IGC31",
+      "law": "The node bound is charged BEFORE a scalar is constructed, so a document cannot build past the limit and only then be rejected",
+      "package": "grapt-config",
+      "file": "crates/grapt-config/src/jsonc.rs",
+      "test": "jsonc_strictness::the_node_charge_lands_before_the_offending_value_is_consumed",
+      "test_target": "integration",
+      "old": "        if !matches!(byte, b'{' | b'[') {\n            self.count_node(path)?;\n        }\n        let value = match byte {",
+      "new": "        let value = match byte {"
+    },
+    {
+      "id": "IGC32",
+      "law": "The public ConfigKey Debug renders shape only; an authored key may itself be secret and must not reach a trace",
+      "package": "grapt-config",
+      "file": "crates/grapt-config/src/document.rs",
+      "test": "secret_containment::direct_debug_of_a_public_config_key_reveals_no_authored_bytes",
+      "test_target": "integration",
+      "old": "        f.write_str(\"ConfigKey(<redacted>)\")",
+      "new": "        write!(f, \"ConfigKey({})\", self.0)"
+    }
+  ]
+}

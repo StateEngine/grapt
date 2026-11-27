@@ -1,0 +1,26 @@
+[package]
+name = "grapt-config"
+autotests = false
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+description = "Strict, bounded JSONC decoding for user-authored configuration, bounded source custody for locating the documents to decode, and the ledger, ordered contribution, provenance and effective-authority bridge built on them: exact byte spans, structured value paths, typed refusals, deterministic discovery slots, slot-derived ranks, per-contribution provenance, a structural complete/incomplete boundary and keyed ConfigLayer minting. Contributions are reported in precedence order and never merged: folding them into one effective value per setting belongs to the later policy/domain fold. U1a, U1b1 and U1b2a of the IA0-2 configuration lane."
+
+[[test]]
+name = "integration"
+path = "tests/integration/main.rs"
+
+# Trybuild probes keep their own harness.
+[[test]]
+name = "compile_fail"
+path = "tests/compile_fail.rs"
+
+[dependencies]
+grapt-policy = { path = "../grapt-policy" }
+thiserror = "2"
+
+[dev-dependencies]
+trybuild = "1.0.120"
+
+[lints]
+workspace = true

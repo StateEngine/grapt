@@ -1,0 +1,23 @@
+error[E0599]: no associated function or constant named `new` found for struct `SessionGrant` in the current scope
+  --> tests/probes/02_persist_session_grant.rs:26:33
+   |
+26 |     let _by_new = SessionGrant::new(session.clone(), capability.clone());
+   |                                 ^^^ associated function or constant not found in `SessionGrant`
+   |
+note: if you're trying to build a new `SessionGrant`, consider using `SessionGrant::from_live` which returns `Option<SessionGrant>`
+  --> src/capability.rs
+   |
+   |     pub fn from_live(decision: &crate::authority::LivePermissionDecision) -> Option<SessionGrant> {
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error[E0599]: no associated function or constant named `mint` found for struct `SessionGrant` in the current scope
+  --> tests/probes/02_persist_session_grant.rs:27:34
+   |
+27 |     let _by_mint = SessionGrant::mint(session, capability);
+   |                                  ^^^^ associated function or constant not found in `SessionGrant`
+   |
+note: if you're trying to build a new `SessionGrant`, consider using `SessionGrant::from_live` which returns `Option<SessionGrant>`
+  --> src/capability.rs
+   |
+   |     pub fn from_live(decision: &crate::authority::LivePermissionDecision) -> Option<SessionGrant> {
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

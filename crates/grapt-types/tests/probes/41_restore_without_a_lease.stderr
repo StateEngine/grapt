@@ -1,0 +1,15 @@
+error[E0061]: this method takes 4 arguments but 3 arguments were supplied
+  --> tests/probes/41_restore_without_a_lease.rs:32:10
+   |
+32 |     plan.apply(rescue, preconditions, authorities)
+   |          ^^^^^                        ----------- argument #3 of type `CheckpointRestoreAuthorityLease` is missing
+   |
+note: method defined here
+  --> src/checkpoint/restore_admission.rs
+   |
+   |     pub fn apply(
+   |            ^^^^^
+help: provide the argument
+   |
+32 |     plan.apply(rescue, preconditions, /* CheckpointRestoreAuthorityLease */, authorities)
+   |                                       ++++++++++++++++++++++++++++++++++++++

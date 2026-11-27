@@ -1,0 +1,47 @@
+{
+  "schema_version": 1,
+  "id": "event-stream-replay-cursor-loss-window",
+  "title": "Capture loss window: the volatile event stream cannot replay committed events",
+  "campaign": "EVENT-STREAM-REPLAY-CURSOR-01",
+  "journey": "J01",
+  "base": {
+    "repository": "secode-rust",
+    "branch": "event-replay-cursor",
+    "commit": "a03e494c1c5dfec142a9b821b192fb28c808431b",
+    "note": "Reproduced at the accepted base before any code change, per the charter. This scenario is engine-derived at the Rust base, not an oracle receipt: the defect under test is the absence of a replay cursor, which no oracle run can emit."
+  },
+  "scope": {
+    "preserves": [
+      "bounded volatile SSE fan-out: a slow subscriber that overflows receives the sticky typed refusal, and even frames admitted to the bounded queue are discarded, never replayed",
+      "events published while a subscriber is absent reach no queue and never appear on any stream again",
+      "a reconnect yields only the connection frame and publishes from that moment on",
+      "protocol-v2 frame grammar: no SSE id, no retry field, event: message / data: only"
+    ],
+    "intentionally_excludes": [
+      "the durable store: the committed rows of the missed events and their bounded cursor recovery are the J02 contract",
+      "location/interest filtering: the host subscription uses the absent interest, so every frame reaches it; the location binding of the replay cursor is the J03 contract",
+      "wall-clock timing: the scenario is deterministic frame order with no timers, ambient clock or randomness"
+    ]
+  },
+  "determinism": {
+    "identifiers": "Event ids are fixture-supplied (evt_*); this event kind carries no engine-minted timestamp on the wire.",
+    "network": "No network or provider process is exercised; the hub is in-process."
+  },
+  "paths": {
+    "actions": "actions.jsonl",
+    "expected": {
+      "stream": "expected/stream-observation.json"
+    }
+  },
+  "record_contracts": {
+    "actions": "Ordered hub operations (subscribe, publish, read, reconcile) each with the observable frame or typed receipt it must produce. Operations are the hub's public surface (subscribe_host, publish, next_frame, reconcile), not private internals.",
+    "stream": "The exact frame multiset each subscriber observes, its terminal outcome, and the missed-event markers proven absent from every stream."
+  },
+  "evidence": [
+    {
+      "path": "crates/grapt-api/tests/loss_window.rs",
+      "test": "a_lost_subscriber_never_receives_the_missed_events_through_the_stream",
+      "claim": "Executed at the accepted base: the loss window reproduces, and the volatile stream alone cannot replay the missed events."
+    }
+  ]
+}

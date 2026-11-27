@@ -1,0 +1,11 @@
+error[E0382]: use of moved value: `prepared`
+  --> tests/probes/01_rollback_after_commit.rs:59:24
+   |
+52 |     let prepared = controller.prepare(&discovered, &candidate)?;
+   |         -------- move occurs because `prepared` has type `PreparedCandidate`, which does not implement the `Copy` trait
+...
+55 |     let _receipt = controller.commit(prepared, Retirement::NoIncumbent)?;
+   |                                      -------- value moved here
+...
+59 |     let _rolled_back = prepared.rollback();
+   |                        ^^^^^^^^ value used here after move

@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "field_labels": ["input", "output", "reasoning", "cache.read", "cache.write"],
+  "field_count": 5,
+  "max_exact_token_count": "9007199254740992",
+  "totals": {
+    "actions": 37,
+    "notes": 1,
+    "accepted": 15,
+    "refused": 21
+  },
+  "refusals_by_error": {
+    "above-exact-bound": 2,
+    "field-absent": 5,
+    "field-not-carriable": 1,
+    "negative": 3,
+    "not-finite": 7,
+    "not-integral": 1,
+    "sum-above-exact-bound": 1,
+    "sum-not-finite": 1
+  }
+}

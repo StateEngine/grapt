@@ -1,0 +1,5 @@
+error[E0599]: no associated function or constant named `default` found for struct `ApiHostLimits` in the current scope
+  --> tests/probes/08_host_limits_have_no_default.rs:16:34
+   |
+16 |     let _limits = ApiHostLimits::default();
+   |                                  ^^^^^^^ associated function or constant not found in `ApiHostLimits`

@@ -1,0 +1,20 @@
+error[E0624]: method `push_notice` is private
+  --> tests/probes/03_notice_pushed_into_an_open_transaction.rs:18:8
+   |
+18 |     tx.push_notice(loop {});
+   |        ^^^^^^^^^^^ private method
+   |
+  ::: src/governed.rs
+   |
+   |     pub(crate) fn push_notice(&self, notice: DurableNotice) {
+   |     ------------------------------------------------------- private method defined here
+
+warning: unreachable call
+  --> tests/probes/03_notice_pushed_into_an_open_transaction.rs:18:8
+   |
+18 |     tx.push_notice(loop {});
+   |        ^^^^^^^^^^^ ------- any code following this expression is unreachable
+   |        |
+   |        unreachable call
+   |
+   = note: `#[warn(unreachable_code)]` (part of `#[warn(unused)]`) on by default

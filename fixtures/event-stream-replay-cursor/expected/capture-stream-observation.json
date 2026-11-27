@@ -1,0 +1,39 @@
+{
+  "all_interest_stream": {
+    "presented_frames": [
+      "evt_ses_a_1",
+      "evt_ses_b_1"
+    ],
+    "fenced_never_presented": [
+      "live evt_ses_b_1 committed at the replay-to-live crossover",
+      "the re-served fenced row on the reconnect page"
+    ],
+    "cursor_token": "minted every 64 presented rows as a capture.cursor frame, sealed at the last presented coordinates; the next row follows the token",
+    "terminal": "named reason, minted cursor holding exactly the presented coordinates, body EOF",
+    "reconnect": "the connected frame names the opening token; presentation resumes strictly after the fence"
+  },
+  "location_stream": {
+    "interest_echoed": {
+      "directory": "/work/one"
+    },
+    "presented_frames": [
+      "evt_ses_l_1",
+      "evt_ses_l_2"
+    ],
+    "never_reached": [
+      "evt_ses_l_3 (scoped to /work/two)",
+      "evt_ses_l_4 (unscoped)"
+    ],
+    "terminal": "minted cursor holds only (ses_l, 2): the coordinates this interest honestly served"
+  },
+  "restart": "the second run presents the same coordinates in the same order as the first",
+  "refusals": {
+    "unauthenticated": "401 before any store page call",
+    "malformed_query": "400 before any stream",
+    "malformed_cursor": "400 before any store page call",
+    "wrong_version_cursor": "400 before any store page call",
+    "wrong_location_cursor": "409 before any store page call",
+    "refused_first_page": "future coordinate and stale aggregate answer 409; corrupt row and unreadable store answer 503"
+  },
+  "assertion": "Exactly-once presentation holds at the crossover, on the token boundary and across a reconnect: a coordinate at or below the held fence is fenced whether it arrives as a concurrent live frame or a re-served page row. The crossover is gap-free: no frame committed between pages is lost. Location isolation is enforced in the store read and in the live fan-out. Every refusal is typed and precedes stream and store work; absent is never reported as unreadable and vice versa."
+}

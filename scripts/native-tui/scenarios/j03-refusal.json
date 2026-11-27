@@ -1,0 +1,223 @@
+{
+  "name": "J03 counterexample - a refused approval writes nothing",
+  "about": [
+    "J03 counterexample - a REFUSED approval writes nothing, and leaves nothing",
+    "pending.",
+    "",
+    "PURPOSE. The positive journey shows that an allowed tool runs. Alone that",
+    "cannot distinguish a client that asks properly from one whose prompt is",
+    "decorative and whose tool runs regardless. This is the other half.",
+    "",
+    "Refusal uses each client's own binding: native binds r to reject in its",
+    "permission pane; the retained Prompt declares its escape key as reject, so",
+    "Escape selects Reject there rather than a key this scenario invented.",
+    "",
+    "THE FILE MUST BE MISSING, not merely lacking a marker. missing is the",
+    "strict claim that nothing was written, so a refusal that wrote DIFFERENT",
+    "bytes cannot pass it. Asserted before the prompt and again after the",
+    "refusal.",
+    "",
+    "THE REFUSED CALL MUST REACH A TERMINAL, and the two clients can prove that to",
+    "different depths. Say which is which rather than averaging them.",
+    "",
+    "Native renders `tool shell error`, which IS a settled outcome, so the native",
+    "assertion names the terminal form. Asserting the bare tool name plus the",
+    "ABSENCE of `running` was weaker than it looked: a blank or still-updating view",
+    "satisfies an absence.",
+    "",
+    "THE RETAINED VERB IS NOT A TERMINAL DISCRIMINATOR and is not used as one.",
+    "`index.tsx:2867` picks `Running` only while running, and otherwise `Ran`",
+    "whenever a command has parsed at all - and `:2870` keeps the spinner for",
+    "`status === \"streaming\"`. So a STREAMING call with a parsed command already",
+    "reads `Ran`. The retained step therefore establishes that the row and its",
+    "command are DISPLAYED, nothing more; settlement on that side is established",
+    "by correlating the durable tool call - session, call id and exact target -",
+    "against its error terminal after the run, and is reported as such.",
+    "",
+    "A step SKIPPED for a client proves nothing about that client. An earlier",
+    "receipt reported this journey as passing on both clients when the positive",
+    "step was native-only; that was an overstatement and is not repeated.",
+    "",
+    "The in-flight forms must ALSO be gone, which is the no-pending-waiter half.",
+    "That terminal is awaited BEFORE the no-effect claim is concluded, rather",
+    "than sampled while the tool might still be starting.",
+    "The filename and marker differ from the positive journey's so the two can",
+    "never satisfy each other, and each client is checked in its own recorded",
+    "effect_root.",
+    "",
+    "WHAT CARRIES THE REFUSAL ON THE RETAINED SIDE, since a review named this as",
+    "a checkable suspect: NOT the token `Ran`. That is the identical token a",
+    "SUCCESSFUL shell draws in j03-approval, because the retained client marks a",
+    "denied tool with strikethrough styling rather than with different words —",
+    "checked in its own renderer, not assumed. `Ran` here proves only that a",
+    "settled shell row exists.",
+    "",
+    "The refusal is carried by the two steps after it: `Running` must be ABSENT,",
+    "so the call settled rather than still going, and `j03-refused.txt` must",
+    "still be MISSING. That last one is an effect on disk, outside both clients",
+    "and unforgeable by either — no amount of fluent output creates a file. A",
+    "reader checking whether this scenario can tell a refusal from a success",
+    "should look there and not at `Ran`."
+  ],
+  "steps": [
+    {
+      "expect": {
+        "native": "PROJECTS",
+        "retained": "Select a project"
+      },
+      "polls": 240
+    },
+    {
+      "capture": "the opening screen"
+    },
+    {
+      "key": {
+        "native": "Enter",
+        "retained": "i"
+      }
+    },
+    {
+      "expect": {
+        "native": "AGENTS",
+        "retained": "ctrl+x tab agents"
+      },
+      "polls": 240
+    },
+    {
+      "capture": "after choosing where to work"
+    },
+    {
+      "key": {
+        "native": "Enter",
+        "retained": "Enter"
+      }
+    },
+    {
+      "expect": {
+        "native": "MODELS"
+      },
+      "polls": 240
+    },
+    {
+      "paste": {
+        "native": "Sol"
+      }
+    },
+    {
+      "expect": {
+        "native": "Sol"
+      },
+      "polls": 240
+    },
+    {
+      "capture": "the model choice, where the two clients differ most"
+    },
+    {
+      "key": {
+        "native": "Enter"
+      }
+    },
+    {
+      "expect": {
+        "native": "model openai/GPT-5.6 Sol"
+      },
+      "polls": 240
+    },
+    {
+      "key": {
+        "native": "n"
+      }
+    },
+    {
+      "expect": {
+        "native": "TRANSCRIPT"
+      },
+      "polls": 240
+    },
+    {
+      "effect": {
+        "native": {
+          "path": "j03-refused.txt",
+          "missing": true
+        },
+        "retained": {
+          "path": "j03-refused.txt",
+          "missing": true
+        }
+      },
+      "polls": 120
+    },
+    {
+      "absent": {
+        "native": "PERMISSION",
+        "retained": "Allow once"
+      },
+      "polls": 240
+    },
+    {
+      "paste": "Use the shell tool to run exactly this command and nothing else: echo NEVERWRITTEN> j03-refused.txt"
+    },
+    {
+      "key": "Enter"
+    },
+    {
+      "expect": {
+        "native": "PERMISSION",
+        "retained": "Allow once"
+      },
+      "polls": 960
+    },
+    {
+      "capture": "the ask, before it is refused"
+    },
+    {
+      "key": {
+        "native": "r",
+        "retained": "Escape"
+      }
+    },
+    {
+      "absent": {
+        "native": "PERMISSION",
+        "retained": "Allow once"
+      },
+      "polls": 480
+    },
+    {
+      "expect": {
+        "native": "tool shell error",
+        "retained": "Ran"
+      },
+      "polls": 960
+    },
+    {
+      "absent": {
+        "native": "tool shell running",
+        "retained": "Running"
+      },
+      "polls": 480
+    },
+    {
+      "effect": {
+        "native": {
+          "path": "j03-refused.txt",
+          "missing": true
+        },
+        "retained": {
+          "path": "j03-refused.txt",
+          "missing": true
+        }
+      },
+      "polls": 240
+    },
+    {
+      "capture": "refused, settled, and nothing written"
+    },
+    {
+      "key": {
+        "native": "Control+q",
+        "retained": "Control+c"
+      }
+    }
+  ]
+}

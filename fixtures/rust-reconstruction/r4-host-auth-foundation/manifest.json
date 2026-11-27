@@ -1,0 +1,86 @@
+{
+  "contract": "grapt-location-acceptance-corpus/v1",
+  "schema_version": 1,
+  "id": "r4-host-auth-foundation",
+  "title": "Listener acquisition: fixed bind, ephemeral bind, bind conflict and resolution bound",
+  "lane": "R4H-L",
+  "owning_crate": "grapt-location",
+  "contract_note": "This corpus is NOT one of the two frozen TypeScript-corpus manifest classes. `manifest.schema.json` (full replay) requires initial-state plus api/events/durable/projection/waivers surfaces, and `oracle-receipt-manifest.schema.json` requires a captured durable log, receipt state and waivers. This lane captured none of those, because there is no oracle run to capture: the behaviour is a Rust-only socket boundary. Declaring either schema would name paths that do not exist, which the corpus law forbids. This manifest therefore declares its own bounded contract and is validated by an executable owner inside the crate, not by the TypeScript manifest gate.",
+  "law_conformance": {
+    "basis": "ratified-law-pack",
+    "oracle_status": "not-implemented-in-frozen-typescript-engine",
+    "note": "The frozen TypeScript engine has no listener-acquisition boundary: it owns no typed bind intent, no bind receipt distinguishing requested from observed address, and no resolution bound. Every scenario below is therefore law-conformance evidence for the ratified crate graph row `grapt-location`, not a parity claim against an oracle capture. No oracle commit is named because naming one would assert a comparison that was never run."
+  },
+  "law_pack_note": "No `law_pack` receipt is recorded. The nine ordered law sources and the supersession matrix are not present in this repository, so a hash receipt written here could not be verified by this tree's own executable owner. An unverifiable hash block would be exactly the fabricated receipt the frozen-corpus law forbids. Whether this corpus should later carry a law-pack receipt validated from the Grapt tree remains an open decision.",
+  "scope": {
+    "preserves": [
+      "A fixed bind receives exactly the port it asked for, and the receipt reports the requested host and port alongside the observed address.",
+      "An ephemeral bind keeps its ephemeral intent in the requested port while the receipt records the address the operating system actually assigned.",
+      "A bind against a held address is refused as a typed address-in-use classification naming that address, and the holding listener is left undamaged.",
+      "A resolution larger than its declared bound is refused before any bind is attempted, and the refusal names the resolution bound rather than any bind outcome."
+    ],
+    "intentionally_excludes": [
+      "Production hostname resolution. The production resolver answers every name with a typed capability gap; no name is resolved through the platform.",
+      "Any production bind. Every scenario binds loopback or a documentation-range address; nothing reaches the network.",
+      "Any provider, HTTP route, router, authentication or DTO. This crate acquires a listening socket and owns nothing above it.",
+      "Any fake or pretend listener. Every listener in these scenarios is a real socket; only the name resolver has a deterministic double.",
+      "Accept, connection handling, readiness and health. A bind receipt is not a readiness claim.",
+      "IPv6 and dual-stack behaviour. Every scenario binds IPv4 loopback.",
+      "The port-transfer path that moves an acquired listener into a host. That is an R4H-H row and has no executable owner in this lane."
+    ]
+  },
+  "determinism": {
+    "clock": "No clock is read. No scenario has a timeout, delay or deadline.",
+    "identifiers": "No identifier is minted. Ports are never guessed: where a scenario needs a specific port it first binds ephemerally and reads the port from the receipt, so the value is observed rather than assumed free.",
+    "network": "No network. Scenarios bind IPv4 loopback, or the RFC 5737 TEST-NET-1 documentation range which is never assigned to a host. Name resolution never reaches the platform: the only answers come from a deterministic in-process resolver configured by the scenario itself.",
+    "filesystem": "No filesystem state is read or written."
+  },
+  "paths": {
+    "actions": "actions.jsonl"
+  },
+  "record_contracts": {
+    "actions": "One ordered JSON object per line. `ordinal` is unique and strictly increasing across the whole file. `scenario` names the scenario the record belongs to and must appear in `scenarios`. `kind` is closed over `resolver.configure`, `listener.bind`, `listener.observe-receipt`, `listener.close`, `listener.connect` and `expect.refusal`. Records are the ordered external input plus the deterministic observations the scenario asserts; they are not a captured engine trace."
+  },
+  "scenarios": [
+    {
+      "id": "fixed-bind-receives-requested-port",
+      "title": "A fixed bind receives exactly the port it asked for",
+      "claim": "When a plan names a fixed port, the acquired listener is bound to that exact port and the receipt reports the requested host, the requested port and the observed address together. A receipt that reported only one of the two would be useless at the moment it is consulted.",
+      "evidence": {
+        "path": "crates/grapt-location/tests/listener_contract.rs",
+        "test_target": "listener_contract",
+        "test": "a_fixed_loopback_bind_receives_exactly_the_port_it_asked_for"
+      }
+    },
+    {
+      "id": "ephemeral-bind-observes-assigned-port",
+      "title": "An ephemeral bind observes a real port and keeps the ephemeral intent",
+      "claim": "An ephemeral plan asks the operating system for port zero and the receipt records the non-zero port the system assigned, while the requested port remains ephemeral. The requested and observed fields are separate facts and the receipt never echoes the request in place of the observation.",
+      "evidence": {
+        "path": "crates/grapt-location/tests/listener_contract.rs",
+        "test_target": "listener_contract",
+        "test": "an_ephemeral_bind_observes_a_real_port_and_keeps_the_ephemeral_intent"
+      }
+    },
+    {
+      "id": "bind-conflict-refused-owner-undamaged",
+      "title": "A held port is refused as address-in-use and its owner is undamaged",
+      "claim": "Binding an address that another listener already holds is refused as a typed address-in-use classification naming that exact address, derived from the error kind rather than from operating-system message text. The holding listener survives the refused attempt, proved by completing a TCP connection to it rather than by re-reading its cached receipt.",
+      "evidence": {
+        "path": "crates/grapt-location/tests/listener_contract.rs",
+        "test_target": "listener_contract",
+        "test": "a_held_port_is_refused_as_address_in_use_and_its_owner_is_undamaged"
+      }
+    },
+    {
+      "id": "resolution-bound-refused-before-bind",
+      "title": "A resolution over its bound is refused before any bind is attempted",
+      "claim": "When resolution produces more addresses than the plan's declared resolution bound allows, the attempt is refused with a typed too-many-addresses outcome carrying the produced count and the limit. The refusal names the resolution bound rather than any bind outcome, which is what proves nothing was attempted: every candidate in this scenario is loopback, so a single attempted bind would have succeeded and returned a listener instead.",
+      "evidence": {
+        "path": "crates/grapt-location/tests/listener_contract.rs",
+        "test_target": "listener_contract",
+        "test": "a_resolution_over_its_bound_is_refused_before_any_bind_is_attempted"
+      }
+    }
+  ]
+}

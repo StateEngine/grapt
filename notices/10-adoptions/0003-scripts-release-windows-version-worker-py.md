@@ -1,0 +1,1 @@
+| `scripts/release/windows_version_worker.py` | `openai/codex`, `codex-rs/utils/pty/src/win/job.rs` | `bb64b894fd67158be0f874872e6d7bfe717e7368` | **Modified by Grapt:** version worker joins a bounded kill-on-close Windows job before spawning the payload, without breakaway. Apache-2.0, Copyright 2025 OpenAI; license and NOTICE in `licenses/openai-codex/`. |

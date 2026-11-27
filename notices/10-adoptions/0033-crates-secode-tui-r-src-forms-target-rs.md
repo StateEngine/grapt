@@ -1,0 +1,1 @@
+| `crates/grapt-tui-forms/src/target.rs` | `openai/codex`, `codex-rs/tui/src/bottom_pane/mcp_server_elicitation.rs` | `bb64b894fd67158be0f874872e6d7bfe717e7368` | **Modified by Grapt:** explicit canonical Session or resolved location request identity, without inferred ownership. Apache-2.0, Copyright 2025 OpenAI; license and NOTICE retained in `licenses/openai-codex/`. |

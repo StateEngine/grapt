@@ -1,0 +1,71 @@
+[package]
+name = "grapt-provider"
+version = "0.1.0"
+edition.workspace = true
+license = "MIT OR Apache-2.0"
+description = "Normalized provider-stream vocabulary, its ordering validator, and the ChatGPT/Codex route adapter. Owns the closed AttemptFragment alphabet that adapters emit and the serialized session owner consumes, plus the one governed transport for that route; owns no durable state."
+
+[features]
+default = []
+# Plaintext is admitted only for controlled loopback acceptance. Production
+# builds omit this feature and retain the mechanically witnessed HTTPS-only
+# client construction.
+loopback-testkit = []
+# Scripted providers are a witness adapter, never a production byte source.
+# Dependent-crate tests must opt in by name.
+deterministic-testkit = []
+
+# Every external name below is admitted by the provider dependency policy.
+# `tests/allowed_external_dependencies.rs` is the machine gate over this exact set; adding
+# a name here without amending that gate's ruled list turns it red.
+[dependencies]
+grapt-diagnostics = { path = "../grapt-diagnostics" }
+grapt-types = { path = "../grapt-types" }
+grapt-policy = { path = "../grapt-policy" }
+thiserror = "2"
+# Transport for the ChatGPT/Codex route. `default-features = false` removes
+# `default-tls` (native-tls/OpenSSL/SChannel), `charset` (encoding_rs + mime)
+# and `system-proxy`, which reads ambient proxy configuration the egress
+# capability dimensions are supposed to govern. `stream` is NOT enabled:
+# `Response::chunk` is ungated, so the SSE reader needs neither `futures-util`
+# nor `tokio-util` nor `wasm-streams`. `json` is NOT enabled: bodies are built
+# and read explicitly, never through a permissive derive.
+reqwest = { version = "0.13.4", default-features = false, features = [
+    "rustls-no-provider",
+    "http2",
+] }
+# Use `ring` rather than `aws-lc-rs`. Construct the provider per client and
+# install it into a `ClientConfig`; leave the process-global provider alone.
+rustls = { version = "0.23", default-features = false, features = [
+    "ring",
+    "std",
+    "tls12",
+] }
+rustls-platform-verifier = "0.7"
+serde_json = "1"
+# Provider request binding: private replay binding.
+sha2 = { version = "0.10", default-features = false, features = ["std"] }
+# `time` only: the response-head deadline is `tokio::time::timeout`. No `net`,
+# no `io-util`, no `rt` in the production surface — the adapter spawns nothing.
+tokio = { version = "1", default-features = false, features = ["time"] }
+
+[lints]
+workspace = true
+
+[dev-dependencies]
+# Integration tests do not inherit normal dependencies.
+grapt-types = { path = "../grapt-types" }
+toml = "0.8"
+trybuild = "1.0.120"
+# The loopback fixtures need a runtime, a listener and byte I/O. These features
+# are test-only: production code in this crate uses `tokio::time` and nothing
+# else, which `codex::production_client_surface_uses_only_time` witnesses.
+tokio = { version = "1", default-features = false, features = [
+    "time",
+    "rt",
+    "rt-multi-thread",
+    "macros",
+    "net",
+    "io-util",
+    "test-util",
+] }

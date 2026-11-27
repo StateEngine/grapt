@@ -1,0 +1,1 @@
+| MCP pane controls | `openai/codex`, `codex-rs/tui/src/chatwidget/slash_dispatch.rs`, commit `c465563aa9626d99420062135b187d299f904f81` | Apache-2.0 | Adapts named MCP operator commands to Grapt's bounded asynchronous control lane and existing configuration publication. |

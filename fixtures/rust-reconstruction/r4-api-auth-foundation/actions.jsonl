@@ -1,0 +1,37 @@
+{"ordinal":1,"scenario":"sealed-mapping-mints-principal","actor":"server","kind":"directory.configure","detail":"two subjects, alpha owning seat-alpha and beta owning seat-beta, under a positive mapping bound"}
+{"ordinal":2,"scenario":"sealed-mapping-mints-principal","actor":"boundary","kind":"subject.verify","detail":"the fixture verification route produces a sealed verified subject for alpha"}
+{"ordinal":3,"scenario":"sealed-mapping-mints-principal","actor":"server","kind":"principal.mint","detail":"resolve maps the verified subject to seat-alpha and the client identity issued for alpha at configuration"}
+{"ordinal":4,"scenario":"sealed-mapping-mints-principal","actor":"observer","kind":"principal.observe","detail":"the principal reports recipient seat-alpha, a receipt naming alpha, and the live directory generation"}
+{"ordinal":5,"scenario":"dto-recipient-never-selects","actor":"client","kind":"dto.decode","detail":"a request authenticated as alpha carries recipient seat-beta in its body"}
+{"ordinal":6,"scenario":"dto-recipient-never-selects","actor":"server","kind":"principal.observe","detail":"the principal still reports seat-alpha; the decoded recipient reached no selection"}
+{"ordinal":7,"scenario":"dto-recipient-never-selects","actor":"server","kind":"expect.refusal","detail":"recipient disagreement, raised before any application invocation"}
+{"ordinal":8,"scenario":"dto-recipient-disagreement-refused","actor":"client","kind":"dto.decode","detail":"a request authenticated as alpha carries the agreeing recipient seat-alpha"}
+{"ordinal":9,"scenario":"dto-recipient-disagreement-refused","actor":"server","kind":"expect.refusal","detail":"agreement grants nothing: the request is still refused for want of a capability proof"}
+{"ordinal":10,"scenario":"dto-recipient-disagreement-refused","actor":"client","kind":"dto.decode","detail":"the same request carries the disagreeing recipient seat-beta"}
+{"ordinal":11,"scenario":"dto-recipient-disagreement-refused","actor":"server","kind":"expect.refusal","detail":"recipient disagreement, a distinct refusal from the missing proof, with zero application invocations"}
+{"ordinal":12,"scenario":"inert-client-id-is-refused","actor":"client","kind":"subject.verify","detail":"the caller presents a credential claiming the client identity cli-0, which the directory really issued to alpha"}
+{"ordinal":13,"scenario":"inert-client-id-is-refused","actor":"boundary","kind":"expect.refusal","detail":"client identity not issued here; provenance is checked ahead of and separately from credential verification"}
+{"ordinal":14,"scenario":"unauthenticated-never-reaches-application","actor":"client","kind":"subject.verify","detail":"a credential is presented to a boundary that ships no credential backend"}
+{"ordinal":15,"scenario":"unauthenticated-never-reaches-application","actor":"boundary","kind":"expect.refusal","detail":"credential rejected; the composed authenticate-then-govern path performs zero application invocations"}
+{"ordinal":16,"scenario":"authentication-is-not-authorization","actor":"server","kind":"principal.mint","detail":"alpha authenticates and the principal is current"}
+{"ordinal":17,"scenario":"authentication-is-not-authorization","actor":"server","kind":"authorize","detail":"a tool-invoke capability at attempt scope is requested with no capability proof supplied"}
+{"ordinal":18,"scenario":"authentication-is-not-authorization","actor":"server","kind":"expect.refusal","detail":"no capability proof; absence is a refusal and never a default allow"}
+{"ordinal":19,"scenario":"revocation-invalidates-live-principal","actor":"server","kind":"principal.mint","detail":"alpha authenticates under directory generation 1"}
+{"ordinal":20,"scenario":"revocation-invalidates-live-principal","actor":"server","kind":"directory.revoke","detail":"the mapping for beta is withdrawn, advancing the directory to generation 2"}
+{"ordinal":21,"scenario":"revocation-invalidates-live-principal","actor":"server","kind":"authorize","detail":"the alpha principal minted under generation 1 is presented for authorization"}
+{"ordinal":22,"scenario":"revocation-invalidates-live-principal","actor":"server","kind":"expect.refusal","detail":"superseded directory generation; currency is compared for equality, so revoking any mapping makes every earlier principal inert"}
+{"ordinal":23,"scenario":"directory-bound-refuses-oversize","actor":"server","kind":"directory.configure","detail":"three mappings are supplied under a bound of two"}
+{"ordinal":24,"scenario":"directory-bound-refuses-oversize","actor":"server","kind":"expect.refusal","detail":"directory bound exceeded, naming the bound; no partial directory is left behind"}
+{"ordinal":25,"scenario":"takeover-displaces-prior-lease","actor":"client","kind":"takeover.acquire","detail":"alpha acquires the live lease for seat-alpha at lease generation 1"}
+{"ordinal":26,"scenario":"takeover-displaces-prior-lease","actor":"client","kind":"takeover.acquire","detail":"alpha acquires again, producing lease generation 2 and a displacement naming generation 1"}
+{"ordinal":27,"scenario":"takeover-displaces-prior-lease","actor":"observer","kind":"takeover.observe","detail":"generation 1 is no longer current and generation 2 is"}
+{"ordinal":28,"scenario":"takeover-displaces-prior-lease","actor":"client","kind":"expect.refusal","detail":"the displaced lease is refused when it tries to release the live slot"}
+{"ordinal":29,"scenario":"takeover-slot-bound-refuses","actor":"client","kind":"takeover.acquire","detail":"alpha fills the single available slot with seat-alpha"}
+{"ordinal":30,"scenario":"takeover-slot-bound-refuses","actor":"client","kind":"expect.refusal","detail":"takeover bound exceeded when beta acquires a new distinct recipient"}
+{"ordinal":31,"scenario":"takeover-slot-bound-refuses","actor":"client","kind":"takeover.acquire","detail":"repeated same-recipient handoffs succeed at capacity and the slot set stays at one entry"}
+{"ordinal":32,"scenario":"router-composition-is-deterministic","actor":"server","kind":"router.register","detail":"five routes are registered in declaration order"}
+{"ordinal":33,"scenario":"router-composition-is-deterministic","actor":"server","kind":"router.register","detail":"the same five routes are registered in reverse order into a second builder"}
+{"ordinal":34,"scenario":"router-composition-is-deterministic","actor":"server","kind":"router.seal","detail":"both builders seal to the same canonical route set, compared against a stated literal rather than only against each other"}
+{"ordinal":35,"scenario":"router-refuses-before-serving","actor":"server","kind":"router.register","detail":"a parameterised route is registered, then a second route differing only in its parameter name"}
+{"ordinal":36,"scenario":"router-refuses-before-serving","actor":"server","kind":"expect.refusal","detail":"conflicting route, refused before the axum registration that would panic on the same input"}
+{"ordinal":37,"scenario":"errors-do-not-echo","actor":"observer","kind":"expect.refusal","detail":"every refusal carrying an observation renders neither the credential, nor the recipient text, nor the observed length, in Display or in Debug, while still naming the bound"}

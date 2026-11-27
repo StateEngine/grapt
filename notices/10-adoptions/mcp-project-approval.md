@@ -1,0 +1,1 @@
+| Project MCP approval | `openai/codex`, `codex-rs/core/src/config/mod.rs` (`set_project_trust_level_inner`), commit `c465563aa9626d99420062135b187d299f904f81` | Apache-2.0 | Adapts explicit user-owned project trust publication to approvals bound to one selected MCP declaration, source and directory. |

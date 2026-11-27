@@ -1,0 +1,1 @@
+| `crates/secode-product/src/dogfood/instructions.rs` | `openai/codex`, `codex-rs/core/gpt_5_1_prompt.md` (Sharing progress updates) | `bb64b894fd67158be0f874872e6d7bfe717e7368` | **Modified by Grapt**: concise provider-neutral preambles and progress guidance in the stable base instructions. Copyright 2025 OpenAI, Apache-2.0; license and NOTICE in `licenses/openai-codex/`. |

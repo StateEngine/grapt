@@ -1,0 +1,10 @@
+[package]
+name = "negative-fixture-ambient-randomness"
+version = "0.0.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+publish = false
+description = "Row-11 negative fixture: proves the disallowed-methods OS-randomness gate actually fires. Deliberately NOT a workspace member — see the root Cargo.toml exclude list."
+
+[dependencies]
+getrandom = "0.4.3"

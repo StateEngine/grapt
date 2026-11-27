@@ -1,0 +1,17 @@
+warning: unreachable expression
+  --> tests/probes/09_openai_thinking_field.rs:22:16
+   |
+21 |         model: todo!(),
+   |                ------- any code following this expression is unreachable
+22 |         input: Vec::new(),
+   |                ^^^^^^^^^^ unreachable expression
+   |
+   = note: `#[warn(unreachable_code)]` (part of `#[warn(unused)]`) on by default
+
+error[E0560]: struct `OpenAiResponsesRequest` has no field named `thinking`
+  --> tests/probes/09_openai_thinking_field.rs:29:9
+   |
+29 |         thinking: Some(ThinkingConfig::Enabled { budget_tokens: 2048 }),
+   |         ^^^^^^^^ `OpenAiResponsesRequest` does not have this field
+   |
+   = note: all struct fields are already assigned

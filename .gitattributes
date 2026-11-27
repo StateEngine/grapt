@@ -1,0 +1,2 @@
+/native-cases/*.json text eol=lf
+/scripts/build/git_hooks/* text eol=lf

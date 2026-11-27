@@ -1,0 +1,173 @@
+{
+  "name": "J04 — reconnect, both clients, one product",
+  "about": [
+    "The reconnect dimension, driven by an ACTUAL severed connection: a relay",
+    "sits between the clients and the product and drops every socket it holds.",
+    "The server never moves.",
+    "",
+    "Why a relay and not a restart: the product admits only an ephemeral port",
+    "(`IA0-1R admits only --port 0`), so restarting it returns a DIFFERENT",
+    "endpoint. A client handed a new address would be exercising configuration,",
+    "not recovery. (An earlier revision of this file described a stop/restart on",
+    "a fixed port; that was never what the step did.)",
+    "",
+    "WHAT EACH POST-CUT OBSERVATION PROVES, stated because they prove different",
+    "things and one of them proves less than it looks:",
+    "",
+    "1. `before the cut` still on screen — the old transcript SURVIVED, with no",
+    "   duplicate of it. On its own this proves almost NOTHING about recovery: a",
+    "   client that died quietly and kept its last frame would satisfy it. It is",
+    "   retained as the no-loss/no-duplication check it always was, not as",
+    "   evidence of reconnection.",
+    "",
+    "2. A FRESH prompt answered after the cut — the client can still transact",
+    "   with the product. This proves the request path recovered. It does NOT",
+    "   prove the event subscription did: an answer can arrive through durable",
+    "   history polling alone.",
+    "",
+    "3. The native client showing a RUNNING execution during that fresh turn —",
+    "   this is the one that proves resubscription. `running` can only come from",
+    "   a live `session.execution.started`; it is not in the durable re-list, so",
+    "   a client reconciling from history alone can never display it. The",
+    "   retained client has no marker here that I can assert with the same",
+    "   confidence, so its post-cut evidence stops at (2) and is reported as",
+    "   that rather than dressed up as more.",
+    "",
+    "THE POST-CUT TURN IS DELIBERATELY SLOW. Step 21 asserts the native client",
+    "shows a LIVE execution after the connection was cut and remade, and a turn",
+    "that answers in two fragments is over before either client's screen can be",
+    "read — the assertion then depends on winning a race against a fixture,",
+    "which is not what this scenario is about. Measured: it passed, and then",
+    "began failing when the scripted provider got faster, on a client that had",
+    "not changed. Asking for a slow count keeps the live state observable for",
+    "as long as the observation needs."
+  ],
+  "steps": [
+    {
+      "expect": {
+        "native": "PROJECTS",
+        "retained": "Select a project"
+      },
+      "polls": 240
+    },
+    {
+      "capture": "the opening screen"
+    },
+    {
+      "key": {
+        "native": "Enter",
+        "retained": "i"
+      }
+    },
+    {
+      "expect": {
+        "native": "AGENTS",
+        "retained": "ctrl+x tab agents"
+      },
+      "polls": 240
+    },
+    {
+      "capture": "after choosing where to work"
+    },
+    {
+      "key": {
+        "native": "Enter",
+        "retained": "Enter"
+      }
+    },
+    {
+      "expect": {
+        "native": "MODELS"
+      },
+      "polls": 240
+    },
+    {
+      "capture": "the model choice, where the two clients differ most"
+    },
+    {
+      "key": {
+        "native": "Enter"
+      }
+    },
+    {
+      "key": {
+        "native": "n"
+      }
+    },
+    {
+      "expect": {
+        "native": "TRANSCRIPT"
+      },
+      "polls": 240
+    },
+    {
+      "paste": "Reply with exactly: before the cut. Do not use tools."
+    },
+    {
+      "key": "Enter"
+    },
+    {
+      "expect": {
+        "native": "[text] before the cut",
+        "retained": "before the cut"
+      },
+      "polls": 480,
+      "times": {
+        "native": 1,
+        "retained": 2
+      }
+    },
+    {
+      "capture": "a settled turn, before the connection is cut"
+    },
+    {
+      "cut": "SET-BY-RECONNECT-RUN"
+    },
+    {
+      "capture": "immediately after the connection was cut"
+    },
+    {
+      "expect": {
+        "native": "before the cut",
+        "retained": "before the cut"
+      },
+      "polls": 480,
+      "times": {
+        "native": 1,
+        "retained": 2
+      }
+    },
+    {
+      "paste": "Reply with exactly: after the cut. Then count slowly from one to fifty, one number per line, with no other commentary."
+    },
+    {
+      "key": "Enter"
+    },
+    {
+      "expect": {
+        "native": "running"
+      },
+      "polls": 480
+    },
+    {
+      "expect": {
+        "native": "[text] after the cut",
+        "retained": "after the cut"
+      },
+      "polls": 480,
+      "times": {
+        "native": 1,
+        "retained": 2
+      }
+    },
+    {
+      "capture": "a fresh answer, after the reconnect"
+    },
+    {
+      "key": {
+        "native": "Control+q",
+        "retained": "Control+c"
+      }
+    }
+  ]
+}

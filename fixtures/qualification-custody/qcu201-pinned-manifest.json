@@ -1,0 +1,51 @@
+{
+  "purpose": "QUALIFICATION-CUSTODY-01 r3 (QCU) Rust resurrection rows for the witnesses this lane adapted: the bridge ownership helper's identity and output refusals and the H1 scratch witness's real ignore rule. Run through the PLR custody runner with --manifest, one disposable worktree per row, intended RED then restored GREEN. PLR rows stay in the PLR manifest; this file admits only whole-token QCU ids.",
+  "run": "python3 scripts/qualification/plugin-linux-reap/run-mutations.py --manifest scripts/qualification/custody/rust-mutation-manifest.json --prefix QCU --receipt <outside-root>",
+  "prefix": "QCU",
+  "mutations": [
+    {
+      "id": "QCU201",
+      "law": "QCU r3 ownership helper: the inspected unit's Id, InvocationID and MainPID read after the executable helper must equal the identity read before it, so a reused pid or a restarted unit is refused rather than attributed to the owned runtime. Disabling the identity comparison admits every drift shape the seam witness feeds",
+      "package": "grapt-plugin",
+      "file": "crates/grapt-plugin/tests/bridge/unit_identity.rs",
+      "test_target": "bridge",
+      "test": "lifecycle::unit_identity::identity_drift_refuses_a_reused_pid_or_restarted_unit",
+      "old": "    if after != Some(before) {",
+      "new": "    if false {",
+      "expected_diagnostic": "identity drift was admitted"
+    },
+    {
+      "id": "QCU202",
+      "law": "QCU r3 ownership helper: the helper's output is accepted only as exactly one complete absolute path. Dropping the embedded-newline refusal admits a two-path answer, which the output witness reds on",
+      "package": "grapt-plugin",
+      "file": "crates/grapt-plugin/tests/bridge/unit_identity.rs",
+      "test_target": "bridge",
+      "test": "lifecycle::unit_identity::start_time_and_helper_output_are_read_exactly",
+      "old": "    if !path.starts_with(b\"/\") || path.contains(&b'\\n') || path.contains(&0) {",
+      "new": "    if !path.starts_with(b\"/\") || path.contains(&0) {",
+      "expected_diagnostic": "was admitted"
+    },
+    {
+      "id": "QCU203",
+      "law": "QCU H1 scratch witness: the owned scratch root carries the repository's real .gitignore, so the fresh __pycache__ is ignored by the real __pycache__/ rule. Copying other bytes in its place makes the directory an ordinary untracked entry, and the anti-vacuity assertion reds before any count is compared",
+      "package": "grapt-types",
+      "file": "crates/grapt-types/tests/direct_include_format/cases.rs",
+      "test_target": "direct_include_format",
+      "test": "cases::an_ignored_runtime_artifact_cannot_move_the_inventory",
+      "old": "        (source.join(\".gitignore\"), directory.join(\".gitignore\")),",
+      "new": "        (source.join(\"Cargo.toml\"), directory.join(\".gitignore\")),",
+      "expected_diagnostic": "is not git-ignored, so this witness cannot reproduce H1"
+    },
+    {
+      "id": "QCU204",
+      "law": "QCU r3 required control: the RSS ownership witness must fail when the production unit-bound stop is disabled. linux::stop_unit first SIGKILLs the unit's control group, then stops the unit; the mutant keeps the kill (so the attributed violation is unchanged) and replaces only the unit stop with a read-only query. The RemainAfterExit unit then stays loaded after the attributed failure and assert_owned_unit_absent reds; the witness's independent fixture teardown stops, resets and proves exactly that unit absent. The first QCU204 form (the whole stop_containment arm a no-op, run 20260929051802) also removed the kill, so the bridge kept running and the witness failed earlier on the violation reason, not the absence the row names",
+      "package": "grapt-plugin",
+      "file": "crates/grapt-plugin/src/supervisor/process/linux.rs",
+      "test_target": "bridge",
+      "test": "lifecycle::observed_rss_and_sustained_cpu_thresholds_terminate_the_owned_process",
+      "old": "    let stopped = bounded_systemctl(&[\"stop\", \"--no-block\", &service])",
+      "new": "    let stopped = bounded_systemctl(&[\"show\", \"--property=Id\", &service])",
+      "expected_diagnostic": "OOM containment unit remained after the attributed failure"
+    }
+  ]
+}

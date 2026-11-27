@@ -1,0 +1,5 @@
+error[E0599]: no associated function or constant named `admitted` found for struct `AttemptPreparation<R>` in the current scope
+ --> tests/probes/74_mint_attempt_admission_outside_owner.rs:6:39
+  |
+6 |     let _ = AttemptPreparation::<()>::admitted;
+  |                                       ^^^^^^^^ associated function or constant not found in `AttemptPreparation<()>`

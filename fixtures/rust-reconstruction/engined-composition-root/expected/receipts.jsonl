@@ -1,0 +1,10 @@
+{"case": "unknown-verb-is-refused", "exit_code": 2, "receipt": {"operation": "refused", "refusal": "argument", "detail": "unknown verb \"teleport\"; this binary defines serve and service ensure|stop|status"}}
+{"case": "omitted-bound-is-refused", "exit_code": 2, "receipt": {"operation": "refused", "refusal": "argument", "detail": "required bound --max-connections was not supplied"}}
+{"case": "unknown-flag-is-refused", "exit_code": 2, "receipt": {"operation": "refused", "refusal": "argument", "detail": "unknown argument \"--not-a-flag\""}}
+{"case": "hostname-is-refused-not-resolved", "exit_code": 2, "receipt": {"operation": "refused", "refusal": "bind", "detail": "bind address \"localhost:8080\" is not a literal ip:port; grapt-engined resolves no hostname"}}
+{"case": "service-status-needs-a-registration", "exit_code": 2, "receipt": {"operation": "refused", "refusal": "argument", "detail": "required bound --registration was not supplied"}}
+{"case": "serve-binds-an-ephemeral-port-and-reports-its-real-exit", "exit_code": 0, "receipt": {"operation": "serve", "exit": "stopped_gracefully", "trigger": "window_elapsed"}}
+{"case": "serve-refuses-a-registration-flag-it-does-not-read", "exit_code": 2, "receipt": {"operation": "refused", "refusal": "argument", "detail": "unknown argument \"--registration\""}}
+{"case": "a-zero-run-window-is-refused", "exit_code": 2, "receipt": {"operation": "refused", "refusal": "argument", "detail": "bound --serve-window-ms does not admit the value \"0\""}}
+{"case": "status-of-an-absent-registration-is-observed-as-empty", "exit_code": 0, "receipt": {"operation": "service", "outcome": "observed", "state": "empty"}}
+{"case": "status-of-an-undecodable-slot-is-observed-as-unreadable", "exit_code": 0, "receipt": {"operation": "service", "outcome": "observed", "state": "unreadable"}}

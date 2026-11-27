@@ -1,0 +1,8 @@
+{"case":"main-bounded-diagnostic","operation":"main.execute.usage","seam":"binary main -> public execute","claim":"The real binary maps parse refusal to bounded stderr and the stable usage exit."}
+{"case":"executor-acp-frames","operation":"executor.acp.frames","seam":"public executor -> ApiClient -> loopback server","claim":"The public executor emits only the committed initialize response and classifies the failed open as remote."}
+{"case":"acp-two-phase-admission","operation":"acp.api-server.admission","seam":"AcpMachine -> ApiClient -> loopback server","claim":"Handshake/open/prompt/cancel validate before effects and a failed effect never advances ACP state."}
+{"case":"server-cancellation-race","operation":"runner.api-server.cancellation","seam":"Runner -> ApiClient -> loopback server","claim":"Terminal server truth at the interrupt boundary wins over a local cancellation fiction."}
+{"case":"server-convergence-refusal","operation":"runner.server.convergence","seam":"Runner -> SSE server -> durable API relist","claim":"A durable cursor gap refuses the run and advisory bytes are never emitted as terminal truth."}
+{"case":"spawned-child-owner","operation":"child.discovery.owner","seam":"spawned child identity -> ServiceDiscovery","claim":"A stale attributed daemon with another PID cannot be relabeled as the spawned child."}
+{"case":"atomic-output-receipt","operation":"output.atomic.partial","seam":"BoundedOutput -> prefix-then-broken writers","claim":"Partial stdout and stderr writes remain bounded and are represented honestly in the receipt."}
+{"case":"run-output-exit-class","operation":"run.error.output-class","seam":"RunError -> attach/run executor classification","claim":"Attach and run output failures map to Output rather than Remote."}

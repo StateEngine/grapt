@@ -1,0 +1,18 @@
+[package]
+name = "grapt-tui-driver"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+description = "Drives the native TUI in a named tmux session for journey checks: start, send keys, capture the exact screen text and wait for expected text within a bound."
+publish = false
+
+[[bin]]
+name = "grapt-tui-driver"
+path = "src/main.rs"
+
+[lints]
+workspace = true
+
+[dev-dependencies]
+# The monotonic scheduling clock the workspace admits; never a durable fact.
+tokio = { version = "1", default-features = false, features = ["time"] }

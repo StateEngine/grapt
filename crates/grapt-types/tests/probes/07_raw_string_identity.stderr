@@ -1,0 +1,55 @@
+error[E0308]: mismatched types
+  --> tests/probes/07_raw_string_identity.rs:11:19
+   |
+11 |     store_command("ses_04b1327e9ffeovGoacE6KI7KVu");
+   |     ------------- ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ expected `SessionId`, found `&str`
+   |     |
+   |     arguments to this function are incorrect
+   |
+note: function defined here
+  --> tests/probes/07_raw_string_identity.rs:5:4
+   |
+ 5 | fn store_command(_session: SessionId) {}
+   |    ^^^^^^^^^^^^^ -------------------
+
+error[E0308]: mismatched types
+  --> tests/probes/07_raw_string_identity.rs:12:21
+   |
+12 |     store_operation("op_1");
+   |     --------------- ^^^^^^ expected `OperationId`, found `&str`
+   |     |
+   |     arguments to this function are incorrect
+   |
+note: function defined here
+  --> tests/probes/07_raw_string_identity.rs:6:4
+   |
+ 6 | fn store_operation(_operation: OperationId) {}
+   |    ^^^^^^^^^^^^^^^ -----------------------
+
+error[E0308]: mismatched types
+  --> tests/probes/07_raw_string_identity.rs:13:17
+   |
+13 |     store_graph("efg_1");
+   |     ----------- ^^^^^^^ expected `EffectiveGraphId`, found `&str`
+   |     |
+   |     arguments to this function are incorrect
+   |
+note: function defined here
+  --> tests/probes/07_raw_string_identity.rs:7:4
+   |
+ 7 | fn store_graph(_graph: EffectiveGraphId) {}
+   |    ^^^^^^^^^^^ ------------------------
+
+error[E0308]: mismatched types
+  --> tests/probes/07_raw_string_identity.rs:14:19
+   |
+14 |     store_service("inst_1");
+   |     ------------- ^^^^^^^^ expected `ServiceInstanceId`, found `&str`
+   |     |
+   |     arguments to this function are incorrect
+   |
+note: function defined here
+  --> tests/probes/07_raw_string_identity.rs:8:4
+   |
+ 8 | fn store_service(_instance: ServiceInstanceId) {}
+   |    ^^^^^^^^^^^^^ ----------------------------

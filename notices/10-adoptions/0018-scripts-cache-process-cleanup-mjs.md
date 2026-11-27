@@ -1,0 +1,1 @@
+| `scripts/cache/process-cleanup.mjs` | `openai/codex`, `codex-rs/core/src/exec.rs` | `bb64b894fd67158be0f874872e6d7bfe717e7368` | Modified: Node-owned process group or Windows process tree, full ACP shutdown allowance, bounded kill/join and shutdown confirmation. Apache-2.0; Copyright 2025 OpenAI. |

@@ -1,0 +1,1 @@
+| `crates/secode-mcp-client/src/http/headers.rs` | `openai/codex`, `codex-rs/rmcp-client/src/utils.rs` (`build_default_headers`) | `092d3acd6bec3e3a14bdc7e7a2810ab628ab759d` | Modified: bounded, sensitive, exact-origin static headers; transport fields reserved; malformed/duplicate fields refused. |

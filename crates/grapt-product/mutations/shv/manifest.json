@@ -1,0 +1,196 @@
+{
+  "schema": "grapt.mutation-manifest.v1",
+  "prefix": "SHV",
+  "inventories": {
+    "SHV": {
+      "rows": 17
+    }
+  },
+  "mutations": [
+    {
+      "id": "SHV01",
+      "file": "crates/grapt-product/src/handover.rs",
+      "package": "grapt-product",
+      "test_target": "handover_journey",
+      "red": "a_write_during_the_retirement_wait_is_caught_only_by_the_post_retirement_read ... FAILED",
+      "old": "    if !eligibility.describes_source(quiesced.observed()) {",
+      "new": "    if false && !eligibility.describes_source(quiesced.observed()) {",
+      "test": "a_write_during_the_retirement_wait_is_caught_only_by_the_post_retirement_read"
+    },
+    {
+      "id": "SHV02",
+      "file": "crates/grapt-product/src/startup.rs",
+      "package": "grapt-product",
+      "test_target": "handover_journey",
+      "red": "a_live_incumbent_that_will_not_retire_refuses_the_handover_by_name ... FAILED",
+      "old": "    if process_is_present(owner.pid()).await? {\n        return Ok(Retirement::TimedOut);\n    }",
+      "new": "    if false && process_is_present(owner.pid()).await? {\n        return Ok(Retirement::TimedOut);\n    }",
+      "test": "a_live_incumbent_that_will_not_retire_refuses_the_handover_by_name"
+    },
+    {
+      "id": "SHV03",
+      "file": "crates/grapt-product/src/compose.rs",
+      "package": "grapt-product",
+      "test_target": "handover_journey",
+      "red": "the_handover_verb_retires_validates_and_commits_through_the_real_binary ... FAILED",
+      "old": "        handover: handover_receipt.map(crate::handover::HandoverReceipt::into_evidence),",
+      "new": "        handover: None,",
+      "test": "the_handover_verb_retires_validates_and_commits_through_the_real_binary"
+    },
+    {
+      "id": "SHV04",
+      "file": "crates/grapt-product/src/handover.rs",
+      "package": "grapt-product",
+      "test_target": "handover_journey",
+      "old": "    if current_registration != registration && current_registration.is_some() {",
+      "new": "    if false && current_registration != registration && current_registration.is_some() {",
+      "test": "replaced_registration_during_retirement_refuses_before_migration",
+      "red": "replaced_registration_during_retirement_refuses_before_migration ... FAILED"
+    },
+    {
+      "id": "SHV05",
+      "file": "crates/grapt-product/src/handover.rs",
+      "package": "grapt-product",
+      "test_target": "handover_journey",
+      "old": "    if config.build().as_str() != request.engine_version {",
+      "new": "    if false && config.build().as_str() != request.engine_version {",
+      "test": "wrong_build_refuses_before_rehearsal_or_store_mutation",
+      "red": "wrong_build_refuses_before_rehearsal_or_store_mutation ... FAILED"
+    },
+    {
+      "id": "SHV06",
+      "file": "crates/grapt-release/src/handoff.rs",
+      "package": "grapt-release",
+      "test_target": "integration",
+      "old": "    if eligibility.candidate().domain() != Some(&domain) {",
+      "new": "    if false && eligibility.candidate().domain() != Some(&domain) {",
+      "test": "r6_migration::serving_attestation_measures_the_open_store_and_rejects_changed_domain",
+      "red": "serving_attestation_measures_the_open_store_and_rejects_changed_domain ... FAILED"
+    },
+    {
+      "id": "SHV07",
+      "file": "crates/grapt-release/src/handoff.rs",
+      "package": "grapt-release",
+      "test_target": "integration",
+      "old": "    let (_, observed) = fingerprint_file(Path::new(path))?;",
+      "new": "    let observed = eligibility.candidate().file().clone();",
+      "test": "r6_migration::serving_attestation_measures_the_open_store_and_rejects_changed_domain",
+      "red": "serving_attestation_measures_the_open_store_and_rejects_changed_domain ... FAILED"
+    },
+    {
+      "id": "SHV08",
+      "file": "crates/grapt-product/src/compose.rs",
+      "package": "grapt-product",
+      "test_target": "handover_journey",
+      "old": "    let admission = Admission::Ordinary(Some(crate::startup::acquire(service_root)?));",
+      "new": "    let admission = Admission::Ordinary(None);",
+      "test": "concurrent_election_refuses_before_migrating_the_source",
+      "red": "concurrent_election_refuses_before_migrating_the_source ... FAILED"
+    },
+    {
+      "id": "SHV09",
+      "package": "grapt-product",
+      "test_target": "handover_journey",
+      "edits": [
+        {
+          "file": "crates/grapt-product/src/handover.rs",
+          "old": "    let (_, observed_source) = fingerprint_file(&request.source)\n        .map_err(|error| refused(format!(\"source observation failed: {error}\")))?;",
+          "new": ""
+        },
+        {
+          "file": "crates/grapt-product/src/handover.rs",
+          "old": "    let registration = read_registration(&request.service_root)?;",
+          "new": "    let (_, observed_source) = fingerprint_file(&request.source)\n        .map_err(|error| refused(format!(\"source observation failed: {error}\")))?;\n    let registration = read_registration(&request.service_root)?;"
+        }
+      ],
+      "test": "a_write_during_the_retirement_wait_is_caught_only_by_the_post_retirement_read",
+      "red": "a_write_during_the_retirement_wait_is_caught_only_by_the_post_retirement_read ... FAILED"
+    },
+    {
+      "id": "SHV10",
+      "file": "crates/grapt-product/src/compose.rs",
+      "package": "grapt-product",
+      "test_target": "handover_journey",
+      "old": "        Admission::Handover(proof) => proof.successor().clone(),",
+      "new": "        Admission::Handover(_proof) => startup.instance(&config.instance)?,",
+      "test": "live_product_handover_preserves_a_product_created_database",
+      "red": "live_product_handover_preserves_a_product_created_database ... FAILED"
+    },
+    {
+      "id": "SHV11",
+      "file": "crates/grapt-product/src/handover.rs",
+      "package": "grapt-product",
+      "test_target": "lib",
+      "old": "    let observation = Observation::new(declared.clone(), probe, version.clone());",
+      "new": "    let observation = Observation::new(declared.clone(), ProbeOutcome::Attributed(declared.clone()), version.clone());",
+      "test": "handover::tests::an_unattributed_probe_cannot_elect_a_measured_store",
+      "red": "handover::tests::an_unattributed_probe_cannot_elect_a_measured_store ... FAILED"
+    },
+    {
+      "id": "SHV12",
+      "file": "crates/grapt-product/src/handover.rs",
+      "package": "grapt-product",
+      "test_target": "handover_journey",
+      "old": "    #[cfg(feature = \"handover-crash-fixture\")]\n    {",
+      "new": "    {",
+      "test": "ordinary_binary_ignores_the_fixture_crash_selector",
+      "red": "ordinary_binary_ignores_the_fixture_crash_selector ... FAILED"
+    },
+    {
+      "id": "SHV13",
+      "file": "crates/grapt-product/src/handover.rs",
+      "package": "grapt-product",
+      "features": [
+        "handover-crash-fixture"
+      ],
+      "test_target": "handover_journey",
+      "old": "    crash_boundary(CrashBoundary::BeforeCommit);",
+      "new": "    // crash cut disabled",
+      "test": "crashes::named_crash_boundaries_reopen_truthful_durable_state",
+      "red": "crashes::named_crash_boundaries_reopen_truthful_durable_state ... FAILED"
+    },
+    {
+      "id": "SHV14",
+      "file": "crates/grapt-platform/src/lib.rs",
+      "package": "grapt-product",
+      "features": [
+        "handover-crash-fixture"
+      ],
+      "test_target": "handover_journey",
+      "old": "        if expected_build.is_some_and(|expected| expected != config.build().as_str()) {",
+      "new": "        if false && expected_build.is_some_and(|expected| expected != config.build().as_str()) {",
+      "test": "crashes::build_changed_during_retirement_refuses_before_first_write_contact",
+      "red": "crashes::build_changed_during_retirement_refuses_before_first_write_contact ... FAILED"
+    },
+    {
+      "id": "SHV15",
+      "file": "crates/grapt-product/src/handover.rs",
+      "package": "grapt-product",
+      "test_target": "lib",
+      "old": "        authority,\n        registration,\n        eligibility,",
+      "new": "        authority: ElectedControllerAuthority::isolated(),\n        registration,\n        eligibility,",
+      "test": "handover::tests::validated_handover_excludes_reentry_until_its_custody_is_released",
+      "red": "handover::tests::validated_handover_excludes_reentry_until_its_custody_is_released ... FAILED"
+    },
+    {
+      "id": "SHV16",
+      "file": "crates/grapt-product/src/compose.rs",
+      "package": "grapt-product",
+      "test_target": "handover_journey",
+      "old": "    let inputs = grapt_platform::PlatformOwner::inspect_for_build(service_root, None)\n        .map_err(|error| ProductRefusal::Platform(error.to_string()))?;\n    let admission = Admission::Ordinary(Some(crate::startup::acquire(service_root)?));\n",
+      "new": "    let admission = Admission::Ordinary(Some(crate::startup::acquire(service_root)?));\n    let inputs = grapt_platform::PlatformOwner::inspect_for_build(service_root, None)\n        .map_err(|error| ProductRefusal::Platform(error.to_string()))?;\n",
+      "test": "failed_preparation_releases_election_and_preserves_registration_for_recovery",
+      "red": "failed_preparation_releases_election_and_preserves_registration_for_recovery ... FAILED"
+    },
+    {
+      "id": "SHV17",
+      "file": "crates/grapt-platform/src/store.rs",
+      "package": "grapt-product",
+      "test_target": "product_root",
+      "old": "            (StoreReadiness::Ready, StoreDirective::OpenReady) => OwnedOpenAuthority::OpenReady,",
+      "new": "            (StoreReadiness::Ready, StoreDirective::OpenReady) => OwnedOpenAuthority::OpenReady,\n            (StoreReadiness::Absent, StoreDirective::OpenReady) => OwnedOpenAuthority::OpenReady,",
+      "test": "absent_store_refuses_before_registration_authority",
+      "red": "absent_store_refuses_before_registration_authority ... FAILED"
+    }
+  ]
+}

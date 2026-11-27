@@ -1,0 +1,1 @@
+| `crates/secode-mcp-client/src/http.rs` | `openai/codex` / `codex-rs/rmcp-client/src/http_client_redirect.rs` (origin and hop checks) | `092d3acd6bec3e3a14bdc7e7a2810ab628ab759d` | modified: direct bounded HTTP adapter, shared deadline, no automatic POST replay or method-changing redirects |

@@ -1,0 +1,16 @@
+error[E0599]: no associated function or constant named `new` found for struct `ModelRef` in the current scope
+  --> tests/probes/23_authored_model_family.rs:18:29
+   |
+18 |     let _forged = ModelRef::new(
+   |                             ^^^ associated function or constant not found in `ModelRef`
+   |
+note: if you're trying to build a new `ModelRef`, consider using `ModelRef::from_catalog` which returns `ModelRef`
+  --> src/model/reference.rs
+   |
+   |     pub fn from_catalog(entry: ModelCatalogEntry) -> Self {
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+help: there is a method `ne` with a similar name, but with different arguments
+  --> $RUST/core/src/cmp.rs
+   |
+   |     fn ne(&self, other: &Rhs) -> bool {
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

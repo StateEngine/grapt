@@ -1,0 +1,306 @@
+{
+  "schema": 1,
+  "prefix": "NMV2",
+  "rows": [
+    {
+      "id": "NMV201",
+      "path": "crates/grapt-mail-transport/src/http/mod.rs",
+      "before": "protocol.as_str()),",
+      "after": "REMOTE_SEAT_MAIL_TRANSPORT_V1),",
+      "witness": "http::wire_tests::nmv2_http_explicit_route_echo_mixed_page_and_v1_ack",
+      "crate": "grapt-mail-transport",
+      "target": "lib",
+      "law": "Explicit route, no silent fallback"
+    },
+    {
+      "id": "NMV202",
+      "path": "crates/grapt-mail-transport/src/http/decode.rs",
+      "before": "text(v, \"protocol\")? != REMOTE_SEAT_MAIL_TRANSPORT_V1",
+      "after": "text(v, \"protocol\")? != b.receipt().protocol().as_str()",
+      "witness": "http::wire_tests::nmv2_http_explicit_route_echo_mixed_page_and_v1_ack",
+      "crate": "grapt-mail-transport",
+      "target": "lib",
+      "law": "Healthy DTO remains v1 under v2 binding"
+    },
+    {
+      "id": "NMV203",
+      "path": "crates/grapt-mail-transport/src/http/operations.rs",
+      "before": "ack.protocol().as_str() != REMOTE_SEAT_MAIL_TRANSPORT_V1",
+      "after": "ack.protocol() != binding.receipt().protocol()",
+      "witness": "http::wire_tests::nmv2_http_explicit_route_echo_mixed_page_and_v1_ack",
+      "crate": "grapt-mail-transport",
+      "target": "lib",
+      "law": "Delivery ACK remains v1 under v2 transport"
+    },
+    {
+      "id": "NMV204",
+      "path": "crates/grapt-mail-transport/src/http/page.rs",
+      "before": "RefusedRowReason::parse(decode::text(row, \"reason\")?)",
+      "after": "RefusedRowReason::parse(decode::text(row, \"reason\")?).or(Some(RefusedRowReason::MalformedEnvelope))",
+      "witness": "http::page_tests::nmv2_closed_gap_shape_reason_id_range_and_cursor",
+      "crate": "grapt-mail-transport",
+      "target": "lib",
+      "law": "Unknown refusal reason is not a known integrity fact"
+    },
+    {
+      "id": "NMV205",
+      "path": "crates/grapt-mail-transport/src/http/page.rs",
+      "before": "if row[\"msg_id\"].is_null()",
+      "after": "if false && row[\"msg_id\"].is_null()",
+      "witness": "http::page_tests::nmv2_last_cursor_is_supplied_opaque_combined_progress",
+      "crate": "grapt-mail-transport",
+      "target": "lib",
+      "law": "Nullable untrusted indexed ID; no fabricated identity"
+    },
+    {
+      "id": "NMV206",
+      "path": "crates/grapt-mail-transport/src/http/page.rs",
+      "before": "if messages.len().saturating_add(refused.len()) > page.max_messages() as usize",
+      "after": "if false && messages.len().saturating_add(refused.len()) > page.max_messages() as usize",
+      "witness": "http::page_tests::nmv2_combined_count_and_bytes_are_not_per_array",
+      "crate": "grapt-mail-transport",
+      "target": "lib",
+      "law": "Messages and refusals share requested count"
+    },
+    {
+      "id": "NMV207",
+      "path": "crates/grapt-mail-transport/src/http/page.rs",
+      "before": "if serde_json::to_vec(value)",
+      "after": "if false && serde_json::to_vec(value)",
+      "witness": "http::page_tests::nmv2_page_metadata_byte_ceiling_survives_valid_body_bounds",
+      "crate": "grapt-mail-transport",
+      "target": "lib",
+      "law": "Complete decoded JSON shares524288 bound"
+    },
+    {
+      "id": "NMV208",
+      "path": "crates/grapt-mail-transport/src/cursor.rs",
+      "before": "(next_after.is_some() && next_after != last)",
+      "after": "false",
+      "witness": "http::page_tests::nmv2_closed_gap_shape_reason_id_range_and_cursor",
+      "crate": "grapt-mail-transport",
+      "target": "lib",
+      "law": "Nonfinal next cursor equals supplied combined last"
+    },
+    {
+      "id": "NMV209",
+      "path": "crates/grapt-mail-transport/src/cursor.rs",
+      "before": "if last.as_ref().is_some_and(|cursor| {",
+      "after": "if false && last.as_ref().is_some_and(|cursor| {",
+      "witness": "http::page_tests::nmv2_closed_gap_shape_reason_id_range_and_cursor",
+      "crate": "grapt-mail-transport",
+      "target": "lib",
+      "law": "Checkpoint names a final emitted entry"
+    },
+    {
+      "id": "NMV210",
+      "path": "crates/grapt-runtime/src/mailbox/remote/snapshot.rs",
+      "before": "u32::try_from(page.entry_count())",
+      "after": "u32::try_from(page.messages().len())",
+      "witness": "mailbox::remote::tests::v2::nmv2_all_refused_pages_charge_slice_and_resume_from_final_refusal",
+      "crate": "grapt-runtime",
+      "target": "lib",
+      "law": "Refusals consume runtime row budget"
+    },
+    {
+      "id": "NMV211",
+      "path": "crates/grapt-store/src/mailbox/remote/progress.rs",
+      "before": "tx.commit()?.discard();",
+      "after": "drop(tx);",
+      "witness": "progress::nmv2_atomic_page_rollback_and_reopen_retains_original_debt_and_gap",
+      "crate": "grapt-store",
+      "target": "remote_mailbox",
+      "law": "Healthy rows and gap receipt commit before progress"
+    },
+    {
+      "id": "NMV212",
+      "path": "crates/grapt-store/src/mailbox/remote/progress.rs",
+      "before": "Self::record_remote_mail_page_within(&tx, input, writer)?",
+      "after": "Self::record_remote_mail_page_within(&tx, input, writer).unwrap_or_default()",
+      "witness": "progress::nmv2_event_failure_rolls_back_all_healthy_admissions",
+      "crate": "grapt-store",
+      "target": "remote_mailbox",
+      "law": "Recording failure rolls back whole page; never swallowed"
+    },
+    {
+      "id": "NMV213",
+      "path": "crates/grapt-store/src/mailbox/remote/progress.rs",
+      "before": "crate::election::fence(tx, &aggregate, writer.epoch())?;",
+      "after": "let _ = (&aggregate, writer);",
+      "witness": "progress::nmv2_foreign_scope_stale_writer_and_legacy_context_keep_no_effects",
+      "crate": "grapt-store",
+      "target": "remote_mailbox",
+      "law": "Fence before any attempted mailbox write"
+    },
+    {
+      "id": "NMV214",
+      "path": "crates/grapt-store/src/mailbox/remote/progress.rs",
+      "before": "if !duplicate && head.as_ref().map(|h| &h.checkpoint) != input.previous",
+      "after": "if false && !duplicate && head.as_ref().map(|h| &h.checkpoint) != input.previous",
+      "witness": "progress::nmv2_progress_must_extend_exact_durable_prefix",
+      "crate": "grapt-store",
+      "target": "remote_mailbox",
+      "law": "Durable page extends exact existing prefix"
+    },
+    {
+      "id": "NMV215",
+      "path": "crates/grapt-store/src/mailbox/remote/progress.rs",
+      "before": "input.gaps.to_vec()",
+      "after": "Vec::new()",
+      "witness": "progress::nmv2_atomic_page_rollback_and_reopen_retains_original_debt_and_gap",
+      "crate": "grapt-store",
+      "target": "remote_mailbox",
+      "law": "Named integrity observations cannot disappear"
+    },
+    {
+      "id": "NMV216",
+      "path": "crates/grapt-store/src/mailbox/remote/progress.rs",
+      "before": "if record.ack().local_admission() != reference.admission\n            || record.ack().canonical_message_digest() != &reference.digest",
+      "after": "if false && (record.ack().local_admission() != reference.admission\n            || record.ack().canonical_message_digest() != &reference.digest)",
+      "witness": "progress::nmv2_recovery_rejects_forged_reference_missing_epoch_and_canonical_drift",
+      "crate": "grapt-store",
+      "target": "remote_mailbox",
+      "law": "Original local digest/admission remain reference authority"
+    },
+    {
+      "id": "NMV217",
+      "path": "crates/grapt-store/src/mailbox/remote/read_budget.rs",
+      "before": ".filter(|n| *n <= self.maximum)",
+      "after": ".filter(|_| true)",
+      "witness": "progress::nmv2_recovery_charges_referenced_record_bytes_and_entry_count",
+      "crate": "grapt-store",
+      "target": "remote_mailbox",
+      "law": "Recovery includes referenced body record bytes"
+    },
+    {
+      "id": "NMV218",
+      "path": "crates/grapt-store/src/mailbox/remote/progress.rs",
+      "before": "if legacy {",
+      "after": "if false && legacy {",
+      "witness": "progress::nmv2_foreign_scope_stale_writer_and_legacy_context_keep_no_effects",
+      "crate": "grapt-store",
+      "target": "remote_mailbox",
+      "law": "V1 ACK debt cannot be silently adopted into v2"
+    },
+    {
+      "id": "NMV219",
+      "path": "crates/grapt-runtime/src/mailbox/remote/progress.rs",
+      "before": "if record.delivery_pending || record.repair_pending",
+      "after": "if false && (record.delivery_pending || record.repair_pending)",
+      "witness": "mailbox::remote::tests::v2::nmv2_crash_after_page_commit_repairs_original_ack_before_warm_resume",
+      "crate": "grapt-runtime",
+      "target": "lib",
+      "law": "Original ACK debt settles before warm resume"
+    },
+    {
+      "id": "NMV220",
+      "path": "crates/grapt-runtime/src/mailbox/remote/snapshot.rs",
+      "before": ".map_or_else(ResumeRequest::cold, ResumeRequest::from_checkpoint)",
+      "after": ".map_or_else(ResumeRequest::cold, |_| ResumeRequest::cold())",
+      "witness": "mailbox::remote::tests::v2::nmv2_crash_after_page_commit_repairs_original_ack_before_warm_resume",
+      "crate": "grapt-runtime",
+      "target": "lib",
+      "law": "Fresh same-version binding resumes exact durable cursor"
+    },
+    {
+      "id": "NMV221",
+      "path": "crates/grapt-runtime/src/mailbox/remote/snapshot.rs",
+      "before": "if armed.snapshot().start_after() != checkpoint.as_ref()",
+      "after": "if false && armed.snapshot().start_after() != checkpoint.as_ref()",
+      "witness": "mailbox::remote::tests::v2::nmv2_warm_echo_mismatch_and_invalid_cursor_never_fall_back_cold",
+      "crate": "grapt-runtime",
+      "target": "lib",
+      "law": "Subscribe must echo exact requested checkpoint"
+    },
+    {
+      "id": "NMV222",
+      "path": "crates/grapt-runtime/src/mailbox/remote/snapshot.rs",
+      "before": "if !self.is_v2() {",
+      "after": "if true {",
+      "witness": "mailbox::remote::tests::v2::nmv2_warm_echo_mismatch_and_invalid_cursor_never_fall_back_cold",
+      "crate": "grapt-runtime",
+      "target": "lib",
+      "law": "V2 invalid checkpoint refuses; no silent cold fallback"
+    },
+    {
+      "id": "NMV223",
+      "path": "crates/grapt-runtime/src/mailbox/remote.rs",
+      "before": "progress_after: None,",
+      "after": "progress_after: Some(grapt_types::EventSeq::new(1)),",
+      "witness": "mailbox::remote::tests::v2::nmv2_crash_after_page_commit_repairs_original_ack_before_warm_resume",
+      "crate": "grapt-runtime",
+      "target": "lib",
+      "law": "Complete local prefix, never newest-only recovery"
+    },
+    {
+      "id": "NMV224",
+      "path": "crates/grapt-event/src/envelope.rs",
+      "before": "&& !native.is_native_mail()",
+      "after": "",
+      "witness": "nmv2_local_progress_roundtrip_is_not_a_message_or_session_fact",
+      "crate": "grapt-event",
+      "target": "mail_progress",
+      "law": "Local mail aggregate is not canonical Session history"
+    },
+    {
+      "id": "NMV225",
+      "path": "crates/grapt-store/src/mailbox/remote/progress.rs",
+      "before": "if epoch.is_none_or(|epoch| epoch <= 0 || epoch > i64::from(u32::MAX))",
+      "after": "if false && epoch.is_none_or(|epoch| epoch <= 0 || epoch > i64::from(u32::MAX))",
+      "witness": "progress::nmv2_recovery_rejects_forged_reference_missing_epoch_and_canonical_drift",
+      "crate": "grapt-store",
+      "target": "remote_mailbox",
+      "law": "New mail fact has positive bounded writer epoch"
+    },
+    {
+      "id": "NMV226",
+      "path": "crates/grapt-store/src/mailbox/remote/progress.rs",
+      "before": "if id != format!(\"evt_{}\", grapt_event::canonical_hash_hex(&data))",
+      "after": "if false && id != format!(\"evt_{}\", grapt_event::canonical_hash_hex(&data))",
+      "witness": "progress::nmv2_recovery_rejects_forged_reference_missing_epoch_and_canonical_drift",
+      "crate": "grapt-store",
+      "target": "remote_mailbox",
+      "law": "Canonical local payload and deterministic event identity agree"
+    },
+    {
+      "id": "NMV227",
+      "path": "crates/grapt-store/src/mailbox/remote/progress.rs",
+      "before": "if grapt_event::canonical_string(&data) != text",
+      "after": "if false && grapt_event::canonical_string(&data) != text",
+      "witness": "progress::nmv2_recovery_rejects_forged_reference_missing_epoch_and_canonical_drift",
+      "crate": "grapt-store",
+      "target": "remote_mailbox",
+      "law": "Stored canonical representation is not silently normalized"
+    },
+    {
+      "id": "NMV228",
+      "path": "crates/grapt-runtime/src/mailbox/remote/progress.rs",
+      "before": "if result.pages == 0 {\n                    return Err(RemoteMailboxError::SliceTooSmall);",
+      "after": "if true {\n                    return Err(RemoteMailboxError::SliceTooSmall);",
+      "witness": "mailbox::remote::tests::v2::nmv2_partial_recovery_budget_yields_without_losing_its_prefix",
+      "crate": "grapt-runtime",
+      "target": "lib",
+      "law": "Partial slice yields without advancing durable prefix; unfit fresh slice refuses"
+    },
+    {
+      "id": "NMV229",
+      "path": "crates/grapt-store/src/mailbox/remote/progress.rs",
+      "before": "i64::try_from(seq.value())\n                .map_err(|_| refusal(\"mail progress recovery sequence exceeds SQL bound\"))?",
+      "after": "i64::try_from(seq.value()).unwrap_or(-1)",
+      "witness": "progress::nmv2_recovery_charges_referenced_record_bytes_and_entry_count",
+      "crate": "grapt-store",
+      "target": "remote_mailbox",
+      "law": "Unreadable recovery position is not absent/start; refuse out-of-range local sequence"
+    },
+    {
+      "id": "NMV230",
+      "path": "crates/grapt-store/src/mailbox/remote.rs",
+      "before": "read_record_budgeted(conn, &stored, Some(budget))?",
+      "after": "read_record_budgeted(conn, &stored, None)?",
+      "witness": "mailbox::remote::progress::aux_tests::nmv2_auxiliary_supersession_is_charged_before_body_materialization",
+      "crate": "grapt-store",
+      "target": "lib",
+      "law": "Charge transitive supersession validation before copying any auxiliary body; original row alone is not the recovery budget"
+    }
+  ]
+}

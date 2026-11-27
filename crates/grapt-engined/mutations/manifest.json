@@ -1,0 +1,156 @@
+{
+  "lane": "E1a",
+  "prefix": "EB",
+  "crate": "grapt-engined",
+  "run": "python3 -B crates/grapt-engined/mutations/run.py",
+  "isolation": "Every mutation is applied inside its own disposable git worktree checked out at the exact candidate commit. No mutant is ever written into the calling worktree, so there is no restore step that could fail and leave a dirty tree. The runner removes exactly what it registered, refuses a pre-existing path at its target rather than reusing it, and verifies absence by re-listing rather than by trusting an exit code, because Windows delayed deletion races worktree removal.",
+  "scope_note": "THIRTEEN rows -- EB01-EB07 and EB09-EB14 -- and the absent one is named rather than quietly dropped. Any prose reading \"EB01-EB14\" is FALSE: EB08 is absent. EB13 carries the observed-address law and EB14 the successful-status rendering law; EB08's id is NOT reused for either, because rebinding a deferred id to a different law is a collision. EB08 -- a lost registration CAS names the winner and is never a success -- is DEFERRED, not retired, and not withheld pending a ruling: the authority question HAS been ruled. Its owner is the CONTROLLER LANE, gated behind the ADAPTER-RELOCATION LANE, and the reason is that `service ensure` writes durable rows and needs a truthful production ClockAuthority for their timestamps (registration.rs:462, :494 and receipt.rs:119), which no lawful E1a closure supplies: ServiceController::new requires that injected authority, ElectedControllerAuthority::compare_and_swap and mutation_permit are both pub(crate), and the only two production ClockAuthority/IdAuthority adapters in the workspace live in grapt-store -- an edge this crate's frozen closure refuses, with RELOCATION rather than duplication as the ruled cure. render_ensure, render_stop and winner_from are authored, correct and RETAINED: they construct the typed refusal vocabulary the controller lane inherits, and removing them would leave five enum variants never constructed and fail -D warnings. They are unreachable from main today, and a row scored against unreachable code would be a survivor dressed as a red, so EB08 stays absent from the row set and `tombstones` stays empty -- a deferral moves no tombstone count. Every row is a property of the COMPOSITION ROOT's own argument handling, rendering, custody or exit behaviour. The bound refusals, the accept-failure classification and the registration CAS itself are owned and witnessed by grapt-api, grapt-location and grapt-service under their own landed prefixes; a row that mutated a library file would be out of scope. ONE ARM OF THIS BINARY IS NOT WITNESSED ON WINDOWS AND IS DISCLOSED RATHER THAN SKIPPED: await_stop races the run window against a real operator interrupt, and a mutant DELETING the ctrl_c arm passes every window-driven witness in this crate, because no cargo integration test on Windows can portably raise a console control event in another process without a dependency this lane refuses. The Linux witness an_operator_interrupt_stops_the_host_and_is_named_as_the_trigger sends SIGINT to the child and asserts trigger == operator_interrupt against a sixty-second window, so it cannot pass by the window firing; on every other platform a test NAMED the_operator_interrupt_arm_is_unwitnessed_on_this_platform_and_owned_by_the_linux_battery stands in its place, so the unsupported outcome appears in the test list instead of nowhere. Owner: the governed Linux battery under the successor -B profile. Until that run, the interrupt arm is a survivor, not a residual, and must not be recorded green from a Windows-only run.",
+  "anchor_archaeology": "Every anchor was derived from the authored source AFTER the final `cargo fmt -p grapt-engined`, and each `old` was proven to occur EXACTLY ONCE in its named file at the candidate. A non-unique anchor applies the mutant somewhere unintended; an anchor matching zero times produces an unapplied mutant that looks exactly like a survivor. Both are refused by the runner's preflight before a single row is applied.",
+  "note": "Every witness ASSERTS and panics; none returns Err. A witness declared -> Result<..> that fails by returning an error prints a bare `Error: <Debug>` with no `panicked at` anywhere, and the row scores RED with empty evidence -- a real run in this campaign produced 32/32 RED with 19 rows reporting no captured diagnostic. Each row's `red` field names the assertion that fails, so a weakening mutant with no failing assertion is recognised as a survivor to be re-authored rather than recorded as killed.",
+  "mutations": [
+    {
+      "id": "EB01",
+      "law": "A missing bound is refused; no bound is ever defaulted.",
+      "package": "grapt-engined",
+      "test_target": "integration",
+      "file": "crates/grapt-engined/src/main.rs",
+      "test": "eb_arguments::an_omitted_connection_bound_refuses_and_never_defaults",
+      "old": "        max_connections: usize_bound(args, \"--max-connections\")?,",
+      "new": "        max_connections: usize_bound(args, \"--max-connections\").unwrap_or(64),",
+      "red": "The omitted bound silently becomes 64, serve stops refusing, and the witness's exit-code and named-flag assertions both fail."
+    },
+    {
+      "id": "EB02",
+      "law": "Every declared bound is echoed in the ready receipt.",
+      "package": "grapt-engined",
+      "test_target": "integration",
+      "file": "crates/grapt-engined/src/receipt.rs",
+      "test": "eb_receipt::the_ready_receipt_echoes_every_supplied_bound",
+      "old": "            max_inflight: bounds.max_inflight,",
+      "new": "            max_inflight: bounds.max_connections,",
+      "red": "max_inflight echoes max_connections. The killing assertion reads the DURABLE ready receipt a real binary run wrote under its settled receipt root: assert_eq!(ready.get(\"max_inflight\").and_then(Value::as_u64), Some(22)) fails against the mutated 11. The witness supplies eleven DISTINCT values precisely so a crossed field cannot pass by coincidence. The pure-function assertion on ServeReceipt::from_bounds is retained as a secondary and is not the killer: while the ready receipt was computed and dropped, this law was a law about a value no consumer could observe."
+    },
+    {
+      "id": "EB03",
+      "law": "An unsupported target is refused by name, never down a Unix arm.",
+      "package": "grapt-engined",
+      "test_target": "integration",
+      "file": "crates/grapt-engined/src/platform.rs",
+      "test": "eb_platform::unsupported_operating_systems_are_refused_by_exact_name",
+      "old": "        \"windows\" | \"linux\" | \"macos\" => PlatformSupport::Supported,",
+      "new": "        \"windows\" | \"linux\" | \"macos\" | \"freebsd\" => PlatformSupport::Supported,",
+      "red": "FreeBSD becomes Supported rather than being refused by exact name; the unsupported-operating-system witness fails. The 2026-10-19 parity decision admits macOS explicitly while every unlisted OS remains refused."
+    },
+    {
+      "id": "EB04",
+      "law": "The 401 posture is disclosed in the ready receipt.",
+      "package": "grapt-engined",
+      "test_target": "integration",
+      "file": "crates/grapt-engined/src/receipt.rs",
+      "test": "eb_receipt::the_ready_receipt_states_that_every_request_answers_401",
+      "old": "            credential_posture: CREDENTIAL_REFUSES_EVERYTHING,",
+      "new": "            credential_posture: \"undisclosed\",",
+      "red": "The posture stops naming the 401. The killing assertion reads the DURABLE ready receipt a real run wrote: assert_eq!(ready.get(\"credential_posture\").and_then(Value::as_str), Some(CREDENTIAL_REFUSES_EVERYTHING)) fails against \"undisclosed\", and the follow-on assertion that the disclosed posture contains 401 fails with it. The pure-function assertion is secondary."
+    },
+    {
+      "id": "EB05",
+      "law": "A forced close is never rendered as graceful.",
+      "package": "grapt-engined",
+      "test_target": "integration",
+      "file": "crates/grapt-engined/src/receipt.rs",
+      "test": "eb_receipt::a_forced_close_is_never_rendered_as_stopped_gracefully",
+      "old": "        ApiHostExit::ForcedClose { .. } => \"forced_close\",",
+      "new": "        ApiHostExit::ForcedClose { .. } => \"stopped_gracefully\",",
+      "red": "A forced close renders as graceful. The killing assertion is on a REAL BINARY RUN: the witness starts serve on an ephemeral port with a one-millisecond drain allowance and a thirty-second header allowance, holds a connection open with an unterminated request head across the drain deadline, and reads the exit field the process printed. assert_eq!(forced_receipt.get(\"exit\").and_then(Value::as_str), Some(\"forced_close\")) fails against the mutated \"stopped_gracefully\", and the assert_ne! against the graceful run's own exit fails with it. This row was FALSE EVIDENCE until run_serve called render_exit: a mutant of a function with no production caller reddens a test-only reference and proves nothing about the product. The pure-function assertions are retained as a secondary."
+    },
+    {
+      "id": "EB06",
+      "law": "A refusal exits non-zero.",
+      "package": "grapt-engined",
+      "test_target": "integration",
+      "file": "crates/grapt-engined/src/main.rs",
+      "test": "eb_arguments::every_typed_refusal_exits_non_zero",
+      "old": "        Outcome::Refused(_) => 2,",
+      "new": "        Outcome::Refused(_) => 0,",
+      "red": "Every typed refusal exits 0 and becomes indistinguishable from success; the assert_eq! on Some(2) fails on the first of the four cases."
+    },
+    {
+      "id": "EB07",
+      "law": "A hostname is refused, never resolved.",
+      "package": "grapt-engined",
+      "test_target": "integration",
+      "file": "crates/grapt-engined/src/main.rs",
+      "test": "eb_arguments::a_hostname_is_refused_as_adapter_unavailable_and_never_bound",
+      "old": "    bind.parse::<SocketAddr>().ok()",
+      "new": "    bind.parse::<SocketAddr>().ok().or(Some(SocketAddr::from(([127, 0, 0, 1], 0))))",
+      "red": "localhost:8080 stops being refused and silently becomes a loopback ephemeral bind, so the run composes a host, serves its window and exits 0; assert_ne!(output.status.code(), Some(0), \"a hostname must not bind\") fails, and the two stdout assertions for \"refusal\":\"bind\" and \"resolves no hostname\" fail with it. The mutant still USES bind, so it compiles clean and is scored on behaviour rather than on a missing symbol."
+    },
+    {
+      "id": "EB09",
+      "law": "`service status` observes and never mutates.",
+      "package": "grapt-engined",
+      "test_target": "integration",
+      "file": "crates/grapt-engined/src/service.rs",
+      "test": "eb_service::status_reads_the_registration_and_never_writes_it",
+      "old": "    let bytes = store.read()?;",
+      "new": "    let bytes = {\n        let _authority =\n            grapt_service::ElectedControllerAuthority::acquire(registration, policy)?;\n        store.read()?\n    };",
+      "red": "Acquiring the elected authority takes the election lock, so observing the slot creates a .elected file; the assertion that no sidecar exists fails and names the path."
+    },
+    {
+      "id": "EB10",
+      "law": "Receipt-root precedence is explicit argument, then GRAPT_RECEIPT_ROOT, then a portable fallback.",
+      "package": "grapt-engined",
+      "test_target": "integration",
+      "file": "crates/grapt-engined/src/custody.rs",
+      "test": "eb_custody::an_explicit_receipt_root_outranks_the_environment",
+      "old": "    let root = explicit.or(from_env).or_else(portable_fallback);",
+      "new": "    let root = from_env.or(explicit).or_else(portable_fallback);",
+      "red": "The environment outranks the explicit argument, so the settled root is the environment path; assert_eq!(settled, explicit) fails."
+    },
+    {
+      "id": "EB11",
+      "law": "A receipt root inside a repository is refused.",
+      "package": "grapt-engined",
+      "test_target": "integration",
+      "file": "crates/grapt-engined/src/custody.rs",
+      "test": "eb_custody::a_receipt_root_inside_a_repository_is_refused",
+      "old": "    if is_inside_repository(&root) {",
+      "new": "    if false {",
+      "red": "An in-repository root settles instead of refusing, so the match on ReceiptRootInsideRepository falls to the panic arm naming the Ok value."
+    },
+    {
+      "id": "EB12",
+      "law": "stdout carries exactly one JSON object; prose goes to stderr.",
+      "package": "grapt-engined",
+      "test_target": "integration",
+      "file": "crates/grapt-engined/src/main.rs",
+      "test": "eb_arguments::stdout_carries_exactly_one_json_object_and_prose_goes_to_stderr",
+      "old": "    writeln!(io::stderr(), \"{prose}\")?;",
+      "new": "    writeln!(io::stdout(), \"{prose}\")?;",
+      "red": "Prose joins the receipt stream, so stdout carries two lines; assert_eq!(lines.len(), 1) fails and prints both."
+    },
+    {
+      "id": "EB13",
+      "law": "The ready receipt names the address the host is ACTUALLY listening on, never the one that was requested.",
+      "package": "grapt-engined",
+      "test_target": "integration",
+      "file": "crates/grapt-engined/src/main.rs",
+      "test": "eb_receipt::the_ready_receipt_names_the_observed_address_and_never_the_requested_one",
+      "old": "    let receipt = ServeReceipt::from_bounds(bounds, ready.observed_address());",
+      "new": "    let receipt = ServeReceipt::from_bounds(bounds, requested);",
+      "red": "The receipt echoes the REQUESTED address. The witness binds 127.0.0.1:0, so the mutated receipt carries port 0 and assert_ne!(address.port(), 0) fails, followed by the assertion that the receipt is not the requested string. This row exists separately from EB02 because it is a fidelity-of-OUTCOME law rather than fidelity-of-input, and it is unwitnessable on a fixed port: with --bind 127.0.0.1:8080 the requested and observed addresses are equal and this exact mutant survives in silence. The corpus therefore carries an ephemeral :0 case as well."
+    },
+    {
+      "id": "EB14",
+      "law": "A successful `service status` receipt names the state it observed, and the owner when the slot has one.",
+      "package": "grapt-engined",
+      "test_target": "integration",
+      "file": "crates/grapt-engined/src/service.rs",
+      "test": "eb_service::a_successful_status_receipt_names_the_state_it_observed",
+      "old": "            ServiceOutcome::Observed { state, owner } => Some((state.as_str(), owner.as_deref())),",
+      "new": "            ServiceOutcome::Observed { .. } => Some((\"empty\", None)),",
+      "red": "This is the RESURRECTION mutant: it restores the collapse this row was added to close, in which every observation rendered alike and an operator could not tell a free slot from a held one from a corrupt one. Under it the binary reports state=empty for all three slots, so assert!(registered_out.contains(\"\\\"state\\\":\\\"registered\\\"\")) fails first, then the owner assertion, then the unreadable one, then all three assert_ne! comparisons that the three states never render alike. It dies for the right reason: the witness DRIVES THE BINARY over three materially different slots -- an absent path, undecodable bytes, and a real encoded RegistrationRecord -- and reads what the process printed, so a mutant that only changes the rendering is still observable. EB09 is a different law over the same verb and is deliberately not merged with this one: EB09 forbids status from creating a lock or election sidecar and asserts on run_status's RETURN VALUE, which stayed correct throughout the defect this row closes."
+    }
+  ],
+  "tombstones": []
+}

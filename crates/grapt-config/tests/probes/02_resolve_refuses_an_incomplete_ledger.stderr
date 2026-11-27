@@ -1,0 +1,15 @@
+error[E0308]: mismatched types
+  --> tests/probes/02_resolve_refuses_an_incomplete_ledger.rs:17:21
+   |
+17 |     let _ = resolve(&ledger);
+   |             ------- ^^^^^^^ expected `&CompleteLedger`, found `&ConfigLedger`
+   |             |
+   |             arguments to this function are incorrect
+   |
+   = note: expected reference `&CompleteLedger`
+              found reference `&ConfigLedger`
+note: function defined here
+  --> src/resolve.rs
+   |
+   | pub fn resolve(ledger: &CompleteLedger) -> Resolution<'_> {
+   |        ^^^^^^^

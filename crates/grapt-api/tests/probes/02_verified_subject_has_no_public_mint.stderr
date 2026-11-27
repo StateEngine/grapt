@@ -1,0 +1,20 @@
+error[E0624]: associated function `mint` is private
+  --> tests/probes/02_verified_subject_has_no_public_mint.rs:11:36
+   |
+11 |     let _forged = VerifiedSubject::mint(todo!(), todo!());
+   |                                    ^^^^ private associated function
+   |
+  ::: src/auth.rs
+   |
+   |     fn mint(subject: SubjectId, policy: AuthenticationPolicyVersion) -> Self {
+   |     ------------------------------------------------------------------------ private associated function defined here
+
+warning: unreachable expression
+  --> tests/probes/02_verified_subject_has_no_public_mint.rs:11:50
+   |
+11 |     let _forged = VerifiedSubject::mint(todo!(), todo!());
+   |                                         -------  ^^^^^^^ unreachable expression
+   |                                         |
+   |                                         any code following this expression is unreachable
+   |
+   = note: `#[warn(unreachable_code)]` (part of `#[warn(unused)]`) on by default

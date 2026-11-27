@@ -1,0 +1,3 @@
+{"case":"ready-authenticated-product-root","outcome":"served","registration_released":true}
+{"case":"absent-store-refuses-before-side-effects","outcome":"refused","reason_family":"store-readiness"}
+{"case":"mismatched-health-never-attributes","outcome":"refused","reason_family":"identity-mismatch"}

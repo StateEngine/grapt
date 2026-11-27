@@ -1,0 +1,11 @@
+error[E0277]: `PhysicalAttemptAuthoritySnapshot` doesn't implement `Debug`
+  --> tests/probes/49c_snapshot_debug_prints_authority.rs:18:22
+   |
+18 |     requires_debug::<grapt_policy::PhysicalAttemptAuthoritySnapshot>();
+   |                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ the trait `Debug` is not implemented for `PhysicalAttemptAuthoritySnapshot`
+   |
+note: required by a bound in `requires_debug`
+  --> tests/probes/49c_snapshot_debug_prints_authority.rs:15:22
+   |
+15 | fn requires_debug<T: core::fmt::Debug>() {}
+   |                      ^^^^^^^^^^^^^^^^ required by this bound in `requires_debug`

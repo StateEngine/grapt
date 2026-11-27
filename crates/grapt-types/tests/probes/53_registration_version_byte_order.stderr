@@ -1,0 +1,13 @@
+error[E0369]: binary operation `>` cannot be applied to type `&ServiceRegistrationVersion`
+  --> tests/probes/53_registration_version_byte_order.rs:18:15
+   |
+18 |     candidate > incumbent
+   |     --------- ^ --------- &ServiceRegistrationVersion
+   |     |
+   |     &ServiceRegistrationVersion
+   |
+note: `ServiceRegistrationVersion` does not implement `PartialOrd`
+  --> src/service.rs
+   |
+   | pub struct ServiceRegistrationVersion(String);
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `ServiceRegistrationVersion` is defined in another crate

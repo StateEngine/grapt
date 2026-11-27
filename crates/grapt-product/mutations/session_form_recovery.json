@@ -1,0 +1,44 @@
+{
+  "mutations": [
+    {
+      "id": "SCFORMR01",
+      "file": "crates/grapt-product/src/dogfood/form.rs",
+      "old": "    application\n        .ensure_session_writer(&session)\n        .map_err(|error| FormReplyApplicationError::InvalidRequest(invalid(error)))?;\n",
+      "new": "",
+      "package": "grapt-product",
+      "test_target": "lib",
+      "test": "dogfood::form::tests::pending_session_forms_answer_and_cancel_after_reopen_once",
+      "red": "reopened reply: InvalidRequest"
+    },
+    {
+      "id": "SCFORMR02",
+      "file": "crates/grapt-product/src/dogfood/form.rs",
+      "old": "    application\n        .ensure_session_writer(&session)\n        .map_err(|error| FormCancelApplicationError::InvalidRequest(invalid(error)))?;\n",
+      "new": "",
+      "package": "grapt-product",
+      "test_target": "lib",
+      "test": "dogfood::form::tests::cancelled_form_can_be_the_first_recovered_session_write",
+      "red": "first recovered cancel: InvalidRequest"
+    },
+    {
+      "id": "SCFORMR03",
+      "file": "crates/grapt-product/src/dogfood/mod.rs",
+      "old": "        match inbox.store().fencing_token(&aggregate) {\n            Ok(_) => Ok(()),",
+      "new": "        match inbox.store().fencing_token(&aggregate) {\n            Ok(_) => inbox.store_mut().elect_writer(&aggregate).map(|_| ()).map_err(|error| error.to_string()),",
+      "package": "grapt-product",
+      "test_target": "lib",
+      "test": "dogfood::form::tests::a_stale_session_writer_cannot_resurrect_by_replying_or_cancelling",
+      "red": "assertion failed: matches!(answer(&app, &owner, &form),"
+    },
+    {
+      "id": "SCFORMR04",
+      "file": "crates/grapt-product/src/dogfood/form.rs",
+      "old": "    if let Some(message) = validate_answer(fields, answer) {\n        return Err(FormReplyApplicationError::FormInvalidAnswer(\n            form_invalid_answer(&id, &message),\n        ));\n    }\n    // Reuse the Session owner after restart; a cached stale epoch stays fenced.\n    application\n        .ensure_session_writer(&session)\n        .map_err(|error| FormReplyApplicationError::InvalidRequest(invalid(error)))?;\n",
+      "new": "    // Reuse the Session owner after restart; a cached stale epoch stays fenced.\n    application\n        .ensure_session_writer(&session)\n        .map_err(|error| FormReplyApplicationError::InvalidRequest(invalid(error)))?;\n    if let Some(message) = validate_answer(fields, answer) {\n        return Err(FormReplyApplicationError::FormInvalidAnswer(\n            form_invalid_answer(&id, &message),\n        ));\n    }\n",
+      "package": "grapt-product",
+      "test_target": "lib",
+      "test": "dogfood::form::tests::invalid_answer_after_reopen_leaves_writer_and_pending_form_untouched",
+      "red": "assertion `left == right` failed"
+    }
+  ]
+}

@@ -1,0 +1,21 @@
+error[E0624]: associated function `establish` is private
+  --> tests/probes/38_forge_user_selection_chain.rs:25:41
+   |
+25 |     let surface = UserSelectionSurface::establish(client, selector);
+   |                                         ^^^^^^^^^ private associated function
+   |
+  ::: src/subagent.rs
+   |
+   |     pub(crate) fn establish(client: AuthenticatedClientId, selector: SelectorVersion) -> Self {
+   |     ----------------------------------------------------------------------------------------- private associated function defined here
+
+warning: unreachable call
+  --> tests/probes/38_forge_user_selection_chain.rs:27:29
+   |
+27 |     let selection = surface.select(
+   |                             ^^^^^^ unreachable call
+...
+30 |         todo!("any ModelRef the attacker resolved from its own catalog"),
+   |         ---------------------------------------------------------------- any code following this expression is unreachable
+   |
+   = note: `#[warn(unreachable_code)]` (part of `#[warn(unused)]`) on by default

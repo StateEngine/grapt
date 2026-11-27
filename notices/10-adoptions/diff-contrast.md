@@ -1,0 +1,1 @@
+| Grapt diff foreground contrast | `openai/codex` | `codex-rs/tui/src/style/contrast.rs`, `codex-rs/tui/src/diff_render.rs` | `bb64b894fd67158be0f874872e6d7bfe717e7368` | Apache-2.0 | Adapted verified-root path shortening and RGB contrast correction to the native diff renderer with bounded per-color search; preserve syntax hues on stronger line fills. |

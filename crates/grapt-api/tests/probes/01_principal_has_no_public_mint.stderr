@@ -1,0 +1,25 @@
+error[E0624]: associated function `mint` is private
+  --> tests/probes/01_principal_has_no_public_mint.rs:15:47
+   |
+15 |       let _forged = AuthenticatedSeatPrincipal::mint(todo!(), todo!(), todo!(), todo!());
+   |                                                 ^^^^ private associated function
+   |
+  ::: src/auth.rs
+   |
+   | /     pub(crate) fn mint(
+   | |         subject: VerifiedSubject,
+   | |         client: AuthenticatedClientId,
+   | |         recipient: SeatRecipientId,
+   | |         generation: DirectoryGeneration,
+   | |     ) -> Self {
+   | |_____________- private associated function defined here
+
+warning: unreachable expression
+  --> tests/probes/01_principal_has_no_public_mint.rs:15:61
+   |
+15 |     let _forged = AuthenticatedSeatPrincipal::mint(todo!(), todo!(), todo!(), todo!());
+   |                                                    -------  ^^^^^^^ unreachable expression
+   |                                                    |
+   |                                                    any code following this expression is unreachable
+   |
+   = note: `#[warn(unreachable_code)]` (part of `#[warn(unused)]`) on by default

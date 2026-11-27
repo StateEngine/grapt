@@ -1,0 +1,1 @@
+| `crates/secode-provider/src/native_search.rs` | `openai/codex`, `codex-rs/protocol/src/models.rs` (`ResponseItem::WebSearchCall`, `WebSearchAction`) | `092d3acd6bec3e3a14bdc7e7a2810ab628ab759d` | Modified: bounded terminal native search history, source retention, and portable recorded-data fallback. |

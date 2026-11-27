@@ -1,0 +1,1 @@
+| `crates/secode-product/src/dogfood/tools/agent_wait.rs` | `openai/codex`, `codex-rs/core/src/tools/handlers/multi_agents_v2/wait.rs` | `092d3acd6bec3e3a14bdc7e7a2810ab628ab759d` | **Modified**: bounded durable result-mail checks, input and cancellation wake, one advisory watch and one timeout. |

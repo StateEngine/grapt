@@ -1,0 +1,38 @@
+[package]
+name = "grapt-permission"
+autotests = false
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+description = "Permission blocker domain: strict event decode and lifecycle fold, proven against the real frozen clone."
+
+[[test]]
+name = "integration"
+path = "tests/integration/main.rs"
+
+# Trybuild probes keep their own harness.
+[[test]]
+name = "compile_fail"
+path = "tests/compile_fail.rs"
+
+# Each evidence test must own its `mod evidence;`, and `integration` already has one.
+[[test]]
+name = "clone_permissions"
+path = "tests/clone_permissions.rs"
+
+[dependencies]
+grapt-types = { path = "../grapt-types" }
+grapt-store = { path = "../grapt-store" }
+rusqlite = { version = "0.41", features = ["bundled"] }
+serde_json = "1"
+serde = "1"
+thiserror = "2"
+tokio = { version = "1", default-features = false, features = ["sync"] }
+
+[dev-dependencies]
+rusqlite = { version = "0.41", features = ["bundled"] }
+tokio = { version = "1", default-features = false, features = ["macros", "rt", "time"] }
+trybuild = "1.0.120"
+
+[lints]
+workspace = true

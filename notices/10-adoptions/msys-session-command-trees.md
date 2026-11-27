@@ -1,0 +1,1 @@
+| Session approval reuse for Windows command trees | `openai/codex`, Apache-2.0, commit `bb64b894fd67158be0f874872e6d7bfe717e7368`, `codex-rs/core/src/tools/sandboxing.rs` | Session approval lookup adapted into the existing bounded permission owner; Grapt uses an explicit Session-only Windows command-tree resource and rechecks ordinary command authority. |

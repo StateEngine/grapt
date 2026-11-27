@@ -1,0 +1,1 @@
+| `crates/secode-session/src/rewind.rs`, `crates/secode-client/src/client/rewind.rs` | `openai/codex`, `codex-rs/core/src/context_manager/history.rs`, `codex-rs/tui/src/app_backtrack.rs` | `092d3acd6bec3e3a14bdc7e7a2810ab628ab759d` | Modified: durable conversation cutoff, bounded event visibility, exact-tip validation and prompt reopening through the authenticated native API. |

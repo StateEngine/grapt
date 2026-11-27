@@ -1,0 +1,42 @@
+{
+  "schema": "grapt.workspace-checkpoint.acceptance.v1",
+  "law_pack_revision": 9,
+  "source_pins": {
+    "specs/secode-rust-reconstruction-r1-2026-08-07.md": "626333034f4760faf2fd2769e1a797d2ebbad5187e0bd787d33b99bf32a47865",
+    "docs/reports/SECODE_RUST_RECONSTRUCTION_DISPOSITION_2026-08-07.md": "cca761d01667451dbac9bda6a8c6424ce6c25313fdc4457882f41fc10b2a70fc",
+    "docs/reports/SECODE_RUST_FOUNDATIONAL_TYPES_AND_LIFECYCLES_2026-08-07.md": "31d4ae9af4229939225374efb9c721e752bc0fc163615e3f188acebed051b032"
+  },
+  "actions": "actions.jsonl",
+  "actions_sha256": "7c6705e202acab393df75c479d39eb17f9eb1461ad4551a7a8e93397194a18b9",
+  "bounds": {
+    "actions": 32,
+    "checkpoint_lanes": 32,
+    "fixture_payload_bytes": 4096,
+    "journal_bytes": 32768,
+    "restore_preconditions": 99
+  },
+  "scenarios": [
+    {"id":"W01-STABLE-CAPTURE","carrier":"grapt-checkpoint::tests::capture::stable_capture_resolve_inspect_and_fork_cross_the_provider_boundary"},
+    {"id":"W01-HEAD-MOVED","carrier":"grapt-checkpoint::tests::capture::a_head_change_after_provider_capture_refuses_the_anchor"},
+    {"id":"W01-WORKTREE-RELINKED","carrier":"grapt-checkpoint::tests::capture::a_worktree_identity_change_after_capture_refuses_the_anchor"},
+    {"id":"W01-VCS-STATES","carrier":"grapt-checkpoint::tests::capture::non_git_unborn_detached_and_unavailable_are_four_observable_states"},
+    {"id":"W01-INPUT-REFUSALS","carrier":"grapt-checkpoint::tests::capture::unknown_lane_and_wrong_root_fail_without_calling_the_provider"},
+    {"id":"W01-PROVIDER-UNAVAILABLE","carrier":"grapt-checkpoint::tests::capture::provider_unavailability_is_a_refusal_not_an_absent_checkpoint"},
+    {"id":"W01-BOUNDARY-CORPUS","carrier":"grapt-product::checkpoint_compatibility::language_neutral_checkpoint_corpus_executes_through_product_owner"},
+    {"id":"W02-PLAN-AUTHORITY-RESCUE","carrier":"grapt-checkpoint::tests::restore::exact_plan_authority_rescue_apply_and_duplicate_refusal_are_one_path"},
+    {"id":"W02-WRONG-AUTHORITY","carrier":"grapt-checkpoint::tests::restore::wrong_authority_is_refused_before_rescue_or_destructive_effect"},
+    {"id":"W02-STALE-OR-CHANGED","carrier":"grapt-checkpoint::tests::restore::stale_plan_and_changed_vcs_baseline_are_pre_effect_refusals"},
+    {"id":"W02-INDEPENDENT-VCS","carrier":"grapt-checkpoint::tests::restore::provider_cannot_self_assert_the_independent_vcs_precondition"},
+    {"id":"W02-MISSING-RESCUE","carrier":"grapt-checkpoint::tests::restore::missing_rescue_and_explicit_authority_refusal_never_apply"},
+    {"id":"W02-DEGRADED-RESCUE","carrier":"grapt-checkpoint::tests::restore::degraded_rescue_is_not_proven_rescue_coverage"},
+    {"id":"W02-UNSUPPORTED-RESCUE","carrier":"grapt-checkpoint::tests::restore::provider_without_rescue_support_requires_an_authorized_visible_waiver"},
+    {"id":"W02-PROVIDER-REFUSAL","carrier":"grapt-checkpoint::tests::restore::provider_refusal_is_durable_and_recovers_as_refused"},
+    {"id":"W02-RECEIPT-MISMATCH","carrier":"grapt-checkpoint::tests::restore::mismatched_provider_receipt_is_quarantined_not_applied"},
+    {"id":"W02-INTERRUPTED-APPLIED","carrier":"grapt-checkpoint::tests::restore::interrupted_apply_is_reconciled_after_engine_reconstruction"},
+    {"id":"W02-INTERRUPTED-QUARANTINE","carrier":"grapt-checkpoint::tests::restore::unresolved_interruption_is_quarantined_after_one_inspect_and_reconcile"},
+    {"id":"W03-CORRUPT-JOURNAL","carrier":"grapt-checkpoint::tests::journal::malformed_or_over_bound_journal_evidence_fails_loudly"},
+    {"id":"W03-OPERATION-SUBSTITUTION","carrier":"grapt-checkpoint::tests::journal::journal_path_cannot_substitute_another_operation_record"},
+    {"id":"W03-BOUNDED-PRECONDITIONS","carrier":"grapt-checkpoint::tests::restore::provider_precondition_observation_is_bounded_before_admission"},
+    {"id":"WM01-DISPOSABLE-PRODUCT","carrier":"cargo run -p grapt-product --example checkpoint_compatibility --features checkpoint-fixture -- <new-disposable-root>"}
+  ]
+}

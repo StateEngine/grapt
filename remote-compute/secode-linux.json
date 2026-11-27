@@ -1,0 +1,478 @@
+{
+  "contract": "remote-compute-profile/v1",
+  "runner_contract": "remote-compute-runner/v1",
+  "profile_id": "secode-rust-linux",
+  "target": {
+    "ssh_target": "build-host",
+    "remote_run_root": "/home/example/secode-remote-compute/runs",
+    "remote_artifact_root": "/home/example/secode-remote-compute/artifacts",
+    "connect_timeout_ms": 10000
+  },
+  "environment": {
+    "inherit": ["HOME", "USER"],
+    "fixed": {
+      "PATH": "/home/example/.cargo/bin:/usr/local/bin:/usr/bin:/bin",
+      "CI": "1",
+      "LC_ALL": "C",
+      "CARGO_INCREMENTAL": "1",
+      "CARGO_TERM_COLOR": "never",
+      "RUST_BACKTRACE": "1"
+    }
+  },
+  "toolchain": {
+    "checks": [
+      {"argv": ["rustc", "+1.97.1", "--version"], "expect": {"stream": "stdout", "match": "exact", "value": "rustc 1.97.1 (8bab26f4f 2026-07-14)"}},
+      {"argv": ["cargo", "+1.97.1", "--version"], "expect": {"stream": "stdout", "match": "exact", "value": "cargo 1.97.1 (c980f4866 2026-06-30)"}},
+      {"argv": ["cargo", "+1.97.1", "clippy", "--version"], "expect": {"stream": "stdout", "match": "exact", "value": "clippy 0.1.97 (8bab26f4f6 2026-07-14)"}},
+      {"argv": ["rustfmt", "+1.97.1", "--version"], "expect": {"stream": "stdout", "match": "exact", "value": "rustfmt 1.9.0-stable (8bab26f4f6 2026-07-14)"}}
+    ],
+    "bootstrap": [
+      ["/home/example/.cargo/bin/rustup", "toolchain", "install", "1.97.1", "--profile", "minimal", "--component", "clippy", "--component", "rustfmt"]
+    ],
+    "bootstrap_policy": "cache-keyed"
+  },
+  "cache": {
+    "mode": "shared-keyed",
+    "namespace": "secode-rust",
+    "key": "linux-x86_64-rust-1.97.1-v1",
+    "env": {
+      "CARGO_HOME": "{{domain}}/cargo-home",
+      "RUSTUP_HOME": "{{domain}}/rustup-home",
+      "CARGO_TARGET_DIR": "{{domain}}/cargo-target"
+    }
+  },
+  "resources": {
+    "domains": {
+      "domain0": {"cpu_policy": "host-shared", "memory": {"policy": "runner-unbounded"}, "concurrency": 1, "cache_namespace": "carrier0"},
+      "domain1": {"cpu_policy": "host-shared", "memory": {"policy": "runner-unbounded"}, "concurrency": 1, "cache_namespace": "carrier1"}
+    },
+    "classes": {
+      "desktop-recovery": {"timeout_ms": 14400000, "domains": ["domain0"]},
+      "retained-decision": {"timeout_ms":7200000,"domains":["domain0"]},
+      "retained-compatibility": {"timeout_ms":14400000,"domains":["domain1"]},
+      "focused": {"timeout_ms": 1200000, "domains": ["domain0", "domain1"]},
+      "mutation": {"timeout_ms": 72000000, "domains": ["domain0", "domain1"]}
+    }
+  },
+  "commands": {
+    "desktop-history": {"steps": [{"id": "d4-product-composition", "argv": ["cargo", "+1.97.1", "test", "-p", "grapt-product", "--no-fail-fast", "-j", "8"], "timeout_ms": 1200000}, {"id": "d4-history-recovery-mutations", "argv": ["python3", "crates/grapt-product/mutations/run.py", "--prefix", "DDR"], "timeout_ms": 7200000}], "resource_class": "desktop-recovery", "timeout_ms": 14400000, "artifacts": []},
+    "dogfood-cli-convergence": {"steps": [{"id": "cli-composition", "argv": ["cargo", "+1.97.1", "test", "-p", "grapt-cli", "--features", "loopback-testkit", "--no-fail-fast", "-j", "8"], "timeout_ms": 1200000}, {"id": "cli-convergence-mutations", "argv": ["python3", "remote-compute/dogfood-cli-convergence.py"], "timeout_ms": 7200000}], "resource_class": "desktop-recovery", "timeout_ms": 14400000, "artifacts": []},
+    "desktop-recovery": {"steps": [{"id": "d4-composition-tests", "argv": ["cargo", "+1.97.1", "test", "-p", "grapt-api", "-p", "grapt-session", "-p", "grapt-product", "--no-fail-fast", "-j", "8"], "timeout_ms": 1200000}, {"id": "d4-recovery-mutations", "argv": ["python3", "crates/grapt-product/mutations/run.py", "--prefix", "DDR"], "timeout_ms": 7200000}, {"id": "d4-tool-context-family", "argv": ["python3", "crates/grapt-product/mutations/run.py", "--prefix", "DTV"], "timeout_ms": 7200000}], "resource_class": "desktop-recovery", "timeout_ms": 14400000, "artifacts": []},
+    "retained-fixture-compat": {
+      "steps": [{"id": "fixture-affected-rows", "argv": ["python3", "remote-compute/retained-fixture-compat.py"], "timeout_ms": 7200000}],
+      "resource_class": "retained-compatibility",
+      "timeout_ms": 7200000,
+      "artifacts": []
+    },
+    "retained-repin-mutations": {
+      "steps": [
+        {
+          "id": "retained-repin-three",
+          "argv": [
+            "python3",
+            "remote-compute/retained-repin-mutations.py"
+          ],
+          "timeout_ms": 1200000
+        },
+        {
+          "id": "retained-profile-fs",
+          "argv": ["python3", "crates/grapt-product/mutations/run.py", "--prefix", "FS"],
+          "timeout_ms": 1200000
+        }
+      ],
+      "resource_class": "focused",
+      "timeout_ms": 1200000,
+      "artifacts": []
+    },
+    "retained-compatibility-tail": {
+      "steps": [
+        {
+          "id": "compatibility-dtv-remaining",
+          "argv": [
+            "python3",
+            "-u",
+            "remote-compute/retained-compatibility-resume.py"
+          ],
+          "timeout_ms": 7200000
+        },
+        {
+          "id": "compatibility-pc",
+          "argv": [
+            "python3",
+            "crates/grapt-product/mutations/run.py",
+            "--prefix",
+            "PC"
+          ],
+          "timeout_ms": 7200000
+        },
+        {
+          "id": "compatibility-pu",
+          "argv": [
+            "python3",
+            "crates/grapt-product/mutations/run.py",
+            "--prefix",
+            "PU"
+          ],
+          "timeout_ms": 7200000
+        },
+        {
+          "id": "compatibility-pcu",
+          "argv": [
+            "python3",
+            "crates/grapt-product/mutations/run.py",
+            "--prefix",
+            "PCU"
+          ],
+          "timeout_ms": 7200000
+        }
+      ],
+      "resource_class": "retained-compatibility",
+      "timeout_ms": 14400000,
+      "artifacts": []
+    },
+    "retained-compatibility-mutations": {
+      "steps": [
+        {
+          "id": "compatibility-ipr",
+          "argv": [
+            "python3",
+            "crates/grapt-product/mutations/run.py",
+            "--prefix",
+            "IPR"
+          ],
+          "timeout_ms": 7200000
+        },
+        {
+          "id": "compatibility-dgh",
+          "argv": [
+            "python3",
+            "crates/grapt-product/mutations/run.py",
+            "--prefix",
+            "DGH"
+          ],
+          "timeout_ms": 7200000
+        },
+        {
+          "id": "compatibility-rmh",
+          "argv": [
+            "python3",
+            "crates/grapt-product/mutations/run.py",
+            "--prefix",
+            "RMH"
+          ],
+          "timeout_ms": 7200000
+        },
+        {
+          "id": "compatibility-lh",
+          "argv": [
+            "python3",
+            "crates/grapt-product/mutations/run.py",
+            "--prefix",
+            "LH"
+          ],
+          "timeout_ms": 7200000
+        },
+        {
+          "id": "compatibility-dtv",
+          "argv": [
+            "python3",
+            "crates/grapt-product/mutations/run.py",
+            "--prefix",
+            "DTV"
+          ],
+          "timeout_ms": 7200000
+        },
+        {
+          "id": "compatibility-pc",
+          "argv": [
+            "python3",
+            "crates/grapt-product/mutations/run.py",
+            "--prefix",
+            "PC"
+          ],
+          "timeout_ms": 7200000
+        },
+        {
+          "id": "compatibility-pu",
+          "argv": [
+            "python3",
+            "crates/grapt-product/mutations/run.py",
+            "--prefix",
+            "PU"
+          ],
+          "timeout_ms": 7200000
+        },
+        {
+          "id": "compatibility-pcu",
+          "argv": [
+            "python3",
+            "crates/grapt-product/mutations/run.py",
+            "--prefix",
+            "PCU"
+          ],
+          "timeout_ms": 7200000
+        }
+      ],
+      "resource_class": "retained-compatibility",
+      "timeout_ms": 14400000,
+      "artifacts": []
+    },
+    "retained-completion-compat": {
+      "steps": [
+        {
+          "id": "completion-affected-anchors",
+          "argv": [
+            "python3",
+            "remote-compute/retained-completion-compat.py"
+          ],
+          "timeout_ms": 7200000
+        }
+      ],
+      "resource_class": "retained-compatibility",
+      "timeout_ms": 7200000,
+      "artifacts": []
+    },
+    "retained-completion-mutations": {
+      "steps": [
+        {
+          "id": "completion-observation-mutations",
+          "argv": [
+            "python3",
+            "crates/grapt-product/mutations/run.py",
+            "--prefix",
+            "SCO"
+          ],
+          "timeout_ms": 7200000
+        }
+      ],
+      "resource_class": "retained-decision",
+      "timeout_ms": 7200000,
+      "artifacts": []
+    },
+    "retained-decision-mutations": {
+      "steps": [
+        {
+          "id": "decision-mutations",
+          "argv": [
+            "python3",
+            "crates/grapt-product/mutations/run.py",
+            "--prefix",
+            "RDT"
+          ],
+          "timeout_ms": 7200000
+        }
+      ],
+      "resource_class": "retained-decision",
+      "timeout_ms": 7200000,
+      "artifacts": []
+    },
+    "retained-shell-focused": {
+      "steps": [
+        {"id": "shell-fmt", "argv": ["cargo", "+1.97.1", "fmt", "-p", "grapt-shell", "--check"], "timeout_ms": 600000},
+        {"id": "shell-clippy", "argv": ["cargo", "+1.97.1", "clippy", "-p", "grapt-shell", "--all-targets", "--", "-D", "warnings"], "timeout_ms": 1200000},
+        {"id": "shell-test", "argv": ["cargo", "+1.97.1", "test", "-p", "grapt-shell", "--lib", "--test", "shell_operation", "--test", "dependency_direction", "--no-fail-fast"], "timeout_ms": 1200000}
+      ],
+      "resource_class": "focused",
+      "timeout_ms": 1200000,
+      "artifacts": []
+    },
+    "retained-product-readiness": {
+      "steps": [
+        {"id": "readiness-1", "argv": ["cargo", "+1.97.1", "test", "-p", "grapt-product", "--test", "product_root", "--no-fail-fast"], "timeout_ms": 600000},
+        {"id": "readiness-2", "argv": ["cargo", "+1.97.1", "test", "-p", "grapt-product", "--test", "product_root", "--no-fail-fast"], "timeout_ms": 600000},
+        {"id": "readiness-3", "argv": ["cargo", "+1.97.1", "test", "-p", "grapt-product", "--test", "product_root", "--no-fail-fast"], "timeout_ms": 600000}
+      ],
+      "resource_class": "focused",
+      "timeout_ms": 1200000,
+      "artifacts": []
+    },
+    "retained-tui-focused": {
+      "steps": [
+        {"id": "retained-fmt", "argv": ["cargo", "+1.97.1", "fmt", "-p", "grapt-api", "-p", "grapt-product", "-p", "grapt-runtime", "-p", "grapt-event", "-p", "grapt-store", "--check"], "timeout_ms": 600000},
+        {"id": "retained-clippy", "argv": ["cargo", "+1.97.1", "clippy", "-p", "grapt-api", "-p", "grapt-product", "-p", "grapt-runtime", "-p", "grapt-event", "-p", "grapt-store", "--all-targets", "--", "-D", "warnings"], "timeout_ms": 1200000},
+        {"id": "retained-event-store", "argv": ["cargo", "+1.97.1", "test", "-p", "grapt-event", "-p", "grapt-store", "--lib", "--no-fail-fast"], "timeout_ms": 1200000},
+        {"id": "retained-runtime", "argv": ["cargo", "+1.97.1", "test", "-p", "grapt-runtime", "--lib", "--no-fail-fast"], "timeout_ms": 1200000},
+        {"id": "retained-api", "argv": ["cargo", "+1.97.1", "test", "-p", "grapt-api", "--lib", "--no-fail-fast"], "timeout_ms": 1200000},
+        {"id": "retained-product", "argv": ["cargo", "+1.97.1", "test", "-p", "grapt-product", "--lib", "--bin", "grapt-server", "--test", "product_root", "--test", "dependency_direction", "--no-fail-fast"], "timeout_ms": 1200000}
+      ],
+      "resource_class": "focused",
+      "timeout_ms": 1200000,
+      "artifacts": []
+    },
+    "smoke": {
+      "steps": [
+        {"id": "evidence-root", "argv": ["cargo", "+1.97.1", "test", "-p", "grapt-event", "--test", "evidence_root"], "timeout_ms": 600000}
+      ],
+      "resource_class": "focused",
+      "timeout_ms": 900000,
+      "artifacts": []
+    },
+    "mutation-battery": {
+      "steps": [
+        {"id": "provider-mutation-census", "argv": ["python3", "-m", "unittest", "crates/grapt-provider/mutations/test_run.py"], "timeout_ms": 600000},
+        {"id": "provider-mutations", "argv": ["python3", "crates/grapt-provider/mutations/run.py"], "timeout_ms": 14400000},
+        {"id": "config-mutations", "argv": ["python3", "crates/grapt-config/mutations/run.py"], "timeout_ms": 14400000},
+        {"id": "config-ledger-mutations", "argv": ["python3", "crates/grapt-config/mutations/igl/run.py"], "timeout_ms": 14400000},
+        {"id": "runtime-mutations", "argv": ["python3", "crates/grapt-runtime/mutations/run.py"], "timeout_ms": 14400000},
+        {"id": "store-mutations", "argv": ["python3", "crates/grapt-store/mutations/run.py"], "timeout_ms": 14400000},
+        {"id": "event-mutations", "argv": ["python3", "crates/grapt-event/mutations/run.py"], "timeout_ms": 14400000},
+        {"id": "platform-mutations", "argv": ["python3", "crates/grapt-platform/mutations/run.py", "--prefix", "IGPX"], "timeout_ms": 14400000},
+        {"id": "product-mutation-census", "argv": ["python3", "-m", "unittest", "crates/grapt-product/mutations/test_run.py"], "timeout_ms": 600000},
+        {"id": "product-mutations", "argv": ["python3", "crates/grapt-product/mutations/run.py"], "timeout_ms": 14400000}
+      ],
+      "resource_class": "mutation",
+      "timeout_ms": 72000000,
+      "artifacts": []
+    },
+    "provider-mutations": {
+      "steps": [
+        {"id": "provider-mutation-census", "argv": ["python3", "-m", "unittest", "crates/grapt-provider/mutations/test_run.py"], "timeout_ms": 600000},
+        {"id": "provider-mutations", "argv": ["python3", "crates/grapt-provider/mutations/run.py"], "timeout_ms": 14400000}
+      ],
+      "resource_class": "mutation",
+      "timeout_ms": 14400000,
+      "artifacts": []
+    },
+    "config-mutations": {
+      "steps": [
+        {"id": "config-mutations", "argv": ["python3", "crates/grapt-config/mutations/run.py"], "timeout_ms": 14400000}
+      ],
+      "resource_class": "mutation",
+      "timeout_ms": 14400000,
+      "artifacts": []
+    },
+    "config-ledger-mutations": {
+      "steps": [
+        {"id": "config-ledger-mutations", "argv": ["python3", "crates/grapt-config/mutations/igl/run.py"], "timeout_ms": 14400000}
+      ],
+      "resource_class": "mutation",
+      "timeout_ms": 14400000,
+      "artifacts": []
+    },
+    "config-all-mutations": {
+      "steps": [
+        {"id": "config-mutations", "argv": ["python3", "crates/grapt-config/mutations/run.py"], "timeout_ms": 14400000},
+        {"id": "config-ledger-mutations", "argv": ["python3", "crates/grapt-config/mutations/igl/run.py"], "timeout_ms": 14400000}
+      ],
+      "resource_class": "mutation",
+      "timeout_ms": 14400000,
+      "artifacts": []
+    },
+    "runtime-mutations": {
+      "steps": [
+        {"id": "runtime-mutations", "argv": ["python3", "crates/grapt-runtime/mutations/run.py"], "timeout_ms": 14400000}
+      ],
+      "resource_class": "mutation",
+      "timeout_ms": 14400000,
+      "artifacts": []
+    },
+    "store-mutations": {
+      "steps": [
+        {"id": "store-mutations", "argv": ["python3", "crates/grapt-store/mutations/run.py"], "timeout_ms": 14400000}
+      ],
+      "resource_class": "mutation",
+      "timeout_ms": 14400000,
+      "artifacts": []
+    },
+    "event-mutations": {
+      "steps": [
+        {"id": "event-mutations", "argv": ["python3", "crates/grapt-event/mutations/run.py"], "timeout_ms": 14400000}
+      ],
+      "resource_class": "mutation",
+      "timeout_ms": 14400000,
+      "artifacts": []
+    },
+    "platform-mutations": {
+      "steps": [
+        {"id": "platform-mutations", "argv": ["python3", "crates/grapt-platform/mutations/run.py", "--prefix", "IGPX"], "timeout_ms": 14400000}
+      ],
+      "resource_class": "mutation",
+      "timeout_ms": 14400000,
+      "artifacts": []
+    },
+    "service-mutations": {
+      "steps": [
+        {"id": "service-mutations", "argv": ["python3", "crates/grapt-service/mutations/sv/run.py"], "timeout_ms": 14400000}
+      ],
+      "resource_class": "mutation",
+      "timeout_ms": 14400000,
+      "artifacts": []
+    },
+    "release-mutations": {
+      "steps": [
+        {"id": "release-mutations-r6mr", "argv": ["python3", "crates/grapt-release/mutations/r6mr/run.py", "--prefix", "R6MR"], "timeout_ms": 14400000}
+      ],
+      "resource_class": "mutation",
+      "timeout_ms": 14400000,
+      "artifacts": []
+    },
+    "permission-mutations": {
+      "steps": [
+        {"id": "permission-mutations-dgp", "argv": ["python3", "crates/grapt-permission/mutations/run.py", "--prefix", "DGP"], "timeout_ms": 14400000},
+        {"id": "permission-mutations-dgpr", "argv": ["python3", "crates/grapt-permission/mutations/run.py", "--prefix", "DGPR"], "timeout_ms": 14400000}
+      ],
+      "resource_class": "mutation",
+      "timeout_ms": 28800000,
+      "artifacts": []
+    },
+    "r4ca-mutations": {
+      "steps": [
+        {"id": "r4ca-mutations", "argv": ["python3", "crates/grapt-cli/mutations/r4ca/run.py"], "timeout_ms": 14400000}
+      ],
+      "resource_class": "mutation",
+      "timeout_ms": 14400000,
+      "artifacts": []
+    },
+    "product-mutations": {
+      "steps": [
+        {"id": "product-mutation-census", "argv": ["python3", "-m", "unittest", "crates/grapt-product/mutations/test_run.py"], "timeout_ms": 600000},
+        {"id": "product-mutations", "argv": ["python3", "crates/grapt-product/mutations/run.py"], "timeout_ms": 14400000}
+      ],
+      "resource_class": "mutation",
+      "timeout_ms": 14400000,
+      "artifacts": []
+    },
+    "pcu-mutations": {
+      "steps": [
+        {"id": "product-mutation-census", "argv": ["python3", "-m", "unittest", "crates/grapt-product/mutations/test_run.py"], "timeout_ms": 600000},
+        {"id": "pcu-mutations", "argv": ["python3", "crates/grapt-product/mutations/run.py", "--prefix", "PCU"], "timeout_ms": 14400000}
+      ],
+      "resource_class": "mutation",
+      "timeout_ms": 14400000,
+      "artifacts": []
+    },
+    "cache-usage-benchmark": {
+      "steps": [
+        {"id": "cache-usage-benchmark-build", "argv": ["cargo", "+1.97.1", "build", "-p", "grapt-product", "--bin", "cache-usage-benchmark"], "timeout_ms": 1200000},
+        {"id": "cache-usage-benchmark", "argv": ["cargo", "+1.97.1", "run", "--quiet", "-p", "grapt-product", "--bin", "cache-usage-benchmark"], "timeout_ms": 1200000}
+      ],
+      "resource_class": "focused",
+      "timeout_ms": 1200000,
+      "artifacts": []
+    }
+  },
+  "inputs": {"artifacts": [
+      {"id":"shell-fixture-manifest-json","local_path":"secode/fixtures/rust-reconstruction/shell-descendant-drain-timeout-bounded-output/manifest.json","remote_path":"fixtures/rust-reconstruction/shell-descendant-drain-timeout-bounded-output/manifest.json","bytes":2288,"sha256":"903a97854c7d685675aa07ee96bfd60c1b1504c4934991ddf71269b88c9c488e","mode":"0444"},
+      {"id":"shell-fixture-actions-jsonl","local_path":"secode/fixtures/rust-reconstruction/shell-descendant-drain-timeout-bounded-output/actions.jsonl","remote_path":"fixtures/rust-reconstruction/shell-descendant-drain-timeout-bounded-output/actions.jsonl","bytes":1070,"sha256":"0f9100d5d4bc3f2e58bb1c1f7d6d7656900d3926114ee1e780fed40d24b9134a","mode":"0444"},
+      {"id":"shell-fixture-expected-waivers-json","local_path":"secode/fixtures/rust-reconstruction/shell-descendant-drain-timeout-bounded-output/expected/waivers.json","remote_path":"fixtures/rust-reconstruction/shell-descendant-drain-timeout-bounded-output/expected/waivers.json","bytes":1018,"sha256":"aed697be8a01dc3a176a20060d3e574613766ab19b658f4665b9aa4618369880","mode":"0444"},
+      {"id":"shell-fixture-expected-durable-jsonl","local_path":"secode/fixtures/rust-reconstruction/shell-descendant-drain-timeout-bounded-output/expected/durable.jsonl","remote_path":"fixtures/rust-reconstruction/shell-descendant-drain-timeout-bounded-output/expected/durable.jsonl","bytes":0,"sha256":"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855","mode":"0444"},
+      {"id":"shell-fixture-expected-state-json","local_path":"secode/fixtures/rust-reconstruction/shell-descendant-drain-timeout-bounded-output/expected/state.json","remote_path":"fixtures/rust-reconstruction/shell-descendant-drain-timeout-bounded-output/expected/state.json","bytes":1518,"sha256":"e669de47d355f4a9d93f74f7472729da42010c9e64484a0921b6a77e95477d26","mode":"0444"},
+
+      {"id":"form-suspension-durable","local_path":"secode/fixtures/rust-reconstruction/form-suspend-settle-after-replacement/expected/durable.jsonl","remote_path":"fixtures/rust-reconstruction/form-suspend-settle-after-replacement/expected/durable.jsonl","bytes":943,"sha256":"288f4719e3b57c29cd33eec6a3ce75305ec901981341b84c6a2e6d07ab840cd7","mode":"0444"},
+      {"id":"ratified-manifest-schema","local_path":"secode/fixtures/rust-reconstruction/manifest.schema.json","remote_path":"fixtures/rust-reconstruction/manifest.schema.json","bytes":8257,"sha256":"372f9cbaf4dd785feb7fb484a728fc1e00bc1f6dc9ac5e6796c765b99da6ff79","mode":"0444"},
+      {"id":"ratified-oracle-receipt-schema","local_path":"secode/fixtures/rust-reconstruction/oracle-receipt-manifest.schema.json","remote_path":"fixtures/rust-reconstruction/oracle-receipt-manifest.schema.json","bytes":7907,"sha256":"6d855521e8107668025de7461cc0742654eac316ebcdba32a396c9ccb632f07f","mode":"0444"},
+      {"id":"ratified-law-pack","local_path":"secode/fixtures/rust-reconstruction/law-pack.json","remote_path":"fixtures/rust-reconstruction/law-pack.json","bytes":1983,"sha256":"d33d1592c27845f9a0f7ab9c4f721106b2437dbbbc1b725b45355c4ce99e08d8","mode":"0444"},
+      {"id":"campaign-replay-actions","local_path":"secode/fixtures/rust-reconstruction/campaign-node-reservation-spend-replay/actions.jsonl","remote_path":"fixtures/rust-reconstruction/campaign-node-reservation-spend-replay/actions.jsonl","bytes":2607,"sha256":"5c4f3eac0097883a660527159d9fb66bb2f009cccc4a527ee42e41b991264874","mode":"0444"},
+      {"id":"campaign-replay-durable","local_path":"secode/fixtures/rust-reconstruction/campaign-node-reservation-spend-replay/expected/durable.jsonl","remote_path":"fixtures/rust-reconstruction/campaign-node-reservation-spend-replay/expected/durable.jsonl","bytes":982,"sha256":"1cc8124b28d555f548a6ae332e6c7ed4f57543d1745cf8320266d9fafbeba40c","mode":"0444"},
+      {"id":"campaign-replay-state","local_path":"secode/fixtures/rust-reconstruction/campaign-node-reservation-spend-replay/expected/state.json","remote_path":"fixtures/rust-reconstruction/campaign-node-reservation-spend-replay/expected/state.json","bytes":2120,"sha256":"a1abcfad153e232ee0f9ed5fc35546d1e5c1968436ba8a840e3a1624b6015d40","mode":"0444"},
+      {"id":"campaign-replay-waivers","local_path":"secode/fixtures/rust-reconstruction/campaign-node-reservation-spend-replay/expected/waivers.json","remote_path":"fixtures/rust-reconstruction/campaign-node-reservation-spend-replay/expected/waivers.json","bytes":1641,"sha256":"d39f9802455593fab0fff3324a8ebb94184e061e49a59b51f4957527788a8c6c","mode":"0444"},
+      {"id":"campaign-replay-manifest","local_path":"secode/fixtures/rust-reconstruction/campaign-node-reservation-spend-replay/manifest.json","remote_path":"fixtures/rust-reconstruction/campaign-node-reservation-spend-replay/manifest.json","bytes":6090,"sha256":"da4c20b4970831a3f19bbd0adbfc4bc8cd24cc85f04fcd34616ed00c4e361444","mode":"0444"},
+      {"id":"reconnect-manifest","local_path":"secode/fixtures/rust-reconstruction/reconnect-cursor-convergence-replay/manifest.json","remote_path":"fixtures/rust-reconstruction/reconnect-cursor-convergence-replay/manifest.json","bytes":2344,"sha256":"6d1cc6e48724f8a1b0aedfa63b6f07af743f1aa6f50db8c936474bd093ae0372","mode":"0444"},
+      {"id":"reconnect-actions","local_path":"secode/fixtures/rust-reconstruction/reconnect-cursor-convergence-replay/actions.jsonl","remote_path":"fixtures/rust-reconstruction/reconnect-cursor-convergence-replay/actions.jsonl","bytes":1747,"sha256":"e0421d98c411050df04b7842be65f9b3ada5c3f28a61aa8c080a29880b0b23f5","mode":"0444"},
+      {"id":"reconnect-durable","local_path":"secode/fixtures/rust-reconstruction/reconnect-cursor-convergence-replay/expected/durable.jsonl","remote_path":"fixtures/rust-reconstruction/reconnect-cursor-convergence-replay/expected/durable.jsonl","bytes":1290,"sha256":"05c869656dc8ebe56d05c20ae8b5e4faf8b00c83eb03ea978d8430d5682147cd","mode":"0444"},
+      {"id":"reconnect-state","local_path":"secode/fixtures/rust-reconstruction/reconnect-cursor-convergence-replay/expected/state.json","remote_path":"fixtures/rust-reconstruction/reconnect-cursor-convergence-replay/expected/state.json","bytes":362,"sha256":"0b963f4de26f485a30c9dec6ff3e4b1fe5df7ad3dbb97a860455f1bb03f6b2b0","mode":"0444"},
+      {"id":"reconnect-waivers","local_path":"secode/fixtures/rust-reconstruction/reconnect-cursor-convergence-replay/expected/waivers.json","remote_path":"fixtures/rust-reconstruction/reconnect-cursor-convergence-replay/expected/waivers.json","bytes":546,"sha256":"9cc4685559b79241e14cb824e67342efd060307f6c4f8bf4555afd0ad111ce29","mode":"0444"}
+    ]},
+  "evidence": {"max_total_bytes": 1048576, "max_log_bytes": 67108864, "artifacts": []},
+  "cleanup": {"policy": "always-remove-run-and-artifacts"}
+}

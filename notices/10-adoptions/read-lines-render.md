@@ -1,0 +1,1 @@
+| `crates/secode-tools-local/src/read_lines/render.rs` | OpenAI Codex, `codex-rs/core/src/tools/handlers/read_file.rs` | `c6ffe9abab04bd3349ecc49fffc0fbf9551826e6` | **Modified:** compact numbered source over the existing lossless bounded page builder, with file/hash header, continuation marker, scoped instructions and explicit structured opt-in; no upstream line clipping. |

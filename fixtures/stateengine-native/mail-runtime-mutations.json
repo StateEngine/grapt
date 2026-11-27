@@ -1,0 +1,125 @@
+{
+  "schema": 1,
+  "rows": [
+    {
+      "id": "NMR01",
+      "path": "crates/grapt-runtime/src/mailbox/remote/io.rs",
+      "before": "if !matches {",
+      "after": "if false {",
+      "witness": "mailbox::remote::tests::foreign_binding_cannot_resume_on_a_second_call",
+      "law": "First binding must match expected exact principal/project pair/recipient",
+      "target": "lib",
+      "crate": "grapt-runtime"
+    },
+    {
+      "id": "NMR02",
+      "path": "crates/grapt-runtime/src/mailbox/remote/io.rs",
+      "before": "|| receipt.verified_principal() != &self.expected.principal",
+      "after": "|| false",
+      "witness": "mailbox::remote::tests::foreign_binding_cannot_resume_on_a_second_call",
+      "law": "Retained failed handle never resumes as an accepted binding",
+      "target": "lib",
+      "crate": "grapt-runtime"
+    },
+    {
+      "id": "NMR03",
+      "path": "crates/grapt-runtime/src/mailbox/remote/snapshot.rs",
+      "before": "|| receipt.source_message() != ack.source_message()",
+      "after": "|| false",
+      "witness": "mailbox::remote::tests::primary_receipt_mismatch_never_settles_local_debt",
+      "law": "Primary receipt must name the original message before local settlement",
+      "target": "lib",
+      "crate": "grapt-runtime"
+    },
+    {
+      "id": "NMR04",
+      "path": "crates/grapt-runtime/src/mailbox/remote/snapshot.rs",
+      "before": "if record.delivery_pending() || record.repair_pending() {",
+      "after": "if record.actionable() {",
+      "witness": "mailbox::remote::tests::consumed_quiet_debt_is_repaired_without_notification",
+      "law": "Consumed and quiet rows still owe original delivery repair",
+      "target": "lib",
+      "crate": "grapt-runtime"
+    },
+    {
+      "id": "NMR05",
+      "path": "crates/grapt-runtime/src/mailbox/remote/snapshot.rs",
+      "before": "self.checkpoint_done = page.next_before.is_none();",
+      "after": "self.checkpoint_done = true;",
+      "witness": "mailbox::remote::tests::checkpoint_candidate_remains_private_until_all_prefix_pages_validate",
+      "law": "Checkpoint candidate remains private until complete prefix validation",
+      "target": "lib",
+      "crate": "grapt-runtime"
+    },
+    {
+      "id": "NMR06",
+      "path": "crates/grapt-runtime/src/mailbox/remote/snapshot.rs",
+      "before": "if self.checkpoint_candidate.is_none() {",
+      "after": "if true {",
+      "witness": "mailbox::remote::tests::checkpoint_candidate_remains_private_until_all_prefix_pages_validate",
+      "law": "Descending pages retain the latest candidate instead of replacing with older positions",
+      "target": "lib",
+      "crate": "grapt-runtime"
+    },
+    {
+      "id": "NMR07",
+      "path": "crates/grapt-runtime/src/mailbox/remote.rs",
+      "before": "result.live = self.is_live();",
+      "after": "result.live = true;",
+      "witness": "mailbox::remote::tests::slice_exhaustion_keeps_source_page_cursor_and_owed_work",
+      "law": "Exhausted bounded work is pending, never live/empty",
+      "target": "lib",
+      "crate": "grapt-runtime"
+    },
+    {
+      "id": "NMR08",
+      "path": "crates/grapt-runtime/src/mailbox/remote/snapshot.rs",
+      "before": "self.source_after = page.next_after().cloned();",
+      "after": "self.source_after = None;",
+      "witness": "mailbox::remote::tests::slice_exhaustion_keeps_source_page_cursor_and_owed_work",
+      "law": "Source page position survives a slice boundary",
+      "target": "lib",
+      "crate": "grapt-runtime"
+    },
+    {
+      "id": "NMR09",
+      "path": "crates/grapt-runtime/src/mailbox/remote/snapshot.rs",
+      "before": ".is_some_and(|origin| armed.snapshot().retained_origin() != origin)",
+      "after": ".is_some_and(|_origin| false)",
+      "witness": "mailbox::remote::tests::invalid_cursor_replays_only_the_named_covering_origin",
+      "law": "Invalid cursor resumes only from its named covering origin",
+      "target": "lib",
+      "crate": "grapt-runtime"
+    },
+    {
+      "id": "NMR10",
+      "path": "crates/grapt-runtime/src/mailbox/remote.rs",
+      "before": "        io::check_cancel(cancel)?;\n        self.ensure_open(cancel).await?;",
+      "after": "        self.ensure_open(cancel).await?;",
+      "witness": "mailbox::remote::tests::cancellation_wins_before_any_physical_call",
+      "law": "Cancellation before activation makes no physical call",
+      "target": "lib",
+      "crate": "grapt-runtime"
+    },
+    {
+      "id": "NMR11",
+      "path": "crates/grapt-store/src/mailbox/remote.rs",
+      "before": "if projection.is_some() {",
+      "after": "if true {",
+      "witness": "mailbox::remote::tests::unmeasured_ack_cannot_erase_known_secondary_repair_debt",
+      "law": "Unavailable secondary measurement cannot erase known refused repair",
+      "target": "lib",
+      "crate": "grapt-runtime"
+    },
+    {
+      "id": "NMR12",
+      "path": "crates/grapt-runtime/src/mailbox/remote.rs",
+      "before": ".is_none_or(|subscription| subscription.generation() != signal.generation())",
+      "after": ".is_none_or(|_subscription| false)",
+      "witness": "mailbox::remote::tests::current_signal_rescans_but_stale_generation_does_not",
+      "law": "A stale poll generation cannot reset the new snapshot",
+      "target": "lib",
+      "crate": "grapt-runtime"
+    }
+  ]
+}

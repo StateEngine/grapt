@@ -1,0 +1,1 @@
+| `crates/secode-mcp-client/src/active_time.rs`, `crates/secode-mcp-host/src/channel.rs` | `openai/codex`, `codex-rs/rmcp-client/src/rmcp_client.rs` (`active_time_timeout`) | `092d3acd6bec3e3a14bdc7e7a2810ab628ab759d` | Modified: checked shared active deadlines across HTTP headers, response reads and recovery, with one scoped human-wait owner and preserved remaining budget. |

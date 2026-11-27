@@ -1,0 +1,65 @@
+{
+  "admitted_receipts": 11,
+  "confirmations": [
+    {
+      "ordinal": 8,
+      "outcome": "still-current",
+      "scenario": "reused-pid-does-not-inherit"
+    }
+  ],
+  "differentials_admitted": [
+    {
+      "left": "retained",
+      "ordinal": 14,
+      "right": "rust",
+      "scenario": "two-engines-compare"
+    }
+  ],
+  "engines_admitted": {
+    "retained": 3,
+    "rust": 8
+  },
+  "refusals": [
+    {
+      "action": "admit",
+      "ordinal": 3,
+      "refusal": "unattributed",
+      "scenario": "health-only-is-not-an-attachment"
+    },
+    {
+      "action": "still-current",
+      "ordinal": 5,
+      "refusal": "not-the-recorded-owner",
+      "scenario": "stale-owner-is-refused"
+    },
+    {
+      "action": "still-current",
+      "ordinal": 7,
+      "refusal": "not-the-recorded-owner",
+      "scenario": "reused-pid-does-not-inherit"
+    },
+    {
+      "action": "differential",
+      "ordinal": 11,
+      "refusal": "same-owner-on-both-sides",
+      "scenario": "one-engine-measured-twice-is-refused"
+    },
+    {
+      "action": "differential",
+      "ordinal": 19,
+      "refusal": "same-selection-on-both-sides",
+      "scenario": "one-engine-compared-with-itself-is-refused"
+    }
+  ],
+  "selector_state": {
+    "attach-retained-engine": "attached:retained",
+    "attach-rust-engine": "attached:rust",
+    "health-only-is-not-an-attachment": "retained",
+    "one-engine-compared-with-itself-is-refused": "attached:rust",
+    "one-engine-measured-twice-is-refused": "attached:rust",
+    "reused-pid-does-not-inherit": "attached:rust",
+    "selector-reverts-to-retained": "retained",
+    "stale-owner-is-refused": "attached:rust",
+    "two-engines-compare": "attached:rust"
+  }
+}

@@ -1,0 +1,255 @@
+name: Hosted gate
+
+# Full gate on GitHub-hosted runners: staged batches push hosted/** branches;
+# once the repository is public, every pull request and every main push runs
+# it too. Each job's condition keeps main pushes and pull requests off private
+# minutes: on a private repository only hosted/** branches run.
+on:
+  push:
+    branches: ['hosted/**', main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: hosted-gate-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+env:
+  CARGO_BUILD_JOBS: '4'
+  CARGO_INCREMENTAL: '0'
+  CARGO_PROFILE_DEV_DEBUG: '0'
+  CARGO_PROFILE_TEST_DEBUG: '0'
+  CARGO_TARGET_DIR: ${{ github.workspace }}/target
+  PYTHONDONTWRITEBYTECODE: '1'
+  CI_PACKAGES: '["*"]'
+  CI_NIGHTLY: 'false'
+  CI_FIXTURE_SHA256: 30748dab876cb7531f2dd4ed2a4519260488003b9985c5a34b5c8c9052505ccc
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  helpers:
+    if: ${{ startsWith(github.ref, 'refs/heads/hosted/') || github.event.repository.visibility == 'public' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: ./.github/actions/hosted-rust
+      # Same publication scan the box gate runs over base..landing commits.
+      - name: Publication scan (commits since main)
+        env:
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD: ${{ github.event.pull_request.head.sha }}
+          PUSH_BEFORE: ${{ github.event.before }}
+        run: |
+          # fetch-depth 0 already brought origin/main; no credentials kept.
+          # A pull request is scanned at its own head, never the synthetic merge
+          # checkout; a main push from the previous tip; a hosted branch from
+          # where it left main. A pull request is judged by the content it adds
+          # alone; the strict main-push scan still holds what lands.
+          head=HEAD
+          mode=landing
+          if [[ "$GITHUB_EVENT_NAME" == pull_request ]]; then
+            base=$PR_BASE
+            head=$PR_HEAD
+            mode=contributor
+          elif [[ "$GITHUB_REF" == refs/heads/main && -n "$PUSH_BEFORE" && ! "$PUSH_BEFORE" =~ ^0+$ ]]; then
+            base=$PUSH_BEFORE
+          else
+            base=$(git merge-base HEAD origin/main)
+          fi
+          python3 - "$base" "$head" "$mode" <<'PYCODE'
+          import sys
+          sys.path.insert(0, 'scripts/build')
+          import publication_scan
+          violations = publication_scan.check(
+              sys.argv[1], sys.argv[2], contributor=sys.argv[3] == 'contributor')
+          if violations:
+              print('\n'.join(violations))
+              sys.exit(1)
+          print('publication scan: clean')
+          PYCODE
+      # The release packager's refusal suite runs under pytest, pinned by hash.
+      - run: python3 -m pip install --user --break-system-packages --require-hashes --no-deps -r scripts/ci/requirements-pytest.txt
+      - run: python3 scripts/ci/run.py helpers
+      - run: python3 -m unittest discover -s bench -p 'test_*.py'
+      - run: python3 scripts/ci/run.py fmt
+      - uses: taiki-e/install-action@3a3daafd3b7f23b8f65d9f5ba2db203fb59b79e2 # v2
+        with:
+          tool: cargo-deny@0.20.2
+      - run: python3 scripts/release/licenses.py check
+
+  clippy:
+    if: ${{ startsWith(github.ref, 'refs/heads/hosted/') || github.event.repository.visibility == 'public' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/hosted-rust
+        id: tools
+      - uses: Swatinem/rust-cache@e9d7b9f1e587218970671bac74e5511ed9506e6a # v2
+        with:
+          shared-key: hosted-gate-clippy-linux
+          key: ${{ steps.tools.outputs.feature-key }}
+      - run: python3 scripts/ci/run.py clippy --platform linux
+
+  windows:
+    if: ${{ startsWith(github.ref, 'refs/heads/hosted/') || github.event.repository.visibility == 'public' }}
+    runs-on: windows-latest
+    timeout-minutes: 180
+    env:
+      CARGO_BUILD_JOBS: '2'
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/hosted-rust
+        id: tools
+      - uses: Swatinem/rust-cache@e9d7b9f1e587218970671bac74e5511ed9506e6a # v2
+        with:
+          shared-key: hosted-gate-windows
+          key: ${{ steps.tools.outputs.feature-key }}
+      # Ordinary and fixture-feature all-target Clippy for the MSVC target.
+      - run: python scripts/ci/run.py clippy --platform windows
+      # Native equivalent of the box's cargo-xwin `test --no-run` pair.
+      - name: Windows test compilation (ordinary and fixture features)
+        run: |
+          python - <<'PYCODE'
+          import subprocess, sys
+          sys.path.insert(0, 'scripts/build')
+          import test_features, windows_gate
+          features = test_features.arguments(None)
+          for enabled in ([features, []] if features else [[]]):
+              subprocess.run(['cargo', 'test', '--locked', '--workspace', '--target',
+                              windows_gate.TARGET, *enabled, '--no-run'], check=True)
+          PYCODE
+
+  archive:
+    if: ${{ startsWith(github.ref, 'refs/heads/hosted/') || github.event.repository.visibility == 'public' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/hosted-rust
+        id: tools
+      - uses: Swatinem/rust-cache@e9d7b9f1e587218970671bac74e5511ed9506e6a # v2
+        with:
+          shared-key: hosted-gate-archive-linux
+          key: ${{ steps.tools.outputs.feature-key }}
+      - run: python3 scripts/ci/run.py archive --platform linux
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: tests-linux
+          path: |
+            tests.tar.zst
+            ci-results/
+          retention-days: 2
+          compression-level: 0
+          if-no-files-found: error
+
+  test:
+    needs: archive
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2]
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: ./.github/actions/hosted-rust
+        id: tools
+      - uses: Swatinem/rust-cache@e9d7b9f1e587218970671bac74e5511ed9506e6a # v2
+        with:
+          shared-key: hosted-gate-tui-linux
+          key: ${{ steps.tools.outputs.feature-key }}
+      # The busy-seat journeys drive the TUI binary and require its build
+      # record (grapt-tui.d) from this tree; the test archive omits it.
+      - run: cargo build --locked -p grapt-tui
+      # Extracting the archive replaces that binary with the archive job's
+      # build of this same commit, stamped before this checkout. Date the
+      # checked-out sources at the commit so the freshness guard compares
+      # source age, not checkout order.
+      - name: Date sources at the commit
+        run: |
+          # Only an unmodified checkout may be dated; a later edit still trips the guard.
+          git diff --quiet HEAD -- || { echo "tracked sources differ from HEAD"; exit 1; }
+          git ls-files -z | xargs -0 touch -h -d "@$(git log -1 --format=%ct)"
+      # The developer-help cache check needs a shared compiler cache on PATH.
+      - uses: taiki-e/install-action@3a3daafd3b7f23b8f65d9f5ba2db203fb59b79e2 # v2
+        with:
+          tool: sccache
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          name: tests-linux
+      - run: python3 scripts/ci/run.py test --platform linux --shard '${{ matrix.shard }}'
+      # Landing evidence: this shard's JUnit must exist and record passing cases.
+      - name: Check the shard's JUnit report
+        run: |
+          python3 - <<'PYCODE'
+          import xml.etree.ElementTree as ET
+          root = ET.parse('target/nextest/gate/junit.xml').getroot()
+          suites = [root] if root.tag == 'testsuite' else root.iter('testsuite')
+          cases = sum(int(s.get('tests', 0)) for s in suites)
+          bad = int(root.get('failures', 0)) + int(root.get('errors', 0))
+          print(f'junit: {cases} cases, {bad} failures or errors')
+          if cases == 0 or bad:
+              raise SystemExit(1)
+          PYCODE
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        if: ${{ always() }}
+        with:
+          name: results-linux-${{ matrix.shard }}
+          path: |
+            target/nextest/gate/junit.xml
+            ci-results/
+          retention-days: 7
+          if-no-files-found: error
+
+  doctest:
+    if: ${{ startsWith(github.ref, 'refs/heads/hosted/') || github.event.repository.visibility == 'public' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/hosted-rust
+        id: tools
+      - uses: Swatinem/rust-cache@e9d7b9f1e587218970671bac74e5511ed9506e6a # v2
+        with:
+          shared-key: hosted-gate-doctest-linux
+          key: ${{ steps.tools.outputs.feature-key }}
+      - run: python3 scripts/ci/run.py doctest --platform linux
+
+  # The one status a ruleset requires: every hosted job ran and passed. It is
+  # not named `check`, so a ruleset cannot confuse it with CI's aggregate.
+  hosted-check:
+    name: hosted-check
+    if: ${{ always() && (startsWith(github.ref, 'refs/heads/hosted/') || github.event.repository.visibility == 'public') }}
+    needs: [helpers, clippy, windows, archive, test, doctest]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+      - name: Require every hosted job
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+        run: python3 scripts/ci/check.py --hosted

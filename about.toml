@@ -1,0 +1,18 @@
+accepted = [
+    "CC0-1.0", # Exact notify version in deny.toml.
+    "BSL-1.0", # Exact versions in deny.toml.
+    "Apache-2.0", "MIT", "BSD-2-Clause", "BSD-3-Clause", "ISC", "Zlib",
+    "Unicode-3.0", "Unicode-DFS-2016",
+    "MPL-2.0", # Approved nucleo packages only; deny.toml pins both exceptions.
+    "CDLA-Permissive-2.0", # CA data only; deny.toml restricts the crate.
+    "MIT-0", # Approved license exception.
+]
+ignore-dev-dependencies = true
+ignore-build-dependencies = false
+
+# deny.toml enforces exact versions.
+[recvmsg]
+accepted = ["0BSD"] # =1.0.0 only.
+
+[doctest-file]
+accepted = ["0BSD"] # =1.1.1 only.

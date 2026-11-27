@@ -1,0 +1,18 @@
+[package]
+name = "grapt-subagent"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+description = "Durable subagent operation domain with artifact-backed, generation-stamped, exactly-once operation delivery to the parent inbox."
+
+[dependencies]
+grapt-types = { path = "../grapt-types" }
+grapt-store = { path = "../grapt-store" }
+grapt-inbox = { path = "../grapt-inbox" }
+grapt-artifact = { path = "../grapt-artifact" }
+rusqlite = { version = "0.41", features = ["bundled"] }
+serde_json = "1"
+thiserror = "2"
+
+[lints]
+workspace = true

@@ -1,0 +1,125 @@
+[package]
+name = "grapt-api"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+description = "Owns the authenticated HTTP boundary: sealed seat principals, bounded directory and routing, the bounded HTTP/1 host, and the single versioned IA0 product health DTO/route. It persists nothing and mints no permission authority."
+
+# Every external name below is admitted by the API dependency policy
+# (R4HA-04, R4HA-05, R4HA-09). `tests/allowed_external_dependencies.rs` is the machine
+# gate over this exact set: the dependency-direction gates filter on `grapt-`, so they
+# say nothing about a crates.io name and an author could otherwise admit their own.
+[dependencies]
+grapt-auth-basic = { path = "../grapt-auth-basic" }
+grapt-stream = { path = "../grapt-stream" }
+grapt-window-lease = { path = "../grapt-window-lease" }
+grapt-schema = { path = "../grapt-schema" }
+grapt-types = { path = "../grapt-types" }
+thiserror = "2"
+# R4HA-05 rules that A owns the router rather than a transport-neutral table, so
+# that the composition law has ONE carrier and A can refuse before the call that
+# panics. `default-features = false` removes `form`, `json`, `query`,
+# `matched-path`, `original-uri`, `tokio`, `tower-log` and `tracing`: A composes
+# and seals a route set and never extracts, serves or logs, so none of those is
+# reachable from this crate.
+#
+# The version is pinned EXACTLY, which is unusual in this workspace and
+# deliberate here. `axum::Router::route` does not return an error — it expands
+# `panic_on_err!` — so the set of inputs that panic is part of this crate's
+# correctness argument, and `src/router.rs` refuses ahead of that exact set
+# after reading this exact version's source. A patch bump can change the set,
+# so it must be a reviewed edit that re-measures rather than a silent
+# resolution.
+axum = { version = "=0.8.9", default-features = false }
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["raw_value"] }
+
+# HTTP/1 host additions. The HTTP host contract directs a `grapt-api` increment that consumes the
+# accepted location listener and drives `hyper::server::conn::http1::Builder` DIRECTLY,
+# and the governing preflight `R4HH_BOUNDED_HTTP1_HOST_PREFLIGHT_2026-08-13.md` (43,300 B
+# / SHA-256 cadd7c36e5aee144fd768075e5f6c8fee15b612c09a00a7beed52c6474736064) states the
+# narrow feature posture each name below must take.
+#
+# Every one of these NAMES was already in `Cargo.lock` at the admitted base
+# `d04e2d96`, at the versions resolved below — the whole stack arrives
+# transitively through `reqwest`. The measured lock delta is therefore one
+# package, not zero and not eight: `httpdate 1.0.3`, which `hyper`'s `server`
+# feature pulls in and which nothing in the workspace had activated before,
+# because `reqwest` uses hyper as a CLIENT. 204 packages become 205.
+#
+# That number is measured from the lock after the edit rather than predicted
+# from the lock before it. A feature activation can add a package even when
+# every name is already present, which is exactly the case here.
+# ---------------------------------------------------------------------------
+
+# The accepted R4H-L listener owner. H consumes `BoundListener` by value and
+# `BoundListener::accept` is the whole seam it needs; H adds no bind intent, DNS,
+# port search or retry policy, and does not edit that crate.
+grapt-location = { path = "../grapt-location" }
+# `server` + `http1` and nothing else. No `http2` and no `client`: H drives one
+# HTTP/1 connection future per admitted socket and is not a client. This is the
+# positive architecture requirement of the preflight, not a size preference —
+# `axum::serve` and hyper-util's auto builder cannot expose `max_headers`,
+# `max_buf_size`, the injected header-read timer, per-connection graceful
+# polling, or the exact forced-close inventory that H must attest.
+hyper = { version = "1", default-features = false, features = ["server", "http1"] }
+# Exactly the two bridges H imports: `rt::TokioIo`/`rt::TokioTimer` under
+# `tokio`, and `service::TowerToHyperService` under `service`. Deliberately NOT
+# `server-auto` (the automatic protocol builder H forbids), NOT `server-graceful`
+# (H owns its own drain inventory and must be able to count it), and NOT any
+# client feature.
+hyper-util = { version = "0.1", default-features = false, features = ["service", "tokio"] }
+# Safe borrowed socket options; probe counts and user timeouts require `all`.
+socket2 = { version = "=0.6.5", default-features = false, features = ["all"] }
+# `net` for the accepted listener's socket type, `rt` for the owned task set,
+# `sync` for the two bounded semaphores, `time` for the one named deadline
+# adapter, and `macros` for `tokio::select!`/`tokio::pin!`.
+#
+# `macros` corrects the preflight, which listed it as dev-only. That was written
+# before the stop semantics existed, and they turn out to BE a select: the accept
+# loop races the stop signal against a permit and against an accept, the drain
+# races the task set against the injected deadline, and each connection races its
+# own future against the stop so it can call `graceful_shutdown` and keep polling
+# the same future. Every one of those is a cancel-safety question, and hand-rolling
+# them against `poll_fn` would replace one reviewed macro with four unreviewed
+# state machines. `io-util` and `test-util` remain dev-only, as the preflight has
+# them.
+tokio = { version = "1", default-features = false, features = [
+    "net",
+    "rt",
+    "sync",
+    "time",
+    "macros",
+] }
+# `limit` only, for `RequestBodyLimit`. It pre-refuses a known oversized
+# `Content-Length` before the inner service and wraps an unknown-length body so
+# no route observes bytes past the bound. Writing that by hand would be a second
+# carrier of one law.
+tower-http = { version = "0.6", default-features = false, features = ["limit"] }
+
+[lints]
+workspace = true
+
+[dev-dependencies]
+# Integration tests do not inherit normal dependencies.
+grapt-types = { path = "../grapt-types" }
+# Both gates parse manifests structurally rather than by line scanning.
+toml = "0.8"
+# The acceptance corpus is JSON; the validator refuses malformed rows.
+serde_json = "1"
+# The compile-fail probes are the only witness shape that can prove an ABSENCE
+# of a public route to authority.
+trybuild = "1.0.120"
+# `macros` for `#[tokio::test]`, `io-util` for the raw hostile-HTTP witnesses
+# that speak bytes at a socket rather than enabling a Hyper client stack, and
+# `test-util` for the paused clock the header-read-deadline witness advances
+# explicitly. None of the three is reachable from the shipped library.
+tokio = { version = "1", default-features = false, features = [
+    "net",
+    "rt",
+    "sync",
+    "time",
+    "macros",
+    "io-util",
+    "test-util",
+] }

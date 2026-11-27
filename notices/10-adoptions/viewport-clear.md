@@ -1,0 +1,1 @@
+| Full viewport initialization | openai/codex | `codex-rs/tui/src/custom_terminal.rs` (`clear_visible_screen`) | `c465563aa9626d99420062135b187d299f904f81` | Apache-2.0, Copyright 2025 OpenAI | Adapted to Ratatui's existing terminal clear so initial blank cells cannot retain foreign terminal text. |

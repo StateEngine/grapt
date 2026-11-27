@@ -1,0 +1,169 @@
+name: macOS compile and product tests
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: macos-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  macos:
+    runs-on: macos-15
+    timeout-minutes: 15
+    env:
+      CARGO_BUILD_JOBS: '2'
+      CARGO_INCREMENTAL: '0'
+      CARGO_PROFILE_DEV_DEBUG: '0'
+      CARGO_PROFILE_TEST_DEBUG: '0'
+      RUST_TEST_THREADS: '2'
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+      - name: Verify arm64 runner and pinned toolchain
+        run: |
+          set -euo pipefail
+          test "$(uname -m)" = arm64
+          mkdir -p "$RUNNER_TEMP/macos-results"
+          git rev-parse HEAD > "$RUNNER_TEMP/macos-results/source.txt"
+          rustup show active-toolchain
+          rustc --version
+          cargo --version
+      - name: Install plugin fixture Node
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: '24.21.0'
+          check-latest: false
+          package-manager-cache: false
+      - name: Verify plugin fixture runtimes
+        run: |
+          set -euo pipefail
+          test "$(node --version)" = v24.21.0
+          test -x /bin/sh
+          test -x /usr/bin/perl
+          printf 'NODE=%s\n' "$(command -v node)" >> "$GITHUB_ENV"
+          node --version > "$RUNNER_TEMP/macos-results/node-version.txt"
+      - name: Check every workspace crate
+        run: |
+          set -euo pipefail
+          cargo check --locked --workspace --keep-going 2>&1 | tee "$RUNNER_TEMP/macos-results/check.log"
+      - name: Test daemon admission, custody and receipts
+        if: ${{ !cancelled() }}
+        run: |
+          set -euo pipefail
+          cargo test --locked -p grapt-engined --test integration --no-fail-fast -- eb_platform:: eb_custody:: eb_receipt:: eb_service:: eb_arguments:: 2>&1 | tee "$RUNNER_TEMP/macos-results/engined.log"
+      - name: Build shipped CLI
+        if: ${{ !cancelled() }}
+        run: |
+          set -euo pipefail
+          cargo build --locked -p grapt-cli --bin grapt --features loopback-testkit 2>&1 | tee "$RUNNER_TEMP/macos-results/cli-build.log"
+      - name: Test CLI unit behavior
+        if: ${{ !cancelled() }}
+        run: |
+          set -euo pipefail
+          cargo test --locked -p grapt-cli --lib --features loopback-testkit --no-fail-fast 2>&1 | tee "$RUNNER_TEMP/macos-results/cli-unit.log"
+          grep -Eq '^test result: ok\. [1-9][0-9]* passed; 0 failed;' "$RUNNER_TEMP/macos-results/cli-unit.log"
+      - name: Test writable Store database
+        if: ${{ !cancelled() }}
+        run: |
+          set -euo pipefail
+          cargo test --locked -p grapt-store --lib owned_sqlite_is_writable --no-fail-fast -- --test-threads=1 2>&1 | tee "$RUNNER_TEMP/macos-results/store-writable.log"
+          grep -Fq 'test result: ok. 1 passed; 0 failed; 0 ignored;' "$RUNNER_TEMP/macos-results/store-writable.log"
+      - name: Prove Store binding guard rejects pathname replacement
+        if: ${{ !cancelled() }}
+        run: |
+          set -euo pipefail
+          python3 scripts/ci/macos_store_mutation.py --root "$GITHUB_WORKSPACE" --logs "$RUNNER_TEMP/macos-results" -- cargo
+      - name: Test headless product journeys
+        if: ${{ !cancelled() }}
+        run: |
+          set -euo pipefail
+          failed=0
+          index=0
+          for suite in \
+            headless_real_process_closes_every_journey_law \
+            apply_patch::native_text_patch_edits_files_and_inspect_cannot_run_it \
+            prompt_cache::consecutive_requests_extend_the_previous_request_byte_for_byte \
+            cli_continuity::a_crashed_session_resumes_through_the_shipped_cli_and_refuses_named_mismatches; do
+            index=$((index + 1))
+            log="$RUNNER_TEMP/macos-results/headless-$index.log"
+            echo "Headless journey $index: $suite"
+            if ! cargo test --locked -p grapt-product --features loopback-provider-testkit --test dogfood_headless "$suite" -- --exact 2>&1 | tee "$log"; then
+              failed=1
+            fi
+            if ! grep -Fq 'test result: ok. 1 passed; 0 failed; 0 ignored;' "$log"; then
+              echo "Journey must execute exactly one passing test: $suite" >&2
+              failed=1
+            fi
+          done
+          exit "$failed"
+      - name: Test skills watcher registration and edits
+        if: ${{ !cancelled() }}
+        run: |
+          set -euo pipefail
+          log="$RUNNER_TEMP/macos-results/skills-watch.log"
+          module=$(git ls-tree --name-only HEAD -- crates/grapt-product/src/dogfood/skills_watch.rs)
+          if [[ -z "$module" ]]; then
+            printf '%s\n' '::notice::Skills watcher module is absent from this ref; watcher validation was not run.' | tee "$log"
+            exit 0
+          fi
+          cargo test --locked -p grapt-product --lib dogfood::skills_watch::tests:: -- --nocapture 2>&1 | tee "$log"
+          grep -Eq '^test result: ok\. [1-9][0-9]* passed; 0 failed; 0 ignored;' "$log"
+          grep -Fq 'dogfood::skills_watch::tests::new_edited_and_recreated_skill_folders_invalidate_their_location' "$log"
+          grep -Fq 'dogfood::skills_watch::tests::directories_created_during_registration_remain_watched_after_setup' "$log"
+      - name: Test plugin supervision
+        if: ${{ !cancelled() }}
+        run: |
+          set -euo pipefail
+          cargo test --locked -p grapt-plugin --all-targets --no-fail-fast -- --test-threads=2 2>&1 | tee "$RUNNER_TEMP/macos-results/plugin.log"
+      - name: Prove native Seatbelt containment and protected-path guard
+        if: ${{ !cancelled() }}
+        run: |
+          set -euo pipefail
+          cargo clippy --locked -p grapt-sandbox --all-targets -- -D warnings 2>&1 | tee "$RUNNER_TEMP/macos-results/seatbelt-clippy.log"
+          cargo test --locked -p grapt-sandbox --all-targets --no-fail-fast 2>&1 | tee "$RUNNER_TEMP/macos-results/seatbelt-tests.log"
+          cargo test --locked -p grapt-product --lib dogfood::tools::terminal::tests::macos::exiting_root_cleans_its_descendant_and_preserves_status -- --exact 2>&1 | tee "$RUNNER_TEMP/macos-results/seatbelt-cleanup.log"
+          grep -Fq 'test result: ok. 1 passed; 0 failed; 0 ignored;' "$RUNNER_TEMP/macos-results/seatbelt-cleanup.log"
+          policy=crates/grapt-sandbox/src/seatbelt/profile.rs
+          original="$RUNNER_TEMP/macos-results/seatbelt-profile.rs.original"
+          cp "$policy" "$original"
+          restore() { cp "$original" "$policy"; }
+          trap restore EXIT
+          cargo run --locked -p grapt-sandbox --example seatbelt_smoke 2>&1 | tee "$RUNNER_TEMP/macos-results/seatbelt-original.log"
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('crates/grapt-sandbox/src/seatbelt/profile.rs')
+          source = path.read_text()
+          target = '        for path in &protected {\n            let parameter = result.parameter(path.clone())?;'
+          if source.count(target) != 1:
+              raise SystemExit('Seatbelt mutation must match exactly one protected-path guard')
+          path.write_text(source.replace(target, target.replace('&protected', 'protected.iter().take(0)')))
+          PY
+          if cargo run --locked -p grapt-sandbox --example seatbelt_smoke 2>&1 | tee "$RUNNER_TEMP/macos-results/seatbelt-mutant.log"; then
+            echo 'Seatbelt protected-path mutant survived' >&2
+            exit 1
+          fi
+          grep -Fq 'SEATBELT_ESCAPE: git-config' "$RUNNER_TEMP/macos-results/seatbelt-mutant.log"
+          restore
+          cargo run --locked -p grapt-sandbox --example seatbelt_smoke 2>&1 | tee "$RUNNER_TEMP/macos-results/seatbelt-restored.log"
+          git diff --exit-code -- "$policy"
+      - name: Test pure crate libraries
+        if: ${{ !cancelled() }}
+        run: |
+          set -euo pipefail
+          cargo test --locked -p grapt-types -p grapt-event -p grapt-policy --lib --no-fail-fast 2>&1 | tee "$RUNNER_TEMP/macos-results/tests.log"
+      - name: Retain compile diagnostics and test results
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: macos-arm64-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/macos-results
+          if-no-files-found: error
+          retention-days: 14

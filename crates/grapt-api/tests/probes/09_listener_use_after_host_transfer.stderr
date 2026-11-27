@@ -1,0 +1,10 @@
+error[E0382]: borrow of moved value: `listener`
+  --> tests/probes/09_listener_use_after_host_transfer.rs:39:20
+   |
+36 |     let listener = listener();
+   |         -------- move occurs because `listener` has type `BoundListener`, which does not implement the `Copy` trait
+37 |     let _host = PreparedApiHost::new(listener, service(), limits(), driver());
+   |                                      -------- value moved here
+38 |     // The listener moved into the host on the line above.
+39 |     let _receipt = listener.receipt();
+   |                    ^^^^^^^^ value borrowed here after move

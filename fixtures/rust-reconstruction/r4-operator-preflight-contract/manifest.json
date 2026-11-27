@@ -1,0 +1,124 @@
+{
+  "$schema": "../oracle-receipt-manifest.schema.json",
+  "schema_version": 1,
+  "id": "r4-operator-preflight-contract",
+  "title": "R4D-2E pre-entrypoint operator contract for a live differential run",
+  "law_pack": {
+    "revision": 9,
+    "sources": [
+      {
+        "path": "specs/secode-rust-reconstruction-r1-2026-08-07.md",
+        "sha256": "626333034f4760faf2fd2769e1a797d2ebbad5187e0bd787d33b99bf32a47865"
+      },
+      {
+        "path": "docs/reports/SECODE_RUST_RECONSTRUCTION_DISPOSITION_2026-08-07.md",
+        "sha256": "cca761d01667451dbac9bda6a8c6424ce6c25313fdc4457882f41fc10b2a70fc"
+      },
+      {
+        "path": "docs/reports/SECODE_RUST_FOUNDATIONAL_TYPES_AND_LIFECYCLES_2026-08-07.md",
+        "sha256": "31d4ae9af4229939225374efb9c721e752bc0fc163615e3f188acebed051b032"
+      },
+      {
+        "path": "docs/reports/SECODE_RUST_PROVIDER_STREAM_RUNTIME_CONTRACT_2026-08-08.md",
+        "sha256": "6c202f89e1e8bdc1de7304f22539ba043a4032f90376434841718f9b5624cdf6"
+      },
+      {
+        "path": "fixtures/rust-reconstruction/README.md",
+        "sha256": "26ebe50177d2d7ba0436c646f477e3dd220cd8f1acffdfe1f4c5f1205e760c3a"
+      },
+      {
+        "path": "specs/secode-rust-agency-continuity-amendment-r1-2026-08-08.md",
+        "sha256": "36fbf3b96258565ff14924d597a1c3a83e6307672b23a754d9f1287e92aa272a"
+      },
+      {
+        "path": "docs/reports/SECODE_CODEX_HARNESS_SURVEY_DISPOSITION_2026-08-08.md",
+        "sha256": "548b5e4a6383d963a4d96231cf14f3786ac43cdfbad8902bd21c47b5f8d9390c"
+      },
+      {
+        "path": "docs/reports/SECODE_SURVEY_DELTA_DISPOSITION_2026-08-08.md",
+        "sha256": "c25d65352aac7f8275adfc9284c83274f98b134d9e3b0ce1dffc22d9886faac3"
+      },
+      {
+        "path": "specs/secode-rust-campaign-mode-amendment-r1-2026-08-08.md",
+        "sha256": "775a3485b707232c991a557856cdb6778a5ce2a9220111dad18fcdeacda1ae2d"
+      }
+    ],
+    "matrix": {
+      "path": "docs/reports/SECODE_RUST_RATIFIED_ARCHITECTURE_SUPERSESSION_MATRIX_2026-08-08.md",
+      "sha256": "9301ccee905750352cbd904a63c6909bc5a2b87982bacec3ca29e7ec1c89af9b"
+    }
+  },
+  "law_conformance": {
+    "basis": "ratified-law-pack",
+    "oracle_status": "not-implemented-in-frozen-typescript-engine",
+    "note": "There is no oracle for this corpus and this manifest carries no oracle block rather than naming a commit it was not captured from. The frozen TypeScript engine at 42e4888cc0 has no notion of an evidence tier, an operator plan, a phase gate, an artifact custody declaration or a declared owner mapping; it persists one string under the desktop store key defaultServerUrl and probes GET /api/health across two URLs with a 3,000 ms timeout, accepting any 2xx. Neither is anything captured from the Rust side: at this canonical the workspace declares no binary target, grapt-api serves no product route, and CredentialAdapter::verify returns Err on every branch by the accepted R4HA-04 ruling. This corpus therefore records the pre-entrypoint operator CONTRACT and records no measurement of any engine, no observation of any host, and no run."
+  },
+  "scope": {
+    "preserves": [
+      "R4D-2A's landed differential vocabulary, consumed rather than restated. OperatorRefusal::Differential carries DifferentialRefusal verbatim, which in turn carries R4D-1's AttachmentRefusal, so all three lanes speak one word per fact. This lane's own forty-two labels are asserted disjoint from every landed one.",
+      "R4D-2A's pinned minimum operation subsets as the sole authority on which matrix an entrypoint can serve. EntrypointCapability::satisfies reads DifferentialMatrix::minimum_subset and compares; it carries no second copy, so an amended subset changes this lane's answer in the same motion instead of contradicting it.",
+      "Owner identity as {ServiceSlotId, ServiceInstanceId, EnvironmentReceipt}, with PID and endpoint as attributes. The retained-side mapping refuses a process identifier, an endpoint or a version offered for any of the three coordinates, with a separate refusal for each so no one confusion stands in for another.",
+      "The ratified bound-statement law: 'long' and every cap in this contract are stated in counts, bytes and milliseconds, never as a duration word or an adjective."
+    ],
+    "intentionally_excludes": [
+      "Any measurement of any engine or host. No process is started, no socket opened, no port bound, no request issued and no filesystem path touched. Every value in this corpus is constructed from its action row.",
+      "Execution of the attended-fleet-host tier. The tier is declared and its caps are data; RunAuthorization::Scheduled carries a receipt whose only constructor is cfg(test) and pub(crate), so outside this crate's own tests the variant is unconstructible and every plan is parked at its announcement.",
+      "Any construction of a DifferentialPlan. RecordedHostBounds admits only ReportedByHostReceipt provenance and there is no ready host to read one from, so the construction seam refuses with host-bounds-unavailable-before-entrypoint. That refusal is this corpus's ordinal 37.",
+      "The sleep/resume matrix, parked pending a scheduled fleet quiesce or a second Windows host. A process suspend and a network drop are refused as substitutes ahead of the park, because offering one is the more specific defect.",
+      "Body-content comparison. The scope is shape and status only; ShapeObservation has no body field at all, so recording one is unrepresentable rather than merely refused, and CommonStoreProof is sealed the same way the window receipt is.",
+      "Any re-binding of a component's cap to the plan's declared tier. TimeoutBudget::declare and EngineProcessCount::declare take the tier caps as a caller-supplied parameter and neither records which tier supplied them, and OperatorPlan::declare does not re-check the pairing. This is DISCLOSED rather than fixed: TierCaps has private fields and only two ways out, ATTENDED and for_tier, and for_tier answers None for both other tiers -- which the plan refuses before any component is reached. Every cap value reachable today is therefore the attended one, so a re-binding guard would be a refusal no input could produce, and an unwitnessable guard in a contract of falsifiable claims is a defect rather than caution. The lane that gives a second tier caps owns the binding and owes it a witness a real input can reach.",
+      "Any live plan claim, socket, desktop, build, install, controller, route, profile edit, remote-compute submission or TypeScript execution."
+    ]
+  },
+  "determinism": {
+    "clock": "No clock is read. The two selection receipts the construction row needs are minted through an injected ClockAuthority whose instant is a literal in the corpus owner; nothing in this lane's own modules reads a clock at all.",
+    "identifiers": "Every tier, entrypoint, matrix, boundary, source, class, control and phase is supplied by actions.jsonl as its stable label and decoded through the owning type's from_label. An unknown label is a loud failure, never a default.",
+    "network": "No network. No socket is opened, no port is bound and no request is issued.",
+    "filesystem": "Read-only. The suite reads this corpus by exact path and writes nothing. The custody and cleanup rows are declarations and enumerations recorded as values; no path in them is opened, created or deleted."
+  },
+  "paths": {
+    "actions": "actions.jsonl",
+    "expected": {
+      "durable": "expected/durable.jsonl",
+      "state": "expected/state.json",
+      "waivers": "expected/waivers.json"
+    }
+  },
+  "record_contracts": {
+    "actions": "Row zero declares its kind as `baseline` and carries one sound plan, one sound mapping and one sound custody. Every later row names its kind in its own `action` field and carries a `change` object holding ONLY the fields it departs from, so a refusal is attributable to exactly that departure. This contract is stated by KIND and never by ordinal range: enumerating ranges rots the first time a row is appended, which is a defect this campaign has already recorded. THE KINDS: `baseline` (exactly one, first); `plan` rows declare an operator plan and may change any plan field including the kill discipline and the run's own budgets; `mapping` rows declare a retained owner mapping alone; `custody` rows declare an artifact custody alone; `gate` rows carry an ordered `phases` array driven through a phase gate opened on the baseline authorization; `construct` rows carry a `bounds` source and attempt to build a DifferentialPlan. A change field the owner cannot apply, an action kind it does not know and an enum label it cannot decode are each a loud failure rather than a skipped row.",
+    "durable": "The ordered declarations that were ADMITTED, by action ordinal. A plan row carries its tier, entrypoint, matrix, boundary, comparison scope and every component receipt the plan derives from its own answers; a mapping row carries its receipt id, its three coordinate sources and its basis; a custody row carries its receipt root, artifact count and declared byte total; a gate row carries its conclusion and the phases it entered. A refused action contributes no durable row. This is the CONTRACT and its projection: nothing here was observed and nothing asserts that any engine or host exists.",
+    "state": "The projection folded from those durable rows plus every refusal: how many actions ran, how many were admitted and refused, the per-kind admitted counts, the ordered refusals with their exact label and full message, and the sorted unique refusal vocabulary. `own_label_count` is read from OperatorRefusal::OWN_LABEL_COUNT rather than restated, so no number in this prose can go stale. Every value is derived from the model's own answers; nothing is observed from a process."
+  },
+  "evidence": [
+    {
+      "path": "crates/grapt-service/tests/operator_corpus.rs",
+      "test": "the_corpus_replays_through_the_model_and_matches_every_expected_surface",
+      "claim": "Replays actions.jsonl through the crate's real public constructors, PRODUCES expected/durable.jsonl and expected/state.json from the model's own answers, and compares both exhaustively - every durable row at its position and every projection key. Nothing in expected/* is hand-written, and a missing expected file fails loudly rather than being skipped."
+    },
+    {
+      "path": "crates/grapt-service/tests/operator_corpus.rs",
+      "test": "the_recorded_vocabulary_is_a_real_subset_of_the_one_this_lane_can_produce",
+      "claim": "Asserts every recorded refusal word is a member of either OperatorRefusal::OWN_LABELS or the landed DifferentialRefusal::ALL_LABELS, read from the enums rather than from a literal of the test's own, and that the corpus recorded at least one refusal at all. A corpus recording only greens would not have tested its instrument."
+    },
+    {
+      "path": "crates/grapt-service/tests/operator_contract.rs",
+      "test": "the entrypoint scope law, the sleep/resume park and its substitutes, the retained mapping seam, comparison scope, custody, cleanup, timeouts, phase gating and the pre-entrypoint construction refusal",
+      "claim": "Fifty-six witnesses executed against the same model, including the engine count at 0, 1, 2 and 3 and the two artifact-budget overflow cases. Each law is asserted against its own OperatorRefusal variant so no law passes by tripping another's guard, each refusal case has a positive control differing in exactly one declaration, and every assertion message names the divergence it asserts rather than restating values that never reach a panic line."
+    },
+    {
+      "path": "crates/grapt-service/src/operator.rs",
+      "test": "every_own_variant_maps_to_its_own_label_and_every_index_is_covered_once",
+      "claim": "The vocabulary completeness proof. own_label_index's match is exhaustive over this lane's enum, so a new law is a compile error before it can be an unrecorded label; this test then requires every index in OWN_LABELS to be produced by a real variant exactly once, which is what the R1 closure review found missing when two tests each compared against their own literal."
+    },
+    {
+      "path": "crates/grapt-service/src/tier.rs",
+      "test": "a_parked_authorization_refuses_execution_and_a_scheduled_one_admits_it",
+      "claim": "The sealed branch, witnessed from src/ because tests/ cannot reach it. AttendedWindowReceipt's only constructor is cfg(test) and pub(crate), so an integration test could not construct a Scheduled authorization even to prove it behaves correctly; witnessing it from tests/ would witness nothing."
+    },
+    {
+      "path": "crates/grapt-service/mutations/da/manifest.json",
+      "test": "DA01-DA41 via crates/grapt-service/mutations/da/run.py",
+      "claim": "One mutation per load-bearing behaviour of this contract, each applied in its own disposable worktree at the candidate commit and each required to turn its named witness red for its own distinct reason. The DA whole-token allocation is verified against every manifest in the workspace before any worktree is built. DA39 removes the engine lower bound, DA40 substitutes a wrapping artifact-budget sum and DA41 a saturating one; the earlier row count of twenty-four in this claim was stale prose against a thirty-eight-row battery and is corrected here rather than left to rot."
+    }
+  ]
+}
