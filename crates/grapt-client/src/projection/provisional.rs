@@ -43,6 +43,15 @@ impl SessionView {
         None
     }
 
+    /// Whether a positioned delta for a block that is not open belongs to a
+    /// message the installed snapshot holds durably. The snapshot reopens every
+    /// block still live at P, so such a block ended at or before P: a delta the
+    /// stream retained from before the read is superseded by the durable row.
+    pub(super) fn superseded_delta(&self, envelope: &EventEnvelope, kind: SliceKind) -> bool {
+        wire_identity(envelope, kind)
+            .is_ok_and(|(message, _)| self.tail_rows.iter().any(|(row, _)| row == &message))
+    }
+
     /// Open one live block from a snapshot: identity-tagged, holding its
     /// offered text, so later deltas apply by offset after it.
     pub(crate) fn open_provisional(

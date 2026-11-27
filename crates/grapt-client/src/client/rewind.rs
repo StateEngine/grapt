@@ -91,16 +91,17 @@ impl<C: Connection> Client<C> {
         self.offer_resume();
         self.connection.resubscribe();
         let history = match self.reconcile(&session) {
-            Ok(()) => RewindHistory::Refreshed,
-            Err(error) if error.is_transient() => {
-                // A rewind may close the event stream. Its replacement can
-                // outlive this command; the existing recovery owner reloads
-                // the committed cut without replaying it or losing the draft.
+            Ok(()) if self.views.contains_key(&session) => RewindHistory::Refreshed,
+            Err(error) if !error.is_transient() => RewindHistory::Failed(error.to_string()),
+            // A rewind may close the event stream. Its replacement can outlive
+            // this command, and a positions read waits for it (or failed
+            // transiently) with nothing rebuilt: the existing recovery owner
+            // reloads the committed cut without replaying it or losing the draft.
+            _ => {
                 self.cursor.stream_closed();
                 self.request_history();
                 RewindHistory::Recovering
             }
-            Err(error) => RewindHistory::Failed(error.to_string()),
         };
         Ok(RewindEdit {
             prompt: selection.prompt,

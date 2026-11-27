@@ -11,7 +11,10 @@ struct LostRewind {
 }
 impl Transport for LostRewind {
     fn call(&mut self, request: &WireRequest) -> Result<WireResponse, TransportError> {
-        if request.operation() == Operation::MessageList {
+        if matches!(
+            request.operation(),
+            Operation::MessageList | Operation::SessionSnapshot
+        ) {
             if self.refuse_history {
                 return Err(TransportError::Unavailable {
                     reason: "service reconnecting".into(),

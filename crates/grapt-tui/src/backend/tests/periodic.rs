@@ -27,6 +27,23 @@ fn text(transcript: &mut grapt_tui_transcript::transcript::Transcript) -> String
         .collect::<Vec<_>>()
         .join("\n")
 }
+/// Whether a frame settles the execution: its terminal or the frozen idle.
+fn settles(frame: &FramePoll) -> Result<bool> {
+    let (FramePoll::Frame(text) | FramePoll::Positioned { data: text, .. }) = frame else {
+        return Ok(false);
+    };
+    Ok(serde_json::from_str::<serde_json::Value>(text)?["type"]
+        .as_str()
+        .is_some_and(|kind| {
+            matches!(
+                kind,
+                "session.execution.succeeded"
+                    | "session.execution.failed"
+                    | "session.execution.interrupted"
+                    | "session.idle"
+            )
+        }))
+}
 /// Hold one periodic read for `hold` while a stream runs. Under the HTTP
 /// socket allowance the held answer applies on one call; past it, the read
 /// times out, its retry answers, and the result still applies once.
@@ -59,21 +76,8 @@ fn held_stream(operation: Operation, hold: Duration, calls: usize) -> Result {
     // legitimately performs its own authority read on another lane.
     let mut terminal = Vec::new();
     for frame in fixture.turn(&reply)? {
-        let settles = match &frame {
-            FramePoll::Frame(text) => serde_json::from_str::<serde_json::Value>(text)?["type"]
-                .as_str()
-                .is_some_and(|kind| {
-                    matches!(
-                        kind,
-                        "session.execution.succeeded"
-                            | "session.execution.failed"
-                            | "session.execution.interrupted"
-                            | "session.idle"
-                    )
-                }),
-            _ => false,
-        };
-        if settles {
+        // The settlement and every frame after it, in the server's order.
+        if !terminal.is_empty() || settles(&frame)? {
             terminal.push(frame);
         } else {
             fixture.frame(frame)?;
