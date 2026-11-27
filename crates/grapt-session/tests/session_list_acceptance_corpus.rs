@@ -23,7 +23,7 @@ use grapt_session::{
 use grapt_store::{AggregateId, AppendInput, EventStore, MigrationOutcome, Projector};
 use grapt_types::{EventVersion, LocationRef, SessionId, WorkspaceId};
 use rusqlite::Connection;
-use serde_json::{json, Map, Value};
+use serde_json::{json, Value};
 use std::path::{Path, PathBuf};
 
 #[path = "../../../test-support/fixtures.rs"]

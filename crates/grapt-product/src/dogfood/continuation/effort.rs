@@ -91,8 +91,5 @@ impl super::DurableContinuation {
     ) {
         *super::lock(&self.redeemer) =
             Some(grapt_provider::CompactionTarget::of(target, family).with_effort_policy(effort));
-        if let Some(recovery) = &self.recovery {
-            recovery.select(target);
-        }
     }
 }

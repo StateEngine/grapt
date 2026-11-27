@@ -311,7 +311,7 @@ impl PermissionHttpState {
             })
             .map_err(|error| PermissionHttpError::Replay(error.to_string()))?;
         if let Some(error) = projection_failure {
-            return Err(PermissionHttpError::Replay(error));
+            return Err(PermissionHttpError::Replay(error.to_string()));
         }
         tx.commit()?.discard();
         Ok(events)

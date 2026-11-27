@@ -5,7 +5,7 @@ use std::sync::{atomic::AtomicBool, mpsc};
 use std::time::Duration;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
-fn service(
+pub(super) fn service(
     app: &Arc<crate::dogfood::DogfoodApplication>,
 ) -> Result<grapt_api::AuthenticatedApiService, String> {
     let config = crate::input::ServiceConfig {
@@ -37,7 +37,7 @@ fn service(
     .map_err(|error| error.to_string())
 }
 
-async fn get(address: std::net::SocketAddr, path: &str) -> Result<String, String> {
+pub(super) async fn get(address: std::net::SocketAddr, path: &str) -> Result<String, String> {
     let mut stream = tokio::net::TcpStream::connect(address)
         .await
         .map_err(|error| error.to_string())?;

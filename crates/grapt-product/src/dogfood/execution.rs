@@ -40,6 +40,7 @@ mod artifacts;
 use artifacts::open_artifacts;
 mod authorities;
 mod block_events;
+mod calibration;
 mod compose;
 pub(super) mod context_trim;
 mod credentials;
@@ -58,7 +59,7 @@ mod revision_order_tests;
 mod side_context;
 mod state;
 mod transient;
-pub(in crate::dogfood) use transient::TransientContext;
+pub(in crate::dogfood) use transient::{check_generation_patch, TransientContext};
 mod principals;
 mod task_application;
 mod timing;
@@ -453,17 +454,14 @@ impl LocationRuntime for LiveLocation {
             .map_err(refusal)?,
         )
         .with_coverage(admission_diagnosis.clone())
-        .with_compaction_recovery(
-            self.compaction_recovery.clone(),
-            &first_target,
-            targets.context_tokens(),
-        );
+        .with_compaction_recovery(self.compaction_recovery.clone());
         let retry_feedback = super::session_status::RetryFeedback::new(
             Arc::clone(&self.active),
             session.clone(),
             prompt_principal.execution.clone(),
             first_target.provider().clone(),
         );
+        self.restore_calibration(session, &first_target);
         let mut plan = ProductPlan::new(
             targets.protocol_family(),
             prompt.clone(),
@@ -558,6 +556,7 @@ impl LocationRuntime for LiveLocation {
             admission_diagnosis,
         )
         .with_server_side(server_side)
+        .with_ceiling(compaction.auto, compaction.model_auto_compact_token_limit)
         .with_hooks(Arc::clone(&hooks))
         .with_routing_session(prompt_cache_key);
         // REGISTRY IDENTITY, WHICH IS NOT THE FILESYSTEM ROOT.

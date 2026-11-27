@@ -1,11 +1,13 @@
 use grapt_session::{
-    BoundedSearch, NonNegativeMs, ParentFilter, SessionListCriteria, SessionListDirection,
-    SessionListError, SessionListKey, SessionListLimits, SessionListOrder, SessionListScope,
-    SessionListStore,
+    BoundedSearch, NonNegativeMs, ParentFilter, SessionListBoundary, SessionListCriteria,
+    SessionListDirection, SessionListError, SessionListKey, SessionListLimits, SessionListOrder,
+    SessionListScope, SessionListStore,
 };
 use grapt_store::EventStore;
 use grapt_types::{LocationRef, ProjectId, SessionId, WorkspaceId};
-use rusqlite::Connection;
+
+mod session_list_support;
+use session_list_support::{criteria, insert};
 
 type TestResult = Result<(), Box<dyn std::error::Error>>;
 
@@ -15,69 +17,6 @@ fn session(raw: &str) -> Result<SessionId, Box<dyn std::error::Error>> {
 
 fn project(raw: &str) -> Result<ProjectId, Box<dyn std::error::Error>> {
     ProjectId::new(raw).ok_or_else(|| "project id must be nonempty".into())
-}
-
-#[allow(clippy::too_many_arguments)]
-fn insert(
-    conn: &Connection,
-    id: &str,
-    updated_ms: i64,
-    project_id: &str,
-    workspace_id: Option<&str>,
-    parent_id: Option<&str>,
-    directory: &str,
-    title: &str,
-) -> rusqlite::Result<()> {
-    conn.execute(
-        "INSERT INTO session_list_legacy_baseline
-            (session_id, updated_ms, source_domain, source_digest, cutover_seq)
-         VALUES (?1, ?2, 'synthetic-fixture', 'digest', -1)",
-        rusqlite::params![id, updated_ms],
-    )?;
-    conn.execute(
-        "INSERT INTO session_list_projection
-            (session_id, project_id, workspace_id, parent_id, directory, title, updated_ms,
-             provenance_kind, provenance_digest, cutover_seq)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 'legacy-baseline', 'digest', -1)",
-        rusqlite::params![
-            id,
-            project_id,
-            workspace_id,
-            parent_id,
-            directory,
-            title,
-            updated_ms
-        ],
-    )?;
-    Ok(())
-}
-
-#[allow(clippy::too_many_arguments)]
-fn criteria(
-    scope: SessionListScope,
-    workspace: Option<WorkspaceId>,
-    search: Option<&str>,
-    parent: ParentFilter,
-    order: SessionListOrder,
-    direction: SessionListDirection,
-    anchor: Option<SessionListKey>,
-    page_size: usize,
-    limits: SessionListLimits,
-) -> Result<SessionListCriteria, SessionListError> {
-    let title_contains = search
-        .map(|value| BoundedSearch::new(value, limits))
-        .transpose()?;
-    SessionListCriteria::new(
-        scope,
-        workspace,
-        title_contains,
-        parent,
-        order,
-        direction,
-        anchor,
-        page_size,
-        limits,
-    )
 }
 
 fn ids(
@@ -212,7 +151,7 @@ fn tied_store() -> TestResult {
                         .iter()
                         .map(|item| item.key.session_id().as_str().to_owned()),
                 );
-                anchor = page.items().last().map(|item| item.key.clone());
+                anchor = page.items().last().map(|item| (&item.key).into());
             }
             assert_eq!(actual, expected, "order={order:?} page_size={page_size}");
         }
@@ -220,7 +159,10 @@ fn tied_store() -> TestResult {
 
     // An anchor is a key, not a foreign key: this identity is absent but lies
     // between `ses_b` and `ses_c` under the equal timestamp.
-    let between = SessionListKey::new(NonNegativeMs::new(10).ok_or("time")?, session("ses_bb")?);
+    let between = SessionListBoundary::from(SessionListKey::new(
+        NonNegativeMs::new(10).ok_or("time")?,
+        session("ses_bb")?,
+    ));
     let page = criteria(
         SessionListScope::All,
         None,
@@ -258,7 +200,10 @@ fn previous_inverts_sql_and_reverses_back_to_requested_order() -> TestResult {
     }
     let mut view = SessionListStore::over(&mut store);
     let limits = SessionListLimits::production();
-    let anchor = SessionListKey::new(NonNegativeMs::new(10).ok_or("time")?, session("ses_d")?);
+    let anchor = SessionListBoundary::from(SessionListKey::new(
+        NonNegativeMs::new(10).ok_or("time")?,
+        session("ses_d")?,
+    ));
     let ascending = criteria(
         SessionListScope::All,
         None,
@@ -272,7 +217,10 @@ fn previous_inverts_sql_and_reverses_back_to_requested_order() -> TestResult {
     )?;
     assert_eq!(ids(&mut view, &ascending)?, ["ses_b", "ses_c"]);
 
-    let anchor = SessionListKey::new(NonNegativeMs::new(10).ok_or("time")?, session("ses_b")?);
+    let anchor = SessionListBoundary::from(SessionListKey::new(
+        NonNegativeMs::new(10).ok_or("time")?,
+        session("ses_b")?,
+    ));
     let descending = criteria(
         SessionListScope::All,
         None,
@@ -293,10 +241,10 @@ fn previous_inverts_sql_and_reverses_back_to_requested_order() -> TestResult {
         ParentFilter::Any,
         SessionListOrder::Ascending,
         SessionListDirection::Previous,
-        Some(SessionListKey::new(
+        Some(SessionListBoundary::from(SessionListKey::new(
             NonNegativeMs::new(10).ok_or("time")?,
             session("ses_a")?,
-        )),
+        ))),
         2,
         limits,
     )?;
@@ -581,11 +529,23 @@ fn unreadable_rows_and_missing_indexes_are_corruption_not_empty_pages() -> TestR
         1,
         tiny,
     )?;
-    match SessionListStore::over(&mut store).list(&request) {
-        Err(SessionListError::ProjectionCorrupt { reason }) => {
-            assert!(reason.contains("over the configured row bound"), "{reason}");
+    // An oversized row is skipped before decode and named, so the page is
+    // degraded, never silently empty.
+    let page = SessionListStore::over(&mut store).list(&request)?;
+    assert!(page.items().is_empty());
+    match page.degraded() {
+        [row] => {
+            assert_eq!(
+                row.session_id.as_ref().map(SessionId::as_str),
+                Some("ses_big")
+            );
+            assert!(
+                row.reason.contains("over the configured row bound"),
+                "{}",
+                row.reason
+            );
         }
-        other => panic!("oversized title must refuse before decode, got {other:?}"),
+        other => panic!("oversized title must be reported as degraded, got {other:?}"),
     }
 
     store
@@ -650,10 +610,10 @@ fn sc05_anchor_comparisons_are_strict() -> TestResult {
         ParentFilter::Any,
         SessionListOrder::Ascending,
         SessionListDirection::Next,
-        Some(SessionListKey::new(
+        Some(SessionListBoundary::from(SessionListKey::new(
             NonNegativeMs::new(10).ok_or("time")?,
             session("ses_b")?,
-        )),
+        ))),
         2,
         SessionListLimits::production(),
     )?;

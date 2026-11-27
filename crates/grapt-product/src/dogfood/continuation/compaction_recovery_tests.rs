@@ -2,13 +2,10 @@ use super::*;
 
 fn fixture(label: &str) -> Result<(Session, DurableContinuation, TestContinuationScratch), String> {
     let (continuation, scratch) = DurableContinuation::empty_for_test(label)?;
-    let target = crate::dogfood::production::tests::projection_target()?;
     let recovery = Session::new(
         Registry::default(),
         continuation.session.clone(),
         continuation.input.clone(),
-        &target,
-        Some(128_000),
     );
     Ok((recovery, continuation, scratch))
 }
@@ -126,7 +123,7 @@ fn cr_every_terminal_reason_maps_to_its_cause() {
 }
 
 /// SC-REL-13: a summary the full adapter kept waiting past its bound is a
-/// transient failure, not the permanent pause row A's child met; any other
+/// transient failure, not a permanent one; any other
 /// refusal keeps whatever cause the call itself recorded.
 #[test]
 fn a_saturated_summary_refusal_is_transient() {
@@ -143,119 +140,32 @@ fn a_saturated_summary_refusal_is_transient() {
 }
 
 #[test]
-fn cr_recovery_credential_change_clears_auth_but_not_credit() -> Result<(), String> {
-    for cause in [Cause::Authentication, Cause::Quota] {
-        let (recovery, continuation, _scratch) = fixture("credential-cause")?;
-        recovery.failed(cause, &lock(&continuation.inbox))?;
-        lock(&recovery.target).credential =
-            CredentialVersion::new("new-version").ok_or("credential")?;
-        let blocked = recovery.blocked(&lock(&continuation.inbox))?;
-        assert_eq!(
-            blocked,
-            if cause == Cause::Authentication {
-                None
-            } else {
-                Some(Cause::Quota)
-            }
-        );
-    }
-    Ok(())
-}
-
-#[test]
-fn cr_recovery_context_budget_change_does_not_clear_an_auth_block() -> Result<(), String> {
-    for cause in [Cause::Context, Cause::Authentication] {
-        let (mut recovery, continuation, _scratch) = fixture("budget-cause")?;
-        recovery.failed(cause, &lock(&continuation.inbox))?;
-        recovery.budget = Some(256_000);
-        let blocked = recovery.blocked(&lock(&continuation.inbox))?;
-        assert_eq!(
-            blocked,
-            if cause == Cause::Context {
-                None
-            } else {
-                Some(Cause::Authentication)
-            }
-        );
-    }
-    Ok(())
-}
-
-#[test]
-fn cr_recovery_catalog_reload_does_not_clear_an_unchanged_target() -> Result<(), String> {
-    for cause in [Cause::Context, Cause::Authentication, Cause::Quota] {
-        let (recovery, continuation, _scratch) = fixture("model-account-cause")?;
-        recovery.failed(cause, &lock(&continuation.inbox))?;
-        let replacement = crate::dogfood::production::tests::projection_target()?;
-        assert_eq!(lock(&recovery.target).model, *replacement.model_ref());
-        assert!(!lock(&recovery.target)
-            .model
-            .is_same_issuance(replacement.model_ref()));
-        lock(&recovery.target).model = replacement.model_ref().clone();
-        assert_eq!(recovery.blocked(&lock(&continuation.inbox))?, Some(cause));
-    }
-    Ok(())
-}
-
-#[test]
-fn cr_recovery_transient_requires_a_new_input_not_a_new_step() -> Result<(), String> {
-    let (mut recovery, continuation, _scratch) = fixture("transient-input")?;
-    recovery.failed(Cause::Transient, &lock(&continuation.inbox))?;
-    assert_eq!(
-        recovery.blocked(&lock(&continuation.inbox))?,
-        Some(Cause::Transient)
-    );
-    recovery.input = "msg_next_input"
-        .parse()
-        .map_err(|error: grapt_types::IdError| error.to_string())?;
-    assert_eq!(recovery.blocked(&lock(&continuation.inbox))?, None);
-    Ok(())
-}
-
-#[test]
-fn cr_recovery_capacity_refuses_without_evicting_another_block() -> Result<(), String> {
-    let (recovery, continuation, _scratch) = fixture("capacity")?;
-    recovery.failed(Cause::Quota, &lock(&continuation.inbox))?;
-    let previous = lock(&recovery.registry.0)
-        .get(&recovery.session)
-        .cloned()
-        .ok_or("block")?;
-    {
-        let mut sessions = lock(&recovery.registry.0);
-        for index in 1..MAX_SUPPRESSED_SESSIONS {
-            let session = format!("ses_blocked_{index}")
+fn a_summary_that_left_no_usable_context_trims_only_the_next_input() -> Result<(), String> {
+    for (cause, trims) in [
+        (Cause::NoProgress, true),
+        (Cause::DidNotFit, true),
+        (Cause::Context, false),
+    ] {
+        let (mut recovery, _continuation, _scratch) = fixture("trim-next-input")?;
+        recovery.failed(cause);
+        assert!(!recovery.trim_requested(), "the same input is not trimmed");
+        recovery.promote_input(
+            &"msg_next_input"
                 .parse()
-                .map_err(|error: grapt_types::IdError| error.to_string())?;
-            sessions.insert(session, previous.clone());
-        }
+                .map_err(|error: grapt_types::IdError| error.to_string())?,
+        );
+        assert_eq!(recovery.trim_requested(), trims, "{cause:?}");
+        recovery.succeeded();
+        assert!(!recovery.trim_requested());
     }
-    let mut another = recovery.clone();
-    another.session = "ses_capacity_next"
-        .parse()
-        .map_err(|error: grapt_types::IdError| error.to_string())?;
-    assert_eq!(
-        another.blocked(&lock(&continuation.inbox))?,
-        Some(Cause::Capacity)
-    );
-    assert_eq!(
-        recovery.blocked(&lock(&continuation.inbox))?,
-        Some(Cause::Quota)
-    );
-    assert_eq!(lock(&recovery.registry.0).len(), MAX_SUPPRESSED_SESSIONS);
-    recovery.succeeded();
-    assert_eq!(another.blocked(&lock(&continuation.inbox))?, None);
     Ok(())
 }
 
 #[test]
 fn cr_recovery_public_failure_requires_a_report_and_is_consumed() -> Result<(), String> {
-    let (recovery, continuation, _scratch) = fixture("report-ownership")?;
-    recovery.failed(Cause::Quota, &lock(&continuation.inbox))?;
-    assert_eq!(
-        recovery.blocked(&lock(&continuation.inbox))?,
-        Some(Cause::Quota)
-    );
-    // A threshold probe observes suppression but does not fail the execution.
+    let (recovery, _continuation, _scratch) = fixture("report-ownership")?;
+    recovery.failed(Cause::Quota);
+    // A failure nobody reported does not relabel the execution.
     assert_eq!(recovery.registry.take_failure(&recovery.session), None);
     recovery.report_failure();
     assert_eq!(
@@ -264,9 +174,27 @@ fn cr_recovery_public_failure_requires_a_report_and_is_consumed() -> Result<(), 
     );
     assert_eq!(recovery.registry.take_failure(&recovery.session), None);
     recovery.report_failure();
-    // A later manual attempt replaces policy observations without reporting
-    // an automatic stop; stale recovery advice cannot relabel its execution.
-    recovery.failed(Cause::Authentication, &lock(&continuation.inbox))?;
+    // A later manual attempt replaces the observation without reporting an
+    // automatic stop; stale advice cannot relabel its execution.
+    recovery.failed(Cause::Authentication);
     assert_eq!(recovery.registry.take_failure(&recovery.session), None);
+    Ok(())
+}
+
+/// A did-not-fit the runtime decided after a compaction that succeeded is
+/// named so, and the next input runs trimmed.
+#[test]
+fn a_runtime_did_not_fit_names_itself_and_trims_the_next_input() -> Result<(), String> {
+    let (mut recovery, _continuation, _scratch) = fixture("runtime-did-not-fit")?;
+    assert_eq!(
+        recovery.registry.did_not_fit(&recovery.session),
+        Cause::DidNotFit
+    );
+    recovery.promote_input(
+        &"msg_after_runtime_fit"
+            .parse()
+            .map_err(|error: grapt_types::IdError| error.to_string())?,
+    );
+    assert!(recovery.trim_requested());
     Ok(())
 }

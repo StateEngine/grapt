@@ -386,6 +386,7 @@ impl NativeMailOwners {
                 return;
             }
         }
+        // Attention is shown across Sessions, so every stream reloads.
         self.hub
             .invalidate_because("native inbox attention could not be published");
     }

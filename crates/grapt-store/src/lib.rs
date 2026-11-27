@@ -166,5 +166,6 @@ pub use plugin_compatibility::{
 pub use projection::{ProjectionId, ProjectionStatus};
 pub use replay::{ConsistencyReport, ReplayFold};
 pub use write::{
-    AppendInput, Appended, CaughtUp, EventStore, FencedWriter, HeldWriters, Projector, WriteError,
+    sqlite_storage_failure, AppendInput, Appended, CaughtUp, EventStore, FencedWriter, HeldWriters,
+    Projector, ProjectorError, WriteError,
 };

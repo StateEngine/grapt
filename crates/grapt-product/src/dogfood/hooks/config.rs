@@ -49,6 +49,9 @@ pub(in crate::dogfood) struct HookCommand {
     pub(super) matcher: Option<Matcher>,
     pub(super) permits_allow: bool,
     pub(super) plugin: Option<super::plugin::Context>,
+    /// Set only by the user: a failure of this hook stops the turn instead of
+    /// being skipped with a warning.
+    pub(super) required: bool,
 }
 
 impl HookCommand {
@@ -232,7 +235,7 @@ fn parse_command(name: &str, directory: &Path, value: &ConfigValue) -> Result<Ho
     let mut seen = BTreeSet::new();
     for (key, _) in object {
         let key = key.value().as_str();
-        if !matches!(key, "command" | "timeout_ms") || !seen.insert(key) {
+        if !matches!(key, "command" | "timeout_ms" | "required") || !seen.insert(key) {
             return Err("hook command contains an unknown or repeated field".to_owned());
         }
     }
@@ -279,6 +282,17 @@ fn parse_command(name: &str, directory: &Path, value: &ConfigValue) -> Result<Ho
         matcher: None,
         permits_allow: false,
         plugin: None,
+        required: required(value)?,
+    })
+}
+
+/// `required` is an optional boolean; anything else is refused, not ignored.
+pub(super) fn required(value: &ConfigValue) -> Result<bool, String> {
+    value.get("required").map_or(Ok(false), |value| {
+        value
+            .value()
+            .as_bool()
+            .ok_or_else(|| "hook required must be true or false".to_owned())
     })
 }
 

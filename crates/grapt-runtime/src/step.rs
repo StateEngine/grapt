@@ -94,8 +94,15 @@ pub enum PolicyError {
 /// more — an unbounded attempt count is the defect the cap exists to prevent.
 pub const MAX_TOTAL_ATTEMPTS: u32 = 5;
 
-/// Ruled upper bound on local backoff and provider `Retry-After` influence.
+/// Ruled upper bound on local backoff for non-rate-limit retries.
 pub const RULED_MAX_RETRY_DELAY: Duration = Duration::from_secs(16);
+
+/// Upper bound on honoring an explicit provider `Retry-After` delay on HTTP 429.
+pub const RATE_LIMIT_MAX_RETRY_DELAY: Duration = Duration::from_secs(60);
+
+/// Maximum extra rate-limit waits honored when the provider supplies `Retry-After`
+/// before falling back to the ordinary attempt budget.
+pub const MAX_RATE_LIMIT_WAITS: u32 = 12;
 
 /// The version identity of this crate's own ruled default policy constants.
 ///
@@ -239,13 +246,30 @@ impl StepPolicy {
 
     /// The delay actually taken: the larger of computed backoff and any
     /// provider-declared minimum, capped by the explicit policy ceiling.
+    ///
+    /// Explicit `Retry-After` values on `RateLimit` are honored up to
+    /// [`RATE_LIMIT_MAX_RETRY_DELAY`] when the policy uses at least the ruled
+    /// default ceiling, so a 30s or 60s provider retry window is waited out
+    /// instead of truncated to 16s.
     pub fn delay_for(&self, retry_number: u32, class: &ProviderFailureClass) -> Duration {
         let backoff = self.backoff_for(retry_number);
+        let ceiling = self.retry_ceiling_for(class);
         let desired = match class.retry_after() {
             Some(after) if after > backoff => after,
             _ => backoff,
         };
-        desired.min(self.max_retry_delay)
+        desired.min(ceiling)
+    }
+
+    pub(crate) fn retry_ceiling_for(&self, class: &ProviderFailureClass) -> Duration {
+        match class {
+            ProviderFailureClass::RateLimit {
+                retry_after: Some(_),
+            } if self.max_retry_delay >= RULED_MAX_RETRY_DELAY => {
+                self.max_retry_delay.max(RATE_LIMIT_MAX_RETRY_DELAY)
+            }
+            _ => self.max_retry_delay,
+        }
     }
 }
 
@@ -289,6 +313,11 @@ pub enum CompactionFailure {
     Repeated {
         reason: String,
     },
+    /// The compaction committed, but the context it left is still at or above
+    /// the proactive ceiling.
+    DidNotFit {
+        reason: String,
+    },
 }
 
 impl CompactionFailure {
@@ -297,6 +326,7 @@ impl CompactionFailure {
             Self::Failed(error) => (ContextFailure::CompactionFailed, error.reason),
             Self::NoProgress { reason } => (ContextFailure::CompactionNoProgress, reason),
             Self::Repeated { reason } => (ContextFailure::CompactionRepeated, reason),
+            Self::DidNotFit { reason } => (ContextFailure::CompactionDidNotFit, reason),
         }
     }
 }
@@ -438,6 +468,12 @@ pub trait AttemptSource {
 
     /// Read-only notification around the driver's own backoff; no I/O policy.
     fn retrying(&mut self, _notice: Option<RetryNotice>) {}
+
+    /// Stable session/source coordinate used to salt pre-admission retry jitter
+    /// without depending on allocation layout or ambient randomness.
+    fn jitter_coordinate(&self) -> Option<&str> {
+        None
+    }
 
     /// Arm or clear an output-ceiling continuation cue. Sources opt in only
     /// when the next Step can retain the partial answer in its real history.

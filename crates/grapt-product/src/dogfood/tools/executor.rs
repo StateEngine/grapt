@@ -66,14 +66,7 @@ impl GovernedToolExecutor<FilesystemArtifactStore> for ProjectToolExecutor {
                 observation.started();
             }
             let preserve_output = machine_output || matches!(&target, EffectTarget::Image(_));
-            let sensitive_output = machine_output
-                || matches!(
-                    &target,
-                    EffectTarget::CodeMode { .. }
-                        | EffectTarget::IntegrationCommand { .. }
-                        | EffectTarget::WebFetch(_)
-                        | EffectTarget::Image(_)
-                );
+            let sensitive_output = target_output_is_sensitive(&target, machine_output);
             let mut execution_receipt = match &target {
                 EffectTarget::TerminalExec(spec) => Some(spec.environment.pending_receipt()),
                 EffectTarget::Shell { environment, .. } => Some(environment.pending_receipt()),
@@ -505,11 +498,10 @@ impl GovernedToolExecutor<FilesystemArtifactStore> for ProjectToolExecutor {
                             });
                             match plugins
                                 .apply_callbacks(
-                                    generation,
-                                    "tool",
-                                    "hook.execute.after",
+                                    (generation, "tool", "hook.execute.after"),
                                     event,
                                     hook_authority(&principal, &parent, &agent, &message, &call),
+                                    crate::dogfood::plugins::OnCallbackFailure::Skip,
                                 )
                                 .await
                             {
@@ -552,11 +544,10 @@ impl GovernedToolExecutor<FilesystemArtifactStore> for ProjectToolExecutor {
                             });
                             match plugins
                                 .apply_callbacks(
-                                    generation,
-                                    "tool",
-                                    "hook.execute.after",
+                                    (generation, "tool", "hook.execute.after"),
                                     event,
                                     hook_authority(&principal, &parent, &agent, &message, &call),
+                                    crate::dogfood::plugins::OnCallbackFailure::Skip,
                                 )
                                 .await
                             {
@@ -638,6 +629,42 @@ impl GovernedToolExecutor<FilesystemArtifactStore> for ProjectToolExecutor {
     }
 }
 
+fn target_output_is_sensitive(target: &EffectTarget, machine_output: bool) -> bool {
+    machine_output
+        || matches!(
+            target,
+            EffectTarget::CodeMode { .. }
+                | EffectTarget::IntegrationCommand { .. }
+                | EffectTarget::WebFetch(_)
+                | EffectTarget::Image(_)
+                | EffectTarget::Mcp { .. }
+        )
+}
+
+#[cfg(test)]
+pub(in crate::dogfood) fn annotate_success_output(
+    output: Vec<u8>,
+    annotations: &[String],
+    preserve_output: bool,
+) -> Result<Vec<u8>, String> {
+    annotate_result(Ok(output), annotations, preserve_output).map_err(|failure| failure.detail)
+}
+
+#[cfg(test)]
+pub(in crate::dogfood) fn annotate_failure_detail(
+    detail: String,
+    annotations: &[String],
+) -> String {
+    match annotate_result(
+        Err(mcp_call::EffectFailure::from(detail)),
+        annotations,
+        false,
+    ) {
+        Err(failure) => failure.detail,
+        Ok(_) => String::new(),
+    }
+}
+
 /// Model-facing outputs can carry hook context. Machine consumers must receive
 /// exactly the effect's bytes: in particular, do not add keys to CodeMode's
 /// nested JSON envelope or append text to plugin credential/interpolation data.
@@ -653,6 +680,8 @@ fn annotate_result(
     match result {
         Ok(output) if preserve_output => Ok(output),
         Ok(mut output) => {
+            let max_bytes =
+                usize::try_from(grapt_runtime::TOOL_ARTIFACT_MAX_BYTES).unwrap_or(usize::MAX);
             if let Ok(mut value) = serde_json::from_slice::<serde_json::Value>(&output) {
                 match value.as_object_mut() {
                     Some(object) if !object.contains_key("hookAnnotations") => {
@@ -665,11 +694,13 @@ fn annotate_result(
                         });
                     }
                 }
-                Ok(value.to_string().into_bytes())
-            } else {
-                append_annotations(&mut output, annotations);
-                Ok(output)
+                let serialized = value.to_string().into_bytes();
+                if serialized.len() <= max_bytes {
+                    return Ok(serialized);
+                }
             }
+            append_annotations(&mut output, annotations);
+            Ok(output)
         }
         Err(mut failure) => {
             let mut detail = failure.detail.into_bytes();
@@ -844,5 +875,86 @@ mod lifecycle_output_tests {
         assert!(failure
             .detail
             .contains("PostToolUse hook failed after dispatch"));
+    }
+
+    #[test]
+    fn inline_mcp_outputs_use_secret_bearing_keyed_capture_and_fit_with_hook_notes(
+    ) -> Result<(), String> {
+        use grapt_artifact::{ArtifactKind, ArtifactStore, CaptureBound, Sensitivity};
+
+        let route = crate::dogfood::mcp::McpRoute {
+            server: "demo".to_owned(),
+            tool: grapt_mcp::McpToolName::new("search").ok_or("tool name")?,
+            description: Some("demo search".to_owned()),
+            output_schema: None,
+            launch: crate::dogfood::mcp::LaunchIdentity {
+                program: "demo-mcp".to_owned(),
+                cwd: ".".to_owned(),
+                arguments: Vec::new(),
+                incarnation: 1,
+                declaration: Arc::new(crate::dogfood::mcp::Declaration::Disabled),
+            },
+        };
+        let target = EffectTarget::Mcp {
+            route,
+            arguments: serde_json::json!({}),
+        };
+        assert!(
+            target_output_is_sensitive(&target, false),
+            "inline MCP outputs must route through secret-bearing keyed capture"
+        );
+
+        let payload_str = format!("MCP_HEAD_{}_MCP_TAIL", "m".repeat(1_048_046));
+        assert_eq!(payload_str.len(), 1_048_064);
+        let hook_note = "h".repeat(1024);
+        let annotated = annotate_result(
+            Ok(payload_str.as_bytes().to_vec()),
+            std::slice::from_ref(&hook_note),
+            false,
+        )
+        .map_err(|failure| failure.detail)?;
+        assert!(annotated.len() <= grapt_runtime::TOOL_ARTIFACT_MAX_BYTES as usize);
+        let text = std::str::from_utf8(&annotated).map_err(|error| error.to_string())?;
+        assert!(
+            text.starts_with(&payload_str),
+            "accepted MCP payload bytes must be preserved intact"
+        );
+        assert!(text.contains(&hook_note));
+
+        let root =
+            std::env::temp_dir().join(format!("grapt-executor-mcp-keyed-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let store = FilesystemArtifactStore::open(
+            &root,
+            b"executor-mcp-keyed-secret".to_vec(),
+            Box::new(grapt_store::SystemClock),
+        )
+        .map_err(|error| error.to_string())?;
+        let bound = CaptureBound::new(grapt_runtime::TOOL_ARTIFACT_MAX_BYTES, 64 * 1024)
+            .ok_or("capture bound")?;
+        let secret_cap = store
+            .capture(
+                std::io::Cursor::new(&annotated),
+                bound,
+                ArtifactKind::CapturedOutput,
+                Sensitivity::SecretBearing,
+            )
+            .map_err(|error| error.to_string())?;
+        let ordinary_cap = store
+            .capture(
+                std::io::Cursor::new(&annotated),
+                bound,
+                ArtifactKind::CapturedOutput,
+                Sensitivity::Ordinary,
+            )
+            .map_err(|error| error.to_string())?;
+        assert!(secret_cap.disposition().is_complete());
+        assert_ne!(
+            secret_cap.reference().digest(),
+            ordinary_cap.reference().digest(),
+            "secret-bearing keyed capture must differ from unkeyed ordinary addressing"
+        );
+        let _ = std::fs::remove_dir_all(&root);
+        Ok(())
     }
 }

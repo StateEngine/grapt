@@ -7,8 +7,9 @@ use grapt_api::u3a::{
 };
 use grapt_runtime::SessionPorts;
 use grapt_session::{
-    BoundedSearch, NonNegativeMs, ParentFilter, SessionListCriteria, SessionListDirection,
-    SessionListKey, SessionListLimits, SessionListOrder, SessionListScope,
+    BoundaryKey, BoundedSearch, KeyDigest, NonNegativeMs, ParentFilter, SessionListBoundary,
+    SessionListCriteria, SessionListDirection, SessionListKey, SessionListLimits, SessionListOrder,
+    SessionListScope,
 };
 use grapt_types::{DeterministicAuthorities, LocationRef, ProjectId, SessionId, WorkspaceId};
 use serde_json::{json, Value};
@@ -30,7 +31,11 @@ fn request_error(error: impl ToString) -> SessionListApplicationError {
 }
 
 fn cursor_error() -> SessionListApplicationError {
-    match decode(json!({"_tag":"InvalidCursorError", "message":"Invalid cursor"})) {
+    cursor_refusal("Invalid cursor")
+}
+
+fn cursor_refusal(message: &str) -> SessionListApplicationError {
+    match decode(json!({"_tag":"InvalidCursorError", "message":message})) {
         Ok(error) => SessionListApplicationError::InvalidCursor(error),
         Err(error) => request_error(error),
     }
@@ -96,10 +101,18 @@ impl PageRequest {
         Ok(Self { query, criteria })
     }
 
-    fn cursor(&self, key: &SessionListKey, direction: &str) -> Result<String, String> {
+    fn cursor(&self, key: &SessionListBoundary, direction: &str) -> Result<String, String> {
         let mut value = self.query.clone();
-        value["anchor"] = json!({"id":key.session_id().as_str(),
-            "time":key.updated_ms().value(), "direction":direction});
+        value["anchor"] = match key.after() {
+            BoundaryKey::Session(key) => json!({
+                "id": key.session_id().as_str(),
+                "time": key.updated_ms().value(),
+                "direction": direction,
+            }),
+            BoundaryKey::Row { rowid, key } => {
+                json!({"row":rowid, "key":key.to_hex(), "direction":direction})
+            }
+        };
         let bytes = serde_json::to_vec(&value).map_err(|error| error.to_string())?;
         let encoded = URL_SAFE_NO_PAD.encode(bytes);
         if encoded.len() > MAX_CURSOR_BYTES {
@@ -134,11 +147,14 @@ fn validate_cursor(query: &Value) -> Result<(), String> {
         .get("anchor")
         .and_then(Value::as_object)
         .ok_or("cursor anchor absent")?;
-    if anchor.len() != 3
-        || !anchor.contains_key("id")
-        || !anchor.contains_key("time")
-        || !anchor.contains_key("direction")
-    {
+    // After a listed Session by its time and id, or after a stored row by
+    // its rowid and the digest of what it held.
+    let members: &[&str] = if anchor.contains_key("id") {
+        &["id", "time", "direction"]
+    } else {
+        &["row", "key", "direction"]
+    };
+    if anchor.len() != members.len() || !members.iter().all(|key| anchor.contains_key(*key)) {
         return Err("cursor anchor malformed".to_owned());
     }
     let mut adapted = query.clone();
@@ -191,16 +207,26 @@ fn criteria(query: &Value, rows: usize) -> Result<SessionListCriteria, String> {
                 Some("previous") => SessionListDirection::Previous,
                 _ => return Err("cursor direction invalid".to_owned()),
             };
-            let time = anchor
-                .get("time")
-                .and_then(Value::as_i64)
-                .and_then(NonNegativeMs::new)
-                .ok_or("cursor time invalid")?;
-            let id = text(anchor, "id")
-                .ok_or("cursor identity absent")?
-                .parse::<SessionId>()
-                .map_err(|e| e.to_string())?;
-            (direction, Some(SessionListKey::new(time, id)))
+            // After a listed Session, or after the stored row a page that
+            // skipped rows stopped on.
+            let boundary = match (text(anchor, "id"), anchor.get("row")) {
+                (Some(id), None) => SessionListBoundary::from(SessionListKey::new(
+                    anchor
+                        .get("time")
+                        .and_then(Value::as_i64)
+                        .and_then(NonNegativeMs::new)
+                        .ok_or("cursor time invalid")?,
+                    id.parse::<SessionId>().map_err(|e| e.to_string())?,
+                )),
+                (None, Some(row)) => SessionListBoundary::after_row(
+                    row.as_i64().ok_or("cursor row invalid")?,
+                    text(anchor, "key")
+                        .and_then(KeyDigest::from_hex)
+                        .ok_or("cursor row key invalid")?,
+                ),
+                _ => return Err("cursor position invalid".to_owned()),
+            };
+            (direction, Some(boundary))
         }
     };
     let limits = SessionListLimits::production();
@@ -214,6 +240,16 @@ fn criteria(query: &Value, rows: usize) -> Result<SessionListCriteria, String> {
     .map_err(|e| e.to_string())
 }
 
+/// Pages one request reads past while it has listed nothing.
+const MAX_SKIPPED_PAGES_FOLLOWED: usize = 4;
+
+fn degraded_reason(row: &grapt_session::SessionListDegradedRow) -> String {
+    match &row.session_id {
+        Some(session) => format!("{session}: {}", row.reason),
+        None => format!("unreadable identity: {}", row.reason),
+    }
+}
+
 pub(super) fn response(
     application: &DogfoodApplication,
     query: SessionListQueryDto,
@@ -221,24 +257,86 @@ pub(super) fn response(
     let request = PageRequest::parse(query)?;
     let authorities = DeterministicAuthorities::new(&*application.clock, &*application.ids);
     let ports = SessionPorts::new(Arc::clone(&application.inbox), &authorities);
-    let page = ports
-        .list(&request.criteria)
-        .map_err(|_| SessionListApplicationError::Unavailable)?;
-    let mut data = Vec::with_capacity(page.items().len());
-    for item in page.items() {
-        data.push(
-            super::list_metadata::row(&ports, item)
-                .map_err(|_| SessionListApplicationError::Unavailable)?,
+    let list = |criteria: &SessionListCriteria| {
+        ports.list(criteria).map_err(|error| match error {
+            // The cursor, not the service, is at fault: retrying it cannot help.
+            grapt_runtime::SessionPortError::List {
+                source: source @ grapt_session::SessionListError::StaleCursor,
+            } => cursor_refusal(&source.to_string()),
+            _ => SessionListApplicationError::Unavailable,
+        })
+    };
+    let mut degraded = Vec::new();
+    let mut data = Vec::new();
+    let mut criteria = request.criteria.clone();
+    let mut followed = 0;
+    // A page that listed nothing a client can show, because its rows were
+    // skipped or none of them became a listing, is read on from where it
+    // stopped, so a client meets an empty page with a continuation only
+    // after this many such pages.
+    let page = loop {
+        let page = list(&criteria)?;
+        degraded.extend(page.degraded().iter().map(degraded_reason));
+        for item in page.items() {
+            // One session whose metadata cannot be read is left out and
+            // named; it never takes the rest of the page with it.
+            match super::list_metadata::row(&ports, item) {
+                Ok(row) => data.push(row),
+                Err(error) => degraded.push(format!("{}: {error}", item.key.session_id())),
+            }
+        }
+        let after = page.continue_after().cloned().or_else(|| {
+            // Items arrive in display order; a Previous page continues
+            // from its first, as its `previous` cursor does.
+            match criteria.direction {
+                SessionListDirection::Next => page.items().last(),
+                SessionListDirection::Previous => page.items().first(),
+            }
+            .map(|item| (&item.key).into())
+        });
+        match after {
+            Some(after) if data.is_empty() && followed < MAX_SKIPPED_PAGES_FOLLOWED => {
+                followed += 1;
+                criteria.anchor = Some(after);
+            }
+            _ => break page,
+        }
+    };
+    if !degraded.is_empty() {
+        eprintln!(
+            "session list warning reason=degraded-rows count={} detail={}",
+            degraded.len(),
+            degraded.join("; ")
         );
+    }
+    // Every row to the end of the list was unreadable: an empty page would
+    // pass for a store with no Sessions, so the list is unavailable instead.
+    if data.is_empty()
+        && !degraded.is_empty()
+        && page.items().is_empty()
+        && page.continue_after().is_none()
+    {
+        return Err(SessionListApplicationError::Unavailable);
     }
     let mut cursor = json!({});
     if let Some(first) = page.items().first() {
         cursor["previous"] = json!(request
-            .cursor(&first.key, "previous")
+            .cursor(&(&first.key).into(), "previous")
             .map_err(request_error)?);
     }
     if let Some(last) = page.items().last() {
-        cursor["next"] = json!(request.cursor(&last.key, "next").map_err(request_error)?);
+        cursor["next"] = json!(request
+            .cursor(&(&last.key).into(), "next")
+            .map_err(request_error)?);
+    }
+    // A page that stopped at its skip bound continues after the rows it
+    // skipped, even when none of them could be shown.
+    if let Some(key) = page.continue_after() {
+        let direction = match request.criteria.direction {
+            SessionListDirection::Next => "next",
+            SessionListDirection::Previous => "previous",
+        };
+        cursor[direction] = json!(request.cursor(key, direction).map_err(request_error)?);
     }
     decode(json!({"data":data,"cursor":cursor}))
         .map_err(|_| SessionListApplicationError::Unavailable)
@@ -264,7 +362,7 @@ mod tests {
                 .unwrap_or_else(|error| panic!("id: {error}")),
         );
         let encoded = request
-            .cursor(&key, "previous")
+            .cursor(&(&key).into(), "previous")
             .unwrap_or_else(|error| panic!("cursor: {error}"));
         let decoded: Value = serde_json::from_slice(
             &URL_SAFE_NO_PAD
@@ -286,7 +384,7 @@ mod tests {
         assert_eq!(resumed.criteria.parent, ParentFilter::Root);
         assert_eq!(resumed.criteria.order, SessionListOrder::Ascending);
         assert_eq!(resumed.criteria.direction, SessionListDirection::Previous);
-        assert_eq!(resumed.criteria.anchor, Some(key));
+        assert_eq!(resumed.criteria.anchor, Some((&key).into()));
     }
 
     #[test]

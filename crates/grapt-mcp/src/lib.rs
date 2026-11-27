@@ -704,13 +704,24 @@ impl ToolCallOutcome {
 /// indistinguishable from a tool that returned nothing, and the model would
 /// continue from an absence that was actually a value it never saw.
 pub fn accept_call(bounds: McpBounds, result: &Value) -> Result<ToolCallOutcome, McpProtocolError> {
+    accept_call_up_to(bounds, result, bounds.max_schema_bytes())
+}
+
+/// Validate a `tools/call` result allowing up to `max_text_bytes` of rendered
+/// text (still bounded by `bounds.max_frame_bytes()`), used when the caller
+/// will spill oversized text to a file rather than sending it inline.
+pub fn accept_call_up_to(
+    bounds: McpBounds,
+    result: &Value,
+    max_text_bytes: usize,
+) -> Result<ToolCallOutcome, McpProtocolError> {
     measure_call_result(result, bounds.max_frame_bytes())?;
     let blocks = result
         .get("content")
         .ok_or(McpProtocolError::CallMissingContent)?
         .as_array()
         .ok_or(McpProtocolError::CallContentNotAnArray)?;
-    let limit = bounds.max_schema_bytes();
+    let limit = max_text_bytes;
     let mut text = String::new();
     for block in blocks {
         let kind = block

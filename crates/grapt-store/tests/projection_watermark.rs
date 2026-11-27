@@ -53,7 +53,7 @@ impl Projector for RowProjector {
         &mut self,
         tx: &rusqlite::Transaction<'_>,
         event: &DecodedEvent,
-    ) -> Result<(), String> {
+    ) -> Result<(), grapt_store::ProjectorError> {
         if self.fail {
             return Err("refused on purpose".into());
         }

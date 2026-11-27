@@ -19,8 +19,8 @@ const MORE_ROUNDS: [[(&str, &str); 2]; 3] = [
     [("call_sc_g", "g.txt"), ("call_sc_h", "h.txt")],
 ];
 const ROUND_TEXT_BYTES: usize = 60_000;
-/// As compaction_config's buffer: the Step after the grouped reads compacts.
-const BUFFER: u64 = 128_000 - 16_384 - 30_000;
+/// The configured limit the grouped reads pass: the Step after them compacts.
+const LIMIT: u64 = 30_000;
 const COMPACTED: &str = "SC_PROVIDER_COMPACTED";
 
 fn compaction_stream() -> Script {
@@ -91,8 +91,8 @@ fn journey_with_guidance(
     prepare(&root, 120_000);
     if let Some(window) = window {
         prepare_model_inventory(&root, window);
-        // This fixture's buffer is calculated from the admitted window,
-        // rather than a listing's default 95 percent allowance.
+        // The ceiling is taken from the admitted window, rather than a
+        // listing's default 95 percent allowance.
         let listing = root.join("account-models.json");
         let mut account: serde_json::Value = serde_json::from_slice(
             &fs::read(&listing).unwrap_or_else(|error| panic!("listing read failed: {error}")),
@@ -111,14 +111,16 @@ fn journey_with_guidance(
         &fs::read(&path).unwrap_or_else(|error| panic!("config read failed: {error}")),
     )
     .unwrap_or_else(|error| panic!("config decode failed: {error}"));
-    config["compaction"] = compaction;
+    place_compaction(&mut config, compaction);
     fs::write(&path, serde_json::to_vec(&config).unwrap_or_default())
         .unwrap_or_else(|error| panic!("config write failed: {error}"));
     // Every read the scripts ask for has its file, and is approved in order.
     let reads: Vec<(&str, &str)> = scripts
         .iter()
         .flat_map(|script| match script {
-            Script::ToolReads { calls } | Script::TextThenReads { calls, .. } => calls.clone(),
+            Script::ToolReads { calls }
+            | Script::ToolReadsUnmetered { calls }
+            | Script::TextThenReads { calls, .. } => calls.clone(),
             _ => Vec::new(),
         })
         .collect();
@@ -235,10 +237,19 @@ fn journey_with_guidance(
     }
 }
 
-fn seed_read() -> Script {
-    Script::ToolReads {
-        calls: READS.to_vec(),
+/// Writes the `compaction` keys; the model limit is a root key beside them.
+fn place_compaction(config: &mut serde_json::Value, mut compaction: serde_json::Value) {
+    if let Some(limit) = compaction
+        .as_object_mut()
+        .and_then(|keys| keys.remove("model_auto_compact_token_limit"))
+    {
+        config["model_auto_compact_token_limit"] = limit;
     }
+    config["compaction"] = compaction;
+}
+
+fn seed_read() -> Script {
+    Script::reads_unmetered(READS.to_vec())
 }
 
 fn input(body: &str) -> Vec<serde_json::Value> {
@@ -255,7 +266,7 @@ fn input(body: &str) -> Vec<serde_json::Value> {
 fn provider_compaction_is_on_by_default_on_an_openai_route() {
     let journey = journey(
         "sc-default-on",
-        serde_json::json!({"buffer": BUFFER}),
+        serde_json::json!({"model_auto_compact_token_limit": LIMIT}),
         vec![
             seed_read(),
             compaction_stream(),
@@ -296,7 +307,7 @@ fn manual_guidance_reaches_provider_compaction_without_entering_the_next_coding_
 fn an_explicit_server_side_false_cannot_bypass_openai_compaction() {
     let journey = journey(
         "sc-explicit-off",
-        serde_json::json!({"buffer": BUFFER, "server_side": false}),
+        serde_json::json!({"model_auto_compact_token_limit": LIMIT, "server_side": false}),
         vec![
             seed_read(),
             compaction_stream(),
@@ -314,7 +325,7 @@ fn an_explicit_server_side_false_cannot_bypass_openai_compaction() {
 fn a_refused_default_provider_compaction_falls_back_and_the_turn_completes() {
     let journey = journey(
         "sc-default-refused",
-        serde_json::json!({"buffer": BUFFER}),
+        serde_json::json!({"model_auto_compact_token_limit": LIMIT}),
         vec![
             seed_read(),
             Script::Refused {
@@ -352,7 +363,7 @@ fn a_refused_default_provider_compaction_falls_back_and_the_turn_completes() {
 fn provider_compaction_commits_its_item_and_the_next_request_carries_it() {
     let journey = journey(
         "sc-committed",
-        serde_json::json!({"buffer": BUFFER, "server_side": true}),
+        serde_json::json!({"model_auto_compact_token_limit": LIMIT, "server_side": true}),
         vec![
             seed_read(),
             compaction_stream(),
@@ -432,8 +443,8 @@ fn provider_compaction_commits_its_item_and_the_next_request_carries_it() {
 /// carries its item, not the text or reads the compactions covered.
 #[test]
 fn successive_provider_compactions_each_retain_past_the_prior_cut() {
-    // Each full request fits the model; the 30k threshold still compacts
-    // every round, including its 60k assistant text and grouped reads.
+    // Each full request fits the model; the limit still compacts every round,
+    // including its 60k assistant text and grouped reads.
     const WINDOW: u64 = 200_000;
     let mut scripts = vec![seed_read(), compaction_stream()];
     for calls in MORE_ROUNDS {
@@ -446,7 +457,7 @@ fn successive_provider_compactions_each_retain_past_the_prior_cut() {
     scripts.push(Script::SuccessText("answered after four compactions"));
     let journey = journey_with_window(
         "sc-successive",
-        serde_json::json!({"buffer": WINDOW - 16_384 - 30_000, "server_side": true}),
+        serde_json::json!({"model_auto_compact_token_limit": LIMIT, "server_side": true}),
         scripts,
         Some(WINDOW),
     );
@@ -526,7 +537,7 @@ fn a_refused_or_itemless_provider_compaction_falls_back_with_its_reason() {
     ] {
         let journey = journey(
             label,
-            serde_json::json!({"buffer": BUFFER, "server_side": true}),
+            serde_json::json!({"model_auto_compact_token_limit": LIMIT, "server_side": true}),
             vec![
                 seed_read(),
                 compaction,
@@ -569,7 +580,10 @@ fn after_a_restart_an_uncommitted_provider_compaction_is_not_retried() {
         &fs::read(&path).unwrap_or_else(|error| panic!("config read failed: {error}")),
     )
     .unwrap_or_else(|error| panic!("config decode failed: {error}"));
-    config["compaction"] = serde_json::json!({"buffer": BUFFER, "server_side": true});
+    place_compaction(
+        &mut config,
+        serde_json::json!({"model_auto_compact_token_limit": LIMIT, "server_side": true}),
+    );
     fs::write(&path, serde_json::to_vec(&config).unwrap_or_default())
         .unwrap_or_else(|error| panic!("config write failed: {error}"));
     for (_, file) in READS {
@@ -667,7 +681,10 @@ fn an_empty_se_summary_after_provider_refusal_is_named_truthfully() {
         &fs::read(&path).unwrap_or_else(|error| panic!("config read failed: {error}")),
     )
     .unwrap_or_else(|error| panic!("config decode failed: {error}"));
-    config["compaction"] = serde_json::json!({"buffer": BUFFER, "server_side": true});
+    place_compaction(
+        &mut config,
+        serde_json::json!({"model_auto_compact_token_limit": LIMIT, "server_side": true}),
+    );
     fs::write(&path, serde_json::to_vec(&config).unwrap_or_default())
         .unwrap_or_else(|error| panic!("config write failed: {error}"));
     for (_, file) in READS {
@@ -743,7 +760,7 @@ fn sc_oversize_envelope_classification_survives_transport_chunking() {
     for chunk_size in [body.len(), 64 * 1024, 100_000] {
         let journey = journey(
             &format!("sc-coalesced-{chunk_size}"),
-            serde_json::json!({"buffer": BUFFER, "server_side": true}),
+            serde_json::json!({"model_auto_compact_token_limit": LIMIT, "server_side": true}),
             vec![
                 seed_read(),
                 Script::RawChunks(
@@ -777,7 +794,7 @@ fn sc_oversize_envelope_classification_survives_transport_chunking() {
 fn ignored_text_beside_a_provider_compaction_is_counted() {
     let journey = journey(
         "sc-ignored-text",
-        serde_json::json!({"buffer": BUFFER, "server_side": true}),
+        serde_json::json!({"model_auto_compact_token_limit": LIMIT, "server_side": true}),
         vec![
             seed_read(),
             Script::Raw(format!(

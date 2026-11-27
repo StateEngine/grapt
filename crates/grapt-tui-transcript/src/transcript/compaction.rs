@@ -74,7 +74,16 @@ impl Transcript {
             return false;
         };
         let heading = match info.phase {
-            CompactionPhase::Completed => "◇ Compaction completed.".to_owned(),
+            // The first line of the row: "Compaction completed." or, when the
+            // row reports both estimates, "Context compacted: X → Y tokens."
+            CompactionPhase::Completed => format!(
+                "◇ {}",
+                cell.slice
+                    .text
+                    .lines()
+                    .next()
+                    .unwrap_or("Compaction completed.")
+            ),
             CompactionPhase::Running => format!(
                 "◇ Compacting… · observed {}s",
                 self.clock.saturating_sub(cell.observed_at).as_secs()

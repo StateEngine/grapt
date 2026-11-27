@@ -45,7 +45,7 @@ mod open;
 mod schema;
 mod store;
 
-pub use error::WriteError;
+pub use error::{sqlite_storage_failure, ProjectorError, WriteError};
 pub use model::{AppendInput, Appended, CaughtUp, FencedWriter, HeldWriters, Projector};
 pub(crate) use open::{ExistingOpenError, FreshBoundary, FreshOpenError};
 pub use store::EventStore;

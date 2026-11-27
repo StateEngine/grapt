@@ -16,8 +16,8 @@ impl Projector for FailingProjector {
         &mut self,
         _tx: &rusqlite::Transaction<'_>,
         _event: &grapt_store::DecodedEvent,
-    ) -> Result<(), String> {
-        Err("injected projection failure".to_owned())
+    ) -> Result<(), grapt_store::ProjectorError> {
+        Err("injected projection failure".into())
     }
 }
 
@@ -96,10 +96,13 @@ fn build_criteria(action: &Value) -> Fallible<SessionListCriteria> {
         Some(anchor) => {
             let updated = anchor["updated_ms"].as_i64().ok_or("anchor updated_ms")?;
             let id = anchor["session_id"].as_str().ok_or("anchor session_id")?;
-            Some(SessionListKey::new(
-                NonNegativeMs::new(updated).ok_or("anchor updated_ms must be non-negative")?,
-                id.parse::<SessionId>()?,
-            ))
+            Some(
+                SessionListKey::new(
+                    NonNegativeMs::new(updated).ok_or("anchor updated_ms must be non-negative")?,
+                    id.parse::<SessionId>()?,
+                )
+                .into(),
+            )
         }
     };
     let page_size = usize::try_from(action["page_size"].as_u64().unwrap_or(1))?;
@@ -117,6 +120,7 @@ fn refusal_name(error: &SessionListError) -> &'static str {
         SessionListError::ProjectionCorrupt { .. } => "ProjectionCorrupt",
         SessionListError::InvalidCriteria { .. } => "InvalidCriteria",
         SessionListError::StoreFailure { .. } => "StoreFailure",
+        SessionListError::StaleCursor => "StaleCursor",
     }
 }
 
@@ -298,36 +302,18 @@ fn apply(state: &mut Run, ordinal: i64, kind: &str, action: &Value) -> Fallible<
                     } else {
                         "SearchLimitExceeded"
                     };
-                    let mut record = Map::new();
-                    record.insert("action".to_owned(), json!(ordinal));
-                    record.insert("outcome".to_owned(), json!("refused"));
-                    record.insert("error".to_owned(), json!(name));
-                    state.api.push(Value::Object(record));
+                    state.api.push(json!({"action": ordinal, "outcome": "refused", "error": name}));
                 }
                 Ok(criteria) => match SessionListStore::over(&mut state.store).list(&criteria) {
-                    Ok(page) => {
-                        let ids = page
-                            .items()
-                            .iter()
-                            .map(|item| json!(item.key.session_id().as_str()))
-                            .collect::<Vec<_>>();
-                        let mut record = Map::new();
-                        record.insert("action".to_owned(), json!(ordinal));
-                        record.insert("outcome".to_owned(), json!("page"));
-                        record.insert(
-                            "order".to_owned(),
-                            json!(action["order"].as_str().unwrap_or("ascending")),
-                        );
-                        record.insert("ids".to_owned(), Value::Array(ids));
-                        state.api.push(Value::Object(record));
-                    }
-                    Err(error) => {
-                        let mut record = Map::new();
-                        record.insert("action".to_owned(), json!(ordinal));
-                        record.insert("outcome".to_owned(), json!("refused"));
-                        record.insert("error".to_owned(), json!(refusal_name(&error)));
-                        state.api.push(Value::Object(record));
-                    }
+                    Ok(page) => state.api.push(json!({
+                        "action": ordinal,
+                        "outcome": "page",
+                        "order": action["order"].as_str().unwrap_or("ascending"),
+                        "ids": item_ids(&page),
+                    })),
+                    Err(error) => state.api.push(
+                        json!({"action": ordinal, "outcome": "refused", "error": refusal_name(&error)}),
+                    ),
                 },
             }
         }
@@ -395,14 +381,18 @@ fn apply(state: &mut Run, ordinal: i64, kind: &str, action: &Value) -> Fallible<
                 1,
                 SessionListLimits::production(),
             )?;
-            let outcome = SessionListStore::over(&mut state.store).list(&criteria);
-            let Err(error) = outcome else {
-                return Err(format!("action {ordinal}: an oversize row must refuse").into());
-            };
+            // The oversize row is skipped and named; it never fails the page.
+            let page = SessionListStore::over(&mut state.store).list(&criteria)?;
+            let degraded = page.degraded().iter().map(|row| {
+                row.session_id
+                    .as_ref()
+                    .map_or_else(String::new, ToString::to_string)
+            });
             state.api.push(json!({
                 "action": ordinal,
-                "outcome": "refused",
-                "error": refusal_name(&error)
+                "outcome": "degraded",
+                "degraded": degraded.collect::<Vec<_>>(),
+                "ids": item_ids(&page),
             }));
             if action["revert_injection"].as_bool() == Some(true) {
                 state.store.connection().execute(
@@ -555,4 +545,11 @@ fn apply(state: &mut Run, ordinal: i64, kind: &str, action: &Value) -> Fallible<
         other => return Err(format!("action {ordinal}: unknown kind {other}").into()),
     }
     Ok(())
+}
+
+fn item_ids(page: &grapt_session::SessionListPage) -> Vec<String> {
+    page.items()
+        .iter()
+        .map(|item| item.key.session_id().to_string())
+        .collect()
 }

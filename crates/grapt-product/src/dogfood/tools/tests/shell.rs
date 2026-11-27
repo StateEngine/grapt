@@ -125,7 +125,7 @@ fn shell_observed_exit_preserves_status_and_both_streams_at_the_artifact_cap() -
             5_000,
         )?
         .model_output()?;
-        assert_eq!(output.len() as u64, grapt_runtime::TOOL_ARTIFACT_MAX_BYTES);
+        assert_eq!(output.len(), SHELL_OUTPUT_MAX_BYTES);
         let text = String::from_utf8(output).map_err(|error| error.to_string())?;
         assert!(text.ends_with(&format!("\n\nCommand exited with code {code}.")));
         assert!(text.contains("OOO") && text.contains("EEE"));

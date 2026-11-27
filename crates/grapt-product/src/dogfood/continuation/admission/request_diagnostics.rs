@@ -21,8 +21,19 @@ struct Observation {
     tools_bytes: Option<usize>,
     instructions_bytes: Option<usize>,
     usage_warning: Option<grapt_types::failure_diagnostic::UsageDiagnostic>,
+    cache_read_share: Option<f64>,
 }
 impl Observation {
+    /// Whether this request repeated the previous one's whole prefix, so a
+    /// provider cache could serve it; absent when there was nothing to compare.
+    fn local_prefix_unchanged(&self) -> Option<bool> {
+        match self.change? {
+            RequestDelta::AppendOnly | RequestDelta::Identical => Some(true),
+            RequestDelta::FirstObservation | RequestDelta::ComparisonBound => None,
+            _ => Some(false),
+        }
+    }
+
     fn metadata(&self) -> serde_json::Value {
         let (change, index) = match self.change {
             None => ("unreported", None),
@@ -48,6 +59,8 @@ impl Observation {
             "cacheRequestToolsBytes": self.tools_bytes,
             "cacheRequestInstructionsBytes": self.instructions_bytes,
             "cacheRequestComparison": "previous-observed-request; volatile; provider cause unreported",
+            "cacheReadShare": self.cache_read_share,
+            "localPrefixUnchanged": self.local_prefix_unchanged(),
         })
     }
 }
@@ -87,6 +100,7 @@ impl SessionCalibrations {
             history.calls.observe(sample);
             let observation = Observation {
                 usage_warning: sample.usage_warning,
+                cache_read_share: call_usage::cache_read_share(sample),
                 change: sample.request.as_ref().map(|request| {
                     history
                         .previous

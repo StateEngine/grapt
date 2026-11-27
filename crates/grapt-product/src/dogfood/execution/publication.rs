@@ -94,7 +94,25 @@ impl LiveExecutor {
                 "Session config cannot be read",
             )]);
         };
+        // A plugin refresh that fails, or a plugin left out of the running
+        // generation, is named; MCP discovery below goes on either way.
+        let mut plugins = Vec::new();
+        if let Err(refusal) = self.plugins.refresh().await {
+            plugins.push(Unavailable::new(
+                "plugins",
+                &format!("{PLUGINS_REFUSED}{refusal}"),
+            ));
+        }
+        plugins.extend(self.plugins.skipped().iter().map(|skipped| {
+            Unavailable::new(&format!("plugin {}", skipped.target), &skipped.reason)
+        }));
         let (published, unavailable) = self.published_tools_for(session, revision).await;
+        // An unreadable MCP state stays unknown: plugins alone cannot say
+        // every other source is usable.
+        let unavailable = unavailable.map(|mut sources| {
+            sources.extend(plugins);
+            sources
+        });
         let accepted = session_config::publish_current(&self.inbox, session, revision, || {
             self.published.set(session, Arc::new(published))
         });
@@ -110,18 +128,6 @@ impl LiveExecutor {
         session: &SessionId,
         revision: Option<u64>,
     ) -> (mcp::PublishedTools, Option<Vec<Unavailable>>) {
-        // Plugins refresh first, over the service's own sources: one they
-        // cannot read is named here, as the MCP read below never sees it.
-        if let Err(refusal) = self.plugins.refresh().await {
-            let refused = Unavailable::new("plugins", &format!("{PLUGINS_REFUSED}{refusal}"));
-            return (
-                mcp::PublishedTools {
-                    refresh_failed: true,
-                    ..Default::default()
-                },
-                Some(vec![refused]),
-            );
-        }
         // Everything that reads configuration is done and DROPPED before the
         // await. `with_status` may start a child process, so this future
         // crosses threads, and holding a session record or a config source

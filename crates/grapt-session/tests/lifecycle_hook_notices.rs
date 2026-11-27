@@ -385,7 +385,6 @@ fn malformed_known_hook_wire_refuses_all_decoders_instead_of_becoming_skipped() 
         ),
         ("text", Some(json!(["not text"]))),
         ("text", None),
-        ("unknownField", Some(json!(true))),
     ];
     for (field, replacement) in cases {
         let source = Source::default();
@@ -421,6 +420,20 @@ fn malformed_known_hook_wire_refuses_all_decoders_instead_of_becoming_skipped() 
             "malformed known kind was counted as a future kind"
         );
     }
+    // A field a later writer adds is not malformed: every reader still reads.
+    let source = Source::default();
+    let mut store = EventStore::open_in_memory()?;
+    let session = setup(&mut store, &source)?;
+    let mut data = wire(&session);
+    data.as_object_mut()
+        .ok_or("fixture is not an object")?
+        .insert("unknownField".to_owned(), json!(true));
+    append_wire(&mut store, &source, &session, &data)?;
+    assert_eq!(
+        notice::lifecycle_hook_notices(store.connection(), &session)?.len(),
+        1
+    );
+    assert!(notice::read_notices(store.connection(), &session).is_ok());
     Ok(())
 }
 

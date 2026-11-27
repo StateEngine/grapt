@@ -152,6 +152,7 @@ mod tests {
             matcher: None,
             permits_allow: true,
             plugin: Some(context.clone()),
+            required: false,
         };
         assert!(shell("echo '${CLAUDE_PLUGIN_ROOT}'", &context).is_err());
         let environment = crate::dogfood::tools::shell_environment::Environment::parent()?;

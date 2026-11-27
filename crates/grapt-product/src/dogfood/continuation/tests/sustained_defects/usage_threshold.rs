@@ -19,6 +19,8 @@ fn provider_reported_context_compacts_at_ninety_percent_before_the_next_call() -
             (Some(950_000), 50_000, true),
         ] {
             for auto in [true, false] {
+                // `auto: false` turns the proactive ceiling off.
+                let compact = compact && auto;
                 let fixture = seeded(&format!("early-compact-{family:?}-{output}"))?;
                 fixture.record_exchange()?;
                 let targets = crate::dogfood::production::tests::projection_targets_with_window(

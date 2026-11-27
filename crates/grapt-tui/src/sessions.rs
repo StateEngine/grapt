@@ -7,6 +7,7 @@ mod render;
 use crate::backend::Agent;
 use crossterm::event::KeyCode;
 use grapt_client::wire::SessionWireId;
+use grapt_client::CatalogReach;
 pub use manage::{handle, poll_search, Message, Request, Search};
 pub use pins::Pins;
 use ratatui_textarea::TextArea;
@@ -61,11 +62,15 @@ impl Picker {
     pub fn editing(&self) -> bool {
         self.edit.is_some() || self.pending.is_some()
     }
+    /// The rows a filter runs over: the server's matches when its search
+    /// reached them, otherwise the cached catalog, so a failed or stalled
+    /// search still shows and selects the matches already known.
     fn source<'a>(&'a self, agents: &'a [Agent]) -> &'a [Agent] {
         match &self.search {
             Some(Search {
                 query,
                 result: Ok(rows),
+                reach: CatalogReach::Read,
             }) if query == &self.query => rows,
             _ => agents,
         }
@@ -181,21 +186,52 @@ impl Picker {
             self.filtered(agents, pins);
         }
     }
-    fn search_hint(&self) -> String {
+    /// What an empty list says: never "none" when the server stopped
+    /// before it could list anything.
+    fn empty_note(&self, catalog: CatalogReach) -> &'static str {
+        let reach = if self.query.is_empty() {
+            catalog
+        } else {
+            match &self.search {
+                Some(search) if search.query == self.query => search.reach,
+                _ => CatalogReach::Read,
+            }
+        };
+        match (self.query.is_empty(), reach) {
+            (true, CatalogReach::Read) => "No sessions available",
+            (false, CatalogReach::Read) => "No matching sessions",
+            (_, CatalogReach::Stalled) => "Sessions could not be read past damaged entries",
+        }
+    }
+    fn search_hint(&self, catalog: CatalogReach) -> String {
         if self.query.is_empty() {
-            return "Search titles across saved sessions".into();
+            return match catalog {
+                CatalogReach::Read => "Search titles across saved sessions".into(),
+                CatalogReach::Stalled => {
+                    "Session list incomplete: damaged entries stopped the last read".into()
+                }
+            };
         }
         match &self.search {
             Some(Search {
                 query,
                 result: Err(error),
+                ..
             }) if query == &self.query => format!(
                 "Search unavailable: {} · local matches",
                 grapt_tui_transcript::markdown::literal(error)
             ),
             Some(Search {
                 query,
+                reach: CatalogReach::Stalled,
+                ..
+            }) if query == &self.query => {
+                "Search incomplete: damaged entries stopped it · local matches".into()
+            }
+            Some(Search {
+                query,
                 result: Ok(rows),
+                ..
             }) if query == &self.query => {
                 format!("Server results · {} matches (first page)", rows.len())
             }

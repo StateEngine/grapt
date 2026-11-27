@@ -180,11 +180,50 @@ impl LiveExecutor {
     }
 }
 
+/// Refuses a `session.generate` context patch that [`apply_generation_context_patch`]
+/// could not apply, so the callback chain can skip the callback that produced it.
+pub(in crate::dogfood) fn check_generation_patch(patch: &serde_json::Value) -> Result<(), String> {
+    system_parts(patch)?;
+    for (name, value) in tool_map(patch)? {
+        patched_tool(name, value)?;
+    }
+    Ok(())
+}
+
 fn apply_generation_context_patch(
     patch: &serde_json::Value,
     context: &mut Vec<grapt_provider::CodexInputItem>,
     published: &mut super::super::mcp::PublishedTools,
 ) -> Result<(), String> {
+    let mut prefixed = system_parts(patch)?;
+    prefixed.append(context);
+    *context = prefixed;
+    let tools = tool_map(patch)?;
+    let offered = patch
+        .get("offered")
+        .and_then(serde_json::Value::as_array)
+        .map_or(&[][..], Vec::as_slice);
+    let mut updated = Vec::new();
+    for mut definition in std::mem::take(&mut published.definitions) {
+        let Some(value) = tools.get(&definition.name) else {
+            // Only a tool the hook was offered can be removed by leaving it out.
+            if !offered
+                .iter()
+                .any(|name| name.as_str() == Some(definition.name.as_str()))
+            {
+                updated.push(definition);
+            }
+            continue;
+        };
+        (definition.description, definition.input_schema) = patched_tool(&definition.name, value)?;
+        updated.push(definition);
+    }
+    published.definitions = updated;
+    Ok(())
+}
+
+/// The patch's system parts as system messages, within the patch bounds.
+fn system_parts(patch: &serde_json::Value) -> Result<Vec<grapt_provider::CodexInputItem>, String> {
     const MAX_PATCH_BYTES: usize = 1024 * 1024;
     let bytes = serde_json::to_vec(patch).map_err(|error| error.to_string())?;
     if bytes.len() > MAX_PATCH_BYTES {
@@ -199,56 +238,105 @@ fn apply_generation_context_patch(
         .ok_or_else(|| {
             "session.generate context hook returned an invalid system array".to_owned()
         })?;
-    let mut prefixed = Vec::with_capacity(system.len().saturating_add(context.len()));
-    for part in system {
-        let text = part
-            .get("text")
-            .and_then(serde_json::Value::as_str)
-            .ok_or_else(|| {
-                "session.generate context hook returned a non-text system part".to_owned()
-            })?;
-        prefixed.push(grapt_provider::CodexInputItem::Message(
-            grapt_provider::InputMessage {
-                role: grapt_provider::MessageRole::System,
-                content: text.to_owned(),
-            },
-        ));
-    }
-    prefixed.append(context);
-    *context = prefixed;
+    system
+        .iter()
+        .map(|part| {
+            let text = part
+                .get("text")
+                .and_then(serde_json::Value::as_str)
+                .ok_or_else(|| {
+                    "session.generate context hook returned a non-text system part".to_owned()
+                })?;
+            Ok(grapt_provider::CodexInputItem::Message(
+                grapt_provider::InputMessage {
+                    role: grapt_provider::MessageRole::System,
+                    content: text.to_owned(),
+                },
+            ))
+        })
+        .collect()
+}
 
-    let tools = patch
+fn tool_map(
+    patch: &serde_json::Value,
+) -> Result<&serde_json::Map<String, serde_json::Value>, String> {
+    patch
         .get("tools")
         .and_then(serde_json::Value::as_object)
-        .ok_or_else(|| "session.generate context hook returned an invalid tool map".to_owned())?;
-    let mut updated = Vec::new();
-    for mut definition in std::mem::take(&mut published.definitions) {
-        let Some(value) = tools.get(&definition.name) else {
-            continue;
-        };
-        definition.description = match value.get("description") {
-            None | Some(serde_json::Value::Null) => None,
-            Some(serde_json::Value::String(description)) => Some(description.clone()),
-            Some(_) => {
-                return Err(format!(
-                    "session.generate context hook returned an invalid description for {}",
-                    definition.name
-                ))
-            }
-        };
-        let schema = value
-            .get("input")
-            .filter(|schema| schema.is_object())
-            .ok_or_else(|| {
-                format!(
-                    "session.generate context hook returned an invalid input schema for {}",
-                    definition.name
-                )
-            })?;
-        definition.input_schema =
-            serde_json::to_string(schema).map_err(|error| error.to_string())?;
-        updated.push(definition);
+        .ok_or_else(|| "session.generate context hook returned an invalid tool map".to_owned())
+}
+
+/// One patched tool's description and encoded input schema.
+fn patched_tool(name: &str, value: &serde_json::Value) -> Result<(Option<String>, String), String> {
+    let description = match value.get("description") {
+        None | Some(serde_json::Value::Null) => None,
+        Some(serde_json::Value::String(description)) => Some(description.clone()),
+        Some(_) => {
+            return Err(format!(
+                "session.generate context hook returned an invalid description for {name}"
+            ))
+        }
+    };
+    let schema = value
+        .get("input")
+        .filter(|schema| schema.is_object())
+        .ok_or_else(|| {
+            format!("session.generate context hook returned an invalid input schema for {name}")
+        })?;
+    let schema = serde_json::to_string(schema).map_err(|error| error.to_string())?;
+    Ok((description, schema))
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    /// The generation chain skips exactly the patches the transient plan could
+    /// not apply, so a valid patch must pass and each malformed one must not.
+    #[test]
+    fn the_generation_patch_check_matches_what_the_plan_applies() {
+        let tool = json!({"description": "echo", "input": {"type": "object"}});
+        let valid = json!({"system": [{"text": "context"}], "tools": {"echo": tool}});
+        assert_eq!(super::check_generation_patch(&valid), Ok(()));
+        for malformed in [
+            json!({"system": [{"text": 1}], "tools": {}}),
+            json!({"system": "context", "tools": {}}),
+            json!({"system": [], "tools": []}),
+            json!({"system": [], "tools": {"echo": {"description": 1, "input": {}}}}),
+            json!({"system": [], "tools": {"echo": {"input": "schema"}}}),
+        ] {
+            assert!(
+                super::check_generation_patch(&malformed).is_err(),
+                "{malformed}"
+            );
+        }
     }
-    published.definitions = updated;
-    Ok(())
+
+    /// A plugin patch can only drop the tools its hook was offered: a session
+    /// tool the hook never saw, such as a healthy MCP tool, stays published.
+    #[test]
+    fn a_plugin_patch_keeps_tools_its_hook_was_not_offered() -> Result<(), String> {
+        let mut published = crate::dogfood::mcp::PublishedTools::default();
+        for name in ["mcp_lookup", "plugin_echo", "plugin_gone"] {
+            published.definitions.push(grapt_provider::ToolDefinition {
+                input_format: grapt_provider::ToolInputFormat::Json,
+                name: name.to_owned(),
+                description: None,
+                input_schema: "{}".to_owned(),
+            });
+        }
+        let patch = json!({
+            "system": [],
+            "tools": {"plugin_echo": {"description": "patched", "input": {"type": "object"}}},
+            "offered": ["plugin_echo", "plugin_gone"],
+        });
+        super::apply_generation_context_patch(&patch, &mut Vec::new(), &mut published)?;
+        let names: Vec<_> = published
+            .definitions
+            .iter()
+            .map(|tool| tool.name.as_str())
+            .collect();
+        assert_eq!(names, ["mcp_lookup", "plugin_echo"]);
+        Ok(())
+    }
 }

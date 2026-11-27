@@ -11,7 +11,7 @@ impl InstructionService {
         session: &SessionId,
     ) -> Result<Option<InstructionHistory>, InstructionError> {
         let conn = store.connection();
-        let truth = history::fold_request_history(conn, session)?;
+        let fold = history::fold_request_history(conn, session)?;
         // Bound persisted cache JSON and its referenced blobs before the normal
         // independent journal/cache comparison allocates either.
         let sizes: Option<(i64, i64)> = conn
@@ -55,9 +55,10 @@ impl InstructionService {
                 }
             }
         }
-        validate_cache(conn, session, truth.as_ref().map(|truth| &truth.state))?;
-        let Some(mut truth) = truth else {
-            return Ok(None);
+        check_cache(conn, session, &fold)?;
+        let skipped = fold.skipped;
+        let Some(mut truth) = fold.history else {
+            return Ok(InstructionHistory::unreadable(skipped));
         };
         // A fork renumbers its copied conversation. Ancestor positions cannot
         // be interleaved with those rows, even when the child's first update
@@ -135,6 +136,7 @@ impl InstructionService {
             through: truth.state.through,
             initial,
             updates,
+            skipped,
         }))
     }
 }

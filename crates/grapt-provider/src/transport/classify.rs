@@ -328,24 +328,117 @@ pub(crate) fn classify_error(
     classify_status(status, retry_after)
 }
 
-/// Parse `Retry-After` as delta-seconds only.
+/// Parse `Retry-After` as delta-seconds or IMF-fixdate HTTP-date.
 ///
-/// The HTTP-date form is deliberately not parsed: it needs a date library this
-/// workspace does not have. An
-/// unparseable value becomes `None`, which is truthful — the adapter did not
-/// learn a delay — rather than a fabricated one.
+/// When an HTTP-date is supplied, `reference_date` (from the response's `Date`
+/// header) supplies the origin time so parsing stays pure and immune to local
+/// clock skew. An unparseable value becomes `None`, which is truthful — the
+/// adapter did not learn a delay — rather than a fabricated one.
 ///
 /// **No cap is applied here, and that is a disclosed gap, not an oversight.**
-/// A hostile or mistaken `Retry-After: 999999999` would be handed to
-/// `StepPolicy::delay_for`, which takes the larger of it and the backoff. The
-/// bound belongs to the policy that decides how long to sleep, not to the
-/// adapter that merely reports what the provider said.
+/// A hostile or mistaken `Retry-After: 999999999` is handed to
+/// `StepPolicy::delay_for`, which owns the policy ceiling.
+#[cfg(test)]
 pub(crate) fn parse_retry_after(raw: Option<&str>) -> Option<Duration> {
+    parse_retry_after_at(raw, None)
+}
+
+pub(crate) fn parse_retry_after_at(
+    raw: Option<&str>,
+    reference_date: Option<&str>,
+) -> Option<Duration> {
     let value = raw?.trim();
-    match value.parse::<u64>() {
-        Ok(seconds) => Some(Duration::from_secs(seconds)),
-        Err(_) => None,
+    if !value.is_empty() && value.bytes().all(|byte| byte.is_ascii_digit()) {
+        return value.parse::<u64>().ok().map(Duration::from_secs);
     }
+    let target = parse_http_date(value)?;
+    let origin = parse_http_date(reference_date?.trim())?;
+    Some(Duration::from_secs(target.saturating_sub(origin)))
+}
+
+fn parse_fixed_digits<T: std::str::FromStr>(raw: &str, width: usize) -> Option<T> {
+    if raw.len() != width || !raw.bytes().all(|byte| byte.is_ascii_digit()) {
+        return None;
+    }
+    raw.parse::<T>().ok()
+}
+
+/// Parse an RFC 9110 IMF-fixdate (`Sun, 06 Nov 1994 08:49:37 GMT`) into
+/// seconds since the Unix epoch without ambient clocks or date crates.
+fn parse_http_date(raw: &str) -> Option<u64> {
+    let mut parts = raw.split(' ');
+    let expected_weekday: u64 = match parts.next()? {
+        "Sun," => 0,
+        "Mon," => 1,
+        "Tue," => 2,
+        "Wed," => 3,
+        "Thu," => 4,
+        "Fri," => 5,
+        "Sat," => 6,
+        _ => return None,
+    };
+    let day: u32 = parse_fixed_digits(parts.next()?, 2)?;
+    let month: u32 = match parts.next()? {
+        "Jan" => 1,
+        "Feb" => 2,
+        "Mar" => 3,
+        "Apr" => 4,
+        "May" => 5,
+        "Jun" => 6,
+        "Jul" => 7,
+        "Aug" => 8,
+        "Sep" => 9,
+        "Oct" => 10,
+        "Nov" => 11,
+        "Dec" => 12,
+        _ => return None,
+    };
+    let year: i64 = parse_fixed_digits(parts.next()?, 4)?;
+    let time = parts.next()?;
+    if parts.next()? != "GMT" || parts.next().is_some() {
+        return None;
+    }
+    if !(1970..=9999).contains(&year) || !(1..=days_in_month(year, month)).contains(&day) {
+        return None;
+    }
+    let mut hms = time.split(':');
+    let hour: u64 = parse_fixed_digits(hms.next()?, 2)?;
+    let minute: u64 = parse_fixed_digits(hms.next()?, 2)?;
+    let second: u64 = parse_fixed_digits(hms.next()?, 2)?;
+    if hms.next().is_some() || hour > 23 || minute > 59 || second > 60 {
+        return None;
+    }
+    let days = days_from_civil(year, month, day)?;
+    // 1970-01-01 was Thursday (4). Reject mismatched weekday names.
+    if (days + 4) % 7 != expected_weekday {
+        return None;
+    }
+    days.checked_mul(86_400)?
+        .checked_add(hour * 3_600 + minute * 60 + second.min(59))
+}
+
+fn is_leap_year(year: i64) -> bool {
+    (year % 4 == 0 && year % 100 != 0) || year % 400 == 0
+}
+
+fn days_in_month(year: i64, month: u32) -> u32 {
+    match month {
+        1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
+        4 | 6 | 9 | 11 => 30,
+        2 if is_leap_year(year) => 29,
+        2 => 28,
+        _ => 0,
+    }
+}
+
+fn days_from_civil(year: i64, month: u32, day: u32) -> Option<u64> {
+    let adjusted_year = year - i64::from(month <= 2);
+    let era = adjusted_year.div_euclid(400);
+    let yoe = adjusted_year.rem_euclid(400);
+    let m = i64::from(month);
+    let doy = (153 * (m + if m > 2 { -3 } else { 9 }) + 2) / 5 + i64::from(day) - 1;
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    u64::try_from(era * 146_097 + doe - 719_468).ok()
 }
 
 pub(crate) fn failure(class: ProviderFailureClass, message: impl Into<String>) -> AttemptFragment {
@@ -414,6 +507,56 @@ mod tests {
             serde_json::json!({"code":42}),
         ] {
             assert_eq!(context_classification(&value), None);
+        }
+    }
+
+    #[test]
+    fn retry_after_parses_delta_seconds_and_http_dates() {
+        assert_eq!(
+            parse_retry_after_at(Some(" 45 "), None),
+            Some(Duration::from_secs(45))
+        );
+        assert_eq!(
+            parse_retry_after_at(
+                Some("Thu, 26 Nov 2026 23:50:45 GMT"),
+                Some("Thu, 26 Nov 2026 23:50:00 GMT"),
+            ),
+            Some(Duration::from_secs(45))
+        );
+        assert_eq!(
+            parse_retry_after_at(
+                Some("Thu, 26 Nov 2026 23:49:00 GMT"),
+                Some("Thu, 26 Nov 2026 23:50:00 GMT"),
+            ),
+            Some(Duration::ZERO)
+        );
+        assert_eq!(
+            parse_retry_after_at(Some("Thu, 26 Nov 2026 23:50:45 GMT"), None),
+            None
+        );
+        assert_eq!(
+            parse_retry_after_at(Some("not-a-date"), Some("Thu, 26 Nov 2026 23:50:00 GMT")),
+            None
+        );
+        // Reject signed delta-seconds and malformed IMF-fixdates.
+        for bad in [
+            "+60",
+            "-5",
+            "",
+            "60s",
+            "Fri, 26 Nov 2026 23:50:45 GMT",
+            "Thu, +26 Nov 2026 23:50:45 GMT",
+            "Thu, 6 Nov 2026 23:50:45 GMT",
+            "Thu, 26 Nov 2026 23:5:45 GMT",
+            "Thu, 31 Feb 2026 23:50:45 GMT",
+            "Thu,  26 Nov 2026 23:50:45 GMT",
+            "Thu,\t26 Nov 2026 23:50:45 GMT",
+        ] {
+            assert_eq!(
+                parse_retry_after_at(Some(bad), Some("Thu, 26 Nov 2026 23:50:00 GMT")),
+                None,
+                "invalid Retry-After should return None: {bad}"
+            );
         }
     }
 }

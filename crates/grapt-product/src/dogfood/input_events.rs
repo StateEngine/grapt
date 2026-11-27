@@ -17,9 +17,10 @@ pub(super) fn publish_promoted(
 ) {
     match inbox.promoted_cursor(session, input) {
         Ok(Some(seq)) => publish(inbox, hub, session, seq),
-        Ok(None) | Err(_) => hub.invalidate_because(&format!(
-            "session {session}: promoted input cursor unavailable"
-        )),
+        Ok(None) | Err(_) => hub.invalidate_session_because(
+            session,
+            &format!("session {session}: promoted input cursor unavailable"),
+        ),
     }
 }
 
@@ -33,15 +34,17 @@ pub(super) fn publish_id(
     match seq {
         Ok(Some(seq)) => match u64::try_from(seq) {
             Ok(seq) => publish(inbox, hub, session, seq),
-            Err(_) => hub.invalidate_because(&format!(
-                "session {session}: input event {event} has a negative sequence {seq}"
-            )),
+            Err(_) => hub.invalidate_session_because(
+                session,
+                &format!("session {session}: input event {event} has a negative sequence {seq}"),
+            ),
         },
         // Configured/saved permission may grant without emitting a new ask.
         Ok(None) => {}
-        Err(error) => hub.invalidate_because(&format!(
-            "session {session}: input event {event} sequence unreadable: {error}"
-        )),
+        Err(error) => hub.invalidate_session_because(
+            session,
+            &format!("session {session}: input event {event} sequence unreadable: {error}"),
+        ),
     }
 }
 
@@ -51,9 +54,12 @@ pub(super) fn publish(inbox: &Inbox, hub: &DogfoodEventHub, session: &SessionId,
             .map(|_| ())
             .map_err(|error| error.to_string())
     }) {
-        hub.invalidate_because(&format!(
-            "session {session}: input event at sequence {seq} could not be published: {error}"
-        ));
+        hub.invalidate_session_because(
+            session,
+            &format!(
+                "session {session}: input event at sequence {seq} could not be published: {error}"
+            ),
+        );
     }
 }
 

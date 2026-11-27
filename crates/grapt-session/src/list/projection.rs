@@ -40,8 +40,8 @@ impl Projector for SessionListProjector {
         &mut self,
         tx: &rusqlite::Transaction<'_>,
         event: &DecodedEvent,
-    ) -> Result<(), String> {
-        Self::project_event(tx, event)
+    ) -> Result<(), grapt_store::ProjectorError> {
+        Ok(Self::project_event(tx, event)?)
     }
 }
 
@@ -53,7 +53,7 @@ fn insert_created(tx: &rusqlite::Transaction<'_>, event: &DecodedEvent) -> Resul
         .ok_or_else(|| "session.created info is missing or not an object".to_owned())?;
     let session = session(&event.data)?;
     if session != event.aggregate_id {
-        return Err("session.created payload identity differs from aggregate".to_owned());
+        return Err("session.created payload identity differs from aggregate".into());
     }
     let project = object_string(info, "projectID")?;
     ProjectId::new(project.clone())

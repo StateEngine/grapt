@@ -104,9 +104,10 @@ impl core::fmt::Debug for SessionStatusEmitter {
 impl SessionStatusEmitter {
     /// An unavailable authoritative observation makes the streamed view stale.
     fn observation_unavailable(&self, session: &SessionId, error: &str) {
-        self.hub.invalidate_because(&format!(
-            "session {session}: authoritative status unavailable: {error}"
-        ));
+        self.hub.invalidate_session_because(
+            session,
+            &format!("session {session}: authoritative status unavailable: {error}"),
+        );
     }
 
     pub(super) fn journaled(
@@ -351,15 +352,17 @@ impl SessionStatusEmitter {
     /// that miss the edge re-read it on their next hydration.
     fn publish(&self, session: &SessionId, kind: StatusKind) {
         let Some(event) = self.build(session, kind) else {
-            self.hub.invalidate_because(&format!(
-                "session {session}: the status edge could not be built"
-            ));
+            self.hub.invalidate_session_because(
+                session,
+                &format!("session {session}: the status edge could not be built"),
+            );
             return;
         };
         if let Err(error) = self.hub.publish(&event) {
-            self.hub.invalidate_because(&format!(
-                "session {session}: the status edge could not be published: {error}"
-            ));
+            self.hub.invalidate_session_because(
+                session,
+                &format!("session {session}: the status edge could not be published: {error}"),
+            );
         }
     }
 }

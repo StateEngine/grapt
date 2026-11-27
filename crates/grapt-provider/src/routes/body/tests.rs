@@ -922,6 +922,30 @@ fn the_model_on_the_wire_is_the_catalogs_model_id() {
     );
 }
 
+#[test]
+fn openai_responses_carries_reasoning_summary_and_encrypted_content_when_variant_is_set() {
+    let model_with_variant =
+        model_variant("openai", "gpt-5", grapt_types::ModelVariantId::new("high"));
+    let request = ProviderRequest::OpenAiResponses(OpenAiResponsesRequest {
+        model: model_with_variant,
+        input: vec![user("Hello").into()],
+        max_output_tokens: Some(bound(4096)),
+        prompt_cache_key: None,
+        tools: Vec::new(),
+        web_search: None,
+        tool_choice: None,
+    });
+    let encoded = body(&request);
+    assert_eq!(
+        encoded["reasoning"],
+        serde_json::json!({"effort": "high", "summary": "auto"})
+    );
+    assert_eq!(
+        encoded["include"],
+        serde_json::json!(["reasoning.encrypted_content"])
+    );
+}
+
 mod cache;
 mod native_mail;
 

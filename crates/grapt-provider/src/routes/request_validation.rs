@@ -165,7 +165,10 @@ mod tests {
 
         for (description, reason) in [
             (Some(String::new()), ExclusionReason::DescriptionEmpty),
-            (Some("x".repeat(513)), ExclusionReason::DescriptionTooLarge),
+            (
+                Some("x".repeat(crate::tool_eligibility::MAX_TOOL_DESCRIPTION_BYTES + 1)),
+                ExclusionReason::DescriptionTooLarge,
+            ),
         ] {
             let tool = crate::ToolDefinition {
                 input_format: crate::ToolInputFormat::Json,
@@ -187,7 +190,7 @@ mod tests {
         let usable = crate::ToolDefinition {
             input_format: crate::ToolInputFormat::Json,
             name: "read".into(),
-            description: Some("x".repeat(512)),
+            description: Some("x".repeat(crate::tool_eligibility::MAX_TOOL_DESCRIPTION_BYTES)),
             input_schema: "{}".into(),
         };
         assert_eq!(eligibility(&usable), Eligibility::Eligible);

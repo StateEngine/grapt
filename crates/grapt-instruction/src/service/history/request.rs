@@ -29,10 +29,12 @@ pub(in crate::service) fn blob_size(
     }
     usize::try_from(size).map_err(|_| bound())
 }
+/// Undecodable rows are skipped and named, the same rows [`fold_history`]
+/// skips, so a request sees the fold every other reader sees.
 pub(in crate::service) fn fold_request_history(
     conn: &Connection,
     session: &SessionId,
-) -> Result<Option<FoldedHistory>, InstructionError> {
+) -> Result<Fold, InstructionError> {
     fold(conn, session, FoldMode::Current)
 }
 
@@ -41,16 +43,19 @@ pub(super) fn legacy_fork_history(
     session: &SessionId,
 ) -> Result<Option<FoldedHistory>, InstructionError> {
     // Compatibility recognition shares the bounded decoder and event fold;
-    // it is never an alternative source of current instruction truth.
-    fold(conn, session, FoldMode::LegacyFork)
+    // it is never an alternative source of current instruction truth. A
+    // degraded fold recognizes nothing.
+    let fold = fold(conn, session, FoldMode::LegacyFork)?;
+    Ok(if fold.skipped.is_empty() {
+        fold.history
+    } else {
+        None
+    })
 }
 
-fn fold(
-    conn: &Connection,
-    session: &SessionId,
-    mode: FoldMode,
-) -> Result<Option<FoldedHistory>, InstructionError> {
+fn fold(conn: &Connection, session: &SessionId, mode: FoldMode) -> Result<Fold, InstructionError> {
     let mut folded = None;
+    let mut skipped = Vec::new();
     let mut count = 0usize;
     let mut bytes = 0usize;
     let lineage = own_lineage(conn, session)?;
@@ -87,36 +92,45 @@ fn fold(
             if bytes > MAX_BYTES {
                 return Err(bound());
             }
-            let id: String = row.get(0)?;
-            let seq: i64 = row.get(1)?;
-            let created: i64 = row.get(2)?;
-            let kind: String = row.get(3)?;
-            let data: String = row.get(4)?;
-            let event = grapt_store::decode::decode_row(
-                &id,
-                segment.session().as_str(),
-                seq,
-                created,
-                &kind,
-                &data,
-            )?;
-            if event.kind.name() == "session.instructions.updated"
-                && event.kind.version().value() == 2
-            {
-                let delta = decode_event_delta(&event.aggregate_id, &event.data)?;
+            let (event, payload) = match decode_journal_row(row, segment.session()) {
+                Ok(decoded) => decoded,
+                Err(error) if row_damage(&error) => {
+                    skipped.push(skip(row, segment.session(), &error));
+                    continue;
+                }
+                Err(error) => return Err(error),
+            };
+            if let Payload::Updated(delta) = &payload {
                 if delta.len() > 256 || delta.keys().any(|key| key.as_str().len() > 256) {
                     return Err(bound());
                 }
-                for hash in delta.values().flatten() {
+                // Each blob is charged to the read's budget from its stored
+                // length before it is opened, and stays charged if the row
+                // turns out damaged: skipping never buys more reading.
+                let mut charge = |hash: &InstructionHash| -> Result<(), InstructionError> {
                     bytes = bytes
                         .checked_add(blob_size(conn, *hash)?)
                         .ok_or_else(bound)?;
                     if bytes > MAX_BYTES {
                         return Err(bound());
                     }
+                    Ok(())
+                };
+                let checked = delta
+                    .values()
+                    .flatten()
+                    .try_for_each(&mut charge)
+                    .and_then(|()| row_blobs(conn, &payload));
+                match checked {
+                    Ok(()) => {}
+                    Err(error) if row_damage(&error) => {
+                        skipped.push(skip(row, segment.session(), &error));
+                        continue;
+                    }
+                    Err(error) => return Err(error),
                 }
             }
-            apply_history_event_with_mode(conn, &mut folded, &event, mode)?;
+            apply_payload(&mut folded, &event, payload, mode)?;
             if folded.as_ref().is_some_and(|history| {
                 history.state.initial.len() > 256 || history.state.current.len() > 256
             }) {
@@ -124,5 +138,8 @@ fn fold(
             }
         }
     }
-    Ok(folded)
+    Ok(Fold {
+        history: folded,
+        skipped,
+    })
 }

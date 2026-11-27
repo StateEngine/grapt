@@ -410,7 +410,7 @@ fn observe(
     let report = state
         .recovery_reports
         .last()
-        .copied()
+        .cloned()
         .ok_or_else(|| format!("scenario {} observed before recovery", state.name))?;
     let observation = required_str(row, "observation")?;
     durable.push(json!({

@@ -112,11 +112,7 @@ fn swr_t2_bounded_shell_output_names_kept_and_observed_bytes() -> Result<(), Str
         },
     )?;
     let output = String::from_utf8(output).map_err(|error| error.to_string())?;
-    assert_eq!(
-        output.len(),
-        usize::try_from(grapt_runtime::TOOL_ARTIFACT_MAX_BYTES)
-            .map_err(|_| "artifact bound exceeds usize")?
-    );
+    assert_eq!(output.len(), SHELL_OUTPUT_MAX_BYTES);
     assert!(output.starts_with(&"0".repeat(SHELL_STREAM_MAX_BYTES - 128)));
     assert!(output.contains("[stdout output bounded: kept "));
     assert!(output.contains("[stderr output bounded: kept "));

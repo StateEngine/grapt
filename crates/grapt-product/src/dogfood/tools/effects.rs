@@ -705,6 +705,8 @@ pub(super) fn render_shell_output(
     render_shell_output_with_suffix(stdout, stderr, "")
 }
 
+pub(super) const SHELL_OUTPUT_MAX_BYTES: usize = grapt_provider::MAX_CODEX_TOOL_TEXT_BYTES;
+
 fn render_shell_output_with_suffix(
     stdout: BoundedStream,
     stderr: BoundedStream,
@@ -712,8 +714,9 @@ fn render_shell_output_with_suffix(
 ) -> Result<Vec<u8>, String> {
     let streams = [("stdout", stdout), ("stderr", stderr)];
     let mut kept = [streams[0].1.bytes.len(), streams[1].1.bytes.len()];
-    let bound = usize::try_from(grapt_runtime::TOOL_ARTIFACT_MAX_BYTES)
-        .map_err(|_| "durable shell artifact bound exceeds usize")?;
+    // Bound shell output itself at 1 MiB so PostToolUse hook annotations stay
+    // inside `grapt_runtime::TOOL_ARTIFACT_MAX_BYTES`'s 64 KiB headroom.
+    let bound = SHELL_OUTPUT_MAX_BYTES;
     let markers = [
         stream_marker(streams[0].0, &streams[0].1, kept[0])?,
         stream_marker(streams[1].0, &streams[1].1, kept[1])?,

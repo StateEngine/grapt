@@ -11,7 +11,6 @@ pub struct SandboxWorktreeConfigNotice {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
 struct Data {
     #[serde(rename = "sessionID")]
     session: String,

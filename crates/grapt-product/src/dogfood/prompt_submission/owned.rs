@@ -17,9 +17,10 @@ impl DogfoodApplication {
             }
         }
         if let Err(backend_result::ExecutionFailure::Unpublished(error)) = &result {
-            self.hub.invalidate_because(&format!(
-                "session {session}: prompt execution failed: {error}"
-            ));
+            self.hub.invalidate_session_because(
+                &session,
+                &format!("session {session}: prompt execution failed: {error}"),
+            );
         }
         start_report.settle(result.map_err(backend_result::ExecutionFailure::into_reason));
     }

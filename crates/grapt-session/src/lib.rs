@@ -44,10 +44,10 @@ pub use lifecycle::{
     SessionForked, SessionLifecycleError,
 };
 pub use list::{
-    BoundedSearch, NonNegativeMs, ParentFilter, SessionListCriteria, SessionListDirection,
-    SessionListError, SessionListItem, SessionListKey, SessionListLimits, SessionListOrder,
-    SessionListPage, SessionListProjector, SessionListProvenance, SessionListScope,
-    SessionListStore,
+    BoundaryKey, BoundedSearch, KeyDigest, NonNegativeMs, ParentFilter, SessionListBoundary,
+    SessionListCriteria, SessionListDegradedRow, SessionListDirection, SessionListError,
+    SessionListItem, SessionListKey, SessionListLimits, SessionListOrder, SessionListPage,
+    SessionListProjector, SessionListProvenance, SessionListScope, SessionListStore,
 };
 pub use projection::{SessionProjection, SessionRow};
 pub use record::SessionRecord;

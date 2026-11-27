@@ -1,5 +1,9 @@
 //! Bounded global form reads, verified against the creation fact.
-use crate::{catalog::FormState, global::GlobalFormBinding, FormError};
+use crate::{
+    catalog::{FormState, SkippedForm},
+    global::GlobalFormBinding,
+    FormError,
+};
 use grapt_store::EventStore;
 use grapt_types::{FormId, FormSuspensionReason};
 use serde_json::Value;
@@ -17,9 +21,9 @@ pub fn global_form(store: &EventStore, id: &FormId) -> Result<Option<GlobalFormR
     let mut stmt = store.connection().prepare(
         "SELECT CASE WHEN length(status) <= 16 THEN status END,
             CASE WHEN suspended_reason IS NULL THEN NULL WHEN length(suspended_reason) <= 16 THEN suspended_reason ELSE '!oversized!' END,
-            CASE WHEN length(CAST(global_binding AS BLOB)) <= 8192 THEN global_binding END,
-            CASE WHEN length(CAST(answer AS BLOB)) <= 262144 THEN answer END,
-            length(CAST(answer AS BLOB))
+            CASE WHEN octet_length(global_binding) <= 8192 THEN global_binding END,
+            CASE WHEN octet_length(answer) <= 262144 THEN answer END,
+            octet_length(answer)
          FROM form_request WHERE id=?1 AND session_id IS NULL")?;
     let mut rows = stmt.query([id.as_str()])?;
     let Some(row) = rows.next()? else {
@@ -71,7 +75,7 @@ pub fn global_form(store: &EventStore, id: &FormId) -> Result<Option<GlobalFormR
         _ => return Err(FormError::Global("invalid state/answer pair".into())),
     };
     let mut events = store.connection().prepare(
-        "SELECT CASE WHEN length(CAST(data AS BLOB)) <= 262144 THEN data END
+        "SELECT CASE WHEN octet_length(data) <= 262144 THEN data END
          FROM event WHERE aggregate_family='form' AND aggregate_id=?1 AND type='form.created.2' ORDER BY seq LIMIT 2")?;
     let mut events = events.query([id.as_str()])?;
     let event = events
@@ -121,7 +125,7 @@ pub fn global_form(store: &EventStore, id: &FormId) -> Result<Option<GlobalFormR
 
 pub fn pending_global_forms(store: &EventStore) -> Result<Vec<GlobalFormRecord>, FormError> {
     let ids = {
-        let mut stmt = store.connection().prepare("SELECT CASE WHEN length(CAST(id AS BLOB)) <= 512 THEN id END FROM form_request
+        let mut stmt = store.connection().prepare("SELECT CASE WHEN octet_length(id) <= 512 THEN id END FROM form_request
             WHERE session_id IS NULL AND status IN ('pending','suspended') ORDER BY rowid LIMIT 129")?;
         let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
         rows.collect::<Result<Vec<_>, _>>()?
@@ -144,4 +148,81 @@ pub fn pending_global_forms(store: &EventStore) -> Result<Vec<GlobalFormRecord>,
         records.push(record);
     }
     Ok(records)
+}
+
+/// Every pending or suspended global form a startup recovery pass can read.
+///
+/// Unlike [`pending_global_forms`], a form whose durable record cannot be
+/// trusted is skipped and named instead of failing the read, so one bad form
+/// cannot stop the server from starting. Pending and suspended forms each get
+/// their own row bound, so damaged rows of one status never displace the
+/// other's healthy forms; rows past a bound wait for the next pass, and a
+/// pass suspends the pending forms it reads, so later ones come up in turn.
+/// A database failure still fails the read.
+pub fn pending_global_forms_for_recovery(
+    store: &EventStore,
+) -> Result<(Vec<GlobalFormRecord>, Vec<SkippedForm>), FormError> {
+    let mut records = Vec::new();
+    let mut skipped = Vec::new();
+    for status in ["pending", "suspended"] {
+        recover_status(store, status, &mut records, &mut skipped)?;
+    }
+    Ok((records, skipped))
+}
+
+/// One status's share of a recovery pass: at most 128 forms, oldest first.
+fn recover_status(
+    store: &EventStore,
+    status: &str,
+    records: &mut Vec<GlobalFormRecord>,
+    skipped: &mut Vec<SkippedForm>,
+) -> Result<(), FormError> {
+    let ids = {
+        let mut stmt = store.connection().prepare(
+            "SELECT CASE WHEN octet_length(id) <= 512 THEN id END FROM form_request
+            WHERE session_id IS NULL AND status = ?1 ORDER BY rowid LIMIT 129",
+        )?;
+        // An identity stored as another type is that row's damage, named
+        // below, never a failure of the whole read.
+        let rows = stmt.query_map([status], |row| {
+            Ok(match row.get_ref(0)? {
+                rusqlite::types::ValueRef::Text(text) => {
+                    std::str::from_utf8(text).ok().map(str::to_owned)
+                }
+                _ => None,
+            })
+        })?;
+        rows.collect::<Result<Vec<_>, _>>()?
+    };
+    for (index, raw) in ids.into_iter().enumerate() {
+        if index == 128 {
+            skipped.push(SkippedForm {
+                id: None,
+                reason: format!(
+                    "more {status} global forms than one recovery pass reads; the rest wait for the next start"
+                ),
+            });
+            break;
+        }
+        let Some(id) = raw.and_then(|raw| raw.parse::<FormId>().ok()) else {
+            skipped.push(SkippedForm {
+                id: None,
+                reason: "global form identity is absent, oversized or invalid".into(),
+            });
+            continue;
+        };
+        match global_form(store, &id) {
+            Ok(Some(record)) => records.push(record),
+            Ok(None) => skipped.push(SkippedForm {
+                id: Some(id),
+                reason: "listed form disappeared".into(),
+            }),
+            Err(error) if error.is_storage_failure() => return Err(error),
+            Err(error) => skipped.push(SkippedForm {
+                id: Some(id),
+                reason: error.to_string(),
+            }),
+        }
+    }
+    Ok(())
 }

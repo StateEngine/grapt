@@ -630,8 +630,10 @@ impl Drop for PendingDecision {
                     "permission cancellation failed for {} in {}: {error}",
                     self.permission, self.session
                 ));
-                self.hub
-                    .invalidate_because("permission cancellation could not be projected");
+                self.hub.invalidate_session_because(
+                    &self.session,
+                    "permission cancellation could not be projected",
+                );
             }
         }
         self.release_wait();
@@ -698,6 +700,8 @@ impl ToolRunner for PermissionToolRunner {
 
 mod ephemeral;
 mod executor;
+#[cfg(test)]
+pub(in crate::dogfood) use executor::{annotate_failure_detail, annotate_success_output};
 mod runner;
 #[cfg(test)]
 use runner::settle_authorized_effect;

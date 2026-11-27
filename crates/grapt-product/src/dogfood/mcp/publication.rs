@@ -106,7 +106,7 @@ impl grapt_mcp_host::publication::PublicationPolicy for DescriptionPolicy {
     }
 
     fn max_description_bytes(&self) -> usize {
-        512
+        grapt_provider::tool_eligibility::MAX_TOOL_DESCRIPTION_BYTES
     }
 
     fn description(&self, server: &str, tool: &DiscoveredTool) -> Option<String> {

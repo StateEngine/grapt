@@ -16,35 +16,57 @@ use grapt_types::{
 use serde_json::{json, Value};
 use std::sync::{Arc, Mutex, MutexGuard};
 
+use super::tools::ask::Unsettled;
+
 #[cfg(test)]
 #[path = "elicitation_tests.rs"]
 mod tests;
 
+/// Settle what a lost process left open. Each form that cannot be read or
+/// suspended is skipped and returned as a warning; a database failure still
+/// fails recovery.
 pub(super) fn recover(
     store: &mut grapt_store::EventStore,
     ids: &dyn IdAuthority,
     clock: &dyn ClockAuthority,
-) -> Result<(), String> {
-    super::tools::ask::recover(store, ids, clock)?;
-    for record in grapt_form::global_catalog::pending_global_forms(store)
-        .map_err(|error| error.to_string())?
-    {
-        store
-            .elect_writer(&AggregateId::Form(record.id.clone()))
-            .map_err(|error| error.to_string())?;
-        if record.state == FormState::Pending {
-            let event: EventId = format!("evt_{}", ids.mint().as_str())
-                .parse()
-                .map_err(|_| "recovery event identity")?;
-            FormService::suspend_on(
-                store,
-                &event,
-                &record.id,
-                FormSuspensionReason::ProcessLoss,
-                clock.now().as_millis(),
-            )
-            .map_err(|error| error.to_string())?;
+) -> Result<Vec<String>, String> {
+    let mut warnings = super::tools::ask::recover(store, ids, clock)?;
+    let (records, skipped) = grapt_form::global_catalog::pending_global_forms_for_recovery(store)
+        .map_err(|error| error.to_string())?;
+    warnings.extend(skipped.iter().map(ToString::to_string));
+    for record in records {
+        match suspend_lost(store, ids, clock, &record) {
+            Ok(()) => {}
+            Err(Unsettled::Storage(reason)) => return Err(reason),
+            Err(Unsettled::Item(reason)) => {
+                warnings.push(format!("global form {}: {reason}", record.id));
+            }
         }
+    }
+    Ok(warnings)
+}
+
+fn suspend_lost(
+    store: &mut grapt_store::EventStore,
+    ids: &dyn IdAuthority,
+    clock: &dyn ClockAuthority,
+    record: &grapt_form::global_catalog::GlobalFormRecord,
+) -> Result<(), Unsettled> {
+    store
+        .elect_writer(&AggregateId::Form(record.id.clone()))
+        .map_err(|error| Unsettled::write(&error))?;
+    if record.state == FormState::Pending {
+        let event: EventId = format!("evt_{}", ids.mint().as_str())
+            .parse()
+            .map_err(|_| Unsettled::Item("recovery event identity".into()))?;
+        FormService::suspend_on(
+            store,
+            &event,
+            &record.id,
+            FormSuspensionReason::ProcessLoss,
+            clock.now().as_millis(),
+        )
+        .map_err(|error| Unsettled::form(&error))?;
     }
     Ok(())
 }
