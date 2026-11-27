@@ -110,11 +110,8 @@ fn a_session_whose_first_step_fails_stays_active_for_the_next_start(
 /// still listed and recovered.
 #[test]
 fn a_malformed_status_row_does_not_stop_the_others() -> Result<(), Box<dyn std::error::Error>> {
-    let path = std::env::temp_dir().join(format!(
-        "grapt-status-recovery-malformed-{}.sqlite",
-        std::process::id()
-    ));
-    let _ = std::fs::remove_file(&path);
+    let dir = tempfile::TempDir::new()?;
+    let path = dir.path().join("grapt-status-recovery-malformed.sqlite");
     let mut store = EventStore::open(&path, "status-recovery-malformed")?;
     let authorities = Authorities::default();
     running(&mut store, &authorities)?;
@@ -143,6 +140,5 @@ fn a_malformed_status_row_does_not_stop_the_others() -> Result<(), Box<dyn std::
         "{recovery:?}"
     );
     drop(store);
-    std::fs::remove_file(&path)?;
     Ok(())
 }

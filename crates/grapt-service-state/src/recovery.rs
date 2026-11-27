@@ -112,16 +112,31 @@ fn recover_one(
         .ok_or("active session status has no execution")?;
     let aggregate = grapt_store::AggregateId::Session(session.clone());
     match store.fencing_token(&aggregate) {
-        Ok(_) => {}
+        Ok(_) => disconnect(store, authorities, &session, &execution, first),
         Err(grapt_store::WriteError::NotElected { .. }) => {
             store
                 .elect_writer(&aggregate)
                 .map_err(|error| error.to_string())?;
+            // Elected only for this visit: released however it ends, so the
+            // store holds no epoch per recovered Session.
+            let result = disconnect(store, authorities, &session, &execution, first);
+            store.release_held_writer(&aggregate);
+            result
         }
-        Err(error) => return Err(error.to_string()),
+        Err(error) => Err(error.to_string()),
     }
-    first(store, &session).map_err(|reason| format!("kept active for the next start: {reason}"))?;
-    record(store, authorities, &session, &execution,
+}
+
+/// Holding the Session's writer: run `first`, then record the disconnection.
+fn disconnect(
+    store: &mut EventStore,
+    authorities: &DeterministicAuthorities<'_>,
+    session: &SessionId,
+    execution: &grapt_types::ExecutionId,
+    first: &mut dyn FnMut(&mut EventStore, &SessionId) -> Result<(), String>,
+) -> Result<(), String> {
+    first(store, session).map_err(|reason| format!("kept active for the next start: {reason}"))?;
+    record(store, authorities, session, execution,
         State::described(Kind::Disconnected, Reason::ProcessLoss,
             "The service restarted before this execution completed; work so far is kept. Send a follow-up prompt to continue.", Some(Action::FollowUp)),
         Change::Recover)?;

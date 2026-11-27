@@ -121,30 +121,58 @@ pub fn recover_process_loss_attempts(
         }
         page.sessions = page.sessions.saturating_add(1);
         report.sessions = report.sessions.saturating_add(1);
-        if let Err(error) = store.elect_writer(&AggregateId::Session(session.clone())) {
-            if error.is_storage_failure() {
-                return Err(error.into());
-            }
-            report.warn(
-                Some(&session),
-                None,
-                format!("writer election failed: {error}"),
-            );
-            after_session = Some(session);
-            continue;
+        // An election made only for this visit is released after it, however
+        // it ends, so the store holds no epoch per interrupted Session.
+        let aggregate = AggregateId::Session(session.clone());
+        let held = store.fencing_token(&aggregate).is_ok();
+        let visited = visit(
+            store,
+            clock,
+            ceiling,
+            first,
+            &session,
+            &mut page,
+            &mut report,
+        );
+        if !held {
+            store.release_held_writer(&aggregate);
         }
-        if let Err(reason) = first(store, &session) {
-            report.warn(
-                Some(&session),
-                None,
-                format!("receipts kept for the next start: {reason}"),
-            );
-            after_session = Some(session);
-            continue;
-        }
-        recover_session(store, clock, ceiling, &session, &mut page, &mut report)?;
+        visited?;
         after_session = Some(session);
     }
+}
+
+/// Elect the Session's writer, run `first`, then settle its receipts. Errors
+/// only when the database itself failed.
+fn visit(
+    store: &mut EventStore,
+    clock: &dyn ClockAuthority,
+    ceiling: AttemptRecordCeiling,
+    first: &mut dyn FnMut(&mut EventStore, &SessionId) -> Result<(), String>,
+    session: &SessionId,
+    page: &mut Page,
+    report: &mut ProcessLossRecoveryReport,
+) -> Result<(), ProcessLossRecoveryError> {
+    if let Err(error) = store.elect_writer(&AggregateId::Session(session.clone())) {
+        if error.is_storage_failure() {
+            return Err(error.into());
+        }
+        report.warn(
+            Some(session),
+            None,
+            format!("writer election failed: {error}"),
+        );
+        return Ok(());
+    }
+    if let Err(reason) = first(store, session) {
+        report.warn(
+            Some(session),
+            None,
+            format!("receipts kept for the next start: {reason}"),
+        );
+        return Ok(());
+    }
+    recover_session(store, clock, ceiling, session, page, report)
 }
 
 impl ProcessLossRecoveryError {

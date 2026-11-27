@@ -165,6 +165,8 @@ fn every_receipt_settles_however_many_sessions_and_rows_a_crash_left() -> TestRe
             &attempt(&format!("attempt-page-{id}")),
             &format!("evt_page_{id}"),
         )?;
+        // A restarted process holds no election for these Sessions.
+        store.release_held_writer(&AggregateId::Session(session(&format!("ses_page_{id}"))));
     }
     let wide = session("ses_page_wide");
     let deep = RECOVERY_PAGE_ROWS + 3;
@@ -191,6 +193,12 @@ fn every_receipt_settles_however_many_sessions_and_rows_a_crash_left() -> TestRe
             .connection()
             .query_row("SELECT COUNT(*) FROM attempt_receipt", [], |row| row.get(0))?;
     assert_eq!(open, 0, "a receipt past the first page was left open");
+    let visited = AggregateId::Session(session("ses_page_000"));
+    assert!(
+        store.fencing_token(&visited).is_err(),
+        "an election made only for recovery outlived its visit"
+    );
+    store.fencing_token(&AggregateId::Session(wide))?;
     Ok(())
 }
 
@@ -270,11 +278,8 @@ fn an_unsettleable_receipt_is_skipped_and_other_sessions_still_recover() -> Test
 
 #[test]
 fn a_store_missing_its_writer_schema_fails_recovery_instead_of_settling_nothing() -> TestResult {
-    let path = std::env::temp_dir().join(format!(
-        "grapt-recovery-schema-{}.sqlite",
-        std::process::id()
-    ));
-    let _ = std::fs::remove_file(&path);
+    let dir = tempfile::TempDir::new()?;
+    let path = dir.path().join("grapt-recovery-schema.sqlite");
     let mut store = EventStore::open(&path, "recovery-schema")?;
     stage_sent_attempt(
         &mut store,
@@ -290,17 +295,13 @@ fn a_store_missing_its_writer_schema_fails_recovery_instead_of_settling_nothing(
         "a database failure was reported as success: {result:?}"
     );
     drop(store);
-    std::fs::remove_file(&path)?;
     Ok(())
 }
 
 #[test]
 fn a_mistyped_writer_row_is_skipped_and_other_sessions_still_recover() -> TestResult {
-    let path = std::env::temp_dir().join(format!(
-        "grapt-recovery-writer-row-{}.sqlite",
-        std::process::id()
-    ));
-    let _ = std::fs::remove_file(&path);
+    let dir = tempfile::TempDir::new()?;
+    let path = dir.path().join("grapt-recovery-writer-row.sqlite");
     let mut store = EventStore::open(&path, "recovery-writer-row")?;
     let broken = session("ses_d1_writer_broken");
     for (session, attempt, terminal) in [
@@ -333,7 +334,6 @@ fn a_mistyped_writer_row_is_skipped_and_other_sessions_still_recover() -> TestRe
     )?;
     assert_eq!(healthy, 1, "the healthy Session must still settle");
     drop(store);
-    std::fs::remove_file(&path)?;
     Ok(())
 }
 
@@ -384,11 +384,8 @@ fn a_session_whose_first_step_fails_keeps_its_receipts_for_the_next_start() -> T
 
 #[test]
 fn a_receipt_larger_than_a_page_is_handled_and_its_session_continues() -> TestResult {
-    let path = std::env::temp_dir().join(format!(
-        "grapt-recovery-large-row-{}.sqlite",
-        std::process::id()
-    ));
-    let _ = std::fs::remove_file(&path);
+    let dir = tempfile::TempDir::new()?;
+    let path = dir.path().join("grapt-recovery-large-row.sqlite");
     let mut store = EventStore::open(&path, "recovery-large-row")?;
     let session = session("ses_d1_large_row");
     for index in 0..3 {
@@ -415,6 +412,5 @@ fn a_receipt_larger_than_a_page_is_handled_and_its_session_continues() -> TestRe
             .query_row("SELECT COUNT(*) FROM attempt_receipt", [], |row| row.get(0))?;
     assert_eq!(open, 0, "a receipt after the large one was left open");
     drop(store);
-    std::fs::remove_file(&path)?;
     Ok(())
 }
