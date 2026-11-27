@@ -16,7 +16,7 @@ use std::{
     time::Duration,
 };
 
-pub(in crate::dogfood) struct Emitter {
+pub(crate) struct Emitter {
     ids: Arc<grapt_store::OsRandomIds>,
     clock: Arc<grapt_store::SystemClock>,
     hub: Arc<DogfoodEventHub>,
@@ -27,17 +27,17 @@ impl std::fmt::Debug for Emitter {
     }
 }
 impl Emitter {
-    pub(in crate::dogfood) fn new(
+    pub(crate) fn new(
         ids: Arc<grapt_store::OsRandomIds>,
         clock: Arc<grapt_store::SystemClock>,
         hub: Arc<DogfoodEventHub>,
     ) -> Arc<Self> {
         Arc::new(Self { ids, clock, hub })
     }
-    pub(super) fn emit(&self, location: &str) {
+    pub(crate) fn emit(&self, location: &str) {
         self.emit_kind(location, false);
     }
-    pub(super) fn resource_changed(&self, location: &str) {
+    pub(crate) fn resource_changed(&self, location: &str) {
         self.emit_kind(location, true);
     }
     fn emit_kind(&self, location: &str, resource: bool) {
@@ -60,17 +60,17 @@ impl Emitter {
     }
 }
 #[derive(Debug)]
-pub(super) struct Signal {
+pub(crate) struct Signal {
     bits: AtomicU8,
     resources: Arc<super::subscriptions::State>,
     emitter: Arc<Emitter>,
     location: String,
 }
 impl Signal {
-    pub(super) fn changed(&self) {
+    pub(crate) fn changed(&self) {
         self.emitter.resource_changed(&self.location);
     }
-    pub(super) fn accept(&self, notification: &serde_json::Value) {
+    pub(crate) fn accept(&self, notification: &serde_json::Value) {
         if notification["method"] == "notifications/resources/updated" {
             if self.resources.notify(notification) {
                 self.changed();
@@ -86,7 +86,7 @@ impl Signal {
             self.emitter.emit(&self.location);
         }
     }
-    pub(super) fn clear(&self, kind: grapt_mcp::content::CatalogKind) {
+    pub(crate) fn clear(&self, kind: grapt_mcp::content::CatalogKind) {
         let bit = if kind == grapt_mcp::content::CatalogKind::Prompts {
             1
         } else {
@@ -96,14 +96,14 @@ impl Signal {
     }
 }
 #[derive(Debug)]
-pub(super) struct Intake(tokio::task::JoinHandle<()>);
+pub(crate) struct Intake(tokio::task::JoinHandle<()>);
 impl Drop for Intake {
     fn drop(&mut self) {
         self.0.abort();
     }
 }
 impl McpRegistry {
-    pub(super) async fn connect(
+    pub(crate) async fn connect(
         &self,
         key: &str,
         directory: &str,

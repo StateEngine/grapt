@@ -704,6 +704,4 @@ impl<O: AttemptOwner> AttemptOwner for ProgressOwner<O> {
 pub struct StepDriver;
 
 #[cfg(test)]
-mod tests {
-    include!("step/tests.rs");
-}
+mod tests;

@@ -5,7 +5,7 @@ use super::*;
 use grapt_api::u3a::{CompactRequestDto, CompactResponseDto, SessionCompactApplicationError};
 
 impl DogfoodApplication {
-    pub(super) fn submit_compact(
+    pub(crate) fn submit_compact(
         &self,
         session_id: WireId<SessionId>,
         request: CompactRequestDto,

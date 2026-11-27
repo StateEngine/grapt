@@ -13,7 +13,7 @@ impl McpRegistry {
     /// identity named the resolved directory, which is precisely the
     /// disagreement the approval binding exists to prevent.
     #[expect(clippy::too_many_lines, reason = "legacy")]
-    pub(super) async fn connect_raw(
+    pub(crate) async fn connect_raw(
         &self,
         location: &str,
         server: &str,

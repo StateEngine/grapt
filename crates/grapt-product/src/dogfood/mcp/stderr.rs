@@ -11,7 +11,7 @@ use tokio::io::{AsyncRead, AsyncReadExt};
 const DRAIN: Duration = Duration::from_millis(250);
 
 #[derive(Clone, Default)]
-pub(super) struct Capture(Arc<Mutex<Tail>>);
+pub(crate) struct Capture(Arc<Mutex<Tail>>);
 
 impl Capture {
     fn with<T>(&self, read: impl FnOnce(&mut Tail) -> T) -> T {
@@ -21,25 +21,25 @@ impl Capture {
         }
     }
 
-    pub(super) fn protect(&self, value: &str) {
+    pub(crate) fn protect(&self, value: &str) {
         self.with(|tail| tail.protect(value));
     }
-    pub(super) fn sanitise(&self, value: &str) -> String {
+    pub(crate) fn sanitise(&self, value: &str) -> String {
         self.with(|tail| tail.sanitise(value))
     }
-    pub(super) fn text(&self) -> String {
+    pub(crate) fn text(&self) -> String {
         self.with(|tail| tail.text())
     }
 }
 
-pub(super) struct Reader {
+pub(crate) struct Reader {
     stop: Option<tokio::sync::oneshot::Sender<()>>,
     task: Option<tokio::task::JoinHandle<()>>,
     capture: Capture,
 }
 
 impl Reader {
-    pub(super) fn start<R: AsyncRead + Unpin + Send + 'static>(
+    pub(crate) fn start<R: AsyncRead + Unpin + Send + 'static>(
         mut pipe: R,
         capture: Capture,
     ) -> Self {
@@ -75,7 +75,7 @@ impl Reader {
 
     /// Startup failure can join the reader. Drop also stops it; cancellation
     /// cannot leave a reader waiting indefinitely on an escaped descendant.
-    pub(super) async fn finish(mut self) -> String {
+    pub(crate) async fn finish(mut self) -> String {
         if let Some(stop) = self.stop.take() {
             let _ = stop.send(());
         }

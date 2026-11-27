@@ -10,13 +10,13 @@ mod catalog_config;
 mod catalog_markdown;
 mod catalog_mcp;
 mod catalog_origin;
-mod catalogs;
+pub(crate) mod catalogs;
 pub(crate) mod claude_plugins;
 mod compact_route;
 mod compaction_config;
 pub(crate) mod connection_setup;
-mod connections;
-mod context;
+pub(crate) mod connections;
+pub(crate) mod context;
 mod context_projection;
 mod continuation;
 mod continuity_attention;
@@ -28,15 +28,15 @@ mod execution;
 pub(crate) mod first_use;
 mod followup;
 mod fork_route;
-mod form;
-mod form_catalog;
-mod global_form;
+pub(crate) mod form;
+pub(crate) mod form_catalog;
+pub(crate) mod global_form;
 mod global_form_events;
-mod history;
+pub(crate) mod history;
 mod history_compaction;
 mod history_json;
 mod history_notices;
-mod hook_import;
+pub(crate) mod hook_import;
 mod hooks;
 mod host_control;
 mod host_resume;
@@ -48,25 +48,25 @@ mod interrupt_pending;
 mod launch_mode;
 mod legacy_names;
 pub(crate) mod lifecycle;
-mod list;
+pub(crate) mod list;
 mod list_metadata;
-mod locations;
-mod mcp;
-mod mcp_config;
-mod mcp_content;
+pub(crate) mod locations;
+pub(crate) mod mcp;
+pub(crate) mod mcp_config;
+pub(crate) mod mcp_content;
 mod metadata_bound;
 mod model_inventory;
 mod native_mail;
 mod path_display;
 mod pending_list;
-mod permission;
+pub(crate) mod permission;
 mod permission_preset;
 mod permission_view;
 #[cfg(feature = "loopback-provider-testkit")]
 mod permission_view_fault;
 pub(crate) mod plugins;
 pub(crate) mod production;
-mod projects;
+pub(crate) mod projects;
 pub(crate) mod prompt_driver;
 mod prompt_images;
 mod prompt_submission;
@@ -77,16 +77,16 @@ mod public_terminal;
 mod read_projection;
 mod reconcile_route;
 mod rewind_route;
-mod sandbox_worktree_config;
+pub(crate) mod sandbox_worktree_config;
 mod schemas;
-mod selection;
+pub(crate) mod selection;
 mod session_config;
 mod session_cost;
 mod session_create;
 mod session_info;
 mod session_snapshot;
 mod session_status;
-mod session_title;
+pub(crate) mod session_title;
 mod side_route;
 mod skills_watch;
 mod source_cache;
@@ -98,7 +98,7 @@ mod stateengine_resume;
 mod step_events;
 pub(crate) mod stream_diagnostics;
 mod subagent;
-mod support;
+pub(crate) mod support;
 #[cfg(test)]
 mod test_provider;
 mod tools;
@@ -110,28 +110,20 @@ pub(crate) use tools::shim_main as terminal_shim_main;
 mod undo_route;
 mod usage;
 mod web_search;
-mod workspace_diff;
-mod workspace_worktree;
+pub(crate) mod workspace_diff;
+pub(crate) mod workspace_worktree;
 
 use std::num::NonZeroU32;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard};
 
+#[cfg(test)]
+use grapt_api::u3a::SessionListQueryDto;
 use grapt_api::u3a::{
-    AgentListResponseDto, AgentLocationQueryDto, ApplicationFuture, CatalogApplicationError,
-    DogfoodApplicationPort, FormCancelApplicationError, FormCreateApplicationError,
-    FormLookupApplicationError, FormReplyApplicationError, InterruptRequestDto,
-    InvalidRequestErrorDto, LocationInfoDto, MessageListQueryDto, ModelDefaultLocationQueryDto,
-    ModelDefaultResponseDto, ModelListResponseDto, ModelLocationQueryDto, NoContent,
-    PermissionApplicationError, PermissionCreateRequestDto, PermissionCreateResponseDto,
-    PermissionGlobalListResponseDto, PermissionListResponseDto, PermissionLocationQueryDto,
-    PermissionReplyRequestDto, PermissionResponseDto, PluginListResponseDto, ProjectCurrentDto,
-    ProjectCurrentLocationQueryDto, ProjectListResponseDto, PromptRequestDto, PromptResponseDto,
-    ProviderListResponseDto, ProviderLocationQueryDto, ServerConnectedEvent,
-    SessionActiveResponseDto, SessionCreateRequestDto, SessionListApplicationError,
-    SessionListQueryDto, SessionLookupApplicationError, SessionMessagesApplicationError,
-    SessionMessagesResponseDto, SessionPromptApplicationError, SessionResponseDto,
-    SessionsResponseDto, SseLimits, WireId,
+    ApplicationFuture, InterruptRequestDto, InvalidRequestErrorDto, NoContent,
+    ProjectCurrentLocationQueryDto, PromptRequestDto, PromptResponseDto, ServerConnectedEvent,
+    SessionLookupApplicationError, SessionPromptApplicationError, SessionResponseDto, SseLimits,
+    WireId,
 };
 use grapt_api::{DogfoodEventHub, SealedPrincipal};
 use grapt_artifact::{ArtifactStore, ReadBudget};
@@ -144,8 +136,8 @@ use grapt_store::{AggregateId, AttemptRecordCeiling, OsRandomIds, SystemClock, W
 #[cfg(test)]
 use grapt_types::ResolvedModelTarget;
 use grapt_types::{
-    ClockAuthority, DeliveryMode, DeterministicAuthorities, EventId, ExecutionId, FormId,
-    IdAuthority, MessageId, PermissionId, ProjectId, SessionId,
+    ClockAuthority, DeliveryMode, DeterministicAuthorities, EventId, ExecutionId, IdAuthority,
+    MessageId, PermissionId, ProjectId, SessionId,
 };
 use serde_json::{json, Value};
 use tokio::sync::watch;
@@ -155,8 +147,8 @@ use self::execution::{LiveDependencies, LiveExecutor};
 use self::production::ProductionProviderLimits;
 pub(crate) use self::public_terminal::{public_terminal, terminal_fragments};
 use self::support::{
-    active_read_failure, conflict, decode, invalid, not_found, public_content, ready,
-    should_execute, static_dto, unknown,
+    conflict, decode, invalid, not_found, public_content, ready, should_execute, static_dto,
+    unknown,
 };
 use self::usage::CompleteUsage;
 
@@ -318,16 +310,18 @@ pub enum DogfoodRefusal {
 }
 
 #[derive(Debug, Clone)]
-struct CatalogProjection {
-    accounts: std::collections::BTreeMap<grapt_types::ProviderId, grapt_types::AccountId>,
-    protocols: std::collections::BTreeMap<grapt_types::ProviderId, grapt_provider::ProtocolFamily>,
-    inventory: Option<Arc<grapt_platform::ModelInventory>>,
-    project: ProjectId,
-    directory: String,
-    provider: String,
-    model: String,
-    default_effort: Option<grapt_types::ModelVariantId>,
-    credential_record: Option<String>,
+pub(crate) struct CatalogProjection {
+    pub(crate) accounts:
+        std::collections::BTreeMap<grapt_types::ProviderId, grapt_types::AccountId>,
+    pub(crate) protocols:
+        std::collections::BTreeMap<grapt_types::ProviderId, grapt_provider::ProtocolFamily>,
+    pub(crate) inventory: Option<Arc<grapt_platform::ModelInventory>>,
+    pub(crate) project: ProjectId,
+    pub(crate) directory: String,
+    pub(crate) provider: String,
+    pub(crate) model: String,
+    pub(crate) default_effort: Option<grapt_types::ModelVariantId>,
+    pub(crate) credential_record: Option<String>,
 }
 
 #[allow(
@@ -657,6 +651,28 @@ impl DogfoodApplication {
         }
     }
 
+    pub(crate) fn plugins_runtime(&self) -> Arc<plugins::PluginRuntime> {
+        Arc::clone(&self.plugins)
+    }
+
+    pub(crate) fn create_session_record(
+        &self,
+        seed: &grapt_session::SessionSeed,
+    ) -> Result<SessionId, grapt_runtime::SessionPortError> {
+        let authorities = DeterministicAuthorities::new(&*self.clock, &*self.ids);
+        SessionPorts::new(Arc::clone(&self.inbox), &authorities)
+            .create(seed)
+            .map(|created| created.session)
+    }
+
+    pub(crate) fn pending_forms_for_session(
+        &self,
+        session: &SessionId,
+    ) -> Result<Vec<grapt_form::catalog::PendingForm>, grapt_form::catalog::FormCatalogError> {
+        let held = self.lock_inbox();
+        grapt_form::catalog::pending_forms_for(held.store(), Some(session))
+    }
+
     fn ensure_session_writer(&self, session: &SessionId) -> Result<(), String> {
         self.verify_session_carry(session)?;
         let aggregate = AggregateId::Session(session.clone());
@@ -672,14 +688,17 @@ impl DogfoodApplication {
         }
     }
 
-    fn session_response(
+    pub(crate) fn session_response(
         &self,
         record: &grapt_session::SessionRecord,
     ) -> Result<SessionResponseDto, InvalidRequestErrorDto> {
         decode(json!({"data": self.session_info(record).map_err(invalid)?})).map_err(invalid)
     }
 
-    fn get_record(&self, session: &SessionId) -> Result<grapt_session::SessionRecord, String> {
+    pub(crate) fn get_record(
+        &self,
+        session: &SessionId,
+    ) -> Result<grapt_session::SessionRecord, String> {
         let authorities = DeterministicAuthorities::new(&*self.clock, &*self.ids);
         let record = SessionPorts::new(Arc::clone(&self.inbox), &authorities)
             .get(session)
@@ -723,8 +742,6 @@ impl DogfoodApplication {
         String::from_utf8(bytes).map_err(|_| "artifact is not UTF-8".to_owned())
     }
 }
-
-include!("application_port.rs");
 
 #[cfg(test)]
 mod basic_tests;

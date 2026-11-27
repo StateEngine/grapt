@@ -18,18 +18,18 @@ use super::catalog_config::CatalogSources;
 use super::catalogs::config_json;
 use super::mcp::McpTimeouts;
 use super::support::{decode, invalid};
-pub(super) use grapt_mcp_host::declaration::runtime_declaration;
+pub(crate) use grapt_mcp_host::declaration::runtime_declaration;
 
-pub(super) mod project_approval;
+pub(crate) mod project_approval;
 
-pub(super) enum Kind {
+pub(crate) enum Kind {
     Integrations,
     McpServers,
     McpInspection,
 }
 
 /// Apply the existing plugin transform to the composed connection catalog.
-pub(super) fn integrations(
+pub(crate) fn integrations(
     application: &super::DogfoodApplication,
     query: ProjectCurrentLocationQueryDto,
 ) -> ApplicationFuture<grapt_api::u3a::IntegrationListResponseDto, InvalidRequestErrorDto> {
@@ -76,7 +76,7 @@ pub(super) fn integrations(
     })
 }
 
-pub(super) fn inspect(
+pub(crate) fn inspect(
     application: &super::DogfoodApplication,
     query: ProjectCurrentLocationQueryDto,
 ) -> ApplicationFuture<grapt_api::u3a::McpInspectionResponseDto, InvalidRequestErrorDto> {
@@ -89,7 +89,7 @@ pub(super) fn inspect(
 /// Unlike [`response`], this never consults the live registry, so a
 /// declared server is listed without being started — a preview must report
 /// what a write would do without spawning a peer to find out.
-pub(super) fn configuration(
+pub(crate) fn configuration(
     application: &super::DogfoodApplication,
     query: ProjectCurrentLocationQueryDto,
 ) -> ApplicationFuture<grapt_api::u3a::McpConfigurationListResponseDto, InvalidRequestErrorDto> {
@@ -108,7 +108,7 @@ pub(super) fn configuration(
     })
 }
 
-pub(super) fn reconnect(
+pub(crate) fn reconnect(
     application: super::DogfoodApplication,
     server: String,
     query: ProjectCurrentLocationQueryDto,
@@ -129,7 +129,7 @@ pub(super) fn reconnect(
     })
 }
 
-pub(super) fn add_runtime(
+pub(crate) fn add_runtime(
     application: super::DogfoodApplication,
     server: String,
     query: ProjectCurrentLocationQueryDto,
@@ -167,7 +167,7 @@ pub(super) fn add_runtime(
     })
 }
 
-pub(super) fn response<T: DeserializeOwned + Send + 'static>(
+pub(crate) fn response<T: DeserializeOwned + Send + 'static>(
     application: super::DogfoodApplication,
     query: ProjectCurrentLocationQueryDto,
     kind: Kind,
@@ -254,7 +254,7 @@ pub(super) fn response<T: DeserializeOwned + Send + 'static>(
 
 /// The document class a declared server came from.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum ConfigScope {
+pub(crate) enum ConfigScope {
     User,
     Project,
 }
@@ -267,26 +267,29 @@ fn scope_of(origin: grapt_plugin::PluginOrigin) -> ConfigScope {
     }
 }
 
-pub(super) struct McpSnapshot {
-    pub(super) roots: super::mcp::roots::Config,
-    pub(super) declared: BTreeMap<String, super::mcp::Declaration>,
+pub(crate) struct McpSnapshot {
+    pub(crate) roots: super::mcp::roots::Config,
+    pub(crate) declared: BTreeMap<String, super::mcp::Declaration>,
     /// Document scope per declared name, filled lockstep with `declared`.
-    pub(super) scope: BTreeMap<String, ConfigScope>,
-    pub(super) codemode_servers: std::collections::BTreeSet<String>,
+    pub(crate) scope: BTreeMap<String, ConfigScope>,
+    pub(crate) codemode_servers: std::collections::BTreeSet<String>,
     /// Project declarations without matching user approval. They cannot start
     /// a process or contact a remote service; each is reported to the Session.
-    pub(super) blocked: Vec<String>,
-    pub(super) project_servers: BTreeMap<String, project_approval::ProjectServer>,
+    pub(crate) blocked: Vec<String>,
+    pub(in crate::dogfood) project_servers: BTreeMap<String, project_approval::ProjectServer>,
 }
 
 /// Why a [`McpSnapshot::blocked`] server was not started, as the Session's
 /// MCP notice reason.
-pub(super) const PROJECT_LOCAL_BLOCKED: &str =
+pub(crate) const PROJECT_LOCAL_BLOCKED: &str =
     "MCP servers from project config require approval; use /mcp approve <server> or add them to your user config";
 
 impl McpSnapshot {
     #[expect(clippy::too_many_lines, reason = "legacy")]
-    pub(super) fn read(sources: &CatalogSources, location: &str) -> Result<Self, String> {
+    pub(in crate::dogfood) fn read(
+        sources: &CatalogSources,
+        location: &str,
+    ) -> Result<Self, String> {
         let roots = super::mcp::roots::Config::read(sources, location)?;
         // Each declaration keeps the document that made it, so a refusal names
         // that document: the one a user must edit, not merely the first one
@@ -474,7 +477,7 @@ impl McpSnapshot {
         })
     }
 
-    pub(super) async fn prepare_roots(
+    pub(crate) async fn prepare_roots(
         &self,
         registry: &super::mcp::McpRegistry,
         key: &str,
@@ -488,7 +491,7 @@ impl McpSnapshot {
     /// Configuration-only rows: name, document scope and disabled state.
     /// Reads no registry, so nothing is started and no transport status is
     /// invented.
-    pub(super) fn configuration_rows(&self) -> Vec<Value> {
+    pub(crate) fn configuration_rows(&self) -> Vec<Value> {
         self.declared
             .iter()
             .map(|(name, declaration)| {

@@ -1,3 +1,4 @@
+use super::*;
 #[test]
 fn local_new_writer_claim_cannot_transfer_an_existing_owner() -> TestResult {
     let (dir, db) = scratch_db("new-writer-owner")?;

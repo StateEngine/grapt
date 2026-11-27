@@ -432,6 +432,50 @@ fn parse_include_line(line: &[u8]) -> Result<String, String> {
     Ok(path.to_owned())
 }
 
+fn char_literal_end(bytes: &[u8], start: usize) -> Option<usize> {
+    if bytes.get(start) != Some(&b'\'') {
+        return None;
+    }
+    let next = *bytes.get(start + 1)?;
+    if next == b'\'' || next == b'\n' || next == b'\r' {
+        return None;
+    }
+    if next == b'\\' {
+        // Bounded Rust character escape sequence (`'\''`, `'\n'`, `'\x7f'`, `'\u{10ffff}'`).
+        let mut cursor = start + 2;
+        if bytes.get(cursor).is_none_or(|b| *b == b'\n' || *b == b'\r') {
+            return None;
+        }
+        cursor += 1;
+        let limit = (start + 16).min(bytes.len());
+        while cursor < limit {
+            match bytes[cursor] {
+                b'\'' => return Some(cursor + 1),
+                b'\n' | b'\r' => return None,
+                _ => cursor += 1,
+            }
+        }
+        return None;
+    }
+    // Unescaped single UTF-8 scalar: the byte immediately after the scalar must be `'`.
+    let char_len = if next < 0x80 {
+        1
+    } else if next & 0xE0 == 0xC0 {
+        2
+    } else if next & 0xF0 == 0xE0 {
+        3
+    } else if next & 0xF8 == 0xF0 {
+        4
+    } else {
+        return None;
+    };
+    let end_char = start + 1 + char_len;
+    if std::str::from_utf8(bytes.get(start + 1..end_char)?).is_err() {
+        return None;
+    }
+    (bytes.get(end_char) == Some(&b'\'')).then_some(end_char + 1)
+}
+
 fn detect_sites(carrier: &str, bytes: &[u8]) -> Result<Vec<Site>, String> {
     let mut sites = Vec::new();
     let mut cursor = 0;
@@ -455,8 +499,10 @@ fn detect_sites(carrier: &str, bytes: &[u8]) -> Result<Vec<Site>, String> {
             quoted_end(bytes, cursor, b'"')
         } else if matches!(bytes.get(cursor..cursor + 2), Some(b"b\"") | Some(b"c\"")) {
             quoted_end(bytes, cursor + 1, b'"')
+        } else if bytes.get(cursor..cursor + 2) == Some(b"b'") {
+            char_literal_end(bytes, cursor + 1)
         } else if bytes[cursor] == b'\'' {
-            quoted_end(bytes, cursor, b'\'')
+            char_literal_end(bytes, cursor)
         } else {
             None
         };

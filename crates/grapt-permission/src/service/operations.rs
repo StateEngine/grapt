@@ -1,3 +1,5 @@
+use super::*;
+
 impl PermissionService {
     pub fn new(store: EventStore) -> Result<Self, PermissionError> {
         store.connection().execute_batch(
@@ -598,7 +600,10 @@ impl PermissionService {
             })
     }
 
-    fn read_row(tx: &Transaction<'_>, id: &PermissionId) -> Result<Option<Row>, PermissionError> {
+    pub(super) fn read_row(
+        tx: &Transaction<'_>,
+        id: &PermissionId,
+    ) -> Result<Option<Row>, PermissionError> {
         type RawRow = (String, String, String, Option<String>);
         let raw: Option<RawRow> = tx
             .query_row(

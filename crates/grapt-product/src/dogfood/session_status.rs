@@ -24,16 +24,16 @@ use grapt_types::{ClockAuthority, EventId, IdAuthority, SessionId};
 mod feedback;
 mod hydration;
 mod journal;
-pub(in crate::dogfood) use feedback::RetryFeedback;
+pub(crate) use feedback::RetryFeedback;
 mod lifecycle;
 mod owner;
 mod read;
-pub(in crate::dogfood) use hydration::{install_hydration, install_volatile_hydration};
-pub(in crate::dogfood) use lifecycle::project as lifecycle_event;
-pub(in crate::dogfood) use owner::{ConfirmationError, StatusInputs};
-pub(in crate::dogfood) use read::fields as state_fields;
+pub(crate) use hydration::{install_hydration, install_volatile_hydration};
+pub(crate) use lifecycle::project as lifecycle_event;
+pub(crate) use owner::{ConfirmationError, StatusInputs};
+pub(crate) use read::fields as state_fields;
 mod retry;
-pub(in crate::dogfood) use journal::{wire as state_wire, Presentation};
+pub(crate) use journal::{wire as state_wire, Presentation};
 
 /// The ruling's last-known cap: 256 sessions, LRU.
 const LAST_KNOWN_CAP: usize = 256;
@@ -74,7 +74,7 @@ impl LastKnown {
     }
 }
 
-pub(super) struct SessionStatusEmitter {
+pub(crate) struct SessionStatusEmitter {
     ids: Arc<OsRandomIds>,
     clock: Arc<SystemClock>,
     hub: Arc<DogfoodEventHub>,
@@ -110,7 +110,7 @@ impl SessionStatusEmitter {
         );
     }
 
-    pub(super) fn journaled(
+    pub(crate) fn journaled(
         ids: &Arc<OsRandomIds>,
         clock: &Arc<SystemClock>,
         hub: &Arc<DogfoodEventHub>,
@@ -158,7 +158,7 @@ impl SessionStatusEmitter {
         }
     }
 
-    pub(super) fn new(
+    pub(crate) fn new(
         ids: Arc<OsRandomIds>,
         clock: Arc<SystemClock>,
         hub: Arc<DogfoodEventHub>,
@@ -178,7 +178,7 @@ impl SessionStatusEmitter {
 
     /// The session became, or stays, active. Always publishes the edge: the
     /// registry listed it at the moment the caller records this.
-    pub(super) fn busy(&self, session: &SessionId) {
+    pub(crate) fn busy(&self, session: &SessionId) {
         self.lock_owed().insert(session.clone());
         self.record(session, StatusKind::Busy);
         self.publish(session, StatusKind::Busy);
@@ -193,7 +193,7 @@ impl SessionStatusEmitter {
     /// registry lock and `publish_idle` after it, so the decision is ordered against the
     /// hydration offer's debt record.
     #[cfg(test)]
-    pub(super) fn idle(&self, session: &SessionId) {
+    pub(crate) fn idle(&self, session: &SessionId) {
         if self.settle_decision(session) {
             self.publish_idle(session);
         }
@@ -208,7 +208,7 @@ impl SessionStatusEmitter {
     /// and the caller publishes the matching idle, or this decision
     /// removed the entry first, so the offer never lists the session and
     /// records no debt.
-    pub(super) fn settle_decision(&self, session: &SessionId) -> bool {
+    pub(crate) fn settle_decision(&self, session: &SessionId) -> bool {
         let was_busy = self.lock_owed().remove(session);
         self.record(session, StatusKind::Idle);
         was_busy
@@ -218,7 +218,7 @@ impl SessionStatusEmitter {
     /// registry lock: the hub's subscriber lock is never taken under a
     /// registry lock, so the settle cannot deadlock a hydrator running on
     /// a subscriber thread.
-    pub(super) fn publish_idle(&self, session: &SessionId) {
+    pub(crate) fn publish_idle(&self, session: &SessionId) {
         self.publish(session, StatusKind::Idle);
     }
 
@@ -234,7 +234,7 @@ impl SessionStatusEmitter {
     /// Test composite only: no production path passes a listing it does not own under a
     /// registry lock.
     #[cfg(test)]
-    pub(super) fn hydrate(&self, active: &[SessionId]) -> Vec<DogfoodEvent> {
+    pub(crate) fn hydrate(&self, active: &[SessionId]) -> Vec<DogfoodEvent> {
         let mut active = active.to_vec();
         active.sort_by(|left, right| left.as_str().cmp(right.as_str()));
         active.dedup();
@@ -256,7 +256,7 @@ impl SessionStatusEmitter {
     /// or it lands after the record, so its decision removes the debt and
     /// publishes the matching idle. `false` when the snapshot is at its
     /// cap.
-    pub(super) fn offer_active(&self, session: &SessionId, frames: &mut Vec<DogfoodEvent>) -> bool {
+    pub(crate) fn offer_active(&self, session: &SessionId, frames: &mut Vec<DogfoodEvent>) -> bool {
         if frames.len() >= HYDRATION_CAP {
             return false;
         }
@@ -273,7 +273,7 @@ impl SessionStatusEmitter {
     /// The snapshot's idle half: the last-known idle entries, in LRU
     /// order, that the caller's listing does not cover, within the
     /// remaining cap.
-    pub(super) fn finish_hydration(&self, listed: &[SessionId], frames: &mut Vec<DogfoodEvent>) {
+    pub(crate) fn finish_hydration(&self, listed: &[SessionId], frames: &mut Vec<DogfoodEvent>) {
         let snapshot: Vec<(SessionId, StatusKind)> = {
             let known = self.lock_last_known();
             known

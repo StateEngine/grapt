@@ -3,12 +3,12 @@
 use std::{ffi::OsString, path::Path};
 
 #[cfg(not(windows))]
-pub(super) async fn resolve(_directory: &Path) -> OsString {
+pub(crate) async fn resolve(_directory: &Path) -> OsString {
     "git".into()
 }
 
 #[cfg(windows)]
-pub(super) async fn resolve(directory: &Path) -> OsString {
+pub(crate) async fn resolve(directory: &Path) -> OsString {
     static NATIVE: tokio::sync::OnceCell<Option<std::path::PathBuf>> =
         tokio::sync::OnceCell::const_new();
     let native = NATIVE

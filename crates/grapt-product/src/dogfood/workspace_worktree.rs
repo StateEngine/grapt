@@ -13,7 +13,7 @@ use super::execution::WorkspaceIdleReservation;
 use super::support::{bounded_message, decode, invalid, static_dto};
 use super::{locations, DogfoodApplication};
 
-pub(super) fn response(
+pub(crate) fn response(
     application: DogfoodApplication,
     query: ProjectCurrentLocationQueryDto,
     request: WorkspaceWorktreeRequestDto,

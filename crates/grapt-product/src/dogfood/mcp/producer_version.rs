@@ -2,7 +2,7 @@
 use super::McpCallRefusal;
 use grapt_mcp::{McpToolName, ToolCallOutcome};
 
-pub(super) fn refused(outcome: &Result<ToolCallOutcome, McpCallRefusal>) -> bool {
+pub(crate) fn refused(outcome: &Result<ToolCallOutcome, McpCallRefusal>) -> bool {
     let text = match outcome {
         Ok(result) if result.is_error() => result.text(),
         Err(McpCallRefusal::Protocol(detail)) => detail
@@ -16,7 +16,7 @@ pub(super) fn refused(outcome: &Result<ToolCallOutcome, McpCallRefusal>) -> bool
 
 /// The named StateEngine reads are idempotent; acknowledgement and bulk
 /// dismissal variants are writes even though they share a read-shaped tool.
-pub(super) fn replayable_read(tool: &McpToolName, arguments: &serde_json::Value) -> bool {
+pub(crate) fn replayable_read(tool: &McpToolName, arguments: &serde_json::Value) -> bool {
     let Some(arguments) = arguments.as_object() else {
         return false;
     };
@@ -32,7 +32,7 @@ pub(super) fn replayable_read(tool: &McpToolName, arguments: &serde_json::Value)
 
 /// Only msg_send currently documents first-send deduplication. A similarly
 /// named field on an unrelated tool does not establish that contract.
-pub(super) fn accepts_send_key(tool: &McpToolName, catalog: &[grapt_mcp::DiscoveredTool]) -> bool {
+pub(crate) fn accepts_send_key(tool: &McpToolName, catalog: &[grapt_mcp::DiscoveredTool]) -> bool {
     tool.as_str() == "stateengine_msg_send"
         && catalog
             .iter()
@@ -45,7 +45,7 @@ pub(super) fn accepts_send_key(tool: &McpToolName, catalog: &[grapt_mcp::Discove
 /// Choose the key before any bytes leave, then retain the exact arguments for
 /// a single replay. The attempt and call identify an effect, not its payload:
 /// changing the payload under a supplied key must still conflict at the server.
-pub(super) fn prepare_send(
+pub(crate) fn prepare_send(
     arguments: &mut serde_json::Value,
     location: &str,
     call: &str,

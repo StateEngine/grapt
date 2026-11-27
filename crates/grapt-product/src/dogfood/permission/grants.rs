@@ -32,7 +32,7 @@ fn terminals(
     application.executor.0.terminals()
 }
 
-pub(in crate::dogfood) fn list(
+pub(crate) fn list(
     application: &DogfoodApplication,
     session: SessionId,
 ) -> Result<SandboxGrantListResponseDto, PermissionApplicationError> {
@@ -72,7 +72,7 @@ pub(in crate::dogfood) fn list(
 }
 
 #[expect(clippy::too_many_lines, reason = "legacy")]
-pub(in crate::dogfood) fn revoke(
+pub(crate) fn revoke(
     application: &DogfoodApplication,
     principal: SealedPrincipal,
     session: SessionId,

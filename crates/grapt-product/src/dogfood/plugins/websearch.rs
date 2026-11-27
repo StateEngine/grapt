@@ -9,7 +9,7 @@ use super::*;
 const MAX_QUERY_BYTES: usize = 16 * 1024;
 
 impl ProductPluginHost {
-    pub(super) fn websearch(
+    pub(crate) fn websearch(
         &self,
         operation: HostOperation,
         application: &Arc<super::DogfoodApplication>,

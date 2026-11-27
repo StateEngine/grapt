@@ -9,7 +9,7 @@ use grapt_types::DeterministicAuthorities;
 use super::{ResolvedLocation, MAX_PATH_BYTES};
 use crate::dogfood::{projects, DogfoodApplication};
 
-pub(in crate::dogfood) async fn resolve_for(
+pub(crate) async fn resolve_for(
     application: &DogfoodApplication,
     query: &ProjectCurrentLocationQueryDto,
 ) -> Result<ResolvedLocation, String> {

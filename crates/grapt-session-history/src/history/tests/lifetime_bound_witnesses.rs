@@ -1,3 +1,4 @@
+use super::*;
 // SC-HIST-01: a Session longer than the page fold's bound still has lifetime
 // totals. `fold_bounded` reads it under the caller's bounds, with the page
 // fold's own semantics, and still refuses past them.

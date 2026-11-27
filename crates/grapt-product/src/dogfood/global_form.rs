@@ -38,7 +38,7 @@ async fn record(
     Ok(record)
 }
 
-pub(super) fn projected_info(mut record: GlobalFormRecord) -> serde_json::Value {
+pub(crate) fn projected_info(mut record: GlobalFormRecord) -> serde_json::Value {
     if record.info["metadata"]["startup"] == true {
         // Keep list and reply-preflight reads identical without persisting a
         // transient state hint in the form's origin metadata.
@@ -47,7 +47,7 @@ pub(super) fn projected_info(mut record: GlobalFormRecord) -> serde_json::Value 
     record.info
 }
 
-pub(super) async fn get(
+pub(crate) async fn get(
     app: DogfoodApplication,
     id: FormId,
     query: ProjectCurrentLocationQueryDto,
@@ -62,7 +62,7 @@ pub(super) async fn get(
         .map_err(|error| FormLookupApplicationError::InvalidRequest(invalid(error)))
 }
 
-pub(super) async fn state(
+pub(crate) async fn state(
     app: DogfoodApplication,
     id: FormId,
     query: ProjectCurrentLocationQueryDto,
@@ -71,7 +71,7 @@ pub(super) async fn state(
     form::state_response(&record.state)
 }
 
-pub(super) async fn reply(
+pub(crate) async fn reply(
     app: DogfoodApplication,
     id: FormId,
     query: ProjectCurrentLocationQueryDto,
@@ -116,7 +116,7 @@ pub(super) async fn reply(
     }
 }
 
-pub(super) async fn cancel(
+pub(crate) async fn cancel(
     app: DogfoodApplication,
     id: FormId,
     query: ProjectCurrentLocationQueryDto,

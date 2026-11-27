@@ -2,12 +2,12 @@ use super::authority::{authorize, Authorized};
 use super::*;
 
 #[derive(Debug)]
-pub(super) struct ProductPluginHost {
-    pub(super) application: Weak<super::DogfoodApplication>,
-    pub(super) handle: tokio::runtime::Handle,
+pub(crate) struct ProductPluginHost {
+    pub(crate) application: Weak<super::DogfoodApplication>,
+    pub(crate) handle: tokio::runtime::Handle,
     subscriptions: Mutex<BTreeMap<u64, PluginEventSubscription>>,
     next_subscription: Mutex<u64>,
-    pub(super) integration: integration::IntegrationRuntime,
+    pub(crate) integration: integration::IntegrationRuntime,
 }
 
 #[derive(Debug)]
@@ -19,7 +19,7 @@ struct PluginEventSubscription {
 }
 
 impl ProductPluginHost {
-    pub(super) fn new(
+    pub(crate) fn new(
         application: Weak<super::DogfoodApplication>,
         handle: tokio::runtime::Handle,
     ) -> Self {
@@ -32,7 +32,7 @@ impl ProductPluginHost {
         }
     }
 
-    pub(super) fn application(&self) -> Result<Arc<super::DogfoodApplication>, String> {
+    pub(crate) fn application(&self) -> Result<Arc<super::DogfoodApplication>, String> {
         self.application
             .upgrade()
             .ok_or_else(|| "plugin host application is no longer active".to_owned())
@@ -42,11 +42,11 @@ impl ProductPluginHost {
         super::support::decode(json!({}))
     }
 
-    pub(super) fn encode<T: serde::Serialize>(value: T) -> Result<Value, String> {
+    pub(crate) fn encode<T: serde::Serialize>(value: T) -> Result<Value, String> {
         serde_json::to_value(value).map_err(|error| error.to_string())
     }
 
-    pub(super) fn located(application: &super::DogfoodApplication, data: Value) -> Value {
+    pub(crate) fn located(application: &super::DogfoodApplication, data: Value) -> Value {
         json!({
             "location": {
                 "directory": application.catalog_snapshot().directory,

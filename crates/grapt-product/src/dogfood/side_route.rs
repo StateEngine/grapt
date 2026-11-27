@@ -3,7 +3,7 @@ use super::*;
 use grapt_api::u3a::{SideQuestionRequestDto, SideQuestionResponseDto};
 
 impl DogfoodApplication {
-    pub(super) fn answer_side_question(
+    pub(crate) fn answer_side_question(
         &self,
         session: SessionId,
         request: SideQuestionRequestDto,

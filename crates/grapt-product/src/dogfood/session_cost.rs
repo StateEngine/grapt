@@ -13,7 +13,7 @@ fn wire(amount: Option<MoneyUsd>, status: &str) -> Map<String, Value> {
     fields
 }
 
-pub(super) fn project(
+pub(crate) fn project(
     application: &DogfoodApplication,
     snapshot: Option<&AccountingSnapshot>,
     metrics_complete: bool,
@@ -34,7 +34,7 @@ pub(super) fn project(
     }
 }
 
-pub(super) fn accounting(
+pub(crate) fn accounting(
     application: &DogfoodApplication,
     session: &SessionId,
 ) -> Result<AccountingSnapshot, String> {

@@ -2,7 +2,7 @@
 use crate::dogfood::execution::LiveActiveExecutions;
 use grapt_api::DogfoodEventHub;
 use std::sync::Arc;
-pub(in crate::dogfood) fn install_hydration(
+pub(crate) fn install_hydration(
     active: Arc<LiveActiveExecutions>,
     status: Arc<super::SessionStatusEmitter>,
     (mail, continuity): (
@@ -14,7 +14,7 @@ pub(in crate::dogfood) fn install_hydration(
     install_status_hydration(active, status, Some((mail, continuity)), hub);
 }
 
-pub(in crate::dogfood) fn install_volatile_hydration(
+pub(crate) fn install_volatile_hydration(
     active: Arc<LiveActiveExecutions>,
     status: Arc<super::SessionStatusEmitter>,
     hub: &DogfoodEventHub,

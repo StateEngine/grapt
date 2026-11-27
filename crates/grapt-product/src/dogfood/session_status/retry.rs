@@ -3,7 +3,7 @@ use super::*;
 use grapt_runtime::step::RetryNotice;
 
 impl SessionStatusEmitter {
-    pub(in crate::dogfood) fn provider_slot_info(
+    pub(crate) fn provider_slot_info(
         &self,
         provider: &grapt_types::ProviderId,
         position: usize,
@@ -27,7 +27,7 @@ impl SessionStatusEmitter {
         ))
     }
 
-    pub(in crate::dogfood) fn waiting_info(
+    pub(crate) fn waiting_info(
         &self,
         provider: &grapt_types::ProviderId,
         notice: RetryNotice,
@@ -85,7 +85,7 @@ impl SessionStatusEmitter {
         ))
     }
 
-    pub(super) fn build_info(
+    pub(crate) fn build_info(
         &self,
         session: &SessionId,
         status: SessionStatusInfo,
@@ -93,7 +93,7 @@ impl SessionStatusEmitter {
         self.build_info_phase(session, status, None)
     }
 
-    pub(in crate::dogfood) fn build_info_phase(
+    pub(crate) fn build_info_phase(
         &self,
         session: &SessionId,
         status: SessionStatusInfo,
@@ -111,12 +111,12 @@ impl SessionStatusEmitter {
         )))
     }
 
-    pub(in crate::dogfood) fn note_active(&self, session: &SessionId) {
+    pub(crate) fn note_active(&self, session: &SessionId) {
         self.lock_owed().insert(session.clone());
         self.record(session, StatusKind::Busy);
     }
 
-    pub(in crate::dogfood) fn publish_status_if_phase(
+    pub(crate) fn publish_status_if_phase(
         &self,
         session: &SessionId,
         status: SessionStatusInfo,
@@ -134,7 +134,7 @@ impl SessionStatusEmitter {
         }
     }
 
-    pub(in crate::dogfood) fn offer_active_phase(
+    pub(crate) fn offer_active_phase(
         &self,
         session: &SessionId,
         status: SessionStatusInfo,

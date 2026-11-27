@@ -1,3 +1,4 @@
+pub(super) use super::*;
 #[test]
 fn completion_observation_is_step_bound_and_preserves_legacy_coordinates(
 ) -> Result<(), Box<dyn std::error::Error>> {
@@ -61,7 +62,7 @@ fn completion_observation_is_step_bound_and_preserves_legacy_coordinates(
     Ok(())
 }
 
-fn reported(value: u64) -> UsageField {
+pub(super) fn reported(value: u64) -> UsageField {
     let count = match TokenCount::new(value) {
         Ok(count) => count,
         Err(error) => panic!("fixture token count is bounded: {error}"),
@@ -69,28 +70,28 @@ fn reported(value: u64) -> UsageField {
     UsageField::reported(count)
 }
 
-fn attempt(raw: &str) -> PhysicalAttemptId {
+pub(super) fn attempt(raw: &str) -> PhysicalAttemptId {
     match PhysicalAttemptId::new(raw) {
         Some(attempt) => attempt,
         None => panic!("{raw} is a non-empty attempt identity"),
     }
 }
 
-fn step(value: u32) -> StepNumber {
+pub(super) fn step(value: u32) -> StepNumber {
     match StepNumber::new(value) {
         Some(step) => step,
         None => panic!("{value} is a positive step number"),
     }
 }
 
-fn message(raw: &str) -> MessageId {
+pub(super) fn message(raw: &str) -> MessageId {
     match raw.parse() {
         Ok(message) => message,
         Err(error) => panic!("{raw} is a valid message identity: {error}"),
     }
 }
 
-fn reference(length: u64) -> ArtifactRef {
+pub(super) fn reference(length: u64) -> ArtifactRef {
     let id = match ArtifactId::new(format!("art_{length}")) {
         Some(id) => id,
         None => panic!("artifact identity is non-empty"),
@@ -103,15 +104,15 @@ fn reference(length: u64) -> ArtifactRef {
 }
 
 /// One durable row, owned so a test can build a list of them.
-struct Row {
-    seq: u64,
-    kind_name: &'static str,
-    kind_version: u32,
-    data: Value,
+pub(super) struct Row {
+    pub(super) seq: u64,
+    pub(super) kind_name: &'static str,
+    pub(super) kind_version: u32,
+    pub(super) data: Value,
 }
 
 impl Row {
-    fn borrow(&self) -> HistoryRow<'_> {
+    pub(super) fn borrow(&self) -> HistoryRow<'_> {
         HistoryRow {
             seq: self.seq,
             kind_name: self.kind_name,
@@ -121,7 +122,7 @@ impl Row {
     }
 }
 
-fn opened(seq: u64, msg: &str, at: &str, number: u32) -> Row {
+pub(super) fn opened(seq: u64, msg: &str, at: &str, number: u32) -> Row {
     Row {
         seq,
         kind_name: "session.assistant-message.opened",
@@ -179,7 +180,7 @@ fn opening_selection_survives_picker_changes_and_replay() -> Result<(), Box<dyn 
     Ok(())
 }
 
-fn appended(seq: u64, msg: &str, ordinal: u64, kind: ContentKind) -> Row {
+pub(super) fn appended(seq: u64, msg: &str, ordinal: u64, kind: ContentKind) -> Row {
     Row {
         seq,
         kind_name: "session.content.appended",
@@ -195,7 +196,7 @@ fn appended(seq: u64, msg: &str, ordinal: u64, kind: ContentKind) -> Row {
     }
 }
 
-fn ended(seq: u64, number: u32) -> Row {
+pub(super) fn ended(seq: u64, number: u32) -> Row {
     Row {
         seq,
         kind_name: "session.step.ended",
@@ -207,7 +208,7 @@ fn ended(seq: u64, number: u32) -> Row {
     }
 }
 
-fn failed(seq: u64, number: u32) -> Row {
+pub(super) fn failed(seq: u64, number: u32) -> Row {
     let fact = match session_step_failed::StepFailedFact::new(
         step(number),
         StepTerminalReason::Interrupted {
@@ -228,7 +229,7 @@ fn failed(seq: u64, number: u32) -> Row {
     }
 }
 
-fn committed(seq: u64) -> CommittedPosition {
+pub(super) fn committed(seq: u64) -> CommittedPosition {
     let event = match format!("evt_terminal_{seq}").parse() {
         Ok(event) => event,
         Err(error) => panic!("terminal event identity must be valid: {error}"),
@@ -244,7 +245,7 @@ fn committed(seq: u64) -> CommittedPosition {
     }
 }
 
-fn fold(rows: &[Row]) -> Result<MessageHistory, HistoryError> {
+pub(super) fn fold(rows: &[Row]) -> Result<MessageHistory, HistoryError> {
     let mut history = MessageHistory::default();
     for row in rows {
         history.apply(row.borrow())?;
@@ -252,14 +253,14 @@ fn fold(rows: &[Row]) -> Result<MessageHistory, HistoryError> {
     Ok(history)
 }
 
-fn folded(rows: &[Row]) -> MessageHistory {
+pub(super) fn folded(rows: &[Row]) -> MessageHistory {
     match fold(rows) {
         Ok(history) => history,
         Err(error) => panic!("these rows must fold: {error}"),
     }
 }
 
-fn messages(history: &MessageHistory) -> Vec<AssistantMessage> {
+pub(super) fn messages(history: &MessageHistory) -> Vec<AssistantMessage> {
     match history.messages() {
         Ok(messages) => messages,
         Err(error) => panic!("this history must render: {error}"),
@@ -641,7 +642,7 @@ fn an_undecodable_owned_row_names_its_kind_and_sequence() {
 /// obtained from `EventStore` because the store's write gate refuses the
 /// corrupt rows these witnesses exist to fold — a row no legal write can
 /// produce is precisely the durable corruption a read model must survive.
-fn stored(rows: &[(i64, &str, &str)]) -> rusqlite::Connection {
+pub(super) fn stored(rows: &[(i64, &str, &str)]) -> rusqlite::Connection {
     let conn = match rusqlite::Connection::open_in_memory() {
         Ok(conn) => conn,
         Err(error) => panic!("an in-memory connection must open: {error}"),
@@ -671,7 +672,7 @@ fn stored(rows: &[(i64, &str, &str)]) -> rusqlite::Connection {
     conn
 }
 
-fn append_stored_tool_call(conn: &rusqlite::Connection, ordinal: usize) {
+pub(super) fn append_stored_tool_call(conn: &rusqlite::Connection, ordinal: usize) {
     let call = match ToolCallId::new(format!("call_page_{ordinal}")) {
         Some(call) => call,
         None => panic!("the static tool-call identity is non-empty"),
@@ -706,7 +707,7 @@ fn append_stored_tool_call(conn: &rusqlite::Connection, ordinal: usize) {
     }
 }
 
-fn session() -> SessionId {
+pub(super) fn session() -> SessionId {
     match "ses_df0a".parse() {
         Ok(session) => session,
         Err(error) => panic!("ses_df0a is a valid session identity: {error}"),
@@ -715,7 +716,7 @@ fn session() -> SessionId {
 
 #[test]
 fn tool_call_page_accepts_exactly_its_bound_and_observes_the_first_over_bound_row() {
-    const RATIFIED_TOOL_CALL_ROWS: usize = crate::MAX_TOOL_CALL_PAGE_ROWS;
+    pub(super) const RATIFIED_TOOL_CALL_ROWS: usize = crate::MAX_TOOL_CALL_PAGE_ROWS;
     let conn = stored(&[]);
     for ordinal in 0..RATIFIED_TOOL_CALL_ROWS {
         append_stored_tool_call(&conn, ordinal);

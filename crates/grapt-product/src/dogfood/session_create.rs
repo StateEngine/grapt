@@ -17,8 +17,8 @@
 use super::*;
 
 /// Everything a validated create request needs, plus what it asked to record.
-pub(super) struct PreparedCreate {
-    pub(super) seed: SessionSeed,
+pub(crate) struct PreparedCreate {
+    pub(crate) seed: SessionSeed,
 }
 
 impl DogfoodApplication {
@@ -28,7 +28,7 @@ impl DogfoodApplication {
     /// names them and the caller cannot; agent and id are validated because a
     /// request that names an unusable one must be refused by field, not turned
     /// into a Session nobody can use.
-    pub(super) async fn prepare_create(
+    pub(crate) async fn prepare_create(
         &self,
         request: &Value,
         requested_id: Option<SessionId>,

@@ -616,6 +616,4 @@ impl ContributionState {
 }
 
 #[cfg(test)]
-mod tests {
-    include!("context/tests.rs");
-}
+mod tests;

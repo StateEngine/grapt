@@ -15,14 +15,14 @@ use std::process::Stdio;
 /// grandchild, so killing the direct child alone would leave it running. The
 /// group is a Job Object on Windows and a cgroup or process group on Unix;
 /// dropping this ends every descendant with the server.
-pub(in crate::dogfood) struct LocalProcess {
-    pub(in crate::dogfood) child: tokio::process::Child,
+pub(crate) struct LocalProcess {
+    pub(crate) child: tokio::process::Child,
     group: processkit::ProcessGroup,
 }
 
 impl LocalProcess {
     /// Stop the whole tree now, ahead of the drop.
-    pub(in crate::dogfood) fn kill_tree(&self) -> Result<(), String> {
+    pub(crate) fn kill_tree(&self) -> Result<(), String> {
         self.group
             .kill_all()
             .map_err(|error| format!("the local MCP server tree could not be stopped: {error}"))
@@ -45,7 +45,7 @@ impl LocalProcess {
 /// configuration is not necessarily the file that ran, and an approval that
 /// bound the configured string would be binding something that did not
 /// execute.
-pub(in crate::dogfood) fn spawn_local(
+pub(crate) fn spawn_local(
     command: &[String],
     cwd: &Path,
     environment: &BTreeMap<String, String>,
@@ -118,7 +118,7 @@ pub(in crate::dogfood) fn spawn_local(
 /// Returns `None` when the name already looks like a path, or when nothing
 /// matches — in which case the spawn proceeds with the name as given so the
 /// failure and its message stay exactly what they were.
-pub(super) fn resolve_program(program: &str) -> Option<std::ffi::OsString> {
+pub(crate) fn resolve_program(program: &str) -> Option<std::ffi::OsString> {
     if program.contains('/') || program.contains('\\') {
         return None;
     }

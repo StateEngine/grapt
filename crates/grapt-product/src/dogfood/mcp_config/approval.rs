@@ -22,7 +22,7 @@ fn selected(
         .remove(name))
 }
 
-pub(super) fn enabled_edit(
+pub(crate) fn enabled_edit(
     sources: &CatalogSources,
     location: &str,
     name: &str,
@@ -42,7 +42,7 @@ pub(super) fn enabled_edit(
     })
 }
 
-pub(super) fn approve_edit(
+pub(crate) fn approve_edit(
     sources: &CatalogSources,
     location: &str,
     name: &str,
@@ -61,7 +61,7 @@ pub(super) fn approve_edit(
     })
 }
 
-pub(in crate::dogfood) fn preview(
+pub(crate) fn preview(
     application: DogfoodApplication,
     name: String,
     query: ProjectCurrentLocationQueryDto,

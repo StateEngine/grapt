@@ -14,7 +14,7 @@ impl DogfoodApplication {
     /// Every stop goes through here — the explicit interrupt and the close
     /// grace that follows a window leaving — so neither path can keep the other's
     /// line. Only a user's explicit resume clears the hold.
-    pub(super) fn hold_after_stop(&self, session: &SessionId) -> Result<(), String> {
+    pub(crate) fn hold_after_stop(&self, session: &SessionId) -> Result<(), String> {
         self.wake_slots.cancel_waiters(session);
         self.ensure_session_writer(session).and_then(|()| {
             self.lock_inbox()
@@ -32,7 +32,7 @@ impl DogfoodApplication {
     /// starts the turn again with no window present. So the close also records
     /// the same durable hold an explicit stop does, and only a user's explicit
     /// resume clears it.
-    pub(super) fn close_after_last_window(&self, session: &SessionId) {
+    pub(crate) fn close_after_last_window(&self, session: &SessionId) {
         // A stop that cannot address an execution has still ended the window's
         // claim; the Session stays resumable either way, and the hold is what a
         // later wake must respect.
@@ -53,7 +53,7 @@ impl DogfoodApplication {
         }
     }
 
-    pub(super) fn interrupt_with_pending(
+    pub(crate) fn interrupt_with_pending(
         &self,
         principal: SealedPrincipal,
         session_id: WireId<SessionId>,

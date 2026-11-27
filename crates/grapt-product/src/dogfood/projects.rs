@@ -17,12 +17,12 @@ use super::support::decode;
 use super::DogfoodApplication;
 
 /// The most projects listed; the TUI keeps the same number of catalog rows.
-pub(super) const MAX_PROJECTS: usize = 128;
+pub(crate) const MAX_PROJECTS: usize = 128;
 
 /// (project, directory) pairs read to find them: four directories a project.
 const MAX_LOCATIONS: usize = 4 * MAX_PROJECTS;
 
-pub(super) fn list(application: &DogfoodApplication) -> Result<ProjectListResponseDto, String> {
+pub(crate) fn list(application: &DogfoodApplication) -> Result<ProjectListResponseDto, String> {
     let rows = {
         let mut inbox = application.lock_inbox();
         SessionListStore::over(inbox.store_mut())
@@ -62,7 +62,7 @@ pub(super) fn list(application: &DogfoodApplication) -> Result<ProjectListRespon
 /// The directory location discovery places `directory`'s project at: its
 /// repository root, or its own canonical path outside Git; `None`
 /// when the directory is gone or unreadable.
-pub(super) fn project_directory(directory: &Path) -> Option<PathBuf> {
+pub(crate) fn project_directory(directory: &Path) -> Option<PathBuf> {
     if !std::fs::metadata(directory).ok()?.is_dir() {
         return None;
     }

@@ -1,38 +1,14 @@
-/// The columns a table named `session` must carry to BE a legacy session
-/// source. One list serves both the migration preflight and the open guard, so
-/// "is this a legacy source" cannot mean two different things in the two places
-/// that ask it.
-const LEGACY_SESSION_COLUMNS: [&str; 7] = [
-    "id",
-    "project_id",
-    "workspace_id",
-    "parent_id",
-    "directory",
-    "title",
-    "time_updated",
-];
+use grapt_types::{LocationRef, Platform, ProjectId, SessionId, WorkspaceId};
+use rusqlite::{Connection, Transaction};
+use sha2::{Digest, Sha256};
 
-/// True only for a table named `session` that carries the legacy shape AND
-/// holds at least one row — the exact state whose rows an `empty-rust-store`
-/// projection would hide.
-fn legacy_source_is_populated(conn: &Connection) -> rusqlite::Result<bool> {
-    if !table_exists(conn, "session")? {
-        return Ok(false);
-    }
-    let columns = columns_of(conn, "session")?;
-    if !LEGACY_SESSION_COLUMNS
-        .iter()
-        .all(|required| columns.iter().any(|present| present == required))
-    {
-        return Ok(false);
-    }
-    // EXISTS, not COUNT(*): the question is whether ANY row is at risk, and a
-    // full count over a large legacy table would be unbounded work at open.
-    conn.query_row("SELECT EXISTS(SELECT 1 FROM session)", [], |row| {
-        row.get::<_, i64>(0)
-    })
-    .map(|value| value != 0)
-}
+use super::schema::{
+    columns_of, create_schema, table_exists, verify_schema, LEGACY_SESSION_COLUMNS,
+};
+use super::{
+    EMPTY_SHA256, IMPORT_BATCH_ROWS, LEGACY_SOURCE, MAX_IMPORTED_ROWS, MAX_ROW_TEXT_BYTES,
+    SESSION_LIST_PROJECTION,
+};
 
 pub(crate) fn validate_legacy_source(conn: &Connection) -> Result<(), String> {
     if table_exists(conn, "session_list_projection").map_err(|error| error.to_string())? {
@@ -230,14 +206,14 @@ pub(crate) fn import_legacy(tx: &Transaction<'_>) -> Result<(), String> {
 }
 
 #[derive(Debug)]
-struct LegacyRow {
-    id: String,
-    project_id: String,
-    workspace_id: Option<String>,
-    parent_id: Option<String>,
-    directory: String,
-    title: String,
-    updated_ms: i64,
+pub(super) struct LegacyRow {
+    pub(super) id: String,
+    pub(super) project_id: String,
+    pub(super) workspace_id: Option<String>,
+    pub(super) parent_id: Option<String>,
+    pub(super) directory: String,
+    pub(super) title: String,
+    pub(super) updated_ms: i64,
 }
 
 fn scan_legacy(
@@ -286,7 +262,7 @@ fn scan_legacy(
 /// this one function: two hand-written copies of the field order would let the
 /// postcondition compare digests that were never computed the same way, which
 /// is a comparison that can only fail for the wrong reason or pass for it.
-fn feed_row(hasher: &mut Sha256, row: &LegacyRow) {
+pub(super) fn feed_row(hasher: &mut Sha256, row: &LegacyRow) {
     feed(hasher, Some(&row.id));
     feed(hasher, Some(&row.project_id));
     feed(hasher, row.workspace_id.as_deref());
@@ -304,7 +280,7 @@ fn feed_row(hasher: &mut Sha256, row: &LegacyRow) {
 /// can produce the mismatch this guards against, so a postcondition reachable
 /// only through `import_legacy` would be an assertion nothing could ever
 /// exercise. A guard no test can reach is decorative.
-fn verify_import_postcondition(
+pub(super) fn verify_import_postcondition(
     conn: &Connection,
     expected_rows: usize,
     expected_digest: &str,
@@ -322,7 +298,7 @@ fn verify_import_postcondition(
 
 /// Recomputes the imported domain from the PROJECTION, in the same total order
 /// and the same encoding the read-only preflight used over the source.
-fn projected_domain(conn: &Connection) -> Result<(usize, String), String> {
+pub(super) fn projected_domain(conn: &Connection) -> Result<(usize, String), String> {
     let mut statement = conn
         .prepare(
             "SELECT session_id, project_id, workspace_id, parent_id, directory, title, updated_ms
@@ -390,69 +366,6 @@ fn validate_row(row: &LegacyRow) -> Result<(), String> {
         .map_err(|error| format!("legacy session {} directory: {error}", row.id))?;
     if row.updated_ms < 0 {
         return Err(format!("legacy session {} has negative updated_ms", row.id));
-    }
-    Ok(())
-}
-
-fn table_exists(conn: &Connection, table: &str) -> rusqlite::Result<bool> {
-    conn.query_row(
-        "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?1)",
-        [table],
-        |row| row.get::<_, i64>(0),
-    )
-    .map(|value| value != 0)
-}
-
-fn columns_of(conn: &Connection, table: &str) -> rusqlite::Result<Vec<String>> {
-    let mut statement = conn.prepare(&format!("PRAGMA table_info(\"{table}\")"))?;
-    let columns = statement
-        .query_map([], |row| row.get::<_, String>(1))?
-        .collect();
-    columns
-}
-
-fn verify_index(
-    conn: &Connection,
-    name: &str,
-    expected: &[&str],
-) -> Result<(), SessionListSchemaError> {
-    let exists: i64 = conn.query_row(
-        "SELECT COUNT(*) FROM sqlite_master WHERE type = 'index' AND name = ?1",
-        [name],
-        |row| row.get(0),
-    )?;
-    if exists != 1 {
-        return Err(SessionListSchemaError::Corrupt(format!(
-            "required index {name} is missing"
-        )));
-    }
-    let mut statement = conn.prepare(&format!("PRAGMA index_xinfo(\"{name}\")"))?;
-    let actual = statement
-        .query_map([], |row| {
-            let key: i64 = row.get(5)?;
-            if key == 0 {
-                Ok(None)
-            } else {
-                Ok(Some((row.get::<_, String>(2)?, row.get::<_, String>(4)?)))
-            }
-        })?
-        .collect::<Result<Vec<_>, _>>()?
-        .into_iter()
-        .flatten()
-        .collect::<Vec<_>>();
-    let actual_columns = actual
-        .iter()
-        .map(|(column, _)| column.as_str())
-        .collect::<Vec<_>>();
-    if actual_columns != expected {
-        return Err(SessionListSchemaError::Corrupt(format!(
-            "index {name} columns are {actual_columns:?}, expected {expected:?}"
-        )));
-    }
-    if actual.iter().any(|(_, collation)| collation != "BINARY") {
-        return Err(SessionListSchemaError::Corrupt(format!(
-            "index {name} collations are {actual:?}, expected BINARY"
-        )));
     }
     Ok(())
 }

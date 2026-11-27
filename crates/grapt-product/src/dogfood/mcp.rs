@@ -29,30 +29,30 @@ use grapt_mcp::{
 use serde_json::Value;
 use tokio::io::{AsyncRead, AsyncWrite};
 
-pub(super) mod auth;
-pub(super) mod auth_api;
+pub(crate) mod auth;
+pub(crate) mod auth_api;
 mod call;
 mod call_lease;
-pub(super) mod channel;
-pub(super) mod content;
+pub(crate) mod channel;
+pub(crate) mod content;
 mod local;
-pub(super) mod nested_startup;
-pub(super) mod notifications;
+pub(crate) mod nested_startup;
+pub(crate) mod notifications;
 mod producer_version;
 mod remote;
-pub(in crate::dogfood) mod roots;
+pub(crate) mod roots;
 mod startup;
 use grapt_mcp_host::startup_trace;
-pub(super) mod subscriptions;
-pub(super) use startup::registry_with_forms;
+pub(crate) mod subscriptions;
+pub(crate) use startup::registry_with_forms;
 #[cfg(test)]
 mod startup_elicitation_tests;
 use grapt_mcp_host::startup_lease;
 #[cfg(test)]
 use startup::start;
 mod stderr;
-pub(super) mod stderr_tail;
-pub(super) use channel::{ChannelError, ConnectionSlot, HeldIo, McpChannel};
+pub(crate) mod stderr_tail;
+pub(crate) use channel::{ChannelError, ConnectionSlot, HeldIo, McpChannel};
 
 pub(crate) use grapt_mcp_host::startup::{StartFailure, StartPhase, StartedServer};
 
@@ -74,7 +74,7 @@ pub(crate) use grapt_mcp_host::startup::{StartFailure, StartPhase, StartedServer
     reason = "each argument is a distinct call coordinate; grouping them would               only move the same list"
 )]
 #[cfg(test)]
-pub(super) async fn run_call<R, W>(
+pub(crate) async fn run_call<R, W>(
     channel: &mut McpChannel<R, W>,
     session: &mut McpSession,
     bounds: McpBounds,
@@ -198,21 +198,21 @@ async fn run_call_with<R: AsyncRead + Unpin, W: AsyncWrite + Unpin>(
 }
 
 mod spawn;
-pub(super) use spawn::spawn_local;
+pub(crate) use spawn::spawn_local;
 
 mod entry;
-pub(super) use entry::ServerEntry;
-pub(super) use grapt_mcp_host::declaration::Declaration;
+pub(crate) use entry::ServerEntry;
+pub(crate) use grapt_mcp_host::declaration::Declaration;
 
-pub(super) use grapt_mcp_host::timeouts::McpTimeouts;
+pub(crate) use grapt_mcp_host::timeouts::McpTimeouts;
 
 /// A held connection to one server.
 /// Erased stream types, so a held connection can be backed by a child process
 /// in production and by a duplex in a witness.
-pub(super) type BoxedRead = Box<dyn AsyncRead + Unpin + Send>;
-pub(super) type BoxedWrite = Box<dyn AsyncWrite + Unpin + Send>;
+pub(crate) type BoxedRead = Box<dyn AsyncRead + Unpin + Send>;
+pub(crate) type BoxedWrite = Box<dyn AsyncWrite + Unpin + Send>;
 
-pub(super) struct LiveServer {
+pub(crate) struct LiveServer {
     roots: Arc<roots::State>,
     notifications: Option<notifications::Intake>,
     identity: ServerIdentity,
@@ -241,13 +241,13 @@ pub(super) struct LiveServer {
 }
 
 /// The parts of a connection that only one caller may touch at a time.
-pub(super) struct LiveIo {
+pub(crate) struct LiveIo {
     /// Released when this connection is finally dropped, whoever was last to
     /// hold it. That is what makes the aggregate bound count processes rather
     /// than map entries.
     _slot: ConnectionSlot,
-    pub(super) channel: McpChannel<BoxedRead, BoxedWrite>,
-    pub(super) session: McpSession,
+    pub(crate) channel: McpChannel<BoxedRead, BoxedWrite>,
+    pub(crate) session: McpSession,
     /// Held so the child outlives the channel. Dropping this kills the server
     /// and every descendant, which is why the channel is never handed out
     /// separately. `None` for a connection with no spawned child, which only a
@@ -272,11 +272,11 @@ impl std::fmt::Debug for LiveServer {
 }
 
 impl LiveServer {
-    pub(super) fn identity(&self) -> &ServerIdentity {
+    pub(crate) fn identity(&self) -> &ServerIdentity {
         &self.identity
     }
 
-    pub(super) fn catalog(&self) -> &[DiscoveredTool] {
+    pub(crate) fn catalog(&self) -> &[DiscoveredTool] {
         &self.catalog
     }
 
@@ -286,11 +286,11 @@ impl LiveServer {
     /// past. A hangup observed during a call is a fact about the present, and
     /// reporting the first while knowing the second is how a status list says
     /// connected about a dead pipe and advertises its tools.
-    pub(super) fn observed_unusable(&self) -> Option<Unusable> {
+    pub(crate) fn observed_unusable(&self) -> Option<Unusable> {
         self.io.observed_unusable()
     }
 
-    pub(super) fn launch(&self) -> &LaunchIdentity {
+    pub(crate) fn launch(&self) -> &LaunchIdentity {
         &self.launch
     }
 }
@@ -299,20 +299,20 @@ mod admission;
 mod availability;
 mod retention;
 mod retry;
-pub(super) use retention::{
+pub(crate) use retention::{
     next_read_ordinal, release_over_bound, retire, MAX_LIVE_CONNECTIONS, MAX_QUEUED_CALLERS,
     MAX_RETAINED_LOCATIONS,
 };
 
 mod publication;
 #[cfg(test)]
-pub(super) use publication::MAX_PUBLISHED_SCHEMA_BYTES;
-pub(super) use publication::{
+pub(crate) use publication::MAX_PUBLISHED_SCHEMA_BYTES;
+pub(crate) use publication::{
     tool_definitions, tool_definitions_for_session, McpRoute, PublishedTools, WithheldTool,
 };
 
 mod approval_identity;
-pub(super) use approval_identity::describe_launch;
+pub(crate) use approval_identity::describe_launch;
 pub(crate) use approval_identity::LaunchIdentity;
 
 /// Why a tool call could not be run. Each variant is a different answer to
@@ -320,7 +320,7 @@ pub(crate) use approval_identity::LaunchIdentity;
 /// a timeout says nothing about whether the server acted, while a refusal says
 /// it did not.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(super) enum McpCallRefusal {
+pub(crate) enum McpCallRefusal {
     /// No server of that name is configured for that location.
     NoSuchServer(String),
     /// No connections are held for this LOCATION at all.
@@ -395,13 +395,13 @@ pub(crate) struct LocationConnections {
 /// be able to fork a process per request, and "connected" must mean a channel
 /// exists right now rather than that one once did.
 #[derive(Debug)]
-pub(super) struct McpRegistry {
+pub(crate) struct McpRegistry {
     roots_authority: Arc<std::sync::Mutex<roots::Authority>>,
     resource_states: std::sync::Mutex<Vec<std::sync::Weak<subscriptions::State>>>,
     resources_closing: std::sync::atomic::AtomicBool,
-    pub(super) catalog_emitter: Option<Arc<notifications::Emitter>>,
-    pub(super) auth: Option<Arc<auth::AuthManager>>,
-    pub(super) forms: Option<super::elicitation::FormProducer>,
+    pub(crate) catalog_emitter: Option<Arc<notifications::Emitter>>,
+    pub(crate) auth: Option<Arc<auth::AuthManager>>,
+    pub(in crate::dogfood) forms: Option<super::elicitation::FormProducer>,
     clock: Arc<dyn grapt_types::ClockAuthority + Send + Sync>,
     /// Process-lifetime declarations admitted through ordinary `mcp.add`.
     /// Kept outside the evictable connection map so releasing an idle
@@ -444,7 +444,7 @@ pub(super) struct McpRegistry {
 }
 
 impl McpRegistry {
-    pub(super) fn new(
+    pub(crate) fn new(
         bounds: McpBounds,
         session_bounds: SessionBounds,
         client_version: impl Into<String>,
@@ -472,12 +472,12 @@ impl McpRegistry {
     }
 
     #[cfg(test)]
-    pub(super) fn connections_for_test(&self) -> &Arc<std::sync::atomic::AtomicUsize> {
+    pub(crate) fn connections_for_test(&self) -> &Arc<std::sync::atomic::AtomicUsize> {
         &self.connections
     }
 
     #[cfg(test)]
-    pub(super) fn connect_attempts(&self) -> usize {
+    pub(crate) fn connect_attempts(&self) -> usize {
         self.connect_attempts
             .load(std::sync::atomic::Ordering::Relaxed)
     }
@@ -490,7 +490,7 @@ impl McpRegistry {
     /// restarted it, which is the shape that produces a use of a retired
     /// generation.
     #[cfg(test)]
-    pub(super) async fn with_status<T>(
+    pub(crate) async fn with_status<T>(
         &self,
         location: &str,
         declared: &BTreeMap<String, Declaration>,
@@ -500,7 +500,7 @@ impl McpRegistry {
             .await
     }
 
-    pub(super) async fn with_status_at<T>(
+    pub(crate) async fn with_status_at<T>(
         &self,
         key: &str,
         directory: &str,
@@ -513,7 +513,7 @@ impl McpRegistry {
     /// Add or replace one process-lifetime declaration. Connecting remains in
     /// `with_status`, so runtime and configured servers share one admission,
     /// replacement, and connection-count path.
-    pub(super) async fn register_runtime(
+    pub(crate) async fn register_runtime(
         &self,
         location: &str,
         name: String,
@@ -553,7 +553,7 @@ impl McpRegistry {
 
     /// Retire only this location's named server. The next catalog read or
     /// admitted call uses ordinary startup; dispatched effects are not replayed.
-    pub(super) async fn reconnect(
+    pub(crate) async fn reconnect(
         &self,
         location: &str,
         server: &str,
@@ -588,7 +588,7 @@ impl McpRegistry {
         Ok(())
     }
 
-    pub(super) async fn retire_server(&self, server: &str, resource: &str) {
+    pub(crate) async fn retire_server(&self, server: &str, resource: &str) {
         let mut locations = self.entries.lock().await;
         for held in locations.values_mut() {
             let matches = held.declarations.get(server).is_some_and(|declaration|
@@ -615,7 +615,7 @@ impl McpRegistry {
     /// that name: there is then no configured server to have a budget, and a
     /// caller that invents one would be dispatching under a deadline no
     /// configuration named.
-    pub(super) async fn execution_budget(&self, location: &str, server: &str) -> Option<Duration> {
+    pub(crate) async fn execution_budget(&self, location: &str, server: &str) -> Option<Duration> {
         let locations = self.entries.lock().await;
         match locations.get(location)?.entries.get(server)? {
             ServerEntry::Live(live) => Some(live.timeouts.execution),
@@ -631,7 +631,7 @@ impl McpRegistry {
     /// server that fails to start, and a refusal reached through NotConnected
     /// proves nothing about the replacement check.
     #[cfg(test)]
-    pub(super) async fn install_live_for_test(
+    pub(crate) async fn install_live_for_test(
         &self,
         location: &str,
         name: &str,
@@ -717,19 +717,19 @@ impl McpRegistry {
     }
 
     #[cfg(test)]
-    pub(super) async fn retained_location_count(&self) -> usize {
+    pub(crate) async fn retained_location_count(&self) -> usize {
         self.entries.lock().await.len()
     }
 
     #[cfg(test)]
-    pub(super) async fn retains_location(&self, location: &str) -> bool {
+    pub(crate) async fn retains_location(&self, location: &str) -> bool {
         self.entries.lock().await.contains_key(location)
     }
 
     /// The I/O handle a witness can hold, so a test owner can occupy a
     /// connection deliberately instead of hoping a cancelled task drops one.
     #[cfg(test)]
-    pub(super) async fn io_handle_for_test(
+    pub(crate) async fn io_handle_for_test(
         &self,
         location: &str,
         server: &str,
@@ -774,7 +774,7 @@ impl McpRegistry {
 /// which the frozen contract contradicts by shipping exactly that knob.
 /// `McpTimeouts::default()` is the single source of the unconfigured values,
 /// so there is no second place for them to drift.
-pub(super) fn registry(
+pub(crate) fn registry(
     clock: Arc<dyn grapt_types::ClockAuthority + Send + Sync>,
 ) -> Result<McpRegistry, String> {
     let bounds = McpBounds::conservative().map_err(|error| error.to_string())?;

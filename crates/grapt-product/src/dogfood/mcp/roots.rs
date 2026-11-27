@@ -5,7 +5,7 @@ use super::{Declaration, McpRegistry};
 mod authority;
 use crate::dogfood::catalog_config::{user_owned, CatalogSources};
 pub(super) use authority::Authority;
-pub(in crate::dogfood) use authority::{EditGuard, Revision};
+pub(crate) use authority::{EditGuard, Revision};
 use serde_json::{json, Value};
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -14,7 +14,7 @@ use std::{
 };
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub(in crate::dogfood) struct Config {
+pub(crate) struct Config {
     // Keep the placement spelling for approval ownership; the advertised root
     // resolves parent segments before URL normalization can change their meaning.
     location: PathBuf,
@@ -123,17 +123,17 @@ struct Snapshot {
 }
 
 #[derive(Debug, Default)]
-pub(super) struct State(Mutex<Snapshot>);
+pub(crate) struct State(Mutex<Snapshot>);
 
 impl State {
-    pub(super) fn new(config: Option<Config>) -> Arc<Self> {
+    pub(crate) fn new(config: Option<Config>) -> Arc<Self> {
         Arc::new(Self(Mutex::new(Snapshot {
             config,
             ..Snapshot::default()
         })))
     }
 
-    pub(super) fn set(&self, config: Option<Config>) -> Result<(), String> {
+    pub(crate) fn set(&self, config: Option<Config>) -> Result<(), String> {
         let mut state = self.0.lock().map_err(|_| "MCP roots custody unavailable")?;
         let config = config.filter(|_| !state.retired);
         if state.config != config {
@@ -143,12 +143,12 @@ impl State {
         Ok(())
     }
 
-    pub(super) fn revoke(&self) {
+    pub(crate) fn revoke(&self) {
         // A poisoned state cannot answer a request, so it already fails closed.
         let _ = self.set(None);
     }
 
-    pub(super) fn retire(&self) {
+    pub(crate) fn retire(&self) {
         if let Ok(mut state) = self.0.lock() {
             state.retired = true;
             state.config = None;
@@ -156,7 +156,7 @@ impl State {
         }
     }
 
-    pub(super) fn response(&self) -> Result<Value, String> {
+    pub(crate) fn response(&self) -> Result<Value, String> {
         let config = {
             let mut state = self.0.lock().map_err(|_| "MCP roots custody unavailable")?;
             state.asked = true;
@@ -166,21 +166,21 @@ impl State {
         config.map_or_else(|| Ok(json!({"roots":[]})), |config| config.response())
     }
 
-    pub(super) fn take_changed(&self) -> Result<bool, String> {
+    pub(crate) fn take_changed(&self) -> Result<bool, String> {
         let mut state = self.0.lock().map_err(|_| "MCP roots custody unavailable")?;
         Ok(std::mem::take(&mut state.changed))
     }
 }
 
 impl McpRegistry {
-    pub(in crate::dogfood) fn roots_revision(&self) -> Result<Revision, String> {
+    pub(crate) fn roots_revision(&self) -> Result<Revision, String> {
         self.roots_authority
             .lock()
             .map_err(|_| "MCP roots custody unavailable")?
             .revision()
     }
 
-    pub(in crate::dogfood) fn edit_roots(
+    pub(crate) fn edit_roots(
         &self,
         workspace: Option<&str>,
         server: &str,
@@ -188,7 +188,7 @@ impl McpRegistry {
         Authority::edit(&self.roots_authority, workspace, server)
     }
 
-    pub(in crate::dogfood) async fn configure_roots(
+    pub(crate) async fn configure_roots(
         &self,
         location: &str,
         roots: &Config,
@@ -228,7 +228,7 @@ impl McpRegistry {
         Ok(())
     }
 
-    pub(super) async fn roots_for(
+    pub(crate) async fn roots_for(
         &self,
         location: &str,
         server: &str,
@@ -244,7 +244,7 @@ impl McpRegistry {
 }
 
 #[derive(Debug)]
-pub(super) struct Prepared {
+pub(crate) struct Prepared {
     config: Config,
     revision: Revision,
     permitted: BTreeMap<String, Declaration>,

@@ -230,8 +230,9 @@ mod tests {
         ))
     }
 
-    include!("codex/tests/support_and_units.rs");
-    include!("codex/tests/transport_stream.rs");
-    include!("codex/tests/utf8_and_framing.rs");
-    include!("codex/tests/ordinals_capacity_and_eof.rs");
+    mod ordinals_capacity_and_eof;
+    mod support;
+    mod support_and_units;
+    mod transport_stream;
+    mod utf8_and_framing;
 }

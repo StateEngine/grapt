@@ -15,14 +15,14 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use super::super::publication::ConnectedCatalog;
 use super::super::*;
 
-pub(super) fn bounds() -> McpBounds {
+pub(crate) fn bounds() -> McpBounds {
     match McpBounds::conservative() {
         Ok(bounds) => bounds,
         Err(_) => panic!("the conservative bounds must be constructible"),
     }
 }
 
-pub(super) fn session() -> McpSession {
+pub(crate) fn session() -> McpSession {
     match SessionBounds::conservative() {
         Ok(session_bounds) => McpSession::declared(session_bounds),
         Err(_) => panic!("the conservative session bounds must be constructible"),
@@ -31,7 +31,7 @@ pub(super) fn session() -> McpSession {
 
 /// A scripted server: it answers each request it reads with the next line
 /// of `script`, so a test can make it answer late, wrongly, or not at all.
-pub(super) fn scripted(
+pub(crate) fn scripted(
     script: Vec<String>,
 ) -> (tokio::io::DuplexStream, tokio::task::JoinHandle<()>) {
     let (ours, theirs) = tokio::io::duplex(1024 * 64);
@@ -79,7 +79,7 @@ pub(super) fn scripted(
 /// Every frame it reads is recorded, so a test can assert what was
 /// actually sent and in what order rather than inferring it from the fact
 /// that startup happened to succeed.
-pub(super) fn conformant(
+pub(crate) fn conformant(
     handshake_reply: String,
 ) -> (
     tokio::io::DuplexStream,
@@ -170,14 +170,14 @@ pub(super) fn conformant(
     (ours, received, handle)
 }
 
-pub(super) fn handshake_answering(version: &str) -> String {
+pub(crate) fn handshake_answering(version: &str) -> String {
     json!({"jsonrpc":"2.0","id":1,"result":{
         "protocolVersion":version,
         "serverInfo":{"name":"fixture-server","version":"1.2"}}})
     .to_string()
 }
 
-pub(super) fn catalog_of(names: &[&str]) -> Vec<DiscoveredTool> {
+pub(crate) fn catalog_of(names: &[&str]) -> Vec<DiscoveredTool> {
     let rows: Vec<Value> = names
         .iter()
         .map(|name| {
@@ -191,7 +191,7 @@ pub(super) fn catalog_of(names: &[&str]) -> Vec<DiscoveredTool> {
     }
 }
 
-pub(super) fn channel(
+pub(crate) fn channel(
     stream: tokio::io::DuplexStream,
 ) -> McpChannel<
     tokio::io::ReadHalf<tokio::io::DuplexStream>,
@@ -201,21 +201,21 @@ pub(super) fn channel(
     McpChannel::new(read, write, bounds())
 }
 
-pub(super) fn handshake() -> String {
+pub(crate) fn handshake() -> String {
     json!({"jsonrpc":"2.0","id":1,"result":{
         "protocolVersion":PROTOCOL_VERSION,
         "serverInfo":{"name":"fixture-server","version":"1.2"}}})
     .to_string()
 }
 
-pub(super) fn listing() -> String {
+pub(crate) fn listing() -> String {
     json!({"jsonrpc":"2.0","id":2,"result":{"tools":[
         {"name":"fixture_read","description":"reads",
          "inputSchema":{"type":"object","properties":{}}}]}})
     .to_string()
 }
 
-pub(super) fn local(command: &str) -> Declaration {
+pub(crate) fn local(command: &str) -> Declaration {
     Declaration::Local {
         command: vec![command.to_owned()],
         cwd: ".".to_owned(),
@@ -225,7 +225,7 @@ pub(super) fn local(command: &str) -> Declaration {
 }
 
 /// A real, healthy child for reuse tests: failed starts deliberately retry.
-pub(super) fn healthy_local(instance: &str) -> Declaration {
+pub(crate) fn healthy_local(instance: &str) -> Declaration {
     let script = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../../scripts/stateengine-native/fixture_server.py");
     assert!(script.is_file(), "native MCP fixture is absent");
@@ -241,7 +241,7 @@ pub(super) fn healthy_local(instance: &str) -> Declaration {
     }
 }
 
-pub(super) fn live_launch(entry: &ServerEntry) -> LaunchIdentity {
+pub(crate) fn live_launch(entry: &ServerEntry) -> LaunchIdentity {
     let ServerEntry::Live(live) = entry else {
         panic!("fixture must hold a live connection: {}", entry.detail());
     };
@@ -250,7 +250,7 @@ pub(super) fn live_launch(entry: &ServerEntry) -> LaunchIdentity {
 
 /// A declaration differing from [`local`] ONLY in the field named, so a
 /// witness can show that field participating in connection identity.
-pub(super) fn local_with_cwd(command: &str, cwd: &str) -> Declaration {
+pub(crate) fn local_with_cwd(command: &str, cwd: &str) -> Declaration {
     Declaration::Local {
         command: vec![command.to_owned()],
         cwd: cwd.to_owned(),
@@ -259,7 +259,7 @@ pub(super) fn local_with_cwd(command: &str, cwd: &str) -> Declaration {
     }
 }
 
-pub(super) fn local_with_environment(
+pub(crate) fn local_with_environment(
     command: &str,
     environment: BTreeMap<String, String>,
 ) -> Declaration {
@@ -278,7 +278,7 @@ pub(super) fn local_with_environment(
 /// launch identity. Tests wrote the cwd by hand and matched the LOCATION,
 /// which agreed only while the helper ignored the declaration's own `cwd`. An
 /// identity that agrees by coincidence is not evidence that the product does.
-pub(super) fn approval_for(
+pub(crate) fn approval_for(
     declaration: &Declaration,
     program: &str,
     incarnation: u64,
@@ -299,13 +299,13 @@ pub(super) fn approval_for(
     }
 }
 
-pub(super) fn declared(name: &str, declaration: Declaration) -> BTreeMap<String, Declaration> {
+pub(crate) fn declared(name: &str, declaration: Declaration) -> BTreeMap<String, Declaration> {
     let mut map = BTreeMap::new();
     map.insert(name.to_owned(), declaration);
     map
 }
 
-pub(super) fn registry_for_tests() -> McpRegistry {
+pub(crate) fn registry_for_tests() -> McpRegistry {
     McpRegistry::new(
         bounds(),
         session_bounds_for_tests(),
@@ -314,14 +314,14 @@ pub(super) fn registry_for_tests() -> McpRegistry {
     )
 }
 
-pub(super) fn session_bounds_for_tests() -> SessionBounds {
+pub(crate) fn session_bounds_for_tests() -> SessionBounds {
     match SessionBounds::conservative() {
         Ok(bounds) => bounds,
         Err(_) => panic!("the conservative session bounds must be constructible"),
     }
 }
 
-pub(super) fn connected_catalog<'a>(
+pub(crate) fn connected_catalog<'a>(
     server: &'a str,
     catalog: &'a [DiscoveredTool],
 ) -> ConnectedCatalog<'a> {
@@ -338,7 +338,7 @@ pub(super) fn connected_catalog<'a>(
     }
 }
 
-pub(super) fn discovered_tool() -> McpToolName {
+pub(crate) fn discovered_tool() -> McpToolName {
     match McpToolName::new("fixture_read") {
         Some(name) => name,
         None => panic!("the fixture tool name must be usable"),
@@ -348,7 +348,7 @@ pub(super) fn discovered_tool() -> McpToolName {
 /// Drive a real startup against the conformant fixture and hand back the
 /// live channel and session, so a call runs on a connection that actually
 /// handshook and discovered rather than on a hand-built one.
-pub(super) async fn connected() -> (
+pub(crate) async fn connected() -> (
     McpChannel<
         tokio::io::ReadHalf<tokio::io::DuplexStream>,
         tokio::io::WriteHalf<tokio::io::DuplexStream>,

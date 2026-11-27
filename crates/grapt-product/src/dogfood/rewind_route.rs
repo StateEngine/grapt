@@ -31,7 +31,7 @@ fn refusal(error: RewindError) -> Error {
 }
 
 impl DogfoodApplication {
-    pub(super) fn preview_rewind(
+    pub(crate) fn preview_rewind(
         &self,
         session_id: WireId<SessionId>,
         request: SessionRewindPreviewRequestDto,
@@ -62,7 +62,7 @@ impl DogfoodApplication {
         .map_err(|error| Error::Unknown(unknown(error)))
     }
 
-    pub(super) fn commit_rewind(
+    pub(crate) fn commit_rewind(
         &self,
         session_id: WireId<SessionId>,
         request: SessionRewindRequestDto,

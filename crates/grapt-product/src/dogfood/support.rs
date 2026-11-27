@@ -19,7 +19,7 @@ use super::{CatalogProjection, PUBLIC_CONTENT_BYTES};
     dead_code,
     reason = "retained by the location-port witness implementation"
 )]
-pub(super) fn catalog_response<T, Q, E>(
+pub(crate) fn catalog_response<T, Q, E>(
     catalog: Arc<CatalogProjection>,
     query: Q,
     data: Value,
@@ -40,7 +40,7 @@ where
     })
 }
 
-pub(super) fn model(catalog: &CatalogProjection) -> Value {
+pub(crate) fn model(catalog: &CatalogProjection) -> Value {
     json!({
         "id": catalog.model,
         "modelID": catalog.model,
@@ -58,7 +58,7 @@ pub(super) fn model(catalog: &CatalogProjection) -> Value {
     })
 }
 
-pub(super) fn ready<T, E>(result: Result<T, E>) -> ApplicationFuture<T, E>
+pub(crate) fn ready<T, E>(result: Result<T, E>) -> ApplicationFuture<T, E>
 where
     T: Send + 'static,
     E: Send + 'static,
@@ -66,7 +66,7 @@ where
     Box::pin(async move { result })
 }
 
-pub(super) fn compose_prompt_extensions(
+pub(crate) fn compose_prompt_extensions(
     request: &Value,
     mut text: String,
 ) -> Result<String, String> {
@@ -131,11 +131,11 @@ pub(super) fn compose_prompt_extensions(
         .map_err(|_| "prompt plus file references exceeds its text bound".to_owned())
 }
 
-pub(super) fn decode<T: DeserializeOwned>(value: Value) -> Result<T, String> {
+pub(crate) fn decode<T: DeserializeOwned>(value: Value) -> Result<T, String> {
     serde_json::from_value(value).map_err(|error| error.to_string())
 }
 
-pub(super) fn invalid(message: impl ToString) -> InvalidRequestErrorDto {
+pub(crate) fn invalid(message: impl ToString) -> InvalidRequestErrorDto {
     static_dto(json!({
         "_tag": "InvalidRequestError",
         "message": bounded_message(message),
@@ -148,7 +148,7 @@ pub(super) fn invalid(message: impl ToString) -> InvalidRequestErrorDto {
 /// sentence, taken from the same place this classifier reads it, so the two cannot
 /// drift apart. A busy reader becomes `Busy` and the route answers 503 with
 /// `Retry-After`; anything else stays an invalid request.
-pub(super) fn active_read_failure(detail: &str) -> SessionActiveApplicationError {
+pub(crate) fn active_read_failure(detail: &str) -> SessionActiveApplicationError {
     if detail == super::read_projection::ReadRefusal::Busy.detail() {
         SessionActiveApplicationError::Busy
     } else {
@@ -156,7 +156,7 @@ pub(super) fn active_read_failure(detail: &str) -> SessionActiveApplicationError
     }
 }
 
-pub(super) fn not_found(session: &SessionId) -> SessionNotFoundErrorDto {
+pub(crate) fn not_found(session: &SessionId) -> SessionNotFoundErrorDto {
     static_dto(json!({
         "_tag": "SessionNotFoundError",
         "sessionID": session.as_str(),
@@ -164,7 +164,7 @@ pub(super) fn not_found(session: &SessionId) -> SessionNotFoundErrorDto {
     }))
 }
 
-pub(super) fn conflict(message: impl ToString) -> ConflictErrorDto {
+pub(crate) fn conflict(message: impl ToString) -> ConflictErrorDto {
     static_dto(json!({
         "_tag": "ConflictError",
         "message": bounded_message(message),
@@ -172,14 +172,14 @@ pub(super) fn conflict(message: impl ToString) -> ConflictErrorDto {
     }))
 }
 
-pub(super) fn unknown(message: impl ToString) -> UnknownErrorDto {
+pub(crate) fn unknown(message: impl ToString) -> UnknownErrorDto {
     static_dto(json!({
         "_tag": "UnknownError",
         "message": bounded_message(message),
     }))
 }
 
-pub(super) fn bounded_message(message: impl ToString) -> String {
+pub(crate) fn bounded_message(message: impl ToString) -> String {
     let message = message.to_string();
     let mut end = message.len().min(1_024);
     while end > 0 && !message.is_char_boundary(end) {
@@ -188,7 +188,7 @@ pub(super) fn bounded_message(message: impl ToString) -> String {
     message[..end].to_owned()
 }
 
-pub(super) fn should_execute(outcome: &AdmitOutcome) -> bool {
+pub(crate) fn should_execute(outcome: &AdmitOutcome) -> bool {
     matches!(
         outcome,
         AdmitOutcome::Admitted {
@@ -200,7 +200,7 @@ pub(super) fn should_execute(outcome: &AdmitOutcome) -> bool {
     )
 }
 
-pub(super) fn public_content(value: &str) -> &str {
+pub(crate) fn public_content(value: &str) -> &str {
     let mut end = value.len().min(PUBLIC_CONTENT_BYTES);
     while end > 0 && !value.is_char_boundary(end) {
         end -= 1;
@@ -208,7 +208,7 @@ pub(super) fn public_content(value: &str) -> &str {
     &value[..end]
 }
 
-pub(super) fn static_dto<T: DeserializeOwned>(value: Value) -> T {
+pub(crate) fn static_dto<T: DeserializeOwned>(value: Value) -> T {
     match serde_json::from_value(value) {
         Ok(value) => value,
         Err(error) => unreachable!("fixed Dogfood DTO failed to decode: {error}"),

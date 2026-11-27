@@ -72,7 +72,7 @@ fn begin_read(state: &Mutex<Cancellation>, deadline: Instant) -> Result<(), Stri
     Ok(())
 }
 
-pub(super) fn blocking<T>(work: impl FnOnce() -> T) -> T {
+pub(crate) fn blocking<T>(work: impl FnOnce() -> T) -> T {
     match tokio::runtime::Handle::try_current() {
         Ok(handle) if handle.runtime_flavor() == tokio::runtime::RuntimeFlavor::MultiThread => {
             tokio::task::block_in_place(work)
@@ -87,7 +87,7 @@ pub(super) fn blocking<T>(work: impl FnOnce() -> T) -> T {
 /// route answers it with 503 and `Retry-After` and a caller must be able to tell it
 /// from a bad request without matching a message.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum ReadRefusal {
+pub(crate) enum ReadRefusal {
     /// The reader was busy for the whole wait. Transient: retry.
     Busy,
     /// Anything else: an unreadable store, a poisoned lock, a replaced database.
@@ -99,7 +99,7 @@ impl ReadRefusal {
     ///
     /// Kept as a method so the text lives beside the classification, and so the
     /// two can never disagree about which refusals are retryable.
-    pub(super) fn detail(self) -> &'static str {
+    pub(crate) fn detail(self) -> &'static str {
         match self {
             // The user-visible wording callers already route on; the change is
             // that its retryable meaning is now carried by the variant.
@@ -125,14 +125,14 @@ fn inbox_by(pool: &ReadPool, deadline: Instant) -> Result<Arc<Mutex<Inbox>>, Rea
         .map_err(ReadRefusal::from)
 }
 
-pub(super) fn inbox_typed(
+pub(crate) fn inbox_typed(
     pool: &ReadPool,
 ) -> Result<Arc<Mutex<Inbox>>, grapt_store::read_pool::ReadPoolError> {
     pool.checkout()
         .map(|read| Arc::new(Mutex::new(Inbox::from_read(read))))
 }
 
-pub(super) fn finish(inbox: Arc<Mutex<Inbox>>) -> Result<(), String> {
+pub(crate) fn finish(inbox: Arc<Mutex<Inbox>>) -> Result<(), String> {
     finish_typed(inbox).map_err(|error| match error {
         Finish::Pool(error) => error.to_string(),
         Finish::Retained(detail) => detail.to_owned(),
@@ -141,12 +141,12 @@ pub(super) fn finish(inbox: Arc<Mutex<Inbox>>) -> Result<(), String> {
 
 /// Why ending a finite read failed: the pool's own error, kept typed so a
 /// busy reader stays a capacity wait, or a projection that kept its snapshot.
-pub(super) enum Finish {
+pub(crate) enum Finish {
     Pool(grapt_store::read_pool::ReadPoolError),
     Retained(&'static str),
 }
 
-pub(super) fn finish_typed(inbox: Arc<Mutex<Inbox>>) -> Result<(), Finish> {
+pub(crate) fn finish_typed(inbox: Arc<Mutex<Inbox>>) -> Result<(), Finish> {
     let inbox = Arc::try_unwrap(inbox)
         .map_err(|_| Finish::Retained("read projection retained its snapshot"))?;
     inbox
@@ -165,7 +165,7 @@ pub(super) fn finish_typed(inbox: Arc<Mutex<Inbox>>) -> Result<(), Finish> {
 /// already failed. Recycling instead would risk handing an unrelated read a
 /// reader that cannot reach the database, which is the failure this prevents.
 /// A successful read still recycles through [`finish_typed`].
-pub(in crate::dogfood) fn discard(inbox: Arc<Mutex<Inbox>>) {
+pub(crate) fn discard(inbox: Arc<Mutex<Inbox>>) {
     if let Ok(inbox) = Arc::try_unwrap(inbox) {
         if let Ok(inbox) = inbox.into_inner() {
             inbox.discard_read();
@@ -174,7 +174,7 @@ pub(in crate::dogfood) fn discard(inbox: Arc<Mutex<Inbox>>) {
 }
 
 impl DogfoodApplication {
-    pub(super) fn read_projection<T: Send + 'static, E: Send + 'static>(
+    pub(crate) fn read_projection<T: Send + 'static, E: Send + 'static>(
         &self,
         project: impl FnOnce(&Self) -> Result<T, E> + Send + 'static,
         failed: fn(String) -> E,
@@ -248,7 +248,7 @@ impl DogfoodApplication {
 }
 
 impl DogfoodApplication {
-    pub(super) fn read_session(
+    pub(crate) fn read_session(
         &self,
         session: grapt_types::SessionId,
     ) -> ApplicationFuture<

@@ -4,7 +4,7 @@ use serde_json::Value;
 
 use crate::dogfood::catalog_config::{bounds, DOCUMENT_BYTES};
 
-pub(super) fn approval(
+pub(crate) fn approval(
     bytes: &[u8],
     location: &str,
     name: &str,
@@ -47,7 +47,7 @@ pub(super) fn approval(
     Ok(output.into_bytes())
 }
 
-pub(super) fn enabled(bytes: &[u8], name: &str, enabled: bool) -> Result<Vec<u8>, String> {
+pub(crate) fn enabled(bytes: &[u8], name: &str, enabled: bool) -> Result<Vec<u8>, String> {
     let document = grapt_config::decode(bytes, bounds()?).map_err(|error| error.to_string())?;
     let mcp = document
         .value()
@@ -101,7 +101,7 @@ pub(super) fn enabled(bytes: &[u8], name: &str, enabled: bool) -> Result<Vec<u8>
     Ok(output.into_bytes())
 }
 
-pub(super) fn server(
+pub(crate) fn server(
     bytes: &[u8],
     name: &str,
     replacement: Option<&Value>,
@@ -145,7 +145,7 @@ pub(super) fn server(
     Ok(output.into_bytes())
 }
 
-pub(in crate::dogfood) fn change(
+pub(crate) fn change(
     text: &mut String,
     object: &Spanned<ConfigValue>,
     path: &[&str],

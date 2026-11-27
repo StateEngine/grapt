@@ -6,7 +6,7 @@ use std::time::Duration;
 use super::retry::{Backoff, ROUND_BUDGET};
 use super::{next_read_ordinal, release_over_bound, retire, Declaration, McpRegistry, ServerEntry};
 
-pub(super) struct StartupSelection<'a> {
+pub(crate) struct StartupSelection<'a> {
     pub directory: &'a str,
     pub server: Option<&'a str>,
     pub human_wait: &'a grapt_mcp_client::HumanWait,
@@ -15,7 +15,7 @@ pub(super) struct StartupSelection<'a> {
 /// Refresh healthy connections and retry failed local starts. Dropping this
 /// future also drops its reservation tokens: the next refresh can proceed
 /// without an async destructor or a detached cleanup task.
-pub(super) async fn with_status<T>(
+pub(crate) async fn with_status<T>(
     registry: &McpRegistry,
     location: &str,
     directory: &str,
@@ -43,7 +43,7 @@ pub(super) async fn with_status<T>(
 
 /// A re-admitted call supplies its active clock and starts only its own server.
 #[expect(clippy::too_many_lines, reason = "legacy")]
-pub(super) async fn with_status_with_wait<T>(
+pub(crate) async fn with_status_with_wait<T>(
     registry: &McpRegistry,
     location: &str,
     declared: &BTreeMap<String, Declaration>,
@@ -378,7 +378,7 @@ impl Drop for NotifyOnDrop<'_> {
 /// Only an unsent call may enter recovery. Reserve the currently approved
 /// declaration through ordinary admission, within the original active call
 /// deadline. Return excluded human time so the caller does not charge it again.
-pub(super) async fn recover_queued(
+pub(crate) async fn recover_queued(
     registry: &McpRegistry,
     location: &str,
     server: &str,

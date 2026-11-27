@@ -13,7 +13,7 @@ const MAX_ARGUMENT_BYTES: usize = 64 * 1_024;
 const MAX_SHELL_EXPANSIONS: usize = 16;
 
 impl ProductPluginHost {
-    pub(super) fn session_command(
+    pub(crate) fn session_command(
         &self,
         application: &Arc<super::super::DogfoodApplication>,
         authorized: &Authorized<'_>,

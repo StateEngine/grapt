@@ -7,7 +7,7 @@ impl DogfoodApplication {
         clippy::too_many_arguments,
         reason = "typed synthetic admission coordinates"
     )]
-    pub(super) async fn submit_synthetic(
+    pub(crate) async fn submit_synthetic(
         &self,
         principal: SealedPrincipal,
         session: SessionId,
@@ -103,7 +103,7 @@ impl DogfoodApplication {
         Ok(response)
     }
 
-    pub(super) fn submit_prompt(
+    pub(crate) fn submit_prompt(
         &self,
         principal: SealedPrincipal,
         session_id: WireId<SessionId>,
@@ -114,7 +114,7 @@ impl DogfoodApplication {
 
     /// The operation's initial tool prompt owns this exact execution. Human
     /// followups use normal Session admission without settling that operation.
-    pub(super) fn submit_child_prompt(
+    pub(crate) fn submit_child_prompt(
         &self,
         principal: SealedPrincipal,
         session_id: WireId<SessionId>,
@@ -431,7 +431,7 @@ impl DogfoodApplication {
         reason = "one admitted execution custody transfer"
     )]
     #[expect(clippy::too_many_lines, reason = "legacy")]
-    pub(super) fn schedule_admitted(
+    pub(in crate::dogfood) fn schedule_admitted(
         &self,
         principal: SealedPrincipal,
         session: SessionId,

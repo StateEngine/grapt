@@ -9,10 +9,10 @@ use serde_json::{json, Value};
 
 use super::DogfoodApplication;
 mod index;
-pub(super) use index::recovery_point;
+pub(crate) use index::recovery_point;
 mod omitted;
 mod page_bytes;
-pub(super) use omitted::OmittedItems;
+pub(crate) use omitted::OmittedItems;
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq)]
 #[serde(rename_all = "lowercase")]
@@ -37,14 +37,14 @@ struct Cursor {
 }
 
 #[derive(Debug)]
-pub(super) struct MessagePage {
+pub(crate) struct MessagePage {
     limit: usize,
     order: Order,
     cursor: Option<Cursor>,
 }
 
 /// Resume older history directly from a trusted compaction recovery anchor.
-pub(super) fn older_cursor(message: &MessageId) -> Result<String, String> {
+pub(crate) fn older_cursor(message: &MessageId) -> Result<String, String> {
     let id = WireId::parse(message.as_str().to_owned()).ok_or("invalid recovery identity")?;
     serde_json::to_vec(&Cursor {
         id,
@@ -68,7 +68,7 @@ fn cursor_error(message: &str) -> SessionMessagesApplicationError {
 
 /// Why a history page could not be produced.
 #[derive(Debug)]
-pub(super) enum PageRefusal {
+pub(crate) enum PageRefusal {
     /// The cursor is well formed but names no message in this Session's
     /// history: it belongs to another Session or was never issued here. An
     /// empty page would read as "no further history", so it refuses instead.
@@ -87,7 +87,7 @@ impl From<String> for PageRefusal {
 }
 
 impl PageRefusal {
-    pub(super) fn into_application(self) -> SessionMessagesApplicationError {
+    pub(crate) fn into_application(self) -> SessionMessagesApplicationError {
         match self {
             Self::StaleCursor => cursor_error(
                 "Cursor does not identify a message in this Session; restart from the first page",
@@ -103,7 +103,7 @@ impl PageRefusal {
 }
 
 impl MessagePage {
-    pub(super) fn parse(
+    pub(crate) fn parse(
         query: MessageListQueryDto,
     ) -> Result<Self, SessionMessagesApplicationError> {
         let input = serde_json::to_value(query).map_err(|error| {
@@ -199,7 +199,7 @@ impl MessagePage {
 /// One public history row: where it sits, its wire id, and how it renders.
 /// A page renders only the rows it selects, so a poll of a long Session
 /// costs its page, not its history.
-pub(super) struct IndexedRow {
+pub(crate) struct IndexedRow {
     seq: u64,
     id: String,
     source: RowSource,
@@ -213,7 +213,7 @@ enum RowSource {
 }
 
 impl IndexedRow {
-    pub(super) fn rendered(seq: u64, id: String, raw: String) -> Self {
+    pub(crate) fn rendered(seq: u64, id: String, raw: String) -> Self {
         Self {
             seq,
             id,
@@ -222,7 +222,7 @@ impl IndexedRow {
     }
 
     /// This row's durable coordinate, which starts the range its content covers.
-    pub(super) fn seq(&self) -> u64 {
+    pub(crate) fn seq(&self) -> u64 {
         self.seq
     }
 
@@ -405,7 +405,7 @@ fn is_terminal_printable(ch: char) -> bool {
         && code != 0x2029
 }
 
-pub(super) fn display_safe(raw: &str, raw_cap_bytes: usize) -> String {
+pub(crate) fn display_safe(raw: &str, raw_cap_bytes: usize) -> String {
     let mut end = raw.len().min(raw_cap_bytes);
     while !raw.is_char_boundary(end) {
         end -= 1;
@@ -469,7 +469,7 @@ fn unreadable_message_row(id: &str, seq: u64) -> Result<String, String> {
     serde_json::to_string(&message).map_err(|error| error.to_string())
 }
 
-pub(super) fn messages_get(
+pub(crate) fn messages_get(
     application: &DogfoodApplication,
     session: &SessionId,
     query: MessageListQueryDto,
@@ -491,7 +491,7 @@ pub(super) fn messages_get(
     })
 }
 
-pub(super) fn message_get(
+pub(crate) fn message_get(
     application: &DogfoodApplication,
     session: &SessionId,
     message: &MessageId,
@@ -540,7 +540,7 @@ impl DogfoodApplication {
     /// pipeline: strict parsers touch every row after this point.
     /// The frozen string wire form is produced exactly once, by the
     /// final DTO serialization.
-    pub(super) fn history_json(
+    pub(crate) fn history_json(
         &self,
         session: &SessionId,
         page: &MessagePage,
@@ -553,7 +553,7 @@ impl DogfoodApplication {
 
     /// The same page as [`Self::history_json`], typed for the session
     /// snapshot: the rows and cursor its bound already decided, never re-read.
-    pub(super) fn history_typed(
+    pub(crate) fn history_typed(
         &self,
         session: &SessionId,
         page: &MessagePage,
@@ -622,7 +622,7 @@ impl DogfoodApplication {
         })
     }
 
-    pub(super) fn message_json(
+    pub(crate) fn message_json(
         &self,
         session: &SessionId,
         message: &MessageId,
@@ -640,7 +640,7 @@ impl DogfoodApplication {
 
     /// Visit public history in bounded pages. Consumers retain their own total
     /// item/byte limits instead of materializing a lifetime transcript first.
-    pub(super) fn visit_history_rows(
+    pub(crate) fn visit_history_rows(
         &self,
         session: &SessionId,
         mut visit: impl FnMut(String) -> Result<(), String>,
@@ -739,7 +739,7 @@ impl DogfoodApplication {
         ))
     }
 
-    pub(super) fn mint_execution(&self) -> Result<ExecutionId, String> {
+    pub(crate) fn mint_execution(&self) -> Result<ExecutionId, String> {
         ExecutionId::new(format!("exe_{}", self.ids.mint().as_str()))
             .ok_or_else(|| "execution identity was invalid".to_owned())
     }

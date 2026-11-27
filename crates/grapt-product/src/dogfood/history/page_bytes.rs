@@ -53,7 +53,7 @@ impl MessagePage {
         }
     }
 
-    pub(super) fn render(
+    pub(crate) fn render(
         &self,
         rows: &[IndexedRow],
         render: impl FnMut(&[IndexedRow]) -> Result<Vec<String>, String>,
@@ -63,7 +63,7 @@ impl MessagePage {
 
     /// The same page as [`Self::render`], typed: the kept rows' DTOs and a
     /// cursor built from the same anchors, with nothing re-decoded.
-    pub(super) fn render_typed(
+    pub(crate) fn render_typed(
         &self,
         rows: &[IndexedRow],
         render: impl FnMut(&[IndexedRow]) -> Result<Vec<String>, String>,
@@ -156,7 +156,7 @@ impl MessagePage {
 /// Only decode failures degrade. Render failures, renderer invariant
 /// violations and transient read errors keep their by-name page refusal, as
 /// none says the stored item is permanently unreadable.
-pub(super) fn readable_row(
+pub(crate) fn readable_row(
     row: &IndexedRow,
     rendered: Result<Vec<String>, String>,
 ) -> Result<KeptRow, String> {

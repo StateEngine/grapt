@@ -7,16 +7,16 @@ use std::time::Duration;
 
 /// Maximum active time for a recovery round; startup human scopes are excluded
 /// and separately share a finite ten-minute allowance.
-pub(super) const ROUND_BUDGET: Duration = Duration::from_secs(30);
+pub(crate) const ROUND_BUDGET: Duration = Duration::from_secs(30);
 
 #[derive(Debug, Clone, Copy)]
-pub(super) struct Backoff {
+pub(crate) struct Backoff {
     failures: u8,
     failed_at: i64,
 }
 
 impl Backoff {
-    pub(super) fn failed(previous: Option<Self>, now: i64) -> Self {
+    pub(crate) fn failed(previous: Option<Self>, now: i64) -> Self {
         let failures = previous.map_or(1, |state| state.failures.saturating_add(1));
         Self {
             failures,
@@ -24,7 +24,7 @@ impl Backoff {
         }
     }
 
-    pub(super) fn remaining(self, now: i64) -> Duration {
+    pub(crate) fn remaining(self, now: i64) -> Duration {
         let seconds = match self.failures {
             1 => 1,
             2 => 2,

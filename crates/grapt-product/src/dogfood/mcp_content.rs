@@ -9,7 +9,7 @@ use serde_json::{json, Value};
 
 use grapt_mcp_host::user_content;
 
-pub(super) fn respond(
+pub(crate) fn respond(
     application: DogfoodApplication,
     server: String,
     query: ProjectCurrentLocationQueryDto,
@@ -111,7 +111,7 @@ pub(super) fn respond(
     })
 }
 
-pub(super) async fn resource_catalog(
+pub(crate) async fn resource_catalog(
     server: &super::mcp::content::ContentServer,
 ) -> Result<(Vec<Value>, Vec<Value>), String> {
     let mut resources = server.catalog(CatalogKind::Resources).await?;
@@ -122,7 +122,7 @@ pub(super) async fn resource_catalog(
     Ok((resources, templates))
 }
 
-pub(super) fn all_resources(
+pub(crate) fn all_resources(
     application: DogfoodApplication,
     query: ProjectCurrentLocationQueryDto,
 ) -> ApplicationFuture<McpResourcesResponseDto, InvalidRequestErrorDto> {

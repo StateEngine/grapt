@@ -6,14 +6,14 @@ use grapt_types::{ExecutionId, ProviderId, SessionId};
 use std::sync::Arc;
 
 #[derive(Clone, Debug)]
-pub(in crate::dogfood) struct RetryFeedback {
+pub(crate) struct RetryFeedback {
     active: Arc<LiveActiveExecutions>,
     session: SessionId,
     execution: ExecutionId,
     provider: ProviderId,
 }
 /// Advisory ownership follows the compaction future, including cancellation.
-pub(in crate::dogfood) struct CompactingGuard(RetryFeedback);
+pub(crate) struct CompactingGuard(RetryFeedback);
 impl Drop for CompactingGuard {
     fn drop(&mut self) {
         self.0
@@ -22,15 +22,12 @@ impl Drop for CompactingGuard {
     }
 }
 impl RetryFeedback {
-    pub(in crate::dogfood) fn attach_input_waits(
-        &self,
-        waits: Arc<crate::dogfood::human_input::Waits>,
-    ) {
+    pub(crate) fn attach_input_waits(&self, waits: Arc<crate::dogfood::human_input::Waits>) {
         self.active
             .attach_input_waits(&self.session, &self.execution, waits);
     }
 
-    pub(in crate::dogfood) fn input_changed(&self) {
+    pub(crate) fn input_changed(&self) {
         self.active.record_state(
             &self.session,
             &self.execution,
@@ -38,12 +35,12 @@ impl RetryFeedback {
         );
     }
 
-    pub(in crate::dogfood) fn compacting(&self) -> CompactingGuard {
+    pub(crate) fn compacting(&self) -> CompactingGuard {
         self.active.compacting(&self.session, &self.execution, true);
         CompactingGuard(self.clone())
     }
 
-    pub(in crate::dogfood) fn new(
+    pub(crate) fn new(
         active: Arc<LiveActiveExecutions>,
         session: SessionId,
         execution: ExecutionId,
@@ -56,7 +53,7 @@ impl RetryFeedback {
             provider,
         }
     }
-    pub(in crate::dogfood) fn provider_slot(&self, position: Option<usize>) {
+    pub(crate) fn provider_slot(&self, position: Option<usize>) {
         let Some(emitter) = self.active.status_emitter() else {
             return;
         };
@@ -71,7 +68,7 @@ impl RetryFeedback {
         self.active.retrying(&self.session, &self.execution, status);
     }
 
-    pub(in crate::dogfood) fn observe(&self, notice: Option<RetryNotice>) {
+    pub(crate) fn observe(&self, notice: Option<RetryNotice>) {
         let Some(emitter) = self.active.status_emitter() else {
             return;
         };

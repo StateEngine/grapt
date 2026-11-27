@@ -25,7 +25,7 @@ const MAX_ERROR_BYTES: usize = 4 * 1_024;
 const MAX_CREDENTIAL_BYTES: usize = 16 * 1_024;
 
 #[derive(Debug, Default)]
-pub(super) struct IntegrationRuntime {
+pub(crate) struct IntegrationRuntime {
     oauth: Mutex<BTreeMap<String, OauthAttempt>>,
     commands: Arc<Mutex<BTreeMap<String, CommandAttempt>>>,
 }
@@ -156,7 +156,7 @@ fn owned_by<'a>(
 }
 
 impl IntegrationRuntime {
-    pub(super) fn generation_closed(&self, generation: PluginGenerationId) {
+    pub(crate) fn generation_closed(&self, generation: PluginGenerationId) {
         lock(&self.oauth).retain(|_, attempt| attempt.generation != generation);
         lock(&self.commands).retain(|_, attempt| {
             if attempt.generation != generation {
@@ -171,7 +171,7 @@ impl IntegrationRuntime {
 }
 
 impl ProductPluginHost {
-    pub(super) fn integration_credentials(
+    pub(crate) fn integration_credentials(
         &self,
         operation: HostOperation,
         application: &super::super::DogfoodApplication,
@@ -248,7 +248,7 @@ impl ProductPluginHost {
         }
     }
 
-    pub(super) fn integration_oauth(
+    pub(crate) fn integration_oauth(
         &self,
         context: &PluginHostContext,
         operation: HostOperation,
@@ -533,7 +533,7 @@ impl ProductPluginHost {
         Ok(value)
     }
 
-    pub(super) fn integration_command(
+    pub(crate) fn integration_command(
         &self,
         context: &PluginHostContext,
         operation: HostOperation,

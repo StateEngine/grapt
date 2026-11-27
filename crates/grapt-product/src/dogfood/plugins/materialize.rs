@@ -96,7 +96,7 @@ fn no_refs(_value: &Value) -> CallbackRefs {
     CallbackRefs::new()
 }
 
-pub(super) fn materialize_websearch(
+pub(crate) fn materialize_websearch(
     candidate: &CandidateGeneration,
 ) -> Result<WebSearchRegistry, String> {
     const MAX_PROVIDERS: usize = 32;
@@ -161,7 +161,7 @@ pub(super) fn materialize_websearch(
     Ok(WebSearchRegistry { providers, default })
 }
 
-pub(super) fn materialize_integrations(
+pub(crate) fn materialize_integrations(
     candidate: &CandidateGeneration,
 ) -> Result<IntegrationRegistry, String> {
     const MAX_METHODS: usize = 64;
@@ -262,7 +262,7 @@ pub(super) fn materialize_integrations(
     Ok(IntegrationRegistry { methods })
 }
 
-pub(super) fn materialize_commands(
+pub(crate) fn materialize_commands(
     candidate: &CandidateGeneration,
     value: Value,
 ) -> Result<CommandRegistry, String> {
@@ -315,7 +315,7 @@ fn bounded_json_string(value: &Value, field: &'static str, bound: usize) -> Resu
         .ok_or_else(|| format!("{field} must contain 1..={bound} UTF-8 bytes"))
 }
 
-pub(super) fn runtime(service_root: &Path) -> Result<BridgeRuntime, String> {
+pub(crate) fn runtime(service_root: &Path) -> Result<BridgeRuntime, String> {
     let manifest = environment_path("GRAPT_PLUGIN_RUNTIME_MANIFEST", legacy_names::LEGACY_PLUGIN_RUNTIME_MANIFEST)?
         .or_else(packaged_runtime_manifest)
         .ok_or_else(|| {

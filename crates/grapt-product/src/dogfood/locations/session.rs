@@ -30,12 +30,12 @@ const MAX_SESSIONS: usize = 4_096;
 type Remembered = (String, Option<PathBuf>, Arc<ResolvedLocation>);
 
 #[derive(Debug, Default)]
-pub(in crate::dogfood) struct SessionLocations(Mutex<HashMap<SessionId, Remembered>>);
+pub(crate) struct SessionLocations(Mutex<HashMap<SessionId, Remembered>>);
 
 impl SessionLocations {
     /// `session`'s location in `directory`: the one already resolved there
     /// while the directory is in the same repository, or a fresh discovery.
-    pub(in crate::dogfood) async fn resolve(
+    pub(crate) async fn resolve(
         &self,
         session: &SessionId,
         directory: &str,

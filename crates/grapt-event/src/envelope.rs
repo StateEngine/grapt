@@ -629,6 +629,4 @@ impl<'a> Reader<'a> {
 }
 
 #[cfg(test)]
-mod tests {
-    include!("envelope/tests.rs");
-}
+mod tests;

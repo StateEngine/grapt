@@ -5,7 +5,7 @@ use grapt_types::SessionId;
 use serde_json::{json, Value};
 
 /// Keep metadata storage failures typed while refusing structurally incomplete carry.
-pub(super) fn lookup(
+pub(crate) fn lookup(
     application: &DogfoodApplication,
     session: &SessionId,
 ) -> Result<grapt_api::u3a::SessionResponseDto, grapt_api::u3a::SessionLookupApplicationError> {
@@ -29,7 +29,7 @@ pub(super) fn lookup(
 }
 
 impl DogfoodApplication {
-    pub(super) fn active_session_response(
+    pub(crate) fn active_session_response(
         &self,
     ) -> Result<grapt_api::u3a::SessionActiveResponseDto, String> {
         let inbox = self.lock_inbox();
@@ -48,7 +48,10 @@ impl DogfoodApplication {
         super::decode(json!({"data": data}))
     }
 
-    pub(super) fn session_metrics(&self, session: &SessionId) -> Result<SessionMetrics, String> {
+    pub(in crate::dogfood) fn session_metrics(
+        &self,
+        session: &SessionId,
+    ) -> Result<SessionMetrics, String> {
         use grapt_session::history::HistoryReadError;
         let record = self.get_record(session)?;
         // A metrics shortfall never decides whether the row exists: past the
@@ -97,7 +100,7 @@ impl DogfoodApplication {
         })
     }
 
-    pub(super) fn session_info(
+    pub(crate) fn session_info(
         &self,
         record: &grapt_session::SessionRecord,
     ) -> Result<Value, String> {
@@ -157,7 +160,7 @@ impl DogfoodApplication {
 }
 
 /// Shared row metadata; list reads deliberately do not project lifetime totals.
-pub(super) fn metadata(
+pub(crate) fn metadata(
     record: &grapt_session::SessionRecord,
     updated_ms: i64,
 ) -> Result<Value, String> {

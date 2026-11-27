@@ -4,7 +4,7 @@ use crate::dogfood::human_input;
 use grapt_service_state::{Action, Change, Kind, Reason, Snapshot, State};
 use grapt_types::{ExecutionId, SessionId};
 
-pub(in crate::dogfood) enum ConfirmationError {
+pub(crate) enum ConfirmationError {
     OwnerChanged,
     OwnerGone,
     CommitUnavailable,
@@ -12,7 +12,7 @@ pub(in crate::dogfood) enum ConfirmationError {
 
 /// A single registry observation; never retained as a second activity map.
 #[derive(Clone)]
-pub(in crate::dogfood) struct StatusInputs {
+pub(crate) struct StatusInputs {
     pub execution: ExecutionId,
     pub retry: Option<grapt_api::u3a::SessionStatusInfo>,
     pub phase: Option<grapt_api::u3a::SessionStatusPhase>,
@@ -24,7 +24,7 @@ pub(in crate::dogfood) struct StatusInputs {
 }
 
 impl LiveActiveExecutions {
-    pub(in crate::dogfood) fn admission_paused(
+    pub(crate) fn admission_paused(
         &self,
         session: &SessionId,
         execution: &ExecutionId,
@@ -71,7 +71,7 @@ impl LiveActiveExecutions {
         }
     }
 
-    pub(in crate::dogfood) fn observe_release(
+    pub(crate) fn observe_release(
         &self,
         session: &SessionId,
         execution: &ExecutionId,
@@ -105,7 +105,7 @@ impl LiveActiveExecutions {
         }
     }
 
-    pub(in crate::dogfood) fn validate_state(
+    pub(crate) fn validate_state(
         &self,
         session: &SessionId,
         snapshot: &Snapshot,
@@ -113,7 +113,7 @@ impl LiveActiveExecutions {
         confirm(self.status_inputs(session, None).as_ref(), snapshot)
     }
 
-    pub(in crate::dogfood) fn status_presentation(
+    pub(crate) fn status_presentation(
         &self,
         session: &SessionId,
         snapshot: &Snapshot,
@@ -135,7 +135,7 @@ impl LiveActiveExecutions {
 
     /// No registry guard survives the call into the journal; the publisher
     /// captures the current owner only after taking the store's lock.
-    pub(in crate::dogfood) fn record_state(
+    pub(crate) fn record_state(
         &self,
         session: &SessionId,
         execution: &ExecutionId,

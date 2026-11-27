@@ -40,16 +40,16 @@ struct Book {
     hint: Option<(std::sync::Weak<super::notifications::Emitter>, String)>,
 }
 #[derive(Debug, Default)]
-pub(in crate::dogfood) struct State(Mutex<Book>);
+pub(crate) struct State(Mutex<Book>);
 impl State {
     fn lock(&self) -> std::sync::MutexGuard<'_, Book> {
         self.0.lock().unwrap_or_else(|error| error.into_inner())
     }
-    pub(super) fn hint(&self, emitter: &Arc<super::notifications::Emitter>, key: &str) {
+    pub(crate) fn hint(&self, emitter: &Arc<super::notifications::Emitter>, key: &str) {
         self.lock().hint = Some((Arc::downgrade(emitter), key.into()));
     }
     /// A cancelled acquisition rolls back only the interest it introduced.
-    pub(super) fn reserve(
+    pub(crate) fn reserve(
         self: &Arc<Self>,
         session: &SessionId,
         uri: &str,
@@ -96,15 +96,15 @@ impl State {
             token: owner.token.clone(),
         })
     }
-    pub(super) fn subscribed(&self, uri: &str) -> bool {
+    pub(crate) fn subscribed(&self, uri: &str) -> bool {
         self.lock().resources.get(uri).is_some_and(|row| row.wire)
     }
-    pub(super) fn confirm(&self, uri: &str) {
+    pub(crate) fn confirm(&self, uri: &str) {
         if let Some(row) = self.lock().resources.get_mut(uri) {
             row.wire = true;
         }
     }
-    pub(super) fn revision(&self, uri: &str) -> u64 {
+    pub(crate) fn revision(&self, uri: &str) -> u64 {
         self.lock().resources.get(uri).map_or(0, |row| row.revision)
     }
     fn read(&self, session: &SessionId, uri: &str, token: &OwnerToken, revision: u64) {
@@ -139,7 +139,7 @@ impl State {
             .retain(|_, row| row.wire || !row.owners.is_empty());
         present
     }
-    pub(super) fn release(&self, session: &SessionId, uri: &str) {
+    pub(crate) fn release(&self, session: &SessionId, uri: &str) {
         let mut book = self.lock();
         if let Some(row) = book.resources.get_mut(uri) {
             row.owners.remove(session);
@@ -147,7 +147,7 @@ impl State {
         book.resources
             .retain(|_, row| row.wire || !row.owners.is_empty());
     }
-    pub(super) fn end(&self, session: Option<&SessionId>) {
+    pub(crate) fn end(&self, session: Option<&SessionId>) {
         let mut book = self.lock();
         if session.is_none() {
             book.closed = true;
@@ -168,17 +168,17 @@ impl State {
             emit(hint);
         }
     }
-    pub(super) fn pending(&self) -> Option<String> {
+    pub(crate) fn pending(&self) -> Option<String> {
         self.lock()
             .resources
             .iter()
             .find(|(_, row)| row.wire && row.owners.is_empty())
             .map(|(uri, _)| uri.clone())
     }
-    pub(super) fn removed(&self, uri: &str) {
+    pub(crate) fn removed(&self, uri: &str) {
         self.lock().resources.remove(uri);
     }
-    pub(super) fn close(&self) {
+    pub(crate) fn close(&self) {
         let mut book = self.lock();
         book.closed = true;
         let changed = !book.resources.is_empty();
@@ -189,7 +189,7 @@ impl State {
             emit(hint);
         }
     }
-    pub(super) fn notify(&self, value: &Value) -> bool {
+    pub(crate) fn notify(&self, value: &Value) -> bool {
         let Some(uri) = value["params"]["uri"].as_str() else {
             return false;
         };
@@ -210,14 +210,14 @@ impl State {
         }
         was_clean && !row.owners.is_empty()
     }
-    pub(super) fn rows(&self, session: &SessionId, server: &str) -> Vec<Value> {
+    pub(crate) fn rows(&self, session: &SessionId, server: &str) -> Vec<Value> {
         self.lock().resources.iter().filter_map(|(uri, row)| {
             row.owners.get(session).filter(|owner| owner.retained).map(|owner| json!({"server":server,"uri":uri,"updated":owner.baseline != row.revision}))
         }).collect()
     }
 }
 
-pub(in crate::dogfood) struct Interest {
+pub(crate) struct Interest {
     state: Arc<State>,
     session: SessionId,
     uri: String,
@@ -225,11 +225,11 @@ pub(in crate::dogfood) struct Interest {
     token: OwnerToken,
 }
 impl Interest {
-    pub(in crate::dogfood) fn read(&self, revision: u64) {
+    pub(crate) fn read(&self, revision: u64) {
         self.state
             .read(&self.session, &self.uri, &self.token, revision);
     }
-    pub(in crate::dogfood) fn keep(mut self) -> Result<(), String> {
+    pub(crate) fn keep(mut self) -> Result<(), String> {
         let present = self
             .state
             .settle(&self.session, &self.uri, &self.token, true);
@@ -257,7 +257,7 @@ fn emit(hint: Option<(std::sync::Weak<super::notifications::Emitter>, String)>) 
     }
 }
 impl McpRegistry {
-    pub(super) fn track_resources(&self, state: &Arc<State>) {
+    pub(crate) fn track_resources(&self, state: &Arc<State>) {
         let mut states = self
             .resource_states
             .lock()
@@ -272,7 +272,7 @@ impl McpRegistry {
         // Every state belongs to one of the registry's bounded live connections.
         states.push(Arc::downgrade(state));
     }
-    pub(in crate::dogfood) fn end_resource_subscriptions(&self, session: Option<&SessionId>) {
+    pub(crate) fn end_resource_subscriptions(&self, session: Option<&SessionId>) {
         let mut states = self
             .resource_states
             .lock()
@@ -285,7 +285,7 @@ impl McpRegistry {
             true
         });
     }
-    pub(in crate::dogfood) async fn close_resource_subscriptions(&self) -> Result<(), String> {
+    pub(crate) async fn close_resource_subscriptions(&self) -> Result<(), String> {
         self.resources_closing
             .store(true, std::sync::atomic::Ordering::Release);
         self.end_resource_subscriptions(None);
@@ -308,7 +308,7 @@ impl McpRegistry {
         .map_err(|_| "MCP resource unsubscribe cleanup exceeded five seconds".into())
     }
 
-    pub(in crate::dogfood) async fn resource_subscriptions(
+    pub(crate) async fn resource_subscriptions(
         &self,
         key: &str,
         session: Option<&SessionId>,
@@ -337,7 +337,7 @@ impl McpRegistry {
 }
 
 /// Called only while owning the held channel's existing I/O mutex.
-pub(super) async fn drain_one(
+pub(crate) async fn drain_one(
     held: &super::HeldIo<super::LiveIo>,
     io: &mut super::LiveIo,
 ) -> Result<(), super::ChannelError> {

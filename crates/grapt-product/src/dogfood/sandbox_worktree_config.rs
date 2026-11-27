@@ -5,7 +5,7 @@
 use super::*;
 use std::path::PathBuf;
 
-pub(super) const WARNING: &str = "Windows sandbox Git worktree config warning: extensions.worktreeConfig=true needs a config.worktree file, but it is missing. The sandbox will not create it and Git may fail with Permission denied. Create an empty config.worktree outside the sandbox yourself (find its path with git rev-parse --git-path config.worktree), or preview /sandbox worktree-config and explicitly consent with /sandbox worktree-config create confirm. The deny policy is unchanged.";
+pub(crate) const WARNING: &str = "Windows sandbox Git worktree config warning: extensions.worktreeConfig=true needs a config.worktree file, but it is missing. The sandbox will not create it and Git may fail with Permission denied. Create an empty config.worktree outside the sandbox yourself (find its path with git rev-parse --git-path config.worktree), or preview /sandbox worktree-config and explicitly consent with /sandbox worktree-config create confirm. The deny policy is unchanged.";
 
 /// Ask Git, rather than parsing config syntax, includes, booleans or worktree
 /// pointers ourselves. No hooks, shell source, network or mutating Git command.
@@ -56,7 +56,7 @@ async fn missing(root: &Path) -> Result<Option<PathBuf>, String> {
     }
 }
 
-pub(super) fn record(
+pub(crate) fn record(
     inbox: &Mutex<Inbox>,
     clock: &dyn ClockAuthority,
     ids: &dyn IdAuthority,
@@ -84,7 +84,7 @@ pub(super) fn record(
     Ok(())
 }
 
-pub(super) async fn observe(application: &DogfoodApplication, session: &SessionId, root: &Path) {
+pub(crate) async fn observe(application: &DogfoodApplication, session: &SessionId, root: &Path) {
     let result = inspect(root, Path::new(&application.catalog_snapshot().directory)).await;
     let warning = match result {
         Ok(Some(_)) => Some(WARNING.to_owned()),
@@ -109,7 +109,7 @@ pub(super) async fn observe(application: &DogfoodApplication, session: &SessionI
     }
 }
 
-pub(in crate::dogfood) async fn before_command(
+pub(crate) async fn before_command(
     root: &Path,
     inbox: &Mutex<Inbox>,
     clock: &(dyn ClockAuthority + Send + Sync),
@@ -159,7 +159,7 @@ fn response(
         .map_err(|error| SessionLookupApplicationError::InvalidRequest(invalid(error)))
 }
 
-pub(super) fn get(
+pub(crate) fn get(
     application: DogfoodApplication,
     session: SessionId,
 ) -> ApplicationFuture<
@@ -214,7 +214,7 @@ async fn create_missing(
     Ok(())
 }
 
-pub(super) fn create(
+pub(crate) fn create(
     application: DogfoodApplication,
     session: SessionId,
     request: grapt_api::u3a::SandboxWorktreeConfigRequestDto,

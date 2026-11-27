@@ -739,7 +739,11 @@ impl LiveExecutor {
     }
 }
 
-include!("execution/helpers.rs");
+mod helpers;
+pub(super) use helpers::next_step;
+use helpers::{
+    dto_string, durable_ref, finite, promoted_text, wire_event, wire_message, wire_session,
+};
 
 #[cfg(test)]
 #[path = "execution/announce_tests.rs"]
