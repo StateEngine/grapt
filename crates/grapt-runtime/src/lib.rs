@@ -99,7 +99,8 @@ pub use provider_source::{
 };
 pub use recovery::{
     recover_process_loss_attempts, ProcessLossRecoveryError, ProcessLossRecoveryReport,
-    RecoveryWarning, MAX_RECOVERY_BYTES, MAX_RECOVERY_ROWS, MAX_RECOVERY_SESSIONS,
+    RecoveryWarning, MAX_RECOVERY_WARNINGS, RECOVERY_PAGE_BYTES, RECOVERY_PAGE_ROWS,
+    RECOVERY_PAGE_SESSIONS,
 };
 pub use residency::{Cancellation, DrainResidency, Residency};
 pub use session_ports::{PromptAdmission, SessionPortError, SessionPorts};

@@ -1,10 +1,15 @@
-//! Bounded process-start recovery for durable Physical Attempts.
+//! Paged process-start recovery for durable Physical Attempts.
 //!
 //! A send-permitted receipt without a terminal is ambiguous after process
 //! loss. Startup settles it to the exact preallocated `ProcessLoss` terminal
 //! and never re-enters a provider boundary. Settled receipts are reclaimed
 //! only after the store proves their terminal; unreadable receipts move to the
 //! durable quarantine before the cursor advances.
+//!
+//! The pass reads in pages, each bounded in Sessions, rows and bytes, and
+//! starts the next page where the last stopped, until every receipt has been
+//! visited once. Each receipt and Session is visited at most once, so the pass
+//! ends however many a crash left behind.
 
 use grapt_event::AggregateId;
 use grapt_store::{
@@ -14,9 +19,14 @@ use grapt_types::{ClockAuthority, PhysicalAttemptId, SessionId, SettledMarker};
 
 use crate::physical_attempt_owner::settle_process_loss_recovery;
 
-pub const MAX_RECOVERY_SESSIONS: usize = 64;
-pub const MAX_RECOVERY_ROWS: usize = 128;
-pub const MAX_RECOVERY_BYTES: usize = 256 * 1024;
+/// Sessions one page visits.
+pub const RECOVERY_PAGE_SESSIONS: usize = 64;
+/// Receipt rows one page reads.
+pub const RECOVERY_PAGE_ROWS: usize = 128;
+/// Receipt bytes one page materializes.
+pub const RECOVERY_PAGE_BYTES: usize = 256 * 1024;
+/// Warnings kept in full; later ones are only counted.
+pub const MAX_RECOVERY_WARNINGS: usize = 64;
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ProcessLossRecoveryReport {
@@ -25,13 +35,21 @@ pub struct ProcessLossRecoveryReport {
     pub reclaimed: usize,
     pub quarantined: usize,
     pub bytes_read: usize,
-    /// Items this pass skipped, each with its reason. A skipped receipt stays
-    /// durable and unsettled, so nothing is replayed and the next start sees
-    /// it again; it never stops the server from starting.
+    /// Pages the pass read; zero when no Session had a receipt.
+    pub pages: usize,
+    /// Sessions that had at least one receipt, in identity order: the ones a
+    /// crash interrupted mid-attempt.
+    pub touched: Vec<SessionId>,
+    /// Items this pass skipped, each with its reason, up to
+    /// [`MAX_RECOVERY_WARNINGS`]. A skipped receipt stays durable and
+    /// unsettled, so nothing is replayed and the next start sees it again; it
+    /// never stops the server from starting.
     pub warnings: Vec<RecoveryWarning>,
+    /// Warnings past the kept ones.
+    pub warnings_omitted: usize,
 }
 
-/// One item a recovery pass could not settle, or a bound that ended the pass.
+/// One item a recovery pass could not settle.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RecoveryWarning {
     pub session: Option<SessionId>,
@@ -58,47 +76,40 @@ pub enum ProcessLossRecoveryError {
     #[error("attempt recovery refused: {0}")]
     Attempt(String),
     #[error(
-        "attempt recovery exceeded its bounded pass ({sessions} sessions, {rows} rows, {bytes} bytes)"
-    )]
-    Bound {
-        sessions: usize,
-        rows: usize,
-        bytes: usize,
-    },
-    #[error(
-        "attempt recovery next row declares {declared} bytes with only {remaining} bytes left"
+        "attempt recovery row declares {declared} bytes, more than a whole page's {remaining}"
     )]
     ByteBudget { declared: usize, remaining: usize },
 }
 
-/// Reconcile every receipt that fits one bounded startup pass.
+/// Reconcile every receipt, page by page.
 ///
 /// This function has no provider, opener, or retry handle in its signature.
 /// Consequently the process-loss path cannot duplicate the external call it
 /// is conservatively settling.
 ///
 /// A receipt or Session that cannot be settled is skipped with a warning in
-/// the report and left durable for the next start; a bound ends the pass the
-/// same way. The database itself failing (read-only, missing schema,
-/// unreadable) is an error, as is a failure to enumerate Sessions at all.
+/// the report and left durable for the next start. The database itself
+/// failing (read-only, missing schema, unreadable) is an error, as is a
+/// failure to enumerate Sessions at all.
 pub fn recover_process_loss_attempts(
     store: &mut EventStore,
     clock: &dyn ClockAuthority,
     ceiling: AttemptRecordCeiling,
 ) -> Result<ProcessLossRecoveryReport, ProcessLossRecoveryError> {
     let mut report = ProcessLossRecoveryReport::default();
+    let mut page = Page::default();
     let mut after_session: Option<SessionId> = None;
-    let mut rows = 0usize;
 
     loop {
         let Some(session) = store.next_attempt_recovery_session(after_session.as_ref())? else {
             return Ok(report);
         };
-        if report.sessions == MAX_RECOVERY_SESSIONS {
-            let reason = bound(report.sessions, rows, report.bytes_read).to_string();
-            report.warn(None, None, reason);
-            return Ok(report);
+        if report.pages == 0 {
+            report.pages = 1;
+        } else if page.sessions == RECOVERY_PAGE_SESSIONS {
+            page.next(&mut report);
         }
+        page.sessions = page.sessions.saturating_add(1);
         report.sessions = report.sessions.saturating_add(1);
         if let Err(error) = store.elect_writer(&AggregateId::Session(session.clone())) {
             if error.is_storage_failure() {
@@ -112,10 +123,7 @@ pub fn recover_process_loss_attempts(
             after_session = Some(session);
             continue;
         }
-        if recover_session(store, clock, ceiling, &session, &mut rows, &mut report)? == Pass::Ended
-        {
-            return Ok(report);
-        }
+        recover_session(store, clock, ceiling, &session, &mut page, &mut report)?;
         after_session = Some(session);
     }
 }
@@ -126,10 +134,28 @@ impl ProcessLossRecoveryError {
     }
 }
 
-#[derive(Debug, PartialEq, Eq)]
-enum Pass {
-    Continue,
-    Ended,
+/// What the current page has spent.
+#[derive(Debug, Default)]
+struct Page {
+    sessions: usize,
+    rows: usize,
+    bytes: usize,
+}
+
+impl Page {
+    /// Start a new page that already holds the Session being read.
+    fn next(&mut self, report: &mut ProcessLossRecoveryReport) {
+        *self = Self {
+            sessions: 1,
+            rows: 0,
+            bytes: 0,
+        };
+        report.pages = report.pages.saturating_add(1);
+    }
+
+    fn fresh(&self) -> bool {
+        self.rows == 0 && self.bytes == 0
+    }
 }
 
 impl ProcessLossRecoveryReport {
@@ -139,35 +165,38 @@ impl ProcessLossRecoveryReport {
         attempt: Option<&PhysicalAttemptId>,
         reason: String,
     ) {
-        self.warnings.push(RecoveryWarning {
-            session: session.cloned(),
-            attempt: attempt.cloned(),
-            reason,
-        });
+        if self.warnings.len() < MAX_RECOVERY_WARNINGS {
+            self.warnings.push(RecoveryWarning {
+                session: session.cloned(),
+                attempt: attempt.cloned(),
+                reason,
+            });
+        } else {
+            self.warnings_omitted = self.warnings_omitted.saturating_add(1);
+        }
     }
 }
 
-/// One Session's receipts. Returns [`Pass::Ended`] when a bound ends the
-/// whole pass, and an error only when the database itself failed.
+/// One Session's receipts, across as many pages as they need. Errors only
+/// when the database itself failed.
 fn recover_session(
     store: &mut EventStore,
     clock: &dyn ClockAuthority,
     ceiling: AttemptRecordCeiling,
     session: &SessionId,
-    rows: &mut usize,
+    page: &mut Page,
     report: &mut ProcessLossRecoveryReport,
-) -> Result<Pass, ProcessLossRecoveryError> {
+) -> Result<(), ProcessLossRecoveryError> {
     let mut after_attempt: Option<PhysicalAttemptId> = None;
+    let mut touched = false;
     loop {
-        let remaining = if *rows == MAX_RECOVERY_ROWS {
-            0
-        } else {
-            MAX_RECOVERY_BYTES.saturating_sub(report.bytes_read)
-        };
+        if page.rows == RECOVERY_PAGE_ROWS {
+            page.next(report);
+        }
         let step = match store.next_attempt_recovery_row(
             session,
             after_attempt.as_ref(),
-            remaining,
+            RECOVERY_PAGE_BYTES.saturating_sub(page.bytes),
             ceiling,
         ) {
             Ok(step) => step,
@@ -178,47 +207,48 @@ fn recover_session(
                     after_attempt.as_ref(),
                     format!("receipt unreadable: {error}"),
                 );
-                return Ok(Pass::Continue);
+                break;
             }
         };
         match step {
-            RecoveryStep::Exhausted => return Ok(Pass::Continue),
+            RecoveryStep::Exhausted => break,
+            // The row was not fetched and the cursor did not move: a new page
+            // holds it, unless even a fresh page cannot, which skips the rest
+            // of this Session so the pass still ends.
             RecoveryStep::BudgetExhausted {
                 declared_bytes,
                 remaining,
-            } => {
-                let error = if *rows == MAX_RECOVERY_ROWS {
-                    bound(report.sessions, *rows, report.bytes_read)
-                } else {
-                    ProcessLossRecoveryError::ByteBudget {
-                        declared: declared_bytes,
-                        remaining,
-                    }
+            } if page.fresh() => {
+                let error = ProcessLossRecoveryError::ByteBudget {
+                    declared: declared_bytes,
+                    remaining,
                 };
-                report.warn(Some(session), None, error.to_string());
-                return Ok(Pass::Ended);
+                report.warn(Some(session), after_attempt.as_ref(), error.to_string());
+                break;
             }
+            RecoveryStep::BudgetExhausted { .. } => page.next(report),
             RecoveryStep::Row {
                 row,
                 next_after,
                 bytes_charged,
             } => {
-                if *rows == MAX_RECOVERY_ROWS {
-                    let reason = bound(report.sessions, *rows, report.bytes_read).to_string();
-                    report.warn(Some(session), None, reason);
-                    return Ok(Pass::Ended);
-                }
+                touched = true;
+                page.bytes = page.bytes.saturating_add(bytes_charged);
                 report.bytes_read = report.bytes_read.saturating_add(bytes_charged);
                 match reconcile_row(store, clock, ceiling, session, row, report) {
                     Err(error) if error.is_storage_failure() => return Err(error),
                     Err(error) => report.warn(Some(session), Some(&next_after), error.to_string()),
                     Ok(()) => {}
                 }
-                *rows = rows.saturating_add(1);
+                page.rows = page.rows.saturating_add(1);
                 after_attempt = Some(next_after);
             }
         }
     }
+    if touched {
+        report.touched.push(session.clone());
+    }
+    Ok(())
 }
 
 fn reconcile_row(
@@ -277,14 +307,6 @@ fn reconcile_row(
         }
     }
     Ok(())
-}
-
-fn bound(sessions: usize, rows: usize, bytes: usize) -> ProcessLossRecoveryError {
-    ProcessLossRecoveryError::Bound {
-        sessions,
-        rows,
-        bytes,
-    }
 }
 
 #[cfg(test)]
@@ -434,6 +456,47 @@ mod tests {
             resurrected_count, 1,
             "a second restart resurrected the exact terminal"
         );
+        Ok(())
+    }
+
+    #[test]
+    fn every_receipt_settles_however_many_sessions_and_rows_a_crash_left() -> TestResult {
+        let mut store = EventStore::open_in_memory()?;
+        let narrow = RECOVERY_PAGE_SESSIONS + 3;
+        for index in 0..narrow {
+            let id = format!("{index:03}");
+            stage_sent_attempt(
+                &mut store,
+                &session(&format!("ses_page_{id}")),
+                &attempt(&format!("attempt-page-{id}")),
+                &format!("evt_page_{id}"),
+            )?;
+        }
+        let wide = session("ses_page_wide");
+        let deep = RECOVERY_PAGE_ROWS + 3;
+        for index in 0..deep {
+            let id = format!("{index:03}");
+            stage_sent_attempt(
+                &mut store,
+                &wide,
+                &attempt(&format!("attempt-wide-{id}")),
+                &format!("evt_wide_{id}"),
+            )?;
+        }
+        let report = recover_process_loss_attempts(&mut store, &FixedClock(40), ceiling(4_096))?;
+        let rows = narrow + deep;
+        assert_eq!(
+            (report.sessions, report.settled, report.reclaimed),
+            (narrow + 1, rows, rows),
+            "{report:?}"
+        );
+        assert!(report.pages > 2 && report.warnings.is_empty(), "{report:?}");
+        assert_eq!(report.touched.len(), narrow + 1);
+        let open: i64 =
+            store
+                .connection()
+                .query_row("SELECT COUNT(*) FROM attempt_receipt", [], |row| row.get(0))?;
+        assert_eq!(open, 0, "a receipt past the first page was left open");
         Ok(())
     }
 
