@@ -141,8 +141,8 @@ impl SseFrameScanner {
                 SseBoundary::None
             }
             (LineState::AfterContentCr, b'\r') => {
-                self.state = LineState::Content;
-                SseBoundary::CompleteAtCurrent
+                self.state = LineState::AtBlankLineCr;
+                SseBoundary::None
             }
             (LineState::AfterContentCr, _) => {
                 self.state = LineState::Content;

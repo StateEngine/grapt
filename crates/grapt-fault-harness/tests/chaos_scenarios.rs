@@ -319,6 +319,35 @@ async fn cr_delimited_sse_cuts_at_exact_frame_boundary() -> Result<(), Box<dyn E
     assert_eq!(parse_sse_events(&body), vec![(1, "cr-1".to_owned())]);
     assert_eq!(body, b"id: 1\rdata: cr-1\r\r");
     proxy.shutdown().await;
+
+    // Mixed CR-terminated content line followed by CRLF blank line (\r\r\n) must preserve the \n.
+    let mixed_body = "id: 1\rdata: mixed-1\r\r\nid: 2\r\ndata: mixed-2\r\n\r\n";
+    let mixed_wire = format!(
+        "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{mixed_body}",
+        mixed_body.len()
+    );
+    let mixed_upstream = spawn_raw_upstream(mixed_wire.into_bytes()).await?;
+    let mixed_proxy = ChaosProxy::new(
+        mixed_upstream,
+        FaultSchedule::new(
+            FaultPlan::new("mixed-cr-crlf-cut", FaultSeed::new(15)).with_rule(
+                FaultTrigger::OnRequest(1),
+                FaultAction::MidStreamEofFrames { after_frames: 1 },
+            ),
+        ),
+    )
+    .start()
+    .await?;
+
+    let (mixed_status, _, mixed_out) =
+        split_http_response(&send_http_get(mixed_proxy.addr(), "/v1/mixed", None).await?)?;
+    assert_eq!(mixed_status, 200);
+    assert_eq!(
+        parse_sse_events(&mixed_out),
+        vec![(1, "mixed-1".to_owned())]
+    );
+    assert_eq!(mixed_out, b"id: 1\rdata: mixed-1\r\r\n");
+    mixed_proxy.shutdown().await;
     Ok(())
 }
 
