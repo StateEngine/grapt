@@ -722,7 +722,7 @@ impl DogfoodEventHub {
         approver: Option<Approver>,
         session: Option<grapt_types::SessionId>,
     ) -> Result<SseBody, SseError> {
-        self.subscribe_window(interest, approver, session, false, None)
+        self.subscribe_window(interest, approver, session, Vec::new(), false, None)
     }
 
     /// Subscribe a supervised host adapter to the same bounded event owner as
@@ -840,7 +840,7 @@ struct SseBody {
     /// The window this stream is, when it named a Session. Dropping the body is
     /// what tells the service the window is gone, so the value is held for its
     /// `Drop` and never read.
-    _window: Option<WindowClaim>,
+    _windows: Vec<WindowClaim>,
 }
 
 impl Drop for SseBody {

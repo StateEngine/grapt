@@ -42,7 +42,14 @@ fn status(suffix: &str, message: &str) -> DogfoodEvent {
 }
 
 fn positions(hub: &DogfoodEventHub, resume: Option<&str>) -> Result<SseBody, SseError> {
-    hub.subscribe_window(query::EventLocationQuery::Absent, None, None, true, resume)
+    hub.subscribe_window(
+        query::EventLocationQuery::Absent,
+        None,
+        None,
+        Vec::new(),
+        true,
+        resume,
+    )
 }
 
 async fn frame(body: &mut SseBody) -> Option<String> {
@@ -186,7 +193,14 @@ async fn the_replay_follows_the_resuming_requests_interest() -> TestResult {
     hub.publish_at(&status("owned", "owned"), &owned)?;
     let interest = query::event_location(Some("location%5Bdirectory%5D=/work/owned"))
         .map_err(|_| "interest")?;
-    let mut resumed = hub.subscribe_window(interest, None, None, true, Some(id_of(&connected)))?;
+    let mut resumed = hub.subscribe_window(
+        interest,
+        None,
+        None,
+        Vec::new(),
+        true,
+        Some(id_of(&connected)),
+    )?;
     let frames = queued(&mut resumed);
     assert_eq!(frames.len(), 2, "{frames:?}");
     assert!(frames[1].contains("evt_owned"));
@@ -203,6 +217,7 @@ async fn a_legacy_subscriber_naming_an_id_is_never_resumed() -> TestResult {
         query::EventLocationQuery::Absent,
         None,
         None,
+        Vec::new(),
         false,
         Some(id_of(&connected)),
     )?;

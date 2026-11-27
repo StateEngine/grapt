@@ -33,6 +33,7 @@ pub fn register_dogfood_event_route(
                     query.location,
                     approver,
                     session,
+                    query.retained,
                     query.positions,
                     resume,
                 ) {

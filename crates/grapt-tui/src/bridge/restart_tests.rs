@@ -72,7 +72,7 @@ fn original_profile_reloads_rotated_endpoint_and_auth_before_allowing_rpc() -> R
 }
 
 #[test]
-fn switching_session_during_reconnect_cannot_install_the_previous_window_lease() -> Result {
+fn switching_session_during_reconnect_shows_the_new_session_and_keeps_the_old_claimed() -> Result {
     let profile = Profile::new()?;
     let peer = Peer::start("old")?;
     profile.publish(&peer, false)?;
@@ -94,11 +94,14 @@ fn switching_session_during_reconnect_cannot_install_the_previous_window_lease()
     });
     assert_eq!(result.ok_or("replacement result missing")??, Some(true));
     let requests = peer.window_requests.seen()?;
+    // The replacement shows the third Session, and the Session it left stays
+    // claimed: switching away must never hand that turn to the close grace.
     assert!(
         requests.last().is_some_and(|request| {
-            request.starts_with("GET /api/event?session=ses_window_third&positions=1 ")
+            request.starts_with("GET /api/event?session=ses_window_third&")
+                && request.contains("retain=ses_window_second")
         }),
-        "live replacement kept the previous Session's lease: {requests:?}"
+        "the replacement did not keep the previous Session claimed: {requests:?}"
     );
     Ok(())
 }

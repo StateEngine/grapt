@@ -1,9 +1,10 @@
-//! Windows shell lifetime, with explicit daemon breakaway.
+//! Windows shell lifetime: every descendant dies with the job.
 //!
 //! Copyright 2025 OpenAI.
 //! Apache-2.0; modified by Grapt: safe pinned adapters and bounded exit census.
-//! Ordinary descendants stay in a kill-on-close job. Only a descendant asking
-//! for CREATE_BREAKAWAY_FROM_JOB escapes; silent breakaway is never enabled.
+//! Every descendant stays in a kill-on-close job. Breakaway is never allowed,
+//! so a descendant asking for CREATE_BREAKAWAY_FROM_JOB is refused at creation
+//! rather than outliving the command.
 //! Both handles below refer to the SAME job: the spawner assigns before resume,
 //! and the observer confirms that the contained tree has emptied.
 use std::os::windows::io::{AsRawHandle, RawHandle};
@@ -34,15 +35,18 @@ impl ConfirmedJob {
         let capture = windows_spawn::diagnostics::Capture::new();
         Self::create_inner().map_err(|detail| {
             let mut failure = SpawnFailure::from(detail);
-            failure.diagnostic = Some(context.failure(capture.failure(), None,
-                serde_json::json!({"phase":"setup_failed","requested_policy":"kill_on_close|breakaway_ok"})));
+            failure.diagnostic = Some(context.failure(
+                capture.failure(),
+                None,
+                serde_json::json!({"phase":"setup_failed","requested_policy":"kill_on_close"}),
+            ));
             failure
         })
     }
 
     fn create_inner() -> Result<Self, String> {
         let mut limits = win32job::ExtendedLimitInfo::new();
-        limits.limit_kill_on_job_close().limit_breakaway_ok();
+        limits.limit_kill_on_job_close();
         let observer = win32job::Job::create_with_limit_info(&limits).map_err(job_error)?;
         // Duplicate a borrowed job handle through a safe adapter; ownership stays
         // explicit and neither duplicate is inheritable. Never treat it as I/O.
@@ -160,7 +164,7 @@ impl ConfirmedJob {
             Ok(count) => serde_json::json!({"active":count}),
             Err(error) => serde_json::json!({"unreadable":error}),
         };
-        serde_json::json!({"policy":"kill_on_close|breakaway_ok","members":active})
+        serde_json::json!({"policy":"kill_on_close","members":active})
     }
 
     pub fn terminate(&self, exit_code: u32) -> Result<(), String> {
