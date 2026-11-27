@@ -130,7 +130,7 @@ fn rw_changed_tip_and_failed_projection_leave_no_cut() -> Result<(), Box<dyn std
             &mut self,
             _: &rusqlite::Transaction<'_>,
             _: &grapt_store::DecodedEvent,
-        ) -> Result<(), String> {
+        ) -> Result<(), grapt_store::ProjectorError> {
             Err("injected rewind projection failure".into())
         }
     }

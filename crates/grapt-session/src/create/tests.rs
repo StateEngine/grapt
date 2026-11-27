@@ -71,8 +71,8 @@ fn local_failed_requested_create_cannot_resurrect_its_claim(
             &mut self,
             _tx: &rusqlite::Transaction<'_>,
             _event: &grapt_store::DecodedEvent,
-        ) -> Result<(), String> {
-            Err("intentional requested-create projection failure".to_owned())
+        ) -> Result<(), grapt_store::ProjectorError> {
+            Err("intentional requested-create projection failure".into())
         }
     }
     let mut store = store();

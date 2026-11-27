@@ -127,9 +127,10 @@ impl SessionStatusEmitter {
             return;
         };
         if let Err(error) = self.hub.publish_if(&event, current) {
-            self.hub.invalidate_because(&format!(
-                "session {session}: retry status publication unavailable: {error}"
-            ));
+            self.hub.invalidate_session_because(
+                session,
+                &format!("session {session}: retry status publication unavailable: {error}"),
+            );
         }
     }
 

@@ -20,7 +20,7 @@ mod request_history;
 mod storage;
 
 use history::{
-    decode_observations, decode_required, fold_history, resolve_delta, resolve_map, validate_cache,
+    check_cache, decode_observations, decode_required, fold_history, resolve_delta, resolve_map,
     write_folded_state, CacheStatus, Observed,
 };
 pub use projection::InstructionProjector;
@@ -131,6 +131,54 @@ pub struct InstructionHistory {
     pub through: EventSeq,
     pub initial: Vec<ResolvedInstruction>,
     pub updates: Vec<InstructionUpdate>,
+    /// Journal rows this read could not decode and left out of the fold.
+    pub skipped: Vec<SkippedInstructionEvent>,
+}
+
+impl InstructionHistory {
+    /// No row of the journal could be read: `None` when there were none, else
+    /// an empty history that still names every skipped row.
+    pub(crate) fn unreadable(skipped: Vec<SkippedInstructionEvent>) -> Option<Self> {
+        (!skipped.is_empty()).then(|| Self {
+            epoch: InstructionEpoch::FIRST,
+            through: EventSeq::FIRST,
+            initial: Vec::new(),
+            updates: Vec::new(),
+            skipped,
+        })
+    }
+}
+
+/// One instruction journal row a fold could not decode, for example one an
+/// older or newer writer left. The fold goes on without it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SkippedInstructionEvent {
+    pub session: SessionId,
+    pub seq: Option<EventSeq>,
+    pub reason: String,
+}
+
+impl std::fmt::Display for SkippedInstructionEvent {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self.seq {
+            Some(seq) => write!(
+                formatter,
+                "session {} seq {}: {}",
+                self.session,
+                seq.value(),
+                self.reason
+            ),
+            None => write!(formatter, "session {}: {}", self.session, self.reason),
+        }
+    }
+}
+
+/// Current applicable values, and the journal rows the read left out.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CurrentInstructions {
+    /// `None` when the Session has no active instruction history.
+    pub values: Option<Vec<ResolvedInstruction>>,
+    pub skipped: Vec<SkippedInstructionEvent>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -201,19 +249,15 @@ impl InstructionService {
         let aggregate = AggregateId::Session(input.session.clone());
         let tx = store.governed_transaction()?;
         ensure_tables(&tx)?;
-        let truth = fold_history(&tx, &input.session)?;
-        let cache = validate_cache(
-            &tx,
-            &input.session,
-            truth.as_ref().map(|truth| &truth.state),
-        )?;
+        // Refresh folds the journal and checks the cache before it appends, so
+        // a corrupt cache fails closed here; its projector then continues from
+        // the cache this check just proved.
+        let fold = fold_history(&tx, &input.session)?;
+        let cache = check_cache(&tx, &input.session, &fold)?;
         if cache != CacheStatus::Present {
-            write_folded_state(
-                &tx,
-                &input.session,
-                truth.as_ref().map(|truth| &truth.state),
-            )?;
+            write_folded_state(&tx, &input.session, fold.persistable())?;
         }
+        let truth = fold.history;
         let required = decode_required(input.required)?;
         let observations = decode_observations(input.observations)?;
 
@@ -301,14 +345,10 @@ impl InstructionService {
         store: &EventStore,
         session: &SessionId,
     ) -> Result<Option<InstructionHistory>, InstructionError> {
-        let truth = fold_history(store.connection(), session)?;
-        validate_cache(
-            store.connection(),
-            session,
-            truth.as_ref().map(|truth| &truth.state),
-        )?;
-        let Some(truth) = truth else {
-            return Ok(None);
+        let fold = fold_history(store.connection(), session)?;
+        check_cache(store.connection(), session, &fold)?;
+        let Some(truth) = fold.history else {
+            return Ok(InstructionHistory::unreadable(fold.skipped));
         };
         Ok(Some(InstructionHistory {
             epoch: truth.state.epoch,
@@ -324,6 +364,7 @@ impl InstructionService {
                     })
                 })
                 .collect::<Result<_, InstructionError>>()?,
+            skipped: fold.skipped,
         }))
     }
 
@@ -332,16 +373,17 @@ impl InstructionService {
     pub fn current(
         store: &EventStore,
         session: &SessionId,
-    ) -> Result<Option<Vec<ResolvedInstruction>>, InstructionError> {
-        let truth = fold_history(store.connection(), session)?;
-        validate_cache(
-            store.connection(),
-            session,
-            truth.as_ref().map(|truth| &truth.state),
-        )?;
-        truth
-            .map(|truth| resolve_map(store.connection(), &truth.state.current))
-            .transpose()
+    ) -> Result<CurrentInstructions, InstructionError> {
+        let fold = fold_history(store.connection(), session)?;
+        check_cache(store.connection(), session, &fold)?;
+        let values = fold
+            .state()
+            .map(|state| resolve_map(store.connection(), &state.current))
+            .transpose()?;
+        Ok(CurrentInstructions {
+            values,
+            skipped: fold.skipped,
+        })
     }
 
     pub fn rebuild(
@@ -350,8 +392,8 @@ impl InstructionService {
     ) -> Result<Option<InstructionHistory>, InstructionError> {
         let tx = store.governed_transaction()?;
         ensure_tables(&tx)?;
-        let truth = fold_history(&tx, session)?;
-        write_folded_state(&tx, session, truth.as_ref().map(|truth| &truth.state))?;
+        let fold = fold_history(&tx, session)?;
+        write_folded_state(&tx, session, fold.persistable())?;
         tx.commit()?.discard();
         Self::history(store, session)
     }

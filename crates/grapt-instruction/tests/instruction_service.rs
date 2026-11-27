@@ -376,7 +376,7 @@ fn compaction_moves_the_epoch_and_move_or_committed_revert_clear_it() -> TestRes
 }
 
 #[test]
-fn cache_and_blob_corruption_fail_closed_but_valid_log_rebuilds() -> TestResult {
+fn cache_corruption_fails_closed_and_blob_damage_is_named() -> TestResult {
     let mut store = EventStore::open_in_memory()?;
     InstructionService::ensure_tables(&mut store)?;
     let session: SessionId = "ses_instruction_rebuild".parse()?;
@@ -450,23 +450,17 @@ fn cache_and_blob_corruption_fail_closed_but_valid_log_rebuilds() -> TestResult 
     assert_eq!(count(&store, "instruction_state")?, 1);
     assert!(InstructionService::history(&store, &session)?.is_some());
 
+    // A blob that is not its content damages the rows naming it, not the
+    // Session: they are skipped and named, never folded as truth.
     store
         .connection()
         .execute("UPDATE instruction_blob SET value = 'tampered'", [])?;
-    let events_before = count(&store, "event")?;
-    let blobs_before = count(&store, "instruction_blob")?;
-    assert!(refresh(
-        &mut store,
-        "evt_rebuild_must_refuse",
-        &session,
-        vec![],
-        vec![available(&source, "new")],
-    )
-    .is_err());
-    assert_eq!(count(&store, "event")?, events_before);
-    assert_eq!(count(&store, "instruction_blob")?, blobs_before);
-    assert!(InstructionService::history(&store, &session).is_err());
-    assert!(InstructionService::rebuild(&mut store, &session).is_err());
+    let history = InstructionService::history(&store, &session)?.ok_or("named")?;
+    assert!(!history.skipped.is_empty(), "the tampered rows are named");
+    assert!(history
+        .initial
+        .iter()
+        .all(|instruction| instruction.value != "tampered"));
     Ok(())
 }
 

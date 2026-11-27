@@ -3,14 +3,13 @@ use super::*;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "kebab-case", deny_unknown_fields)]
+#[serde(tag = "kind", rename_all = "kebab-case")]
 pub(super) enum DurableLine {
     Applying(Box<DurableApplying>),
     Terminal(DurableTerminal),
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub(super) struct DurableApplying {
     schema: u8,
     operation: String,
@@ -92,7 +91,6 @@ impl TryFrom<DurableApplying> for ApplyingRestore {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub(super) struct DurableTerminal {
     schema: u8,
     state: String,

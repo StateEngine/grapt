@@ -294,4 +294,63 @@ fn ctrl_u_clears_only_the_session_filter_and_preserves_a_valid_selection(
     Ok(())
 }
 
+/// A list or search the server stopped before it could list anything never
+/// reads as "none".
+#[test]
+fn a_stalled_list_or_search_is_never_shown_as_no_sessions() -> Result<(), Box<dyn std::error::Error>>
+{
+    let agents = agents()?;
+    let mut picker = Picker::new(&agents);
+    assert_eq!(
+        picker.empty_note(CatalogReach::Read),
+        "No sessions available"
+    );
+    assert_ne!(
+        picker.empty_note(CatalogReach::Stalled),
+        "No sessions available"
+    );
+    assert!(picker
+        .search_hint(CatalogReach::Stalled)
+        .contains("incomplete"));
+    picker.query = "absent".into();
+    picker.search = Some(Search {
+        query: "absent".into(),
+        result: Ok(Vec::new()),
+        reach: CatalogReach::Stalled,
+    });
+    assert_ne!(
+        picker.empty_note(CatalogReach::Read),
+        "No matching sessions"
+    );
+    assert!(picker
+        .search_hint(CatalogReach::Read)
+        .contains("incomplete"));
+    Ok(())
+}
+
+#[test]
+fn a_stalled_search_keeps_the_local_matches_selectable() -> Result<(), Box<dyn std::error::Error>> {
+    let agents = agents()?;
+    let pins = Pins::default();
+    let mut picker = Picker::new(&agents);
+    picker.query = "session042".into();
+    picker.accept_search(
+        Search {
+            query: "session042".into(),
+            result: Ok(Vec::new()),
+            reach: CatalogReach::Stalled,
+        },
+        &agents,
+        &pins,
+    );
+    let shown: Vec<_> = picker
+        .entries(&agents, &pins)
+        .iter()
+        .map(|agent| agent.row.title.clone())
+        .collect();
+    assert_eq!(shown, ["Session042"]);
+    assert_eq!(picker.selected.as_ref(), Some(&agents[42].row.id));
+    Ok(())
+}
+
 mod management;

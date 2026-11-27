@@ -18,13 +18,37 @@ pub const MAX_RECOVERY_SESSIONS: usize = 64;
 pub const MAX_RECOVERY_ROWS: usize = 128;
 pub const MAX_RECOVERY_BYTES: usize = 256 * 1024;
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ProcessLossRecoveryReport {
     pub sessions: usize,
     pub settled: usize,
     pub reclaimed: usize,
     pub quarantined: usize,
     pub bytes_read: usize,
+    /// Items this pass skipped, each with its reason. A skipped receipt stays
+    /// durable and unsettled, so nothing is replayed and the next start sees
+    /// it again; it never stops the server from starting.
+    pub warnings: Vec<RecoveryWarning>,
+}
+
+/// One item a recovery pass could not settle, or a bound that ended the pass.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RecoveryWarning {
+    pub session: Option<SessionId>,
+    pub attempt: Option<PhysicalAttemptId>,
+    pub reason: String,
+}
+
+impl std::fmt::Display for RecoveryWarning {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if let Some(session) = &self.session {
+            write!(formatter, "session {session} ")?;
+        }
+        if let Some(attempt) = &self.attempt {
+            write!(formatter, "attempt {} ", attempt.as_str())?;
+        }
+        write!(formatter, "{}", self.reason)
+    }
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -52,6 +76,11 @@ pub enum ProcessLossRecoveryError {
 /// This function has no provider, opener, or retry handle in its signature.
 /// Consequently the process-loss path cannot duplicate the external call it
 /// is conservatively settling.
+///
+/// A receipt or Session that cannot be settled is skipped with a warning in
+/// the report and left durable for the next start; a bound ends the pass the
+/// same way. The database itself failing (read-only, missing schema,
+/// unreadable) is an error, as is a failure to enumerate Sessions at all.
 pub fn recover_process_loss_attempts(
     store: &mut EventStore,
     clock: &dyn ClockAuthority,
@@ -66,56 +95,129 @@ pub fn recover_process_loss_attempts(
             return Ok(report);
         };
         if report.sessions == MAX_RECOVERY_SESSIONS {
-            return Err(bound(report.sessions, rows, report.bytes_read));
+            let reason = bound(report.sessions, rows, report.bytes_read).to_string();
+            report.warn(None, None, reason);
+            return Ok(report);
         }
-        store.elect_writer(&AggregateId::Session(session.clone()))?;
         report.sessions = report.sessions.saturating_add(1);
-
-        let mut after_attempt: Option<PhysicalAttemptId> = None;
-        loop {
-            let remaining = if rows == MAX_RECOVERY_ROWS {
-                0
-            } else {
-                MAX_RECOVERY_BYTES.saturating_sub(report.bytes_read)
-            };
-            match store.next_attempt_recovery_row(
-                &session,
-                after_attempt.as_ref(),
-                remaining,
-                ceiling,
-            )? {
-                RecoveryStep::Exhausted => break,
-                RecoveryStep::BudgetExhausted {
-                    declared_bytes,
-                    remaining,
-                } => {
-                    if rows == MAX_RECOVERY_ROWS {
-                        return Err(bound(report.sessions, rows, report.bytes_read));
-                    }
-                    return Err(ProcessLossRecoveryError::ByteBudget {
-                        declared: declared_bytes,
-                        remaining,
-                    });
-                }
-                RecoveryStep::Row {
-                    row,
-                    next_after,
-                    bytes_charged,
-                } => {
-                    if rows == MAX_RECOVERY_ROWS {
-                        return Err(bound(report.sessions, rows, report.bytes_read));
-                    }
-                    report.bytes_read = report
-                        .bytes_read
-                        .checked_add(bytes_charged)
-                        .ok_or_else(|| bound(report.sessions, rows, report.bytes_read))?;
-                    reconcile_row(store, clock, ceiling, &session, row, &mut report)?;
-                    rows = rows.saturating_add(1);
-                    after_attempt = Some(next_after);
-                }
+        if let Err(error) = store.elect_writer(&AggregateId::Session(session.clone())) {
+            if error.is_storage_failure() {
+                return Err(error.into());
             }
+            report.warn(
+                Some(&session),
+                None,
+                format!("writer election failed: {error}"),
+            );
+            after_session = Some(session);
+            continue;
+        }
+        if recover_session(store, clock, ceiling, &session, &mut rows, &mut report)? == Pass::Ended
+        {
+            return Ok(report);
         }
         after_session = Some(session);
+    }
+}
+
+impl ProcessLossRecoveryError {
+    fn is_storage_failure(&self) -> bool {
+        matches!(self, Self::Store(error) if error.is_storage_failure())
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+enum Pass {
+    Continue,
+    Ended,
+}
+
+impl ProcessLossRecoveryReport {
+    fn warn(
+        &mut self,
+        session: Option<&SessionId>,
+        attempt: Option<&PhysicalAttemptId>,
+        reason: String,
+    ) {
+        self.warnings.push(RecoveryWarning {
+            session: session.cloned(),
+            attempt: attempt.cloned(),
+            reason,
+        });
+    }
+}
+
+/// One Session's receipts. Returns [`Pass::Ended`] when a bound ends the
+/// whole pass, and an error only when the database itself failed.
+fn recover_session(
+    store: &mut EventStore,
+    clock: &dyn ClockAuthority,
+    ceiling: AttemptRecordCeiling,
+    session: &SessionId,
+    rows: &mut usize,
+    report: &mut ProcessLossRecoveryReport,
+) -> Result<Pass, ProcessLossRecoveryError> {
+    let mut after_attempt: Option<PhysicalAttemptId> = None;
+    loop {
+        let remaining = if *rows == MAX_RECOVERY_ROWS {
+            0
+        } else {
+            MAX_RECOVERY_BYTES.saturating_sub(report.bytes_read)
+        };
+        let step = match store.next_attempt_recovery_row(
+            session,
+            after_attempt.as_ref(),
+            remaining,
+            ceiling,
+        ) {
+            Ok(step) => step,
+            Err(error) if error.is_storage_failure() => return Err(error.into()),
+            Err(error) => {
+                report.warn(
+                    Some(session),
+                    after_attempt.as_ref(),
+                    format!("receipt unreadable: {error}"),
+                );
+                return Ok(Pass::Continue);
+            }
+        };
+        match step {
+            RecoveryStep::Exhausted => return Ok(Pass::Continue),
+            RecoveryStep::BudgetExhausted {
+                declared_bytes,
+                remaining,
+            } => {
+                let error = if *rows == MAX_RECOVERY_ROWS {
+                    bound(report.sessions, *rows, report.bytes_read)
+                } else {
+                    ProcessLossRecoveryError::ByteBudget {
+                        declared: declared_bytes,
+                        remaining,
+                    }
+                };
+                report.warn(Some(session), None, error.to_string());
+                return Ok(Pass::Ended);
+            }
+            RecoveryStep::Row {
+                row,
+                next_after,
+                bytes_charged,
+            } => {
+                if *rows == MAX_RECOVERY_ROWS {
+                    let reason = bound(report.sessions, *rows, report.bytes_read).to_string();
+                    report.warn(Some(session), None, reason);
+                    return Ok(Pass::Ended);
+                }
+                report.bytes_read = report.bytes_read.saturating_add(bytes_charged);
+                match reconcile_row(store, clock, ceiling, session, row, report) {
+                    Err(error) if error.is_storage_failure() => return Err(error),
+                    Err(error) => report.warn(Some(session), Some(&next_after), error.to_string()),
+                    Ok(()) => {}
+                }
+                *rows = rows.saturating_add(1);
+                after_attempt = Some(next_after);
+            }
+        }
     }
 }
 
@@ -138,7 +240,14 @@ fn reconcile_row(
                 SettledMarker::new(clock.now()),
                 &mut projectors,
             )
-            .map_err(|error| ProcessLossRecoveryError::Attempt(error.to_string()))?;
+            .map_err(|error| match error {
+                crate::physical_attempt_owner::PhysicalAttemptOwnerError::Store(write)
+                    if write.is_storage_failure() =>
+                {
+                    ProcessLossRecoveryError::Store(write)
+                }
+                other => ProcessLossRecoveryError::Attempt(other.to_string()),
+            })?;
             if settlement == AttemptSettlement::Settled {
                 report.settled = report.settled.saturating_add(1);
             }
@@ -353,6 +462,118 @@ mod tests {
             |row| row.get(0),
         )?;
         assert_eq!((live, quarantined, terminals), (0, 1, 0));
+        Ok(())
+    }
+
+    #[test]
+    fn an_unsettleable_receipt_is_skipped_and_other_sessions_still_recover() -> TestResult {
+        let first = session("ses_d1_a_first");
+        let broken = session("ses_d1_b_broken");
+        let healthy = session("ses_d1_c_healthy");
+        let mut store = EventStore::open_in_memory()?;
+        stage_sent_attempt(
+            &mut store,
+            &first,
+            &attempt("attempt-d1-first"),
+            "evt_d1_shared",
+        )?;
+        // Claims a terminal id the first Session's settlement will already own.
+        stage_sent_attempt(
+            &mut store,
+            &broken,
+            &attempt("attempt-d1-broken"),
+            "evt_d1_shared",
+        )?;
+        stage_sent_attempt(
+            &mut store,
+            &healthy,
+            &attempt("attempt-d1-healthy"),
+            "evt_d1_healthy",
+        )?;
+
+        let report = recover_process_loss_attempts(&mut store, &FixedClock(40), ceiling(4_096))?;
+        assert_eq!(report.sessions, 3);
+        assert!(
+            report
+                .warnings
+                .iter()
+                .any(|warning| warning.session.as_ref() == Some(&broken)),
+            "the broken receipt must surface as a warning: {report:?}"
+        );
+        let healthy_terminal: i64 = store.connection().query_row(
+            "SELECT COUNT(*) FROM event WHERE id = 'evt_d1_healthy'",
+            [],
+            |row| row.get(0),
+        )?;
+        assert_eq!(healthy_terminal, 1, "the healthy Session must still settle");
+        Ok(())
+    }
+
+    #[test]
+    fn a_store_missing_its_writer_schema_fails_recovery_instead_of_settling_nothing() -> TestResult
+    {
+        let path = std::env::temp_dir().join(format!(
+            "grapt-recovery-schema-{}.sqlite",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_file(&path);
+        let mut store = EventStore::open(&path, "recovery-schema")?;
+        stage_sent_attempt(
+            &mut store,
+            &session("ses_d1_schema"),
+            &attempt("attempt-d1-schema"),
+            "evt_d1_schema",
+        )?;
+        rusqlite::Connection::open(&path)?.execute_batch("DROP TABLE aggregate_writer")?;
+        let result = recover_process_loss_attempts(&mut store, &FixedClock(40), ceiling(4_096));
+        assert!(
+            matches!(result, Err(ProcessLossRecoveryError::Store(_))),
+            "a database failure was reported as success: {result:?}"
+        );
+        drop(store);
+        std::fs::remove_file(&path)?;
+        Ok(())
+    }
+
+    #[test]
+    fn a_mistyped_writer_row_is_skipped_and_other_sessions_still_recover() -> TestResult {
+        let path = std::env::temp_dir().join(format!(
+            "grapt-recovery-writer-row-{}.sqlite",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_file(&path);
+        let mut store = EventStore::open(&path, "recovery-writer-row")?;
+        let broken = session("ses_d1_writer_broken");
+        for (session, attempt, terminal) in [
+            (&broken, "attempt-d1-writer-broken", "evt_d1_writer_broken"),
+            (
+                &session("ses_d1_writer_healthy"),
+                "attempt-d1-writer-healthy",
+                "evt_d1_writer_healthy",
+            ),
+        ] {
+            stage_sent_attempt(&mut store, session, &self::attempt(attempt), terminal)?;
+        }
+        rusqlite::Connection::open(&path)?.execute(
+            "UPDATE aggregate_writer SET owner_id = X'00FF' WHERE aggregate_id = ?1",
+            [broken.as_str()],
+        )?;
+        let report = recover_process_loss_attempts(&mut store, &FixedClock(40), ceiling(4_096))?;
+        assert!(
+            report
+                .warnings
+                .iter()
+                .any(|warning| warning.session.as_ref() == Some(&broken)),
+            "the mistyped writer row must surface as a warning: {report:?}"
+        );
+        let healthy: i64 = store.connection().query_row(
+            "SELECT COUNT(*) FROM event WHERE id = 'evt_d1_writer_healthy'",
+            [],
+            |row| row.get(0),
+        )?;
+        assert_eq!(healthy, 1, "the healthy Session must still settle");
+        drop(store);
+        std::fs::remove_file(&path)?;
         Ok(())
     }
 }

@@ -1,6 +1,7 @@
 use super::InstructionError;
 use crate::{classify_blob, BlobAddressing};
 use grapt_types::{EventSeq, InstructionEpoch, InstructionHash, InstructionKey, SessionId};
+use rusqlite::types::ValueRef;
 use rusqlite::{Connection, OptionalExtension, Transaction};
 use serde_json::Value;
 use std::collections::BTreeMap;
@@ -252,20 +253,34 @@ pub(super) fn write_state(
     Ok(())
 }
 
+/// The blob `hash` names. A blob that is absent, not text, or not the content
+/// its address names is [`InstructionError::Corruption`]: damage to the rows
+/// that reference it, which a fold may skip. SQLite's own failures stay
+/// [`InstructionError::Sqlite`].
 pub(super) fn load_blob(
     conn: &Connection,
     hash: InstructionHash,
 ) -> Result<String, InstructionError> {
-    let value: Option<String> = conn
+    let value = conn
         .query_row(
             "SELECT value FROM instruction_blob WHERE hash = ?1",
             [hash.to_string()],
-            |row| row.get(0),
+            |row| {
+                Ok(match row.get_ref(0)? {
+                    ValueRef::Text(text) => std::str::from_utf8(text)
+                        .map(str::to_owned)
+                        .map_err(|error| error.to_string()),
+                    other => Err(format!("is {}, not text", other.data_type())),
+                })
+            },
         )
-        .optional()?;
-    let value = value.ok_or_else(|| InstructionError::Corruption {
-        reason: format!("instruction hash {hash} has no blob"),
-    })?;
+        .optional()?
+        .ok_or_else(|| InstructionError::Corruption {
+            reason: format!("instruction hash {hash} has no blob"),
+        })?
+        .map_err(|reason| InstructionError::Corruption {
+            reason: format!("instruction blob {hash} {reason}"),
+        })?;
     if classify_blob(hash, &value) == BlobAddressing::Violation {
         return Err(InstructionError::Corruption {
             reason: format!("instruction blob {hash} violates its content address"),

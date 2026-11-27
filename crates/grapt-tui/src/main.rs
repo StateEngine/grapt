@@ -641,6 +641,8 @@ fn run(config: Config, access: &grapt_console::Access) -> Result<(), String> {
                             || ui.title != update.title
                             || ui.model != update.model;
                         ui.agents = update.agents;
+                        dirty |= ui.catalog != update.catalog;
+                        ui.catalog = update.catalog;
                         dirty |= ui.switcher.observe(&ui.agents, tokio::time::Instant::now());
                         ui.status = update.status;
                         ui.repository_status = update.repository_status;

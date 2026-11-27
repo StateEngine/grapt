@@ -303,6 +303,8 @@ pub(super) fn inspect(
     require_session(application, &session)?;
     let inbox = application.lock_inbox();
     let current = InstructionService::current(inbox.store(), &session).map_err(refused)?;
+    super::instructions::warn_skipped(&current.skipped);
+    let current = current.values;
     let captured = current.is_some();
     let mut ambient = String::new();
     let mut keys = Vec::new();

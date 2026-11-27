@@ -1,7 +1,7 @@
 use super::model::StoredRow;
 use super::{
     allocate_sequence, read_sequence_cursor, AppendInput, Appended, CaughtUp, EventStore,
-    FencedWriter, HeldWriters, Projector, WriteError,
+    FencedWriter, HeldWriters, Projector, ProjectorError, WriteError,
 };
 use crate::election::{Election, LostWriterState};
 use crate::form_fact::decode_fact;
@@ -320,12 +320,15 @@ impl EventStore {
                 &versioned_type,
                 &data_text,
             )?;
-            event
-                .project(projector, &tx)
-                .map_err(|message| WriteError::Projector {
-                    name: projection.as_str().to_owned(),
-                    message,
-                })?;
+            event.project(projector, &tx).map_err(|error| {
+                let name = projection.as_str().to_owned();
+                match error {
+                    ProjectorError::Refused(message) => WriteError::Projector { name, message },
+                    ProjectorError::Storage(source) => {
+                        WriteError::ProjectorStorage { name, source }
+                    }
+                }
+            })?;
             let seq = event.seq().value();
             crate::projection::advance(&tx, projection, aggregate, seq)?;
             watermark = Some(seq);
@@ -539,12 +542,15 @@ impl EventStore {
         )?;
         for projector in projectors.iter_mut() {
             let projection = projector.projection();
-            event
-                .project(*projector, tx)
-                .map_err(|message| WriteError::Projector {
-                    name: projection.as_str().to_owned(),
-                    message,
-                })?;
+            event.project(*projector, tx).map_err(|error| {
+                let name = projection.as_str().to_owned();
+                match error {
+                    ProjectorError::Refused(message) => WriteError::Projector { name, message },
+                    ProjectorError::Storage(source) => {
+                        WriteError::ProjectorStorage { name, source }
+                    }
+                }
+            })?;
             // The watermark advances HERE — in the same transaction as the rows
             // that projector just wrote and as the event row below. Every
             // projector's position moves with the fact or with neither, which is

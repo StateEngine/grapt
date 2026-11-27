@@ -1,5 +1,5 @@
 use super::history::{
-    apply_history_event, fold_history, fold_parent_history, load_fork, validate_cache,
+    apply_history_event, check_cache, fold_history, fold_parent_history, load_fork,
     write_folded_state,
 };
 use super::InstructionError;
@@ -21,8 +21,15 @@ impl Projector for InstructionProjector {
         ProjectionId::new("instruction-state")
     }
 
-    fn project(&mut self, tx: &Transaction<'_>, event: &DecodedEvent) -> Result<(), String> {
-        project_event(tx, event).map_err(|error| error.to_string())
+    fn project(
+        &mut self,
+        tx: &Transaction<'_>,
+        event: &DecodedEvent,
+    ) -> Result<(), grapt_store::ProjectorError> {
+        project_event(tx, event).map_err(|error| match error {
+            InstructionError::Sqlite(error) => error.into(),
+            error => error.to_string().into(),
+        })
     }
 }
 
@@ -35,11 +42,6 @@ pub(super) fn decode_event_delta(
             reason: "instruction event data is not an object".into(),
         });
     };
-    if object.len() != 2 || !object.contains_key("sessionID") || !object.contains_key("delta") {
-        return Err(InstructionError::Corruption {
-            reason: "instruction event must contain exactly sessionID and delta".into(),
-        });
-    }
     let event_session = object
         .get("sessionID")
         .and_then(Value::as_str)
@@ -90,20 +92,13 @@ fn project_event(tx: &Transaction<'_>, event: &DecodedEvent) -> Result<(), Instr
         | ("session.compaction.ended", 1 | 2)
         | ("session.moved", 1)
         | ("session.revert.committed", 1) => {
-            let mut truth = fold_history(tx, &event.aggregate_id)?;
-            validate_cache(
-                tx,
-                &event.aggregate_id,
-                truth.as_ref().map(|truth| &truth.state),
-            )?;
+            ensure_exact_instruction_event(event)?;
+            let mut fold = fold_history(tx, &event.aggregate_id)?;
+            check_cache(tx, &event.aggregate_id, &fold)?;
             // Replay, request projection and commit use the same aggregate
             // transition, including a child's restarted instruction epoch.
-            apply_history_event(tx, &mut truth, event)?;
-            write_folded_state(
-                tx,
-                &event.aggregate_id,
-                truth.as_ref().map(|truth| &truth.state),
-            )
+            apply_history_event(tx, &mut fold.history, event)?;
+            write_folded_state(tx, &event.aggregate_id, fold.persistable())
         }
         ("session.forked", 2) => project_fork(tx, event),
         ("session.instructions.updated", version)
@@ -115,6 +110,26 @@ fn project_event(tx: &Transaction<'_>, event: &DecodedEvent) -> Result<(), Instr
             version,
         }),
         _ => Ok(()),
+    }
+}
+
+/// This crate writes `session.instructions.updated`, so an append carries
+/// exactly sessionID and delta; reads tolerate fields a later writer adds.
+fn ensure_exact_instruction_event(event: &DecodedEvent) -> Result<(), InstructionError> {
+    if event.kind.name() != "session.instructions.updated" {
+        return Ok(());
+    }
+    match &event.data {
+        Value::Object(object)
+            if object.len() == 2
+                && object.contains_key("sessionID")
+                && object.contains_key("delta") =>
+        {
+            Ok(())
+        }
+        _ => Err(InstructionError::Corruption {
+            reason: "instruction event must contain exactly sessionID and delta".into(),
+        }),
     }
 }
 
@@ -133,7 +148,7 @@ fn project_fork(tx: &Transaction<'_>, event: &DecodedEvent) -> Result<(), Instru
             ),
         });
     }
-    if fold_history(tx, &event.aggregate_id)?.is_some() {
+    if fold_history(tx, &event.aggregate_id)?.history.is_some() {
         return Err(InstructionError::Corruption {
             reason: format!(
                 "session {} has instruction history before its fork fact",
@@ -142,16 +157,8 @@ fn project_fork(tx: &Transaction<'_>, event: &DecodedEvent) -> Result<(), Instru
         });
     }
     let inherited = fold_parent_history(tx, &fork)?;
-    validate_cache(
-        tx,
-        &event.aggregate_id,
-        inherited.as_ref().map(|truth| &truth.state),
-    )?;
-    write_folded_state(
-        tx,
-        &event.aggregate_id,
-        inherited.as_ref().map(|truth| &truth.state),
-    )
+    check_cache(tx, &event.aggregate_id, &inherited)?;
+    write_folded_state(tx, &event.aggregate_id, inherited.persistable())
 }
 
 pub(super) fn decode_fork(event: &DecodedEvent) -> Result<ForkBoundary, InstructionError> {
@@ -164,11 +171,10 @@ pub(super) fn decode_fork(event: &DecodedEvent) -> Result<ForkBoundary, Instruct
             version: event.kind.version().value(),
         });
     }
-    let object = strict_object(
+    let object = required_object(
         &event.data,
         "session.forked",
         &["sessionID", "parentID", "parentSeq"],
-        &["from"],
     )?;
     decode_session(event, object)?;
     let parent = parse_id::<SessionId>(
@@ -202,13 +208,13 @@ pub(super) fn decode_fork(event: &DecodedEvent) -> Result<ForkBoundary, Instruct
 }
 
 pub(super) fn decode_compaction_ended(event: &DecodedEvent) -> Result<(), InstructionError> {
-    // These are the exact frozen v1 boundary shapes. Accepting only sessionID
-    // would let a corrupt foreign event advance or clear the instruction epoch.
-    let object = strict_object(
+    // Every field of the frozen v1 boundary is required. Accepting only
+    // sessionID would let a corrupt foreign event advance or clear the
+    // instruction epoch.
+    let object = required_object(
         &event.data,
         "session.compaction.ended",
         &["sessionID", "reason", "text", "recent"],
-        &[],
     )?;
     decode_session(event, object)?;
     match required_string(object, "reason", "session.compaction.ended")? {
@@ -248,14 +254,9 @@ pub(super) fn decode_compaction_ended_v2(event: &DecodedEvent) -> Result<(), Ins
 }
 
 pub(super) fn decode_moved(event: &DecodedEvent) -> Result<(), InstructionError> {
-    let object = strict_object(
-        &event.data,
-        "session.moved",
-        &["sessionID", "location"],
-        &["projectID", "subpath"],
-    )?;
+    let object = required_object(&event.data, "session.moved", &["sessionID", "location"])?;
     decode_session(event, object)?;
-    let location = strict_object(
+    let location = required_object(
         object
             .get("location")
             .ok_or_else(|| InstructionError::Corruption {
@@ -263,7 +264,6 @@ pub(super) fn decode_moved(event: &DecodedEvent) -> Result<(), InstructionError>
             })?,
         "session.moved location",
         &["directory"],
-        &["workspaceID"],
     )?;
     required_string(location, "directory", "session.moved location")?;
     if let Some(workspace) = location.get("workspaceID") {
@@ -331,11 +331,12 @@ fn decode_session(
     })
 }
 
-fn strict_object<'a>(
+/// An object carrying every `required` field. Fields this build does not
+/// know are tolerated, so a row a newer or older writer left still reads.
+fn required_object<'a>(
     value: &'a Value,
     kind: &str,
     required: &[&str],
-    optional: &[&str],
 ) -> Result<&'a serde_json::Map<String, Value>, InstructionError> {
     let Value::Object(object) = value else {
         return Err(InstructionError::Corruption {
@@ -347,18 +348,11 @@ fn strict_object<'a>(
         .filter(|field| !object.contains_key(**field))
         .copied()
         .collect::<Vec<_>>();
-    let unexpected = object
-        .keys()
-        .filter(|field| !required.contains(&field.as_str()) && !optional.contains(&field.as_str()))
-        .cloned()
-        .collect::<Vec<_>>();
-    if missing.is_empty() && unexpected.is_empty() {
+    if missing.is_empty() {
         return Ok(object);
     }
     Err(InstructionError::Corruption {
-        reason: format!(
-            "{kind} has missing fields {missing:?} and unexpected fields {unexpected:?}"
-        ),
+        reason: format!("{kind} has missing fields {missing:?}"),
     })
 }
 

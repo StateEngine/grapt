@@ -265,6 +265,8 @@ fn br_execution_rows_and_refusals_match_before_selection() -> TestResult {
             "failure",
             "future",
             "interrupt",
+            // A field a later writer adds is tolerated on read.
+            "extra-field",
         ]
         .contains(&case)
         {

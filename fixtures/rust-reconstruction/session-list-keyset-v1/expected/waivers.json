@@ -23,7 +23,7 @@
     {
       "id": "injected-corruption-is-reverted-after-it-is-observed",
       "scope": "actions.jsonl action 11",
-      "corrected_expectation": "The oversize-title row is injected to prove the row bound refuses before decode allocation, then removed. Leaving it would make every later action refuse, so the corpus reverts the injection and the final projection contains no ses_oversize row."
+      "corrected_expectation": "Per-row degrade: the oversize-title row is skipped before decode allocation and named in the page's degraded rows, and the page is filled from the healthy rows after it instead of refusing. The injection is still reverted after it is observed, so the final projection contains no ses_oversize row."
     }
   ]
 }

@@ -149,10 +149,13 @@ impl Drop for BackgroundChild {
             }
         };
         if let Err(error) = subagent::settle(&self.application, &self.operation, &terminal) {
-            self.application.hub.invalidate_because(&format!(
-                "session {}: background settlement failed: {error}",
-                self.child
-            ));
+            self.application.hub.invalidate_session_because(
+                &self.child,
+                &format!(
+                    "session {}: background settlement failed: {error}",
+                    self.child
+                ),
+            );
         }
         self.application.agent_activity.send_replace(());
     }

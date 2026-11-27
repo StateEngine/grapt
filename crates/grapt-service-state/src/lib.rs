@@ -65,7 +65,7 @@ pub enum Action {
 
 /// The owner supplies the cause and permitted recovery, never a consumer guess.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields, rename_all = "camelCase")]
+#[serde(rename_all = "camelCase")]
 pub struct State {
     #[serde(rename = "type")]
     pub kind: Kind,

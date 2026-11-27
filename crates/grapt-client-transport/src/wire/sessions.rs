@@ -181,10 +181,17 @@ fn detail(info: &grapt_api::u3a::SessionInfoDto) -> SessionDetail {
 pub fn decode_sessions(bytes: &[u8]) -> Result<Vec<SessionRow>, WireError> {
     decode_sessions_page(bytes).map(|(rows, _)| rows)
 }
-pub fn decode_sessions_page(bytes: &[u8]) -> Result<(Vec<SessionRow>, bool), WireError> {
+/// Decode one `SessionsResponseDto` page and the cursor that continues it,
+/// present whenever more rows follow, even after a page with no rows.
+pub fn decode_sessions_page(bytes: &[u8]) -> Result<(Vec<SessionRow>, Option<String>), WireError> {
     use grapt_api::u3a::SessionsResponseDto;
     let dto: SessionsResponseDto = decode_page(bytes, limits()?)?;
-    let more = dto.cursor().get().next().as_value().is_some();
+    let more = dto
+        .cursor()
+        .get()
+        .next()
+        .as_value()
+        .map(|next| next.as_str().to_owned());
     Ok((
         dto.data()
             .get()

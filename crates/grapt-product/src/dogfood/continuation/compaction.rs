@@ -857,14 +857,16 @@ impl ProductCompactor {
         match public_ended(&event, created, seq, &descriptor, &text, &prepared.recent) {
             Ok(notice) => {
                 if let Err(error) = self.hub.publish(&notice) {
-                    self.hub.invalidate_because(&format!(
-                        "compaction notice could not be published: {error}"
-                    ));
+                    self.hub.invalidate_session_because(
+                        &self.continuation.session,
+                        &format!("compaction notice could not be published: {error}"),
+                    );
                 }
             }
-            Err(error) => self.hub.invalidate_because(&format!(
-                "compaction notice could not be projected: {error}"
-            )),
+            Err(error) => self.hub.invalidate_session_because(
+                &self.continuation.session,
+                &format!("compaction notice could not be projected: {error}"),
+            ),
         }
         drop(inbox);
         Ok(())

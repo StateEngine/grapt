@@ -32,10 +32,14 @@ pub(super) fn search<C: grapt_client::Connection>(
     client: &mut Client<C>,
     query: String,
 ) -> Message {
+    let mut reach = grapt_client::CatalogReach::Read;
     let result = client
         .search_sessions(&query)
-        .map(|rows| {
-            rows.into_iter()
+        .map(|found| {
+            reach = found.reach;
+            found
+                .rows
+                .into_iter()
                 .map(|row| Agent {
                     display_name: None,
                     current: client.selected() == Some(&row.id),
@@ -46,7 +50,11 @@ pub(super) fn search<C: grapt_client::Connection>(
                 .collect()
         })
         .map_err(|e| e.to_string());
-    Message::Search(Search { query, result })
+    Message::Search(Search {
+        query,
+        result,
+        reach,
+    })
 }
 pub(super) fn manage<C: grapt_client::Connection>(
     client: &mut Client<C>,

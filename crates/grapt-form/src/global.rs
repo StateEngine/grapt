@@ -1,5 +1,7 @@
 //! Typed global ownership on the existing durable form service.
-use grapt_store::{AggregateId, DecodedFormFact, EventStore, GovernedTransaction, HeldWriters};
+use grapt_store::{
+    AggregateId, DecodedFormFact, EventStore, GovernedTransaction, HeldWriters, ProjectorError,
+};
 use grapt_types::{EventId, FormId, FormOwner, LocationRef, McpElicitationId, ToolCallId};
 use serde_json::{json, Value};
 
@@ -201,10 +203,12 @@ impl GlobalFormBinding {
     }
 }
 
+/// Project one global form fact. A SQLite failure keeps its type, so the
+/// database failing is never read as this fact being refused.
 pub(crate) fn project(
     tx: &rusqlite::Transaction<'_>,
     event: &DecodedFormFact,
-) -> Result<(), String> {
+) -> Result<(), ProjectorError> {
     let binding = GlobalFormBinding::decode(&event.data["owner"])?;
     if event.kind.name() == "form.created" {
         let form = &event.data["form"];
@@ -213,21 +217,19 @@ pub(crate) fn project(
             return Err("global form projection identity mismatch".into());
         }
         if let Some(error) = crate::answer::validate_fields(&form["fields"]) {
-            return Err(error);
+            return Err(error.into());
         }
         tx.execute(
             "INSERT INTO form_request (id, session_id, title, status, global_binding) VALUES (?1, NULL, ?2, 'pending', ?3)",
             rusqlite::params![event.form.as_str(), title, binding.wire().to_string()],
-        ).map_err(|error| error.to_string())?;
+        )?;
         return Ok(());
     }
-    let stored: String = tx
-        .query_row(
-            "SELECT global_binding FROM form_request WHERE id=?1 AND session_id IS NULL",
-            [event.form.as_str()],
-            |row| row.get(0),
-        )
-        .map_err(|error| error.to_string())?;
+    let stored: String = tx.query_row(
+        "SELECT global_binding FROM form_request WHERE id=?1 AND session_id IS NULL",
+        [event.form.as_str()],
+        |row| row.get(0),
+    )?;
     let stored: Value = serde_json::from_str(&stored).map_err(|error| error.to_string())?;
     // COMPATIBILITY, NOT EQUALITY. The ownership coordinates must match; the
     // observational call identity must not contradict. See `compatible_with`.
@@ -236,7 +238,7 @@ pub(crate) fn project(
         return Err(if stored.call.is_some() && binding.call.is_some() {
             "global form dispatch identity changed".into()
         } else {
-            String::from("global form connection or location changed")
+            "global form connection or location changed".into()
         });
     }
     let changed = match event.kind.name() {
@@ -245,9 +247,9 @@ pub(crate) fn project(
             let raw: String = tx.query_row(
                 "SELECT CASE WHEN length(CAST(data AS BLOB)) <= 262144 THEN data END FROM event
                  WHERE aggregate_family='form' AND aggregate_id=?1 AND type='form.created.2' ORDER BY seq LIMIT 1",
-                [event.form.as_str()], |row| row.get(0)).map_err(|error| error.to_string())?;
+                [event.form.as_str()], |row| row.get(0))?;
             let created: Value = serde_json::from_str(&raw).map_err(|error| error.to_string())?;
-            if let Some(error) = crate::answer::validate_answer(&created["form"]["fields"], answer) { return Err(error); }
+            if let Some(error) = crate::answer::validate_answer(&created["form"]["fields"], answer) { return Err(error.into()); }
             tx.execute("UPDATE form_request SET status='answered', answer=?2 WHERE id=?1 AND status IN ('pending','suspended')",
                 rusqlite::params![event.form.as_str(), answer.to_string()])
         }
@@ -257,7 +259,7 @@ pub(crate) fn project(
             tx.execute("UPDATE form_request SET status='suspended', suspended_reason=?2 WHERE id=?1 AND status='pending'", rusqlite::params![event.form.as_str(), reason])
         }
         _ => return Err("non-global form fact".into()),
-    }.map_err(|error| error.to_string())?;
+    }?;
     if changed != 1 {
         return Err("global form transition lost its live row".into());
     }

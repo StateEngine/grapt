@@ -33,6 +33,8 @@ pub struct Update {
     pub start: usize,
     pub rows: Vec<Slice>,
     pub agents: Vec<Agent>,
+    /// Whether the last session-list read could list anything.
+    pub catalog: grapt_client::CatalogReach,
     pub permission: Option<PermissionAsk>,
     pub policy: Option<String>,
     pub bypass_permissions: bool,
