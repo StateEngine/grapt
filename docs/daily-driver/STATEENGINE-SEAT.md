@@ -260,7 +260,7 @@ Further automatic compactions retain both tested operations and their objective.
 
 The same R process also survives a crash while a nested tool is waiting and a
 Session question has an edited, unanswered draft. The question and composer
-drafts survive; the explicit answer settles once after restart. `/reconcile`
+drafts survive; the explicit answer settles once after restart. The restart
 records the lost tool outcome as unknown once, without repeating its effect.
 The continued task then verifies the existing effect and both operations with
 real tools. R exits cleanly with two Ctrl+C presses within 1.5 seconds while the
@@ -305,12 +305,14 @@ does not bind a native seat or start a mail peer on the live engine's port.
 Native mail, seat binding and the actual producer seat-day remain separate
 row A acceptance work.
 
-If a crash loses a nested tool's result, the Session may refuse new input and
-ask you to run `/reconcile`. In R, this command records the lost runs as
-**unknown** through the existing Session recovery operation. It does not rerun
-them or claim they completed. The result stays open until **Esc**. Inspect their
-effects before continuing. A refusal
-keeps the command editable; retry it explicitly once the Session can recover.
+If a crash loses a nested tool's result while a turn runs, the restart records
+the lost runs as **unknown** before the Session accepts input. It does not rerun
+them or claim they completed; inspect their effects before continuing. A run
+the restart could not settle leaves the Session refusing new input and asking
+you to run `/reconcile`. In R, this command records the lost runs as unknown
+through the same Session recovery operation. The result stays open until
+**Esc**. A refusal keeps the command editable; retry it explicitly once the
+Session can recover.
 
 This is bounded synthetic Linux integration evidence. A real producer seat-day,
 provider cache share, Windows behavior, R performance and release packaging remain
