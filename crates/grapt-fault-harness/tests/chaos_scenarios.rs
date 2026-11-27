@@ -60,7 +60,9 @@ fn extract_header(headers: &str, name: &str) -> Option<String> {
 }
 
 fn parse_sse_events(body: &[u8]) -> Vec<(u64, String)> {
-    let text = String::from_utf8_lossy(body).replace("\r\n", "\n");
+    let text = String::from_utf8_lossy(body)
+        .replace("\r\n", "\n")
+        .replace('\r', "\n");
     let mut events = Vec::new();
     for frame in text.split("\n\n") {
         let mut id = None;
@@ -289,6 +291,66 @@ async fn crlf_and_chunked_sse_cut_at_exact_frame_boundary() -> Result<(), Box<dy
         vec![(1, "chunked-1".to_owned())]
     );
     chunked_proxy.shutdown().await;
+    Ok(())
+}
+
+#[tokio::test]
+async fn cr_delimited_sse_cuts_at_exact_frame_boundary() -> Result<(), Box<dyn Error>> {
+    // Standalone CR (\r) is a valid WHATWG SSE line ending; cutoff=1 must forward ONLY event 1.
+    let cr_body = "id: 1\rdata: cr-1\r\rid: 2\rdata: cr-2\r\r";
+    let cr_wire = format!(
+        "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{cr_body}",
+        cr_body.len()
+    );
+    let upstream = spawn_raw_upstream(cr_wire.into_bytes()).await?;
+    let proxy = ChaosProxy::new(
+        upstream,
+        FaultSchedule::new(FaultPlan::new("cr-sse-cut", FaultSeed::new(13)).with_rule(
+            FaultTrigger::OnRequest(1),
+            FaultAction::MidStreamEofFrames { after_frames: 1 },
+        )),
+    )
+    .start()
+    .await?;
+
+    let (status, _, body) =
+        split_http_response(&send_http_get(proxy.addr(), "/v1/cr", None).await?)?;
+    assert_eq!(status, 200);
+    assert_eq!(parse_sse_events(&body), vec![(1, "cr-1".to_owned())]);
+    assert_eq!(body, b"id: 1\rdata: cr-1\r\r");
+    proxy.shutdown().await;
+    Ok(())
+}
+
+#[tokio::test]
+async fn chunked_passthrough_preserves_trailers_verbatim() -> Result<(), Box<dyn Error>> {
+    let mut wire = b"HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nTransfer-Encoding: chunked\r\nTrailer: X-Stream-Digest\r\nConnection: close\r\n\r\n".to_vec();
+    wire.extend_from_slice(&encode_http_chunk(b"hello "));
+    wire.extend_from_slice(&encode_http_chunk(b"trailers"));
+    wire.extend_from_slice(b"0\r\nX-Stream-Digest: sha256=abc123\r\n\r\n");
+
+    let upstream = spawn_raw_upstream(wire).await?;
+    let proxy = ChaosProxy::new(
+        upstream,
+        FaultSchedule::new(FaultPlan::new("chunked-trailers", FaultSeed::new(14))),
+    )
+    .start()
+    .await?;
+
+    let (status, headers, raw_body) =
+        split_http_response(&send_http_get(proxy.addr(), "/v1/trailers", None).await?)?;
+    assert_eq!(status, 200);
+    assert_eq!(
+        extract_header(&headers, "trailer").as_deref(),
+        Some("X-Stream-Digest")
+    );
+    let raw_text = String::from_utf8_lossy(&raw_body);
+    assert!(raw_text.ends_with("0\r\nX-Stream-Digest: sha256=abc123\r\n\r\n"));
+    let mut decoder = ChunkedDecoder::new();
+    let decoded = decoder.decode(&raw_body);
+    assert!(!decoded.malformed && decoded.finished);
+    assert_eq!(decoded.payload, b"hello trailers");
+    proxy.shutdown().await;
     Ok(())
 }
 

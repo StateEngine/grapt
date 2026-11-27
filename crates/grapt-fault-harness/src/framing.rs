@@ -96,41 +96,81 @@ pub fn encode_http_chunk(payload: &[u8]) -> Vec<u8> {
     out
 }
 
-/// Incremental SSE event boundary detector supporting both LF (`\n\n`) and CRLF (`\r\n\r\n`).
+/// Result of feeding one byte into [`SseFrameScanner`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SseBoundary {
+    /// No frame boundary completed at this byte.
+    None,
+    /// A frame delimiter completed on the current byte (include this byte).
+    CompleteAtCurrent,
+    /// A standalone CR blank line completed on the previous byte (exclude this byte).
+    CompleteBeforeCurrent,
+}
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+enum LineState {
+    #[default]
+    Content,
+    AfterContentCr,
+    AtLineStart,
+    AtBlankLineCr,
+}
+
+/// Incremental WHATWG SSE event boundary detector supporting LF (`\n`),
+/// CRLF (`\r\n`), and standalone CR (`\r`) line endings across arbitrary chunk splits.
 #[derive(Debug, Default)]
 pub struct SseFrameScanner {
-    after_newline: bool,
-    saw_cr_after_newline: bool,
+    state: LineState,
 }
 
 impl SseFrameScanner {
-    /// Feed one logical body byte; returns `true` on the final byte of an event delimiter.
-    pub fn push_byte(&mut self, byte: u8) -> bool {
-        match byte {
-            b'\n' => {
-                if self.after_newline {
-                    self.after_newline = false;
-                    self.saw_cr_after_newline = false;
-                    true
-                } else {
-                    self.after_newline = true;
-                    self.saw_cr_after_newline = false;
-                    false
-                }
+    /// Feed one logical body byte and report whether an SSE event boundary completed.
+    pub fn push_byte(&mut self, byte: u8) -> SseBoundary {
+        match (self.state, byte) {
+            (LineState::Content, b'\n') => {
+                self.state = LineState::AtLineStart;
+                SseBoundary::None
             }
-            b'\r' => {
-                if self.after_newline && !self.saw_cr_after_newline {
-                    self.saw_cr_after_newline = true;
-                } else {
-                    self.after_newline = false;
-                    self.saw_cr_after_newline = false;
-                }
-                false
+            (LineState::Content, b'\r') => {
+                self.state = LineState::AfterContentCr;
+                SseBoundary::None
             }
-            _ => {
-                self.after_newline = false;
-                self.saw_cr_after_newline = false;
-                false
+            (LineState::Content, _) => SseBoundary::None,
+            (LineState::AfterContentCr, b'\n') => {
+                self.state = LineState::AtLineStart;
+                SseBoundary::None
+            }
+            (LineState::AfterContentCr, b'\r') => {
+                self.state = LineState::Content;
+                SseBoundary::CompleteAtCurrent
+            }
+            (LineState::AfterContentCr, _) => {
+                self.state = LineState::Content;
+                SseBoundary::None
+            }
+            (LineState::AtLineStart, b'\n') => {
+                self.state = LineState::Content;
+                SseBoundary::CompleteAtCurrent
+            }
+            (LineState::AtLineStart, b'\r') => {
+                self.state = LineState::AtBlankLineCr;
+                SseBoundary::None
+            }
+            (LineState::AtLineStart, _) => {
+                self.state = LineState::Content;
+                SseBoundary::None
+            }
+            (LineState::AtBlankLineCr, b'\n') => {
+                self.state = LineState::Content;
+                SseBoundary::CompleteAtCurrent
+            }
+            (LineState::AtBlankLineCr, b'\r') => {
+                self.state = LineState::AtBlankLineCr;
+                SseBoundary::CompleteBeforeCurrent
+            }
+            (LineState::AtBlankLineCr, _) => {
+                self.state = LineState::Content;
+                SseBoundary::CompleteBeforeCurrent
             }
         }
     }

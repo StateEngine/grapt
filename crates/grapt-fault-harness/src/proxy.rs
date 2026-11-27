@@ -19,7 +19,7 @@ use tokio::task::{JoinHandle, JoinSet};
 use crate::framing::{
     build_synthetic_http_response, encode_http_chunk, find_header_end,
     is_chunked_transfer_encoding, parse_content_length, parse_request_line, ChunkedDecoder,
-    SseFrameScanner, MAX_RESPONSE_HEADER_BYTES,
+    SseBoundary, SseFrameScanner, MAX_RESPONSE_HEADER_BYTES,
 };
 use crate::schedule::{FailureTranscript, FaultAction, FaultSchedule};
 
@@ -403,6 +403,10 @@ impl StreamState {
         wire: &[u8],
         delay_gate: &DelayGate,
     ) -> StreamDecision {
+        // Relay PassThrough responses verbatim so chunk framing and trailers stay intact.
+        if matches!(self.action, FaultAction::PassThrough) {
+            return write_and_flush(client, wire).await;
+        }
         if let Some(decoder) = &mut self.chunked_decoder {
             let decoded = decoder.decode(wire);
             if decoded.malformed {
@@ -516,12 +520,23 @@ impl StreamState {
             return StreamDecision::CloseEof;
         }
         for (idx, &byte) in slice.iter().enumerate() {
-            if self.sse_scanner.push_byte(byte) {
-                self.frames_seen = self.frames_seen.saturating_add(1);
-                if self.frames_seen >= target_frames {
-                    let _ = write_logical(client, &slice[..=idx], chunked).await;
-                    self.body_bytes_sent = self.body_bytes_sent.saturating_add(idx + 1);
-                    return StreamDecision::CloseEof;
+            match self.sse_scanner.push_byte(byte) {
+                SseBoundary::None => {}
+                SseBoundary::CompleteAtCurrent => {
+                    self.frames_seen = self.frames_seen.saturating_add(1);
+                    if self.frames_seen >= target_frames {
+                        let _ = write_logical(client, &slice[..=idx], chunked).await;
+                        self.body_bytes_sent = self.body_bytes_sent.saturating_add(idx + 1);
+                        return StreamDecision::CloseEof;
+                    }
+                }
+                SseBoundary::CompleteBeforeCurrent => {
+                    self.frames_seen = self.frames_seen.saturating_add(1);
+                    if self.frames_seen >= target_frames {
+                        let _ = write_logical(client, &slice[..idx], chunked).await;
+                        self.body_bytes_sent = self.body_bytes_sent.saturating_add(idx);
+                        return StreamDecision::CloseEof;
+                    }
                 }
             }
         }
