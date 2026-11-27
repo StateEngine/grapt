@@ -206,8 +206,8 @@ impl Projector for RefuseAfterProjection {
         &mut self,
         _tx: &rusqlite::Transaction<'_>,
         _event: &grapt_store::DecodedEvent,
-    ) -> Result<(), String> {
-        Err("injected projector refusal".to_owned())
+    ) -> Result<(), grapt_store::ProjectorError> {
+        Err("injected projector refusal".into())
     }
 }
 

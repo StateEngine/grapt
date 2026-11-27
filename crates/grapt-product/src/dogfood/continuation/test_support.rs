@@ -67,23 +67,14 @@ impl Drop for TestContinuationScratch {
 impl DurableContinuation {
     /// This continuation after an earlier input's compaction made no progress:
     /// its next request is the trimmed recovery request.
-    pub(in crate::dogfood) fn after_no_progress_for_test(
-        self,
-        target: &grapt_types::ResolvedModelTarget,
-    ) -> Result<Self, String> {
+    pub(in crate::dogfood) fn after_no_progress_for_test(self) -> Result<Self, String> {
         let registry = compaction_recovery::Registry::default();
         let earlier = "msg_d2a_no_progress"
             .parse()
             .map_err(|e: grapt_types::IdError| e.to_string())?;
-        let recovery = compaction_recovery::Session::new(
-            registry.clone(),
-            self.session.clone(),
-            earlier,
-            target,
-            None,
-        );
-        recovery.failed(compaction_recovery::Cause::NoProgress, &lock(&self.inbox))?;
-        Ok(self.with_compaction_recovery(registry, target, None))
+        compaction_recovery::Session::new(registry.clone(), self.session.clone(), earlier)
+            .failed(compaction_recovery::Cause::NoProgress);
+        Ok(self.with_compaction_recovery(registry))
     }
 
     pub(in crate::dogfood) fn empty_for_test(

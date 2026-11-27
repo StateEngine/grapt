@@ -10,21 +10,21 @@ pub enum CompactionRecovery {
     Transient,
     Other,
     NoProgress,
-    Capacity,
+    DidNotFit,
 }
 
 impl CompactionRecovery {
     pub fn message(self) -> String {
         match self {
-            Self::Context => "automatic compaction paused after context overflow; change the model/context budget, rewind, or request /compact to retry",
-            Self::Authentication => "automatic compaction paused after authentication failure; sign in again and request /compact to retry",
-            Self::Quota => "automatic compaction paused after credit/quota failure; restore credit and request /compact, or retry after a successful model response",
-            Self::Transient => "automatic compaction paused after a transient failure; the next user input or /compact may retry",
+            Self::Context => "Automatic compaction failed after a context overflow. Change the model or context budget, rewind, or request /compact to retry.",
+            Self::Authentication => "Automatic compaction failed after an authentication failure. Sign in again, then send another prompt.",
+            Self::Quota => "Automatic compaction failed after a credit or quota failure. Restore credit, then send another prompt.",
+            Self::Transient => "Automatic compaction failed after a transient failure. Send another prompt or request /compact to retry.",
             Self::NoProgress => "Automatic compaction made no progress. Your history is intact; send another prompt to continue with a visibly trimmed context.",
-            Self::Other => "automatic compaction paused after a non-transient failure; change the model/context budget, rewind, or request /compact to retry",
-            Self::Capacity => "automatic compaction recovery capacity reached; request /compact to retry manually",
+            Self::DidNotFit => "The compacted context still did not fit the model's context window. Your history is intact; send another prompt to continue with a visibly trimmed context.",
+            Self::Other => "Automatic compaction failed. Change the model or context budget, rewind, or request /compact to retry.",
             Self::UsageLimit { reset } => return format!(
-                "Automatic compaction paused. {} Request /compact after switching accounts.",
+                "Automatic compaction failed. {} Switch accounts, then send another prompt.",
                 super::provider_limit_message(reset)
             ),
         }.to_owned()

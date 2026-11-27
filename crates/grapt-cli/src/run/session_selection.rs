@@ -32,10 +32,9 @@ pub(super) async fn newest_for_project(
                 RunError::NoSession
             });
         };
-        if rows.is_empty()
-            || !seen.insert(next.as_str().to_owned())
-            || page_number + 1 == MAX_SELECTION_PAGES
-        {
+        // A page can be empty and still continue: the server skipped rows
+        // it could not list. Repeated cursors and the page cap bound this.
+        if !seen.insert(next.as_str().to_owned()) || page_number + 1 == MAX_SELECTION_PAGES {
             return Err(RunError::SessionSelectionIncomplete);
         }
         page = client.top_level_sessions_at(next.as_str()).await?;

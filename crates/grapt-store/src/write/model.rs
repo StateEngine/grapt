@@ -1,4 +1,4 @@
-use super::WriteError;
+use super::{ProjectorError, WriteError};
 use crate::decode::DecodedEvent;
 use crate::notify::CommittedNotices;
 use crate::projection::ProjectionId;
@@ -13,15 +13,15 @@ pub trait Projector {
         &mut self,
         tx: &rusqlite::Transaction<'_>,
         event: &DecodedEvent,
-    ) -> Result<(), String>;
+    ) -> Result<(), ProjectorError>;
     /// Session projectors refuse global facts unless their owner explicitly
     /// implements the global-form projection.
     fn project_form(
         &mut self,
         _tx: &rusqlite::Transaction<'_>,
         _event: &crate::DecodedFormFact,
-    ) -> Result<(), String> {
-        Err("this projector does not own global form facts".to_owned())
+    ) -> Result<(), ProjectorError> {
+        Err("this projector does not own global form facts".into())
     }
 }
 

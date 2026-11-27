@@ -375,7 +375,7 @@ fn swr_c02_restart_recovers_exact_omission_and_compacts_another_grouped_step() {
 }
 
 #[test]
-fn swr_c02_no_progress_summary_is_refused_before_publication() {
+fn swr_c02_a_summary_that_cannot_fit_commits_once_and_ends_the_step() {
     const OUTPUT_BYTES: usize = 28_000;
     let _journey = process_journey_custody();
     let root = root("swr-c02-no-progress");
@@ -416,7 +416,7 @@ fn swr_c02_no_progress_summary_is_refused_before_publication() {
     assert_eq!(
         provider.calls.load(Ordering::SeqCst),
         3,
-        "a coding request opened after an inadmissible summary"
+        "a coding request opened after a summary that does not fit"
     );
     let messages = json(
         address,
@@ -428,11 +428,12 @@ fn swr_c02_no_progress_summary_is_refused_before_publication() {
         messages.to_string().contains("executionFailure"),
         "the typed execution failure was not projected"
     );
-    // A summary that does not reduce is no progress, but not an unusable
+    // A summary that does not fit is named so, but it is not an unusable
     // one: it leaves no compaction-failed notice.
     assert!(
-        !messages.to_string().contains("compactionFailed"),
-        "a non-summary no-progress stop was named an unusable summary: {messages}"
+        messages.to_string().contains("did not fit")
+            && !messages.to_string().contains("compactionFailed"),
+        "the stop was not named did-not-fit: {messages}"
     );
     child.stop_after_witness(&root);
     drop(child);
@@ -448,7 +449,8 @@ fn swr_c02_no_progress_summary_is_refused_before_publication() {
             |row| row.get(0),
         )
         .unwrap_or_else(|error| panic!("C02 descriptor count is unreadable: {error}"));
-    assert_eq!(committed, 0, "an inadmissible descriptor was published");
+    // The summary is kept: the next input starts from it, trimmed.
+    assert_eq!(committed, 1, "the summary was not committed exactly once");
     let failed: String = store
         .connection()
         .query_row(
@@ -461,7 +463,7 @@ fn swr_c02_no_progress_summary_is_refused_before_publication() {
         .unwrap_or_else(|error| panic!("C02 terminal failure is unreadable: {error}"));
     assert!(
         failed.contains("compaction-no-progress"),
-        "the durable failure was not CompactionNoProgress: {failed}"
+        "the durable failure is not readable as no-progress by an older build: {failed}"
     );
     drop(store);
     process_fixture::cleanup(&root);
@@ -535,7 +537,7 @@ fn swr_h2_dual_stream_shell_artifact_reaches_provider_and_survives_restart() {
     const CALL: &str = "call_swr_dual_stream";
     const COMMAND: &str = "i=0; while [ $i -lt 600 ]; do printf '%01024d' 0; printf '%01024d' 1 >&2; i=$((i+1)); done";
     const PAGE: usize = 64 * 1024;
-    const HISTORY_CALLS: [&str; 16] = [
+    const HISTORY_CALLS: [&str; 17] = [
         "call_h2_page_0",
         "call_h2_page_1",
         "call_h2_page_2",
@@ -552,6 +554,7 @@ fn swr_h2_dual_stream_shell_artifact_reaches_provider_and_survives_restart() {
         "call_h2_page_13",
         "call_h2_page_14",
         "call_h2_page_15",
+        "call_h2_page_16",
     ];
     let _journey = process_journey_custody();
     let root = root("swr-dual-stream");
@@ -628,20 +631,12 @@ fn swr_h2_dual_stream_shell_artifact_reaches_provider_and_survives_restart() {
     let output = receipt["output"]
         .as_str()
         .unwrap_or_else(|| panic!("command output missing"));
-    let omitted = receipt["omitted_output_bytes"]
-        .as_u64()
-        .unwrap_or_else(|| panic!("receipt did not explain the additional output clipping"))
-        as usize;
-    let marker = format!("\n[shell: omitted {omitted} output bytes to retain execution receipt]\n");
-    let (head, tail) = output
-        .split_once(&marker)
-        .unwrap_or_else(|| panic!("receipt loss marker missing"));
-    assert!(omitted > 0);
-    // The original bounded shell capture filled its byte ceiling. Every byte
-    // displaced by the receipt must be accounted for by its explicit marker.
-    assert_eq!(head.len() + omitted + tail.len(), artifact_bound);
-    assert!(!head.is_empty() && head.chars().all(|character| character == '0'));
-    assert!(tail.contains('1'), "stderr end was lost");
+    // With 64 KiB receipt/annotation headroom above the 1 MiB shell output cap,
+    // the full 1 MiB dual-stream shell output survives intact inside the receipt.
+    assert_eq!(output.len(), 1024 * 1024);
+    assert!(receipt.get("omitted_output_bytes").is_none());
+    assert!(output.starts_with("0000"), "stdout start was lost");
+    assert!(output.contains('1'), "stderr end was lost");
     // Public message content remains its original excerpt, independent of the model preview.
     let page = json(
         address,
@@ -683,12 +678,13 @@ fn swr_h2_dual_stream_shell_artifact_reaches_provider_and_survives_restart() {
     eprintln!("H2 shell containment: fallback={fallback}");
     assert_eq!(
         command_part.matches("[shell:").count(),
-        1,
+        0,
         "unexpected supervision notice inside command output"
     );
-    // Detailed stdout/stderr capture markers precede the outer receipt
-    // clipping. The retained stderr marker still names its observed stream.
-    assert!(command_part.contains(&marker));
+    // Detailed stdout/stderr capture markers survive intact when the receipt
+    // fits within the 64 KiB headroom above the 1 MiB shell output cap.
+    assert!(command_part.contains("[stdout output bounded: kept "));
+    assert!(command_part.contains("[stderr output bounded: kept "));
     assert!(command_part.ends_with("of 614400 observed bytes]"));
     child.stop_after_witness(&root);
     drop(child);

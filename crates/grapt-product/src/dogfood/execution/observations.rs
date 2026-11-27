@@ -40,14 +40,16 @@ pub(super) fn start(
     match crate::dogfood::session_status::lifecycle_event(observation) {
         Ok(event) => {
             if let Err(error) = location.hub.publish(&event) {
-                location.hub.invalidate_because(&format!(
-                    "session {session}: execution start could not be published: {error}"
-                ));
+                location.hub.invalidate_session_because(
+                    session,
+                    &format!("session {session}: execution start could not be published: {error}"),
+                );
             }
         }
-        Err(error) => location.hub.invalidate_because(&format!(
-            "session {session}: execution start could not be projected: {error}"
-        )),
+        Err(error) => location.hub.invalidate_session_because(
+            session,
+            &format!("session {session}: execution start could not be projected: {error}"),
+        ),
     }
     if let Some(status) = &location.active.status {
         if let Err(error) = status.publish_current(session, |snapshot| {
@@ -56,9 +58,10 @@ pub(super) fn start(
                 .status_presentation(session, snapshot)
                 .map_err(|_| "session status owner is unconfirmed".to_owned())
         }) {
-            location.hub.invalidate_because(&format!(
-                "session {session}: status publication unavailable: {error}"
-            ));
+            location.hub.invalidate_session_because(
+                session,
+                &format!("session {session}: status publication unavailable: {error}"),
+            );
         }
     }
     Ok(())
@@ -357,9 +360,10 @@ impl LiveExecutor {
         // remains a failed store; force clients to reconcile its actual state.
         let _unrecorded =
             self.observe_execution(session, execution, Some(Outcome::Failed), &Failure::Generic);
-        self.hub.invalidate_because(&format!(
-            "session {session}: execution {execution} abandoned"
-        ));
+        self.hub.invalidate_session_because(
+            session,
+            &format!("session {session}: execution {execution} abandoned"),
+        );
     }
 }
 
@@ -455,9 +459,10 @@ pub(super) fn announce(
                 .map_err(|_| "session status owner is unconfirmed".to_owned())
         });
         if let Err(error) = &result {
-            hub.invalidate_because(&format!(
-                "session {session}: status publication unavailable: {error}"
-            ));
+            hub.invalidate_session_because(
+                session,
+                &format!("session {session}: status publication unavailable: {error}"),
+            );
         }
         result.is_ok()
     });
@@ -465,16 +470,22 @@ pub(super) fn announce(
     match crate::dogfood::session_status::lifecycle_event(observation) {
         Ok(event) => {
             if let Err(error) = hub.publish(&event) {
-                hub.invalidate_because(&format!(
-                    "session {session}: execution observation could not be published: {error}"
-                ));
+                hub.invalidate_session_because(
+                    session,
+                    &format!(
+                        "session {session}: execution observation could not be published: {error}"
+                    ),
+                );
                 return Ok(ObservationPublication::Unavailable);
             }
         }
         Err(error) => {
-            hub.invalidate_because(&format!(
-                "session {session}: execution observation could not be projected: {error}"
-            ));
+            hub.invalidate_session_because(
+                session,
+                &format!(
+                    "session {session}: execution observation could not be projected: {error}"
+                ),
+            );
             return Ok(ObservationPublication::Unavailable);
         }
     }
@@ -496,12 +507,24 @@ pub(super) fn public_failure_with_compaction(
         error,
         grapt_runtime::CoordinatorError::Context {
             failure: grapt_types::ContextFailure::CompactionFailed
-                | grapt_types::ContextFailure::CompactionNoProgress,
+                | grapt_types::ContextFailure::CompactionNoProgress
+                | grapt_types::ContextFailure::CompactionDidNotFit,
             ..
         }
     ) {
         if let Some(cause) = location.compaction_recovery.take_failure(session) {
             return Failure::CompactionRecovery(cause.public());
+        }
+        if matches!(
+            error,
+            grapt_runtime::CoordinatorError::Context {
+                failure: grapt_types::ContextFailure::CompactionDidNotFit,
+                ..
+            }
+        ) {
+            return Failure::CompactionRecovery(
+                location.compaction_recovery.did_not_fit(session).public(),
+            );
         }
     }
     public_failure(error)

@@ -1,7 +1,10 @@
 mod request;
 pub(super) use request::{blob_size as request_blob_size, fold_request_history};
 
-use super::{InstructionChange, InstructionError, ResolvedInstruction, SourceObservation};
+use super::{
+    InstructionChange, InstructionError, ResolvedInstruction, SkippedInstructionEvent,
+    SourceObservation,
+};
 use grapt_store::DecodedEvent;
 use grapt_types::{
     EventSeq, ForkBoundary, ForkLineage, ForkLineageBuilder, InstructionEpoch, InstructionHash,
@@ -56,6 +59,39 @@ pub(super) enum CacheStatus {
     Present,
     Missing,
     LegacyFork,
+    /// The fold skipped rows, so it cannot judge a cache a full reader wrote.
+    Degraded,
+}
+
+/// A fold of durable history and the rows it had to leave out.
+#[derive(Debug, Default)]
+pub(super) struct Fold {
+    pub(super) history: Option<FoldedHistory>,
+    pub(super) skipped: Vec<SkippedInstructionEvent>,
+}
+
+impl Fold {
+    pub(super) fn state(&self) -> Option<&CachedState> {
+        self.history.as_ref().map(|history| &history.state)
+    }
+
+    /// The state a writer may persist. A degraded fold persists none, so the
+    /// next reader that can decode every row rebuilds the cache from the log.
+    pub(super) fn persistable(&self) -> Option<&CachedState> {
+        if self.skipped.is_empty() {
+            self.state()
+        } else {
+            None
+        }
+    }
+}
+
+/// The decoded meaning of one instruction-relevant journal row.
+enum Payload {
+    Updated(BTreeMap<InstructionKey, Option<InstructionHash>>),
+    CompactionEnded,
+    Cleared,
+    Unrelated,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -113,25 +149,38 @@ fn hash_value(value: &str) -> InstructionHash {
     InstructionHash::from_bytes(Sha256::digest(value.as_bytes()).into())
 }
 
+/// Fold a Session's whole lineage. A row whose envelope or payload cannot be
+/// decoded is skipped and named in [`Fold::skipped`]; ordering and blob
+/// failures still fail the fold.
 pub(super) fn fold_history(
     conn: &Connection,
     session: &SessionId,
-) -> Result<Option<FoldedHistory>, InstructionError> {
+) -> Result<Fold, InstructionError> {
     fold_segments(conn, &own_lineage(conn, session)?)
 }
 
 pub(super) fn fold_parent_history(
     conn: &Connection,
     fork: &ForkBoundary,
-) -> Result<Option<FoldedHistory>, InstructionError> {
+) -> Result<Fold, InstructionError> {
     fold_segments(conn, &inherited_lineage(conn, fork)?)
 }
 
-fn fold_segments(
+/// Check the cache against a fold, unless the fold is degraded.
+pub(super) fn check_cache(
     conn: &Connection,
-    lineage: &ForkLineage,
-) -> Result<Option<FoldedHistory>, InstructionError> {
+    session: &SessionId,
+    fold: &Fold,
+) -> Result<CacheStatus, InstructionError> {
+    if !fold.skipped.is_empty() {
+        return Ok(CacheStatus::Degraded);
+    }
+    validate_cache(conn, session, fold.state())
+}
+
+fn fold_segments(conn: &Connection, lineage: &ForkLineage) -> Result<Fold, InstructionError> {
     let mut folded = None;
+    let mut skipped = Vec::new();
     for segment in lineage.segments() {
         let mut stmt = conn.prepare(
             "SELECT id, seq, created, type, data FROM event
@@ -149,23 +198,22 @@ fn fold_segments(
         let cap = segment.cap().bound().map(grapt_types::ParentSeq::as_raw);
         let mut rows = stmt.query(rusqlite::params![segment.session().as_str(), cap])?;
         while let Some(row) = rows.next()? {
-            let id: String = row.get(0)?;
-            let seq: i64 = row.get(1)?;
-            let created: i64 = row.get(2)?;
-            let kind: String = row.get(3)?;
-            let data: String = row.get(4)?;
-            let event = grapt_store::decode::decode_row(
-                &id,
-                segment.session().as_str(),
-                seq,
-                created,
-                &kind,
-                &data,
-            )?;
-            apply_history_event(conn, &mut folded, &event)?;
+            let decoded = decode_journal_row(row, segment.session());
+            match decoded.and_then(|decoded| row_blobs(conn, &decoded.1).map(|()| decoded)) {
+                Ok((event, payload)) => {
+                    apply_payload(&mut folded, &event, payload, FoldMode::Current)?;
+                }
+                Err(error) if row_damage(&error) => {
+                    skipped.push(skip(row, segment.session(), &error));
+                }
+                Err(error) => return Err(error),
+            }
         }
     }
-    Ok(folded)
+    Ok(Fold {
+        history: folded,
+        skipped,
+    })
 }
 
 pub(super) fn apply_history_event(
@@ -182,12 +230,111 @@ fn apply_history_event_with_mode(
     event: &DecodedEvent,
     mode: FoldMode,
 ) -> Result<(), InstructionError> {
+    let payload = decode_payload(event)?;
+    row_blobs(conn, &payload)?;
+    apply_payload(folded, event, payload, mode)
+}
+
+/// Every blob an update row names reads as the content it addresses.
+fn row_blobs(conn: &Connection, payload: &Payload) -> Result<(), InstructionError> {
+    if let Payload::Updated(delta) = payload {
+        for hash in delta.values().flatten() {
+            load_blob(conn, *hash)?;
+        }
+    }
+    Ok(())
+}
+
+/// Whether `error` is damage to the row being folded, which the fold skips
+/// and names, rather than a failure of the database reading it.
+fn row_damage(error: &InstructionError) -> bool {
+    match error {
+        InstructionError::Sqlite(error) => !grapt_store::sqlite_storage_failure(error),
+        InstructionError::EntryBound { .. } => false,
+        _ => true,
+    }
+}
+
+/// Validate one row's payload for its kind and version.
+/// Read and decode one journal row (`id, seq, created, type, data`). Every
+/// failure, a column SQLite cannot read as its type included, belongs to the
+/// row, so the caller skips it rather than ending the fold.
+fn decode_journal_row(
+    row: &rusqlite::Row<'_>,
+    session: &SessionId,
+) -> Result<(DecodedEvent, Payload), InstructionError> {
+    let id: String = row.get(0)?;
+    let seq: i64 = row.get(1)?;
+    let created: i64 = row.get(2)?;
+    let kind: String = row.get(3)?;
+    let data: String = row.get(4)?;
+    let event = grapt_store::decode::decode_row(&id, session.as_str(), seq, created, &kind, &data)?;
+    let payload = decode_payload(&event)?;
+    Ok((event, payload))
+}
+
+/// The marker for a row [`decode_journal_row`] could not decode.
+fn skip(
+    row: &rusqlite::Row<'_>,
+    session: &SessionId,
+    error: &InstructionError,
+) -> SkippedInstructionEvent {
+    SkippedInstructionEvent {
+        session: session.clone(),
+        seq: row
+            .get::<_, i64>(1)
+            .ok()
+            .and_then(|seq| u64::try_from(seq).ok())
+            .map(EventSeq::new),
+        reason: error.to_string(),
+    }
+}
+
+fn decode_payload(event: &DecodedEvent) -> Result<Payload, InstructionError> {
     match (event.kind.name(), event.kind.version().value()) {
-        ("session.instructions.updated", 2) => {
-            let delta = decode_event_delta(&event.aggregate_id, &event.data)?;
-            for hash in delta.values().flatten() {
-                load_blob(conn, *hash)?;
-            }
+        ("session.instructions.updated", 2) => Ok(Payload::Updated(decode_event_delta(
+            &event.aggregate_id,
+            &event.data,
+        )?)),
+        ("session.compaction.ended", 1) => {
+            decode_compaction_ended(event)?;
+            Ok(Payload::CompactionEnded)
+        }
+        // The Rust-native boundary. SAME epoch semantics as v1 — this is one
+        // semantic boundary carried at two payload versions, not two events —
+        // and an EXPLICIT arm rather than a widened v1 pattern, so the two
+        // payload contracts can never validate each other.
+        ("session.compaction.ended", 2) => {
+            decode_compaction_ended_v2(event)?;
+            Ok(Payload::CompactionEnded)
+        }
+        ("session.moved", 1) => {
+            decode_moved(event)?;
+            Ok(Payload::Cleared)
+        }
+        ("session.revert.committed", 1) => {
+            decode_revert_committed(event)?;
+            Ok(Payload::Cleared)
+        }
+        ("session.instructions.updated", version)
+        | ("session.compaction.ended", version)
+        | ("session.moved", version)
+        | ("session.revert.committed", version) => Err(InstructionError::UnsupportedVersion {
+            kind: event.kind.name().to_owned(),
+            version,
+        }),
+        _ => Ok(Payload::Unrelated),
+    }
+}
+
+fn apply_payload(
+    folded: &mut Option<FoldedHistory>,
+    event: &DecodedEvent,
+    payload: Payload,
+    mode: FoldMode,
+) -> Result<(), InstructionError> {
+    match payload {
+        Payload::Updated(delta) => {
             if let Some(history) = folded {
                 enter_aggregate(history, event, mode);
                 ensure_monotonic(&history.state, event)?;
@@ -212,10 +359,8 @@ fn apply_history_event_with_mode(
                 updates: Vec::new(),
                 owner: event.aggregate_id.clone(),
             });
-            Ok(())
         }
-        ("session.compaction.ended", 1) => {
-            decode_compaction_ended(event)?;
+        Payload::CompactionEnded => {
             if let Some(history) = folded {
                 enter_aggregate(history, event, mode);
                 ensure_monotonic(&history.state, event)?;
@@ -224,51 +369,17 @@ fn apply_history_event_with_mode(
                 history.state.initial = history.state.current.clone();
                 history.updates.clear();
             }
-            Ok(())
         }
-        // The Rust-native boundary. SAME epoch semantics as v1 — this is one
-        // semantic boundary carried at two payload versions, not two events —
-        // and an EXPLICIT arm rather than a widened v1 pattern, so the two
-        // payload contracts can never validate each other.
-        ("session.compaction.ended", 2) => {
-            decode_compaction_ended_v2(event)?;
-            if let Some(history) = folded {
-                enter_aggregate(history, event, mode);
-                ensure_monotonic(&history.state, event)?;
-                history.state.epoch = InstructionEpoch::new(event.seq.value());
-                history.state.through = event.seq;
-                history.state.initial = history.state.current.clone();
-                history.updates.clear();
-            }
-            Ok(())
-        }
-        ("session.moved", 1) => {
-            decode_moved(event)?;
+        Payload::Cleared => {
             if let Some(history) = folded {
                 enter_aggregate(history, event, mode);
                 ensure_monotonic(&history.state, event)?;
             }
             *folded = None;
-            Ok(())
         }
-        ("session.revert.committed", 1) => {
-            decode_revert_committed(event)?;
-            if let Some(history) = folded {
-                enter_aggregate(history, event, mode);
-                ensure_monotonic(&history.state, event)?;
-            }
-            *folded = None;
-            Ok(())
-        }
-        ("session.instructions.updated", version)
-        | ("session.compaction.ended", version)
-        | ("session.moved", version)
-        | ("session.revert.committed", version) => Err(InstructionError::UnsupportedVersion {
-            kind: event.kind.name().to_owned(),
-            version,
-        }),
-        _ => Ok(()),
+        Payload::Unrelated => {}
     }
+    Ok(())
 }
 
 // A fork can copy fewer conversation rows than its parent has journal rows.

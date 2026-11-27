@@ -20,7 +20,7 @@ pub(super) const TOOL_EXCLUDED: &str = "tool-excluded";
 
 /// One definition left out of a request.
 #[derive(Debug, Clone, PartialEq, Eq, Ord, PartialOrd, Serialize, Deserialize)]
-#[serde(deny_unknown_fields, rename_all = "camelCase")]
+#[serde(rename_all = "camelCase")]
 pub struct ExcludedTool {
     pub name: String,
     /// A product-authored reason, never a provider string.
@@ -53,7 +53,6 @@ pub struct ToolExcludedNotice {
 }
 
 #[derive(Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
 struct Data {
     #[serde(rename = "sessionID")]
     session: String,

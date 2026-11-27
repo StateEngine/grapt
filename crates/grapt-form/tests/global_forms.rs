@@ -694,3 +694,164 @@ fn a_dispatch_with_an_attempt_round_trips_exactly() -> TestResult {
     assert_eq!(back, binding, "wire was {wire}");
     Ok(())
 }
+
+#[test]
+fn recovery_skips_a_corrupt_global_form_and_keeps_the_healthy_one() -> TestResult {
+    // Bad evidence, and a value SQLite cannot read as its declared type.
+    for (index, damage) in [
+        "UPDATE form_request SET global_binding = 'not json' WHERE id = 'frm_broken'",
+        "UPDATE form_request SET suspended_reason = 7 WHERE id = 'frm_broken'",
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        recovery_skips_damage(index, damage)?;
+    }
+    Ok(())
+}
+
+fn recovery_skips_damage(index: usize, damage: &str) -> TestResult {
+    let path = std::env::temp_dir().join(format!(
+        "grapt-form-recovery-skip-{}-{index}.db",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_file(&path);
+    let mut store = EventStore::open(&path, "test")?;
+    FormService::initialize(&mut store)?;
+    let owner = binding()?;
+    for (form, event) in [("frm_broken", "evt_broken"), ("frm_healthy", "evt_healthy")] {
+        let id: FormId = form.parse()?;
+        store.elect_writer(&AggregateId::Form(id.clone()))?;
+        FormService::create_global_on(
+            &mut store,
+            &event.parse()?,
+            &id,
+            &owner,
+            &json!({"id":form, "sessionID":"global", "title":"Name",
+                "metadata":{"kind":"mcp-elicitation"},
+                "fields":[{"key":"name", "type":"string", "required":true}]}),
+            1,
+        )?;
+    }
+    drop(store);
+    // The store refuses ungoverned writes, so the damage comes from a separate
+    // connection, as a foreign writer would leave it.
+    rusqlite::Connection::open(&path)?.execute(damage, [])?;
+    let store = EventStore::open(&path, "test")?;
+
+    assert!(grapt_form::global_catalog::pending_global_forms(&store).is_err());
+    let (records, skipped) = grapt_form::global_catalog::pending_global_forms_for_recovery(&store)?;
+    let healthy: Vec<&str> = records.iter().map(|record| record.id.as_str()).collect();
+    assert_eq!(healthy, ["frm_healthy"]);
+    assert_eq!(skipped.len(), 1);
+    assert_eq!(
+        skipped[0].id.as_ref().map(FormId::as_str),
+        Some("frm_broken")
+    );
+    drop(store);
+    let _ = std::fs::remove_file(&path);
+    Ok(())
+}
+
+#[test]
+fn recovery_reaches_a_pending_form_behind_a_full_pass_of_suspended_ones() -> TestResult {
+    let path = std::env::temp_dir().join(format!(
+        "grapt-form-recovery-order-{}.db",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_file(&path);
+    let mut store = EventStore::open(&path, "test")?;
+    FormService::initialize(&mut store)?;
+    let owner = binding()?;
+    for form in ["frm_suspended", "frm_waiting"] {
+        let id: FormId = form.parse()?;
+        store.elect_writer(&AggregateId::Form(id.clone()))?;
+        FormService::create_global_on(
+            &mut store,
+            &format!("evt_create_{form}").parse()?,
+            &id,
+            &owner,
+            &json!({"id":form, "sessionID":"global", "title":"Name",
+                "fields":[{"key":"name", "type":"string"}]}),
+            1,
+        )?;
+    }
+    FormService::suspend_on(
+        &mut store,
+        &"evt_suspend_first".parse()?,
+        &"frm_suspended".parse()?,
+        FormSuspensionReason::ProcessLoss,
+        2,
+    )?;
+    drop(store);
+    // Past the capacity a writer of this build enforces: 128 more suspended
+    // forms, all ahead of the pending one in row order.
+    let raw = rusqlite::Connection::open(&path)?;
+    raw.execute_batch(
+        "CREATE TEMP TABLE copy AS SELECT * FROM form_request WHERE id = 'frm_suspended'",
+    )?;
+    for index in 0..128 {
+        raw.execute("UPDATE copy SET id = ?1", [format!("frm_copy_{index:03}")])?;
+        raw.execute("INSERT INTO form_request SELECT * FROM copy", [])?;
+    }
+    raw.execute(
+        "UPDATE form_request SET rowid = (SELECT MAX(rowid) + 1 FROM form_request)
+           WHERE id = 'frm_waiting'",
+        [],
+    )?;
+    drop(raw);
+    let store = EventStore::open(&path, "test")?;
+    let (records, _) = grapt_form::global_catalog::pending_global_forms_for_recovery(&store)?;
+    assert!(
+        records
+            .iter()
+            .any(|record| record.id.as_str() == "frm_waiting"),
+        "the pending form waited behind suspended ones"
+    );
+    drop(store);
+    let _ = std::fs::remove_file(&path);
+    Ok(())
+}
+
+#[test]
+fn unreadable_pending_rows_never_displace_a_healthy_suspended_form() -> TestResult {
+    let path = std::env::temp_dir().join(format!(
+        "grapt-form-recovery-budget-{}.db",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_file(&path);
+    let mut store = EventStore::open(&path, "test")?;
+    FormService::initialize(&mut store)?;
+    let id: FormId = "frm_suspended".parse()?;
+    create(&mut store, &id, &binding()?)?;
+    FormService::suspend_on(
+        &mut store,
+        &"evt_suspend_older".parse()?,
+        &id,
+        FormSuspensionReason::ProcessLoss,
+        2,
+    )?;
+    drop(store);
+    // Pending rows whose identity no build can read, as a foreign writer or
+    // a disk could leave them.
+    let raw = rusqlite::Connection::open(&path)?;
+    raw.execute_batch(
+        "CREATE TEMP TABLE copy AS SELECT * FROM form_request WHERE id = 'frm_suspended';
+         UPDATE copy SET status = 'pending'",
+    )?;
+    for index in 0..128_u32 {
+        raw.execute("UPDATE copy SET id = ?1", [index.to_be_bytes().to_vec()])?;
+        raw.execute("INSERT INTO form_request SELECT * FROM copy", [])?;
+    }
+    drop(raw);
+    let store = EventStore::open(&path, "test")?;
+    let (records, skipped) = grapt_form::global_catalog::pending_global_forms_for_recovery(&store)?;
+    assert!(
+        records.iter().any(|record| record.id == id),
+        "unreadable pending rows displaced the suspended form"
+    );
+    assert_eq!(skipped.len(), 128, "every unreadable row is named");
+    drop(store);
+    let _ = std::fs::remove_file(&path);
+    Ok(())
+}

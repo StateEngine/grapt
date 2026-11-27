@@ -67,7 +67,7 @@ impl ProjectionFact {
         &self,
         projector: &mut dyn Projector,
         tx: &rusqlite::Transaction<'_>,
-    ) -> Result<(), String> {
+    ) -> Result<(), crate::ProjectorError> {
         match self {
             Self::Session(event) => projector.project(tx, event),
             Self::Form(event) => projector.project_form(tx, event),

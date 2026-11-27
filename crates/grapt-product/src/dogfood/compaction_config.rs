@@ -3,14 +3,12 @@
 //! folded over the ordered config documents, a later document winning per
 //! key (`session/compaction.ts` `settings`).
 //!
-//! - `auto: false` disables only the additional projected-input threshold;
-//!   the universal reported-usage ceiling, structural bounds and `/compact` remain.
-//! - `buffer` replaces SE's headroom in the threshold. SE's budget is the
-//!   account inventory context, which is the model's INPUT window, so this is
-//!   the oracle's input-limit branch (`input - buffer`), with SE's output
-//!   reserve still held back. Unset keeps SE's own 4 096 headroom, not the
-//!   oracle's 20 000 default. The separate 90% reported-usage trigger is
-//!   universal; a buffer can compact earlier but cannot delay it.
+//! - `auto: false` disables the proactive trigger: the 90% ceiling on the
+//!   reported total (else the local estimate). A provider overflow, a
+//!   structural bound and `/compact` still compact.
+//! - `buffer` is accepted and IGNORED: SE compacts at 90% of the window, so a
+//!   buffer has no threshold to move. A Session whose configuration sets it is
+//!   told so once ([`IgnoredKey`]).
 //! - `server_side` (SE's own key) lets an OpenAI Responses or ChatGPT/Codex
 //!   route compact on the provider: the same decision sends a
 //!   `compaction_trigger` and commits the provider's opaque compaction item,
@@ -27,7 +25,6 @@ use std::path::Path;
 use grapt_config::ConfigValue;
 
 use super::catalog_config::{CatalogEnvironment, CatalogSources};
-use super::continuation::admission::HEADROOM;
 
 /// A config key SE accepts, so an oracle configuration loads, but does not
 /// apply, and what SE does instead.
@@ -40,6 +37,11 @@ pub(super) struct IgnoredKey {
 pub(super) const SERVER_SIDE: IgnoredKey = IgnoredKey {
     key: "compaction.server_side",
     reason: "OpenAI uses provider compaction; other providers use SE summary",
+};
+
+pub(super) const BUFFER: IgnoredKey = IgnoredKey {
+    key: "compaction.buffer",
+    reason: "SE compacts at 90% of the context window",
 };
 
 pub(super) const KEEP_TOKENS: IgnoredKey = IgnoredKey {
@@ -88,11 +90,7 @@ impl CompactionSettings {
             .then_some(KEEP_TOKENS)
             .into_iter()
             .chain(self.server_side.is_some().then_some(SERVER_SIDE))
-    }
-
-    /// What the threshold holds back besides the output reserve.
-    pub(super) fn headroom(&self) -> u64 {
-        self.buffer.unwrap_or(HEADROOM)
+            .chain(self.buffer.is_some().then_some(BUFFER))
     }
 
     /// The settings that apply to a Session placed at `directory`, under the

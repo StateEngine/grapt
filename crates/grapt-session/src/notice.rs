@@ -50,11 +50,16 @@ use context_trim::CONTEXT_TRIMMED;
 pub use context_trim::{record_context_trimmed, ContextEstimate, ContextTrimNotice};
 pub use tool_excluded::{record_tool_excluded, ExcludedTool, ToolExcludedNotice};
 mod step_failure;
+mod token_calibration;
 pub use page::{public_notice_predicate, read_notice_at, skipped_kinds};
 use sandbox_worktree_config::SANDBOX_WORKTREE_CONFIG;
 pub use sandbox_worktree_config::{record_sandbox_worktree_config, SandboxWorktreeConfigNotice};
 use step_failure::STEP_FAILURE;
 pub use step_failure::{record_step_failure, step_failure_notices, StepFailureNotice};
+use token_calibration::TOKEN_CALIBRATION;
+pub use token_calibration::{
+    latest_token_calibration, record_token_calibration, CalibrationTarget, TokenCalibration,
+};
 
 const KIND: &str = "session.notice.recorded";
 const MCP_UNAVAILABLE: &str = "mcp-unavailable";
@@ -79,7 +84,6 @@ pub const MAX_NOTICE_DATA_BYTES: usize = 128 * 1024;
 
 /// One source a turn could not use, and why, in product words.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub struct Unavailable {
     pub source: String,
     pub reason: String,
@@ -127,7 +131,6 @@ pub struct Notice {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
 struct Data {
     #[serde(rename = "sessionID")]
     session: String,
@@ -254,7 +257,6 @@ pub struct NotRunYet {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
 struct NotRunYetData {
     #[serde(rename = "sessionID")]
     session: String,
@@ -352,7 +354,6 @@ pub struct ContextRepeated {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
 struct ExecutionNoticeData {
     #[serde(rename = "sessionID")]
     session: String,
@@ -524,7 +525,6 @@ pub struct ConfigIgnored {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
 struct ConfigIgnoredData {
     #[serde(rename = "sessionID")]
     session: String,
@@ -820,7 +820,7 @@ fn skipped(
                         THEN CASE WHEN json_valid(data) THEN data END END AS safe_data
                  FROM event WHERE aggregate_family = 'session' AND aggregate_id = ?1
                  AND type = 'session.notice.recorded.1' AND {visible}))
-             WHERE shape = 'text' AND kind NOT IN (?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)
+             WHERE shape = 'text' AND kind NOT IN (?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)
              GROUP BY kind ORDER BY kind LIMIT ?2"
         ))
         .map_err(|error| error.to_string())?;
@@ -843,6 +843,7 @@ fn skipped(
                 SANDBOX_WORKTREE_CONFIG,
                 CONTEXT_TRIMMED,
                 INTERRUPTED_TURN,
+                TOKEN_CALIBRATION,
             ),
             |row| {
                 Ok(SkippedKind {

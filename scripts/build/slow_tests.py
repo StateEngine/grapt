@@ -64,6 +64,8 @@ TESTS = {
             'crates/grapt-product/src/dogfood/continuation/tests/split_exchange.rs',
         'dogfood::continuation::tests::structural_bounds::many_large_outputs_refuse_before_their_payloads_are_read':
             'crates/grapt-product/src/dogfood/continuation/tests/structural_bounds.rs',
+        'dogfood::continuation::tests::structural_bounds::a_trimmed_retry_past_the_read_bounds_plans_instead_of_compacting':
+            'crates/grapt-product/src/dogfood/continuation/tests/structural_bounds.rs',
         'dogfood::continuation::tests::sustained_defects::swr_c1_tiny_settled_calls_compact_before_the_page_bound':
             'crates/grapt-product/src/dogfood/continuation/tests/sustained_defects.rs',
         'dogfood::continuation::tests::sustained_defects::swr_c2_a_tight_cut_suffix_advances_through_another_compaction':

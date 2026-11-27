@@ -171,3 +171,35 @@ fn reopened_turn_resurfaces_only_current_compaction(ui: &mut Ui) -> Result {
     assert!(!ui.transcript.cell_expanded(0));
     Ok(())
 }
+
+/// A completed compaction that reports both estimates says what it did on its
+/// heading line; one that reports neither keeps the plain heading.
+#[test]
+fn a_completed_compaction_with_estimates_says_what_it_did() -> Result {
+    for (estimates, heading) in [
+        (
+            r#","metadata":{"tokenEstimates":{"before":"1200","after":"350","basis":"estimated"}}"#,
+            "Context compacted: 1200 → 350 tokens.",
+        ),
+        ("", "Compaction completed."),
+    ] {
+        let payload = format!(
+            r#"{{"data":[{{"type":"compaction","status":"completed","id":"msg_compaction_sized","time":{{"created":1}},"reason":"auto"{estimates},"summary":"Retained.","recent":"msg_kept"}}],"cursor":{{}}}}"#
+        );
+        let page = decode_messages(payload.as_bytes())?;
+        let mut view = SessionView::new(&session_id("ses_compaction_sized")?);
+        for message in page.messages {
+            view.apply_durable(&message, Bounds::default())?;
+        }
+        let mut ui = Ui::new(false);
+        ui.transcript.update(true, 0, view.slices);
+        let slice = ui.transcript.cell_slice(0);
+        assert!(slice.compaction.is_some(), "the row is not a compaction");
+        assert_eq!(
+            slice.text.lines().next(),
+            Some(heading),
+            "the heading is not {heading:?}"
+        );
+    }
+    Ok(())
+}

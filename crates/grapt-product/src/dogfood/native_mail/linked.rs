@@ -52,6 +52,7 @@ impl LinkedMailStatus {
         ));
         match self.frame(session, location) {
             Some(frame) if self.hub.publish(&frame).is_ok() => {}
+            // Attention is shown across Sessions, so every stream reloads.
             _ => self
                 .hub
                 .invalidate_because("linked mail status could not be published"),

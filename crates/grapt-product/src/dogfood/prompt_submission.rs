@@ -480,7 +480,7 @@ impl DogfoodApplication {
             failed_executor
                 .0
                 .observe_abandoned(&failed_session, &failed_execution);
-            failed_hub.invalidate_because(&format!(
+            failed_hub.invalidate_session_because(&failed_session, &format!(
                 "session {failed_session}: prompt task for execution {failed_execution} did not settle normally"
             ));
         });

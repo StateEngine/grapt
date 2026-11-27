@@ -15,7 +15,7 @@ impl Projector for CountingProjector {
         &mut self,
         tx: &rusqlite::Transaction<'_>,
         event: &DecodedEvent,
-    ) -> Result<(), String> {
+    ) -> Result<(), crate::ProjectorError> {
         if self.fail {
             return Err("boom".into());
         }

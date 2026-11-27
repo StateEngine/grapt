@@ -256,7 +256,7 @@ impl Projector for FailureProjector {
         &mut self,
         tx: &rusqlite::Transaction<'_>,
         event: &DecodedEvent,
-    ) -> Result<(), String> {
+    ) -> Result<(), grapt_store::ProjectorError> {
         tx.execute(
             "CREATE TABLE IF NOT EXISTS step_failure_projection (id TEXT PRIMARY KEY, seq INTEGER NOT NULL)",
             [],
@@ -271,7 +271,7 @@ impl Projector for FailureProjector {
         )
         .map_err(|error| error.to_string())?;
         if self.fail {
-            return Err("step-failure projector refused after writing".to_owned());
+            return Err("step-failure projector refused after writing".into());
         }
         Ok(())
     }

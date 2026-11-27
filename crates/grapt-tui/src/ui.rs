@@ -33,6 +33,8 @@ pub struct Ui {
     pub composer: TextArea<'static>,
     pub mentions: crate::mentions::Mentions,
     pub agents: Vec<Agent>,
+    /// Whether the last session-list read could list anything.
+    pub catalog: grapt_client::CatalogReach,
     pub session_pins: crate::sessions::Pins,
     pub switcher: crate::subagents::Switcher,
     pub permission: Option<PermissionAsk>,
@@ -139,6 +141,7 @@ impl Ui {
             mentions: crate::mentions::Mentions::default(),
             recall: crate::recall::Recall::default(),
             agents: Vec::new(),
+            catalog: grapt_client::CatalogReach::Read,
             session_pins: crate::sessions::Pins::default(),
             switcher: crate::subagents::Switcher::default(),
             permission: None,
@@ -752,6 +755,7 @@ impl Ui {
                 center(area, 80, 80),
                 &self.agents,
                 &self.session_pins,
+                self.catalog,
                 p,
             );
         }

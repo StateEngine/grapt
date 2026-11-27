@@ -909,3 +909,39 @@ fn a_block_past_capacity_keeps_the_snapshot_incomplete_until_it_closes() -> Resu
     assert_eq!(hub.provisional(&session)?.len(), retained.len() - 1);
     Ok(())
 }
+
+/// A window bound to one Session still receives another Session's status by
+/// location, so a failure about that other Session must end it too.
+#[tokio::test]
+async fn a_session_invalidation_ends_a_window_bound_to_another_session() -> Result<(), SseError> {
+    let hub = DogfoodEventHub::try_new(
+        limits(4, 8, MAX_SSE_EVENT_BYTES, MAX_SSE_FRAME_BYTES)?,
+        connected("session_scope"),
+    )?;
+    let session = |raw: &str| -> grapt_types::SessionId {
+        match raw.parse() {
+            Ok(session) => session,
+            Err(_) => panic!("session fixture"),
+        }
+    };
+    let (failed, other) = (session("ses_failed"), session("ses_other"));
+    let mut other_window =
+        hub.subscribe_window_at(query::EventLocationQuery::Absent, None, Some(other))?;
+    assert!(
+        matches!(next(&mut other_window).await, Some(Ok(_))),
+        "connection frame"
+    );
+    // Stands in for the failed Session's status, which this window receives.
+    hub.publish(&DogfoodEvent::ServerConnected(connected(
+        "failed_session_busy",
+    )))?;
+    assert!(matches!(next(&mut other_window).await, Some(Ok(_))));
+
+    hub.invalidate_session_because(&failed, "status edge could not be published");
+
+    assert!(
+        matches!(next(&mut other_window).await, Some(Err(_))),
+        "a window that may show the failed Session's status kept streaming"
+    );
+    Ok(())
+}

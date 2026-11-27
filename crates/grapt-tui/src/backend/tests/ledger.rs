@@ -290,6 +290,7 @@ fn review_ledger_search_and_opening_completion_apply_in_both_orders() -> Result 
             crate::sessions::Search {
                 query: String::new(),
                 result: Ok(vec![found.clone()]),
+                reach: grapt_client::CatalogReach::Read,
             },
         )));
         let open = settled(Outcome::Command(done(

@@ -15,6 +15,24 @@ impl DurableContinuation {
         self.read_projection(Self::structural_admission_at)
     }
 
+    /// A trimmed retry of history past the read bounds reads from the newest
+    /// window those bounds serve, as a summary does. Returns that window's
+    /// floor, `None` when the history since the cut fits. Reader contention is
+    /// the plan's typed capacity wait, never a refusal.
+    pub(in crate::dogfood) fn floor_for_trim(
+        &mut self,
+    ) -> Result<Option<grapt_types::EventSeq>, grapt_runtime::PlanRefusal> {
+        let floor = self.read_for_plan(|reader| {
+            reader
+                .summary_window_floor_at()
+                .map_err(grapt_runtime::PlanRefusal::from)
+        })?;
+        if floor.is_some() {
+            self.set_summary_floor(floor);
+        }
+        Ok(floor)
+    }
+
     /// The window floor, kept as a non-zero value so the continuation stays
     /// within the plan context's size bound.
     pub(super) fn summary_floor(&self) -> Option<grapt_types::EventSeq> {
@@ -214,17 +232,24 @@ impl DurableContinuation {
 }
 
 /// The first row at which the content a request over `[from, until)` reads
-/// passes [`MAX_CONTEXT_BYTES`], charging every tool argument, tool output,
-/// failure detail and text payload at its declared length up to the
-/// per-artifact text bound, and every human or synthetic input at its text.
-/// It reads no artifact: a window past it is refused before its payloads are
-/// held, where the request's own byte bound applied only after.
+/// passes [`MAX_CONTEXT_BYTES`], charging every tool argument, unpreviewed
+/// tool output, failure detail and text payload at its declared length up to
+/// the per-artifact text bound, previewed local tool terminals (shell and
+/// external/MCP tools) at [`shell_preview::MAX_BYTES`], and every human or
+/// synthetic input at its text. It reads no artifact: a window past it is
+/// refused before its payloads are held, where the request's own byte bound
+/// applied only after.
 fn declared_bytes_over(
     inbox: &Inbox,
     session: &SessionId,
     from: Option<grapt_types::EventSeq>,
     until: Option<grapt_types::EventSeq>,
 ) -> Result<Option<grapt_types::EventSeq>, String> {
+    let unpreviewed_builtins: Vec<&str> = crate::dogfood::tools::BUILTIN_TOOL_NAMES
+        .iter()
+        .copied()
+        .filter(|tool| !shell_preview::is_previewed_tool(tool))
+        .collect();
     boundary::declared_bytes_over(
         inbox.store(),
         session,
@@ -232,6 +257,10 @@ fn declared_bytes_over(
         until,
         MAX_CODEX_TOOL_TEXT_BYTES,
         MAX_CONTEXT_BYTES,
+        Some(boundary::PreviewBudget {
+            cap: shell_preview::MAX_BYTES,
+            unpreviewed_tools: &unpreviewed_builtins,
+        }),
     )
 }
 

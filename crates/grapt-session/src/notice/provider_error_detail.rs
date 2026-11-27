@@ -35,7 +35,6 @@ pub struct ProviderErrorDetailNotice {
     pub outcome: ProviderErrorOutcome,
 }
 #[derive(Debug, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
 struct Data {
     #[serde(rename = "sessionID")]
     session: String,

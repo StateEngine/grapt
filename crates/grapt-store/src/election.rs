@@ -107,6 +107,11 @@ impl std::fmt::Display for WriterOwnerId {
 pub enum ElectionError {
     #[error("sqlite: {0}")]
     Sqlite(String),
+    /// SQLite refused the writer row itself (a value of the wrong type, or a
+    /// constraint): that row's damage, not a failure of the database holding
+    /// it. [`ElectionError::Sqlite`] is only the database's own failure.
+    #[error("writer row refused: {0}")]
+    RowRefused(String),
     /// No writer has ever been elected for this aggregate. An append carrying
     /// any epoch is refused: an unknown writer is not a stale writer, and
     /// treating it as "epoch 1 by default" would let an unelected process
@@ -146,7 +151,11 @@ pub enum ElectionError {
 
 impl From<rusqlite::Error> for ElectionError {
     fn from(error: rusqlite::Error) -> Self {
-        ElectionError::Sqlite(error.to_string())
+        if crate::sqlite_storage_failure(&error) {
+            ElectionError::Sqlite(error.to_string())
+        } else {
+            ElectionError::RowRefused(error.to_string())
+        }
     }
 }
 

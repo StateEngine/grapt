@@ -478,9 +478,6 @@
     "crates/grapt-product/src/dogfood/continuation/compaction/plans.rs": {
       "impl ProductCompactor::fn plan :: clippy::too_many_lines": 1
     },
-    "crates/grapt-product/src/dogfood/continuation/history_tool.rs": {
-      "fn assemble_outputs :: clippy::too_many_lines": 1
-    },
     "crates/grapt-product/src/dogfood/continuation/history_tool/page.rs": {
       "impl ToolProjection::fn read_group :: clippy::too_many_lines": 1
     },
@@ -1362,10 +1359,6 @@
     "crates/grapt-session/src/lifecycle/tests.rs": {
       "fn a_fork_carries_the_tool_history_its_conversation_claims :: clippy::too_many_lines": 1,
       "fn selected_fork_refuses_unfinished_hidden_and_foreign_prefixes_without_writing :: clippy::too_many_lines": 1
-    },
-    "crates/grapt-session/src/list/query.rs": {
-      "impl Query < ' _ >::fn bounded_list :: clippy::too_many_lines": 1,
-      "impl Query < ' _ >::fn read_page :: clippy::too_many_lines": 1
     },
     "crates/grapt-session/src/notice/step_failure.rs": {
       "fn record_step_failure :: clippy::too_many_lines": 1

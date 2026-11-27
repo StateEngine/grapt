@@ -33,7 +33,12 @@ pub const TOOL_PROGRESS_MAX_BYTES: usize = 8 * 1024;
 pub const TOOL_INPUT_MAX_BYTES: usize = 256 * 1024;
 
 /// Hard capture ceiling for one tool output or failure detail.
-pub const TOOL_ARTIFACT_MAX_BYTES: u64 = 1024 * 1024;
+///
+/// Reserves 64 KiB of bounded headroom above the 1 MiB MCP frame cap so an
+/// accepted 1 MiB MCP result plus bounded lifecycle hook annotations (<= 8 KiB)
+/// and failure wrappers always captures as `CaptureDisposition::Complete`
+/// without truncating any accepted MCP bytes.
+pub const TOOL_ARTIFACT_MAX_BYTES: u64 = 1024 * 1024 + 64 * 1024;
 
 /// Streaming artifact-capture buffer, independent of the capture ceiling.
 pub const TOOL_ARTIFACT_BUFFER_BYTES: usize = 64 * 1024;

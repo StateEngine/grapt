@@ -107,6 +107,7 @@ fn saved_pins_quick_slots_and_delayed_server_search_preserve_the_composer(
     ui.session_message(Message::Search(Search {
         query: "Old".into(),
         result: Ok(vec![remote.clone()]),
+        reach: grapt_client::CatalogReach::Read,
     }));
     assert!(ui
         .picker
@@ -116,6 +117,7 @@ fn saved_pins_quick_slots_and_delayed_server_search_preserve_the_composer(
     ui.session_message(Message::Search(Search {
         query: "Remote".into(),
         result: Ok(vec![remote.clone()]),
+        reach: grapt_client::CatalogReach::Read,
     }));
     handle_key(
         KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
@@ -211,6 +213,7 @@ fn kss_picker_management_requires_confirmation_and_keeps_the_draft_on_refusal(
     ui.session_message(Message::Search(Search {
         query: missing.row.title.clone(),
         result: Ok(vec![missing.clone()]),
+        reach: grapt_client::CatalogReach::Read,
     }));
     ui.session_message(Message::Unavailable {
         id: missing.row.id.clone(),

@@ -375,9 +375,9 @@ async fn scc_the_step_does_not_charge_summary_calls_against_its_attempt_bound(
 }
 
 /// SC-REL-07a: a structural capacity refusal that a committed compaction does
-/// not clear ends the Step as bounded no progress: one compaction, no loop.
+/// not clear ends the Step as did-not-fit: one compaction, no loop.
 #[tokio::test]
-async fn sc_rel_07a_a_structural_refusal_compaction_cannot_clear_ends_as_no_progress() {
+async fn sc_rel_07a_a_structural_refusal_compaction_cannot_clear_ends_as_did_not_fit() {
     struct Reloading {
         generation: u64,
         compactions: u32,
@@ -434,9 +434,9 @@ async fn sc_rel_07a_a_structural_refusal_compaction_cannot_clear_ends_as_no_prog
         StepResult::Failed { failure } => assert_eq!(
             failure.reason(),
             &StepTerminalReason::ContextFailure {
-                failure: grapt_types::ContextFailure::CompactionNoProgress,
+                failure: grapt_types::ContextFailure::CompactionDidNotFit,
             }
         ),
-        other => panic!("an uncleared structural refusal must stop as no progress: {other:?}"),
+        other => panic!("an uncleared structural refusal must stop as did-not-fit: {other:?}"),
     }
 }

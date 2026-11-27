@@ -41,8 +41,55 @@ async fn startup_suspends_an_orphaned_durable_form_without_recreating_its_wait()
     Ok(())
 }
 
+/// The database failing under a form's settlement fails startup instead of
+/// leaving the form unsettled behind a warning.
+#[tokio::test]
+async fn a_database_failure_settling_a_lost_form_fails_startup() -> TestResult {
+    let path = std::env::temp_dir().join(format!(
+        "grapt-form-storage-failure-{}.sqlite",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_file(&path);
+    let producer = producer_on(grapt_store::EventStore::open(&path, "form-storage")?)?;
+    let mut live = producer.connect("/elicitation-witness", "greeter")?;
+    let request = request()?;
+    let mut wait = live.answer(&request, None);
+    let _pending = tokio::time::timeout(std::time::Duration::from_millis(1), &mut wait).await;
+    drop(wait);
+    let id = live.pending.take().ok_or("no pending form to orphan")?;
+    drop(live);
+    // An engine error on the settling UPDATE, from outside the store.
+    rusqlite::Connection::open(&path)?.execute_batch(
+        "CREATE TRIGGER fail_form_settlement BEFORE UPDATE ON form_request
+         BEGIN SELECT * FROM absent_table; END;",
+    )?;
+    let result = recover(
+        producer.lock().store_mut(),
+        producer.ids.as_ref(),
+        producer.clock.as_ref(),
+    );
+    assert!(
+        result.is_err(),
+        "startup passed over a database failure: {result:?}"
+    );
+    assert_eq!(
+        global_form(producer.lock().store(), &id)?
+            .ok_or("form")?
+            .state,
+        FormState::Pending
+    );
+    drop(producer);
+    std::fs::remove_file(&path)?;
+    Ok(())
+}
+
 fn producer() -> Result<FormProducer, Box<dyn std::error::Error>> {
-    let mut store = grapt_store::EventStore::open_in_memory()?;
+    producer_on(grapt_store::EventStore::open_in_memory()?)
+}
+
+fn producer_on(
+    mut store: grapt_store::EventStore,
+) -> Result<FormProducer, Box<dyn std::error::Error>> {
     FormService::initialize(&mut store)?;
     Ok(FormProducer {
         hooks: None,

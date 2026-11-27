@@ -1,18 +1,20 @@
-use super::projection::{location_of, validate_location};
+use super::keyset::{self, After, Segment};
+use super::projection::location_of;
 use super::request::{
-    NonNegativeMs, ParentFilter, SessionListCriteria, SessionListDirection, SessionListError,
-    SessionListItem, SessionListKey, SessionListOrder, SessionListPage, SessionListProvenance,
-    SessionListScope,
+    BoundaryKey, KeyDigest, ParentFilter, SessionListCriteria, SessionListDegradedRow,
+    SessionListDirection, SessionListError, SessionListItem, SessionListOrder, SessionListPage,
+    SessionListScope, MAX_PAGE_ROWS,
 };
+use super::row;
 #[expect(
     unused_imports,
     reason = "SC15's compile-valid replacement names this type in the extracted query scope"
 )]
 use grapt_store::session_list::SqliteVmBudget;
 use grapt_store::session_list::{verify_schema_shape, SessionListSchemaError};
-use grapt_types::{ProjectId, SessionId, WorkspaceId};
-use rusqlite::types::{Type, Value as SqlValue, ValueRef};
-use rusqlite::{Connection, OptionalExtension};
+use grapt_types::ProjectId;
+use rusqlite::types::{Value as SqlValue, ValueRef};
+use rusqlite::Connection;
 
 #[derive(Debug)]
 pub struct SessionListStore<'conn> {
@@ -21,12 +23,11 @@ pub struct SessionListStore<'conn> {
 
 impl<'conn> SessionListStore<'conn> {
     /// Every list request uses a successfully opened store and exclusively
-    /// owns hook registration for its bounded synchronous read. It uses a
-    /// connection belonging to an `EventStore` that opened successfully — and
-    /// an open cannot succeed unless the whole-projection integrity invariant
-    /// passed. That successful open IS the receipt this request path relies on
-    /// in place of rescanning the table per page; a public raw-connection
-    /// constructor would let a caller obtain a list view that never had one.
+    /// owns hook registration for its bounded synchronous read. A successful
+    /// open proves the projection's shape; each page then validates every row
+    /// it reads and skips, with a reason, any row that breaks the projection
+    /// law. A public raw-connection constructor would let a caller obtain a
+    /// list view whose shape was never proven.
     pub fn over(store: &'conn mut grapt_store::EventStore) -> Self {
         Self { store }
     }
@@ -121,8 +122,8 @@ impl Query<'_> {
             .conn
             .prepare(
                 "SELECT
-                    CASE WHEN length(CAST(project_id AS BLOB)) <= ?2 THEN project_id END,
-                    CASE WHEN length(CAST(directory AS BLOB)) <= ?2 THEN directory END,
+                    CASE WHEN octet_length(project_id) <= ?2 THEN project_id END,
+                    CASE WHEN octet_length(directory) <= ?2 THEN directory END,
                     MAX(updated_ms) AS newest
                  FROM session_list_projection
                  GROUP BY project_id, directory
@@ -139,13 +140,13 @@ impl Query<'_> {
             .next()
             .map_err(|source| SessionListError::StoreFailure { source })?
         {
-            let project = required_text(row, 0, "project_id")?;
+            let project = row::required_text(row, 0, "project_id")?;
             let project =
                 ProjectId::new(project).ok_or_else(|| SessionListError::ProjectionCorrupt {
                     reason: "project_id is empty".to_owned(),
                 })?;
-            let directory = required_text(row, 1, "directory")?;
-            let updated = integer(row, 2, "updated_ms")?;
+            let directory = row::required_text(row, 1, "directory")?;
+            let updated = row::integer(row, 2, "updated_ms")?;
             page_bytes = page_bytes
                 .checked_add(project.as_str().len() + directory.len())
                 .ok_or_else(|| SessionListError::ProjectionCorrupt {
@@ -166,7 +167,12 @@ impl Query<'_> {
 
     /// Every SQLite read a list request makes lives here, under the caller's
     /// installed budget.
-    #[expect(clippy::too_many_lines, reason = "legacy")]
+    ///
+    /// Rows that break the projection law are skipped and listed in the
+    /// page's degraded rows. When skipped rows leave the page short, reading
+    /// continues after the last row read, so a run of corrupt rows never
+    /// passes for the end of the list. At most [`MAX_PAGE_ROWS`] rows are
+    /// skipped per page, and the VM-step budget bounds the whole request.
     fn bounded_list(
         &self,
         criteria: &SessionListCriteria,
@@ -178,119 +184,78 @@ impl Query<'_> {
         if matches!(criteria.scope, SessionListScope::Directory(_)) {
             self.install_directory_function(criteria.limits.row_text_bytes.get())?;
         }
-
-        let physical = match (criteria.order, criteria.direction) {
-            (SessionListOrder::Ascending, SessionListDirection::Next)
-            | (SessionListOrder::Descending, SessionListDirection::Previous) => {
-                SessionListOrder::Ascending
-            }
-            (SessionListOrder::Descending, SessionListDirection::Next)
-            | (SessionListOrder::Ascending, SessionListDirection::Previous) => {
-                SessionListOrder::Descending
-            }
+        let start = match &criteria.anchor {
+            None => None,
+            Some(anchor) => Some(match &anchor.after {
+                BoundaryKey::Session(key) => After::Session {
+                    time: key.updated_ms.value(),
+                    id: key.session_id.as_str().to_owned(),
+                },
+                BoundaryKey::Row { rowid, key } => After::Row {
+                    rowid: *rowid,
+                    keyed: self.require_row(*rowid, *key)?,
+                },
+            }),
         };
-        let order_sql = match physical {
-            SessionListOrder::Ascending => "ASC",
-            SessionListOrder::Descending => "DESC",
-        };
-        let comparison = match physical {
-            SessionListOrder::Ascending => ">",
-            SessionListOrder::Descending => "<",
-        };
-
-        let mut sql = String::from(
-            "SELECT
-                CASE WHEN length(CAST(session_id AS BLOB)) > ?1
-                       OR length(CAST(project_id AS BLOB)) > ?1
-                       OR length(CAST(COALESCE(workspace_id, '') AS BLOB)) > ?1
-                       OR length(CAST(COALESCE(parent_id, '') AS BLOB)) > ?1
-                       OR length(CAST(directory AS BLOB)) > ?1
-                       OR length(CAST(title AS BLOB)) > ?1
-                       OR length(CAST(provenance_kind AS BLOB)) > ?1
-                       OR length(CAST(provenance_digest AS BLOB)) > ?1
-                     THEN 1 ELSE 0 END,
-                CASE WHEN length(CAST(session_id AS BLOB)) <= ?1 THEN session_id END,
-                CASE WHEN length(CAST(project_id AS BLOB)) <= ?1 THEN project_id END,
-                CASE WHEN workspace_id IS NULL OR length(CAST(workspace_id AS BLOB)) <= ?1
-                     THEN workspace_id END,
-                CASE WHEN parent_id IS NULL OR length(CAST(parent_id AS BLOB)) <= ?1
-                     THEN parent_id END,
-                CASE WHEN length(CAST(directory AS BLOB)) <= ?1 THEN directory END,
-                CASE WHEN length(CAST(title AS BLOB)) <= ?1 THEN title END,
-                updated_ms,
-                provenance_kind,
-                provenance_digest,
-                cutover_seq,
-                (SELECT seq FROM projection_watermark
-                 WHERE projection = 'session-list-v1'
-                   AND aggregate_family = 'session'
-                   AND aggregate_id = session_list_projection.session_id),
-                (SELECT seq FROM event_sequence
-                 WHERE aggregate_family = 'session'
-                   AND aggregate_id = session_list_projection.session_id)
-             FROM session_list_projection WHERE 1 = 1",
-        );
-        let mut params = vec![SqlValue::Integer(
-            i64::try_from(criteria.limits.row_text_bytes.get()).map_err(|_| {
-                SessionListError::InvalidCriteria {
-                    reason: "row text limit does not fit SQLite INTEGER".to_owned(),
-                }
-            })?,
-        )];
-        let mut push = |value: SqlValue| {
-            params.push(value);
-            format!("?{}", params.len())
-        };
-
-        match &criteria.scope {
-            SessionListScope::All => {}
-            SessionListScope::Directory(location) => {
-                let parameter = push(SqlValue::Text(location.directory().to_owned()));
-                sql.push_str(&format!(
-                    " AND grapt_session_directory(directory) COLLATE BINARY = {parameter}"
-                ));
+        let descending = descending(criteria);
+        let mut pending =
+            std::collections::VecDeque::from(keyset::segments(start.as_ref(), descending));
+        let mut page = PageFill::default();
+        let mut continue_after = None;
+        while let Some(segment) = pending.front() {
+            let wanted = criteria.page_size.get() - page.items.len();
+            let (sql, params) = page_sql(criteria, segment, wanted)?;
+            let (scanned, last) = self.read_rows(&sql, params, criteria, &mut page)?;
+            if page.full || page.items.len() == criteria.page_size.get() {
+                break;
             }
-            SessionListScope::Project(project) => {
-                let parameter = push(SqlValue::Text(project.as_str().to_owned()));
-                sql.push_str(&format!(" AND project_id COLLATE BINARY = {parameter}"));
+            let exhausted = scanned < wanted;
+            if exhausted && pending.len() == 1 {
+                break;
+            }
+            if page.degraded.len() >= MAX_PAGE_ROWS {
+                // Stopped by the skip bound, not the end of the list.
+                continue_after = match last {
+                    Some(After::Row { rowid, .. }) => row::boundary_after(self.conn, rowid)
+                        .map_err(|source| SessionListError::StoreFailure { source })?,
+                    _ => None,
+                };
+                break;
+            }
+            if exhausted {
+                pending.pop_front();
+            } else {
+                // Skipped rows left the page short: read on after the last.
+                let Some(last) = last else { break };
+                pending = keyset::segments(Some(&last), descending).into();
             }
         }
-        if let Some(workspace) = criteria.effective_workspace() {
-            let parameter = push(SqlValue::Text(workspace.as_str().to_owned()));
-            sql.push_str(&format!(" AND workspace_id COLLATE BINARY = {parameter}"));
+        let PageFill {
+            mut items,
+            degraded,
+            ..
+        } = page;
+        if criteria.direction == SessionListDirection::Previous {
+            items.reverse();
         }
-        if let Some(search) = &criteria.title_contains {
-            let parameter = push(SqlValue::Text(search.as_str().to_owned()));
-            sql.push_str(&format!(" AND instr(title, {parameter}) > 0"));
-        }
-        match &criteria.parent {
-            ParentFilter::Any => {}
-            ParentFilter::Root => sql.push_str(" AND parent_id IS NULL"),
-            ParentFilter::Child(parent) => {
-                let parameter = push(SqlValue::Text(parent.as_str().to_owned()));
-                sql.push_str(&format!(" AND parent_id COLLATE BINARY = {parameter}"));
-            }
-        }
-        if let Some(anchor) = &criteria.anchor {
-            let time = push(SqlValue::Integer(anchor.updated_ms.value()));
-            let id = push(SqlValue::Text(anchor.session_id.as_str().to_owned()));
-            sql.push_str(&format!(
-                " AND (updated_ms {comparison} {time}
-                   OR (updated_ms = {time} AND session_id COLLATE BINARY {comparison} {id}))"
-            ));
-        }
-        let limit = push(SqlValue::Integer(
-            i64::try_from(criteria.page_size.get()).map_err(|_| {
-                SessionListError::InvalidCriteria {
-                    reason: "page size does not fit SQLite INTEGER".to_owned(),
-                }
-            })?,
-        ));
-        sql.push_str(&format!(
-            " ORDER BY updated_ms {order_sql}, session_id COLLATE BINARY {order_sql} LIMIT {limit}"
-        ));
+        Ok(SessionListPage {
+            items,
+            degraded,
+            continue_after,
+        })
+    }
 
-        self.read_page(&sql, params, criteria)
+    /// A cursor after a stored row continues only while that row still holds
+    /// the time and key it named; otherwise the rows that tie with it cannot
+    /// be placed, and listing restarts instead of skipping them. Returns
+    /// whether that key is not NULL.
+    fn require_row(&self, rowid: i64, key: KeyDigest) -> Result<bool, SessionListError> {
+        match row::stored_key(self.conn, rowid)
+            .map_err(|source| SessionListError::StoreFailure { source })?
+        {
+            Some(stored) if stored.digest == key => Ok(stored.keyed),
+            _ => Err(SessionListError::StaleCursor),
+        }
     }
 
     #[allow(
@@ -306,28 +271,36 @@ impl Query<'_> {
                 FunctionFlags::SQLITE_UTF8
                     | FunctionFlags::SQLITE_DETERMINISTIC
                     | FunctionFlags::SQLITE_INNOCUOUS,
+                // A directory that is not text, is over the row bound or is
+                // not a location belongs to no directory: its row matches no
+                // directory scope, and the unscoped list names it as corrupt.
                 move |context| {
-                    let directory = context.get_raw(0).as_str()?;
-                    if directory.len() > max_bytes {
-                        return Err(rusqlite::Error::UserFunctionError(
-                            "session directory exceeds the row text bound".into(),
-                        ));
-                    }
-                    location_of(directory, None)
-                        .map(|location| location.directory().to_owned())
-                        .map_err(|reason| rusqlite::Error::UserFunctionError(reason.into()))
+                    Ok(match context.get_raw(0) {
+                        ValueRef::Text(bytes) if bytes.len() <= max_bytes => {
+                            std::str::from_utf8(bytes).ok().and_then(|directory| {
+                                location_of(directory, None)
+                                    .ok()
+                                    .map(|location| location.directory().to_owned())
+                            })
+                        }
+                        _ => None,
+                    })
                 },
             )
             .map_err(|source| SessionListError::StoreFailure { source })
     }
 
-    #[expect(clippy::too_many_lines, reason = "legacy")]
-    fn read_page(
+    /// Reads one statement's rows into `page`. A row that breaks the
+    /// projection law is skipped and reported, never allowed to fail the
+    /// page. Returns how many rows the statement yielded and where the last
+    /// one sits, so the caller can continue past skipped rows.
+    fn read_rows(
         &self,
         sql: &str,
         params: Vec<SqlValue>,
         criteria: &SessionListCriteria,
-    ) -> Result<SessionListPage, SessionListError> {
+        page: &mut PageFill,
+    ) -> Result<(usize, Option<After>), SessionListError> {
         let mut statement = self
             .conn
             .prepare(sql)
@@ -335,156 +308,166 @@ impl Query<'_> {
         let mut rows = statement
             .query(rusqlite::params_from_iter(params))
             .map_err(|source| SessionListError::StoreFailure { source })?;
-        let mut items = Vec::with_capacity(criteria.page_size.get());
-        let mut page_bytes = 0usize;
+        let (mut scanned, mut last) = (0, None);
         while let Some(row) = rows
             .next()
             .map_err(|source| SessionListError::StoreFailure { source })?
         {
-            let oversized: i64 = row
-                .get(0)
-                .map_err(|error| corrupt_sql("oversized marker", error))?;
-            if oversized != 0 {
-                return Err(SessionListError::ProjectionCorrupt {
-                    reason: "a selected row contains text over the configured row bound".to_owned(),
-                });
-            }
-            let session_raw = required_text(row, 1, "session_id")?;
-            let project_raw = required_text(row, 2, "project_id")?;
-            let workspace_raw: Option<String> = row
-                .get(3)
-                .map_err(|error| corrupt_sql("workspace_id", error))?;
-            let parent_raw: Option<String> = row
-                .get(4)
-                .map_err(|error| corrupt_sql("parent_id", error))?;
-            let directory = required_text(row, 5, "directory")?;
-            let title = required_text(row, 6, "title")?;
-            let updated_raw = integer(row, 7, "updated_ms")?;
-            let provenance_kind = required_text(row, 8, "provenance_kind")?;
-            let digest = required_text(row, 9, "provenance_digest")?;
-            let cutover_seq = integer(row, 10, "cutover_seq")?;
-            let watermark: Option<i64> = row
-                .get(11)
-                .map_err(|error| corrupt_sql("projection watermark", error))?;
-            let head: Option<i64> = row
-                .get(12)
-                .map_err(|error| corrupt_sql("aggregate head", error))?;
-            validate_watermark(&session_raw, cutover_seq, watermark, head)?;
-
-            let session_id = session_raw.parse::<SessionId>().map_err(|error| {
-                SessionListError::ProjectionCorrupt {
-                    reason: format!("session_id {session_raw:?}: {error}"),
-                }
-            })?;
-            let project_id = ProjectId::new(project_raw.clone()).ok_or_else(|| {
-                SessionListError::ProjectionCorrupt {
-                    reason: format!("session {session_raw} has an empty project_id"),
-                }
-            })?;
-            let workspace_id = workspace_raw
-                .map(|raw| {
-                    WorkspaceId::new(raw).ok_or_else(|| SessionListError::ProjectionCorrupt {
-                        reason: format!("session {session_raw} has an empty workspace_id"),
-                    })
-                })
-                .transpose()?;
-            validate_location(&directory, workspace_id.as_ref()).map_err(|reason| {
-                SessionListError::ProjectionCorrupt {
-                    reason: format!("session {session_raw} location: {reason}"),
-                }
-            })?;
-            let parent_id = parent_raw
-                .map(|raw| {
-                    raw.parse::<SessionId>()
-                        .map_err(|error| SessionListError::ProjectionCorrupt {
-                            reason: format!("session {session_raw} parent_id: {error}"),
-                        })
-                })
-                .transpose()?;
-            let updated_ms = NonNegativeMs::new(updated_raw).ok_or_else(|| {
-                SessionListError::ProjectionCorrupt {
-                    reason: format!("session {session_raw} has negative updated_ms"),
-                }
-            })?;
-            if digest.trim().is_empty() {
-                return Err(SessionListError::ProjectionCorrupt {
-                    reason: format!("session {session_raw} has blank provenance digest"),
-                });
-            }
-            let provenance = match provenance_kind.as_str() {
-                "legacy-baseline" if cutover_seq >= -1 => {
-                    let baseline: Option<(i64, String, i64)> = self
-                        .conn
-                        .query_row(
-                            "SELECT updated_ms, source_digest, cutover_seq
-                             FROM session_list_legacy_baseline WHERE session_id = ?1",
-                            [&session_raw],
-                            |baseline| Ok((baseline.get(0)?, baseline.get(1)?, baseline.get(2)?)),
-                        )
-                        .optional()
-                        .map_err(|source| SessionListError::StoreFailure { source })?;
-                    if baseline != Some((updated_raw, digest.clone(), cutover_seq)) {
-                        return Err(SessionListError::ProjectionCorrupt {
-                            reason: format!(
-                                "session {session_raw} baseline provenance does not match"
-                            ),
-                        });
+            scanned += 1;
+            last = row::after(row);
+            match row::decode(self.conn, row) {
+                Ok((item, bytes)) => {
+                    let total = page.bytes.saturating_add(bytes);
+                    if total > criteria.limits.page_text_bytes.get() && !page.items.is_empty() {
+                        // The page is full by bytes: end it before this row,
+                        // which the next page's cursor reads again.
+                        page.full = true;
+                        return Ok((scanned, last));
                     }
-                    SessionListProvenance::LegacyBaseline {
-                        digest,
-                        cutover_seq,
-                    }
+                    page.bytes = total;
+                    page.items.push(item);
                 }
-                "rust-event" if cutover_seq == -1 => SessionListProvenance::RustEvent { digest },
-                other => {
-                    return Err(SessionListError::ProjectionCorrupt {
-                        reason: format!(
-                            "session {session_raw} has invalid provenance {other:?}/{cutover_seq}"
-                        ),
-                    })
+                Err(SessionListError::ProjectionCorrupt { reason }) => {
+                    page.degraded.push(SessionListDegradedRow {
+                        session_id: row::session_hint(row),
+                        reason,
+                    });
                 }
-            };
-            let row_bytes = session_raw.len()
-                + project_raw.len()
-                + workspace_id
-                    .as_ref()
-                    .map_or(0, |value| value.as_str().len())
-                + parent_id.as_ref().map_or(0, |value| value.as_str().len())
-                + directory.len()
-                + title.len()
-                + provenance_kind.len()
-                + match &provenance {
-                    SessionListProvenance::LegacyBaseline { digest, .. }
-                    | SessionListProvenance::RustEvent { digest } => digest.len(),
-                };
-            page_bytes = page_bytes.checked_add(row_bytes).ok_or_else(|| {
-                SessionListError::ProjectionCorrupt {
-                    reason: "decoded page byte count overflowed".to_owned(),
-                }
-            })?;
-            if page_bytes > criteria.limits.page_text_bytes.get() {
-                return Err(SessionListError::ProjectionCorrupt {
-                    reason: format!(
-                        "decoded page text is {page_bytes} bytes; maximum is {}",
-                        criteria.limits.page_text_bytes
-                    ),
-                });
+                Err(other) => return Err(other),
             }
-            items.push(SessionListItem {
-                key: SessionListKey::new(updated_ms, session_id),
-                project_id,
-                workspace_id,
-                parent_id,
-                directory,
-                title,
-                provenance,
-            });
         }
-        if criteria.direction == SessionListDirection::Previous {
-            items.reverse();
-        }
-        Ok(SessionListPage { items })
+        Ok((scanned, last))
     }
+}
+
+/// A page being filled across one or more statements.
+#[derive(Default)]
+struct PageFill {
+    items: Vec<SessionListItem>,
+    degraded: Vec<SessionListDegradedRow>,
+    bytes: usize,
+    full: bool,
+}
+
+/// Whether the page reads the keyset from its high end.
+fn descending(criteria: &SessionListCriteria) -> bool {
+    matches!(
+        (criteria.order, criteria.direction),
+        (SessionListOrder::Descending, SessionListDirection::Next)
+            | (SessionListOrder::Ascending, SessionListDirection::Previous)
+    )
+}
+
+/// One statement for up to `limit` rows of `segment`, in the page's physical
+/// order.
+fn page_sql(
+    criteria: &SessionListCriteria,
+    segment: &Segment,
+    limit: usize,
+) -> Result<(String, Vec<SqlValue>), SessionListError> {
+    let (order_sql, comparison) = if descending(criteria) {
+        ("DESC", "<")
+    } else {
+        ("ASC", ">")
+    };
+
+    let mut sql = String::from(
+        "SELECT
+            CASE WHEN octet_length(session_id) > ?1
+                   OR octet_length(project_id) > ?1
+                   OR octet_length(workspace_id) > ?1
+                   OR octet_length(parent_id) > ?1
+                   OR octet_length(directory) > ?1
+                   OR octet_length(title) > ?1
+                   OR octet_length(provenance_kind) > ?1
+                   OR octet_length(provenance_digest) > ?1
+                 THEN 1 ELSE 0 END,
+            CASE WHEN octet_length(session_id) <= ?1 THEN session_id END,
+            CASE WHEN octet_length(project_id) <= ?1 THEN project_id END,
+            CASE WHEN workspace_id IS NULL OR octet_length(workspace_id) <= ?1
+                 THEN workspace_id END,
+            CASE WHEN parent_id IS NULL OR octet_length(parent_id) <= ?1
+                 THEN parent_id END,
+            CASE WHEN octet_length(directory) <= ?1 THEN directory END,
+            CASE WHEN octet_length(title) <= ?1 THEN title END,
+            CASE WHEN typeof(updated_ms) = 'integer' THEN updated_ms END,
+            CASE WHEN octet_length(provenance_kind) <= ?1 THEN provenance_kind END,
+            CASE WHEN octet_length(provenance_digest) <= ?1 THEN provenance_digest END,
+            CASE WHEN typeof(cutover_seq) = 'integer' THEN cutover_seq END,
+            CASE WHEN octet_length(session_id) <= ?1 THEN
+                (SELECT seq FROM projection_watermark
+                 WHERE projection = 'session-list-v1'
+                   AND aggregate_family = 'session'
+                   AND aggregate_id = session_list_projection.session_id) END,
+            CASE WHEN octet_length(session_id) <= ?1 THEN
+                (SELECT seq FROM event_sequence
+                 WHERE aggregate_family = 'session'
+                   AND aggregate_id = session_list_projection.session_id) END,
+            rowid,
+            typeof(session_id) <> 'null'
+         FROM session_list_projection WHERE 1 = 1",
+    );
+    let mut params = vec![SqlValue::Integer(
+        i64::try_from(criteria.limits.row_text_bytes.get()).map_err(|_| {
+            SessionListError::InvalidCriteria {
+                reason: "row text limit does not fit SQLite INTEGER".to_owned(),
+            }
+        })?,
+    )];
+    let mut push = |value: SqlValue| {
+        params.push(value);
+        format!("?{}", params.len())
+    };
+
+    match &criteria.scope {
+        SessionListScope::All => {}
+        SessionListScope::Directory(location) => {
+            let parameter = push(SqlValue::Text(location.directory().to_owned()));
+            sql.push_str(&format!(
+                " AND grapt_session_directory(CASE WHEN octet_length(directory) <= ?1
+                   THEN directory END) COLLATE BINARY = {parameter}"
+            ));
+        }
+        SessionListScope::Project(project) => {
+            let parameter = push(SqlValue::Text(project.as_str().to_owned()));
+            sql.push_str(&format!(" AND project_id COLLATE BINARY = {parameter}"));
+        }
+    }
+    if let Some(workspace) = criteria.effective_workspace() {
+        let parameter = push(SqlValue::Text(workspace.as_str().to_owned()));
+        sql.push_str(&format!(" AND workspace_id COLLATE BINARY = {parameter}"));
+    }
+    if let Some(search) = &criteria.title_contains {
+        let parameter = push(SqlValue::Text(search.as_str().to_owned()));
+        // A title that is not text or is over the row bound is never read, so
+        // it matches no search; the unscoped list names its row as corrupt.
+        sql.push_str(&format!(
+            " AND instr(CASE WHEN typeof(title) = 'text' AND octet_length(title) <= ?1
+                   THEN title END, {parameter}) > 0"
+        ));
+    }
+    match &criteria.parent {
+        ParentFilter::Any => {}
+        ParentFilter::Root => sql.push_str(" AND parent_id IS NULL"),
+        ParentFilter::Child(parent) => {
+            let parameter = push(SqlValue::Text(parent.as_str().to_owned()));
+            sql.push_str(&format!(" AND parent_id COLLATE BINARY = {parameter}"));
+        }
+    }
+    sql.push_str(&segment.terms(comparison, &mut push));
+    let limit = push(SqlValue::Integer(i64::try_from(limit).map_err(|_| {
+        SessionListError::InvalidCriteria {
+            reason: "page size does not fit SQLite INTEGER".to_owned(),
+        }
+    })?));
+    sql.push_str(&format!(
+        // SQLite sorts NULL keys first ascending and last descending, the
+        // keyset's own order, so the key index serves every segment directly.
+        " ORDER BY updated_ms {order_sql}, session_id COLLATE BINARY {order_sql},
+           rowid {order_sql} LIMIT {limit}"
+    ));
+
+    Ok((sql, params))
 }
 
 fn sqlite_interrupted(error: &rusqlite::Error) -> bool {
@@ -503,72 +486,67 @@ fn map_schema(error: SessionListSchemaError) -> SessionListError {
     }
 }
 
-fn corrupt_sql(field: &'static str, error: rusqlite::Error) -> SessionListError {
-    SessionListError::ProjectionCorrupt {
-        reason: format!("{field} has the wrong SQLite type: {error}"),
-    }
-}
+#[cfg(test)]
+mod plan_tests {
+    use super::*;
+    use crate::list::request::SessionListLimits;
 
-fn required_text(
-    row: &rusqlite::Row<'_>,
-    index: usize,
-    field: &'static str,
-) -> Result<String, SessionListError> {
-    row.get::<_, Option<String>>(index)
-        .map_err(|error| corrupt_sql(field, error))?
-        .ok_or_else(|| SessionListError::ProjectionCorrupt {
-            reason: format!("{field} is absent or oversized"),
-        })
-}
-
-fn integer(
-    row: &rusqlite::Row<'_>,
-    index: usize,
-    field: &'static str,
-) -> Result<i64, SessionListError> {
-    let value = row
-        .get_ref(index)
-        .map_err(|error| corrupt_sql(field, error))?;
-    if value.data_type() != Type::Integer {
-        return Err(SessionListError::ProjectionCorrupt {
-            reason: format!(
-                "{field} has SQLite type {:?}, expected INTEGER",
-                value.data_type()
-            ),
-        });
-    }
-    match value {
-        ValueRef::Integer(value) => Ok(value),
-        _ => Err(SessionListError::ProjectionCorrupt {
-            reason: format!("{field} changed SQLite type while decoding"),
-        }),
-    }
-}
-
-fn validate_watermark(
-    session: &str,
-    cutover: i64,
-    watermark: Option<i64>,
-    head: Option<i64>,
-) -> Result<(), SessionListError> {
-    if cutover < -1 {
-        return Err(SessionListError::ProjectionCorrupt {
-            reason: format!("session {session} has invalid cutover {cutover}"),
-        });
-    }
-    if cutover >= 0 && watermark.is_none() {
-        return Err(SessionListError::ProjectionCorrupt {
-            reason: format!("session {session} is missing its projection watermark"),
-        });
-    }
-    if let Some(watermark) = watermark {
-        if watermark < cutover || head.is_none_or(|head| watermark > head) {
-            return Err(SessionListError::ProjectionCorrupt {
-                reason: format!(
-                    "session {session} watermark {watermark} is outside cutover/head {cutover}/{head:?}"
-                ),
-            });
+    /// Every statement a page can run is one seek in key-index order: a
+    /// sort or filtered scan over rows sharing a time would cost the whole
+    /// run before the first row.
+    #[test]
+    fn every_segment_is_one_seek_in_index_order() -> Result<(), Box<dyn std::error::Error>> {
+        let store = grapt_store::EventStore::open_in_memory()?;
+        let positions = [
+            None,
+            Some(After::Session {
+                time: 5,
+                id: "ses_a".to_owned(),
+            }),
+            Some(After::Row {
+                rowid: 1,
+                keyed: true,
+            }),
+            Some(After::Row {
+                rowid: 1,
+                keyed: false,
+            }),
+        ];
+        for order in [SessionListOrder::Ascending, SessionListOrder::Descending] {
+            let criteria = SessionListCriteria::new(
+                SessionListScope::All,
+                None,
+                None,
+                ParentFilter::Any,
+                order,
+                SessionListDirection::Next,
+                None,
+                2,
+                SessionListLimits::production(),
+            )?;
+            for position in &positions {
+                for segment in keyset::segments(position.as_ref(), descending(&criteria)) {
+                    let (sql, params) = page_sql(&criteria, &segment, 2)?;
+                    let mut statement = store
+                        .connection()
+                        .prepare(&format!("EXPLAIN QUERY PLAN {sql}"))?;
+                    let plan = statement
+                        .query_map(rusqlite::params_from_iter(params), |row| {
+                            row.get::<_, String>(3)
+                        })?
+                        .collect::<Result<Vec<_>, _>>()?;
+                    let outer = plan
+                        .iter()
+                        .find(|step| step.contains("session_list_projection"))
+                        .ok_or("no projection step")?;
+                    assert!(
+                        !plan.iter().any(|step| step.contains("TEMP B-TREE"))
+                            && (outer.starts_with("SEARCH") || segment == Segment::All),
+                        "{order:?} {segment:?} is not one seek: {plan:?}"
+                    );
+                }
+            }
         }
+        Ok(())
     }
-    Ok(())
 }

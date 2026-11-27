@@ -259,7 +259,7 @@ impl Projector for PermissionProjector {
         &mut self,
         tx: &Transaction<'_>,
         event: &grapt_store::DecodedEvent,
-    ) -> Result<(), String> {
+    ) -> Result<(), grapt_store::ProjectorError> {
         let decoded = crate::PermissionEvent::decode(
             event.kind.name(),
             event.kind.version().value(),

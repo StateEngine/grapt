@@ -335,30 +335,84 @@ impl Drop for LiveQuestion {
         if let Err(error) = self.retire() {
             self.producer
                 .hub
-                .invalidate_because("question retirement failed");
+                .invalidate_session_because(&self.session, "question retirement failed");
             crate::diagnostics::report(format!("question retirement failed: {error}"));
         }
     }
 }
 
 /// Retire lost waiters through the form owner; their audit stays settled and bounded.
+///
+/// A form that cannot be read or retired is skipped and returned as a warning,
+/// so one bad form cannot stop the server from starting. A database failure
+/// still fails recovery.
 pub(in crate::dogfood) fn recover(
     store: &mut grapt_store::EventStore,
     ids: &dyn IdAuthority,
     clock: &dyn ClockAuthority,
-) -> Result<(), String> {
-    for row in grapt_form::catalog::pending_forms(store).map_err(|e| e.to_string())? {
+) -> Result<Vec<String>, String> {
+    let recoverable =
+        grapt_form::catalog::pending_forms_for_recovery(store).map_err(|e| e.to_string())?;
+    let mut warnings: Vec<String> = recoverable
+        .skipped
+        .iter()
+        .map(ToString::to_string)
+        .collect();
+    for row in recoverable.forms {
         if row.info["metadata"]["kind"].as_str() != Some(TOOL) {
             continue;
         }
-        let event: EventId = format!("evt_{}", ids.mint().as_str())
-            .parse()
-            .map_err(|_| "question recovery identity")?;
-        let aggregate = grapt_store::AggregateId::Session(row.session);
-        store.elect_writer(&aggregate).map_err(|e| e.to_string())?;
-        let result = FormService::cancel_on(store, &event, &row.id, clock.now().as_millis());
-        store.release_held_writer(&aggregate);
-        result.map_err(|e| e.to_string())?;
+        match retire_lost(store, ids, clock, &row) {
+            Ok(()) => {}
+            Err(Unsettled::Storage(reason)) => return Err(reason),
+            Err(Unsettled::Item(reason)) => warnings.push(format!(
+                "form {} in session {}: {reason}",
+                row.id, row.session
+            )),
+        }
     }
-    Ok(())
+    Ok(warnings)
+}
+
+/// Why one lost form was not settled: the database failing ends recovery,
+/// anything about the form itself is a warning.
+pub(in crate::dogfood) enum Unsettled {
+    Storage(String),
+    Item(String),
+}
+
+impl Unsettled {
+    pub(in crate::dogfood) fn write(error: &grapt_store::WriteError) -> Self {
+        if error.is_storage_failure() {
+            Self::Storage(error.to_string())
+        } else {
+            Self::Item(error.to_string())
+        }
+    }
+
+    pub(in crate::dogfood) fn form(error: &grapt_form::FormError) -> Self {
+        if error.is_storage_failure() {
+            Self::Storage(error.to_string())
+        } else {
+            Self::Item(error.to_string())
+        }
+    }
+}
+
+fn retire_lost(
+    store: &mut grapt_store::EventStore,
+    ids: &dyn IdAuthority,
+    clock: &dyn ClockAuthority,
+    row: &grapt_form::catalog::PendingForm,
+) -> Result<(), Unsettled> {
+    let event: EventId = format!("evt_{}", ids.mint().as_str())
+        .parse()
+        .map_err(|_| Unsettled::Item("question recovery identity".into()))?;
+    let aggregate = grapt_store::AggregateId::Session(row.session.clone());
+    store
+        .elect_writer(&aggregate)
+        .map_err(|error| Unsettled::write(&error))?;
+    let result = FormService::cancel_on(store, &event, &row.id, clock.now().as_millis());
+    store.release_held_writer(&aggregate);
+    result.map(|_| ()).map_err(|error| Unsettled::form(&error))
 }

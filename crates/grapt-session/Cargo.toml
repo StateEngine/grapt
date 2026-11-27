@@ -21,7 +21,7 @@ grapt-store = { path = "../grapt-store" }
 # The durable history read model, moved out along its own responsibility. The
 # arrow points DOWN: history depends on event and store, never back on Session.
 grapt-session-history = { path = "../grapt-session-history" }
-rusqlite = { version = "0.41", features = ["bundled", "functions"] }
+rusqlite = { version = "0.41", features = ["blob", "bundled", "functions"] }
 serde_json = "1"
 serde = { version = "1", features = ["derive"] }
 thiserror = "2"

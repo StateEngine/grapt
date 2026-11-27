@@ -497,3 +497,53 @@ fn presentation_metadata_is_bounded_and_creation_rolls_back_with_its_projection(
     assert_eq!(row.info["fields"], fields);
     Ok(())
 }
+
+#[test]
+fn malformed_creation_json_skips_its_form_and_recovery_keeps_the_healthy_one() -> TestResult {
+    let path = std::env::temp_dir().join(format!(
+        "grapt-form-malformed-creation-{}.db",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_file(&path);
+    let mut store = EventStore::open(&path, "test")?;
+    for session in ["ses_creation_broken", "ses_creation_healthy"] {
+        store.elect_writer(&AggregateId::Session(session.parse()?))?;
+    }
+    let mut svc = FormService::new(store)?;
+    for (form, session) in [
+        ("frm_creation_broken", "ses_creation_broken"),
+        ("frm_creation_healthy", "ses_creation_healthy"),
+    ] {
+        svc.create(
+            &ev(&format!("evt_{form}"))?,
+            &form.parse()?,
+            &session.parse()?,
+            "Name",
+            &fields(),
+            1,
+        )?;
+    }
+    drop(svc);
+    // The store refuses ungoverned writes; another writer's damage.
+    rusqlite::Connection::open(&path)?.execute(
+        "UPDATE event SET data = '{\"form\": not json' WHERE type = 'form.created.1'
+           AND aggregate_id = 'ses_creation_broken'",
+        [],
+    )?;
+    let store = EventStore::open(&path, "test")?;
+    let recoverable = grapt_form::catalog::pending_forms_for_recovery(&store)?;
+    let healthy: Vec<&str> = recoverable
+        .forms
+        .iter()
+        .map(|form| form.id.as_str())
+        .collect();
+    assert_eq!(healthy, ["frm_creation_healthy"]);
+    assert_eq!(recoverable.skipped.len(), 1);
+    assert_eq!(
+        recoverable.skipped[0].id.as_ref().map(FormId::as_str),
+        Some("frm_creation_broken")
+    );
+    drop(store);
+    std::fs::remove_file(&path)?;
+    Ok(())
+}

@@ -4,6 +4,10 @@ use crate::interrupted_turn::INTERRUPTED_TURN;
 
 /// `data` is a fixed caller-owned SQL column, never user input. Unknown textual
 /// kinds are advisory; malformed/oversized kinds still enter the strict decoder.
+/// A [`TOKEN_CALIBRATION`] row is accounting, never history, whatever its size:
+/// it is known by its parsed top-level `kind` alone. A row that does not parse
+/// has no knowable kind, so it takes the strict path every malformed notice
+/// takes rather than hiding a public notice that merely mentions the name.
 pub fn public_notice_predicate(data: &str) -> String {
     let kinds = [
         MCP_UNAVAILABLE,
@@ -21,7 +25,9 @@ pub fn public_notice_predicate(data: &str) -> String {
     ]
     .map(|kind| format!("'{kind}'"))
     .join(",");
-    format!("CASE WHEN length(CAST({data} AS BLOB)) > {MAX_NOTICE_DATA_BYTES} THEN 1 WHEN NOT json_valid({data}) THEN 1 WHEN json_type({data}, '$.kind') IS NOT 'text' THEN 1 ELSE json_extract({data}, '$.kind') IN ({kinds}) END")
+    let internal =
+        format!("json_valid({data}) AND json_extract({data}, '$.kind') IS '{TOKEN_CALIBRATION}'");
+    format!("CASE WHEN {internal} THEN 0 WHEN length(CAST({data} AS BLOB)) > {MAX_NOTICE_DATA_BYTES} THEN 1 WHEN NOT json_valid({data}) THEN 1 WHEN json_type({data}, '$.kind') IS NOT 'text' THEN 1 ELSE json_extract({data}, '$.kind') IN ({kinds}) END")
 }
 
 pub fn skipped_kinds(

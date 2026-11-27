@@ -18,9 +18,10 @@ use std::collections::HashMap;
 mod service;
 
 pub use service::{
-    EntryOutcome, InstructionBoundary, InstructionChange, InstructionError, InstructionHistory,
-    InstructionProjector, InstructionService, InstructionUpdate, InstructionValue, RefreshInput,
-    RefreshOutcome, ResolvedInstruction, SourceObservation,
+    CurrentInstructions, EntryOutcome, InstructionBoundary, InstructionChange, InstructionError,
+    InstructionHistory, InstructionProjector, InstructionService, InstructionUpdate,
+    InstructionValue, RefreshInput, RefreshOutcome, ResolvedInstruction, SkippedInstructionEvent,
+    SourceObservation,
 };
 
 /// How a stored blob relates to its hash key.

@@ -147,8 +147,19 @@ pub fn split_exchange_opening(
     decoded(seq, "exchange opening has a negative sequence")
 }
 
+/// Bounded preview ceiling for local tools whose terminal outputs are
+/// projected inline unless excluded by `unpreviewed_tools`.
+#[derive(Debug, Clone, Copy)]
+pub struct PreviewBudget<'a> {
+    pub cap: usize,
+    pub unpreviewed_tools: &'a [&'a str],
+}
+
 /// First position past a declared-payload budget. No artifact is opened.
 /// The caller owns both the per-item charge cap and the total byte ceiling.
+/// Candidate terminal rows are validated through the shared
+/// `grapt_event::session_tool_terminal` decoder so only decodable terminals
+/// are charged and malformed rows never abort the query.
 pub fn declared_bytes_over(
     store: &EventStore,
     session: &SessionId,
@@ -156,12 +167,23 @@ pub fn declared_bytes_over(
     until: Option<EventSeq>,
     cap: usize,
     limit: usize,
+    preview: Option<PreviewBudget<'_>>,
 ) -> Result<Option<EventSeq>, String> {
     // Match the payload reader's saturated range for an out-of-range cut.
     let at = |seq: EventSeq| i64::try_from(seq.value()).unwrap_or(i64::MAX);
     let from = from.map_or(i64::MIN, at);
     let until = until.map(at);
     let cap_sql = i64::try_from(cap).map_err(|_| "artifact bound")?;
+    let (preview_cap, unpreviewed_json) = match preview {
+        Some(preview) => (
+            preview.cap,
+            Some(
+                serde_json::to_string(preview.unpreviewed_tools)
+                    .map_err(|error| format!("unpreviewed tool list encoding failed: {error}"))?,
+            ),
+        ),
+        None => (cap, None),
+    };
     let probe = |error: rusqlite::Error| format!("declared content boundary probe failed: {error}");
     // Messages and content declare their clamped length in SQL. A terminal
     // declares only what its decoded fact names: an undecodable one is no
@@ -170,42 +192,77 @@ pub fn declared_bytes_over(
     let mut statement = store
         .connection()
         .prepare(&format!(
-            "SELECT seq, bytes, terminal FROM (
+            "WITH local_preview_calls AS (
+                SELECT json_extract(data, '$.callID') AS call_id
+                  FROM event
+                 WHERE ?5 IS NOT NULL
+                   AND aggregate_family = 'session'
+                   AND aggregate_id = ?1
+                   AND type IN ('session.tool.input.started.1', 'session.tool.input.started.2')
+                   AND CASE
+                         WHEN typeof(data) = 'text' AND json_valid(data)
+                         THEN coalesce(json_extract(data, '$.execution'), 'local') = 'local'
+                              AND json_type(data, '$.name') = 'text'
+                              AND NOT EXISTS (
+                                  SELECT 1 FROM json_each(?5)
+                                   WHERE value = json_extract(data, '$.name'))
+                         ELSE 0
+                       END = 1
+            )
+            SELECT seq, bytes, terminal, is_previewed FROM (
                 SELECT seq, min(max(coalesce(length(CAST(text AS BLOB)), 0), 0), ?4) AS bytes,
-                       NULL AS terminal FROM session_message
+                       NULL AS terminal, 0 AS is_previewed FROM session_message
                  WHERE session_id = ?1 AND type IN ('user', 'synthetic')
                    AND (seq >= ?2 OR seq < 0) AND (?3 IS NULL OR seq < ?3)
                 UNION ALL
-                SELECT seq, min(max(coalesce(CASE WHEN json_valid(data)
-                    THEN json_extract(data, '$.item.payload.length') END, 0), 0), ?4), NULL FROM event
+                SELECT seq, min(max(coalesce(CASE WHEN typeof(data) = 'text' AND json_valid(data)
+                    THEN json_extract(data, '$.item.payload.length') END, 0), 0), ?4),
+                    NULL, 0 FROM event
                  WHERE aggregate_family = 'session' AND aggregate_id = ?1
                    AND (seq >= ?2 OR seq < 0) AND (?3 IS NULL OR seq < ?3)
                    AND type = 'session.content.appended.1'
-                   AND (json_valid(data) = 0
-                        OR json_extract(data, '$.item.kind') NOT IN ('reasoning', 'opaque'))
+                   AND CASE
+                         WHEN typeof(data) != 'text' OR json_valid(data) = 0 THEN 1
+                         WHEN json_extract(data, '$.item.kind') NOT IN ('reasoning', 'opaque') THEN 1
+                         ELSE 0
+                       END = 1
                 UNION ALL
-                SELECT e.seq, 0, {terminal} FROM event e
+                SELECT e.seq, 0, {terminal},
+                       CASE WHEN ?5 IS NOT NULL
+                             AND typeof(e.data) = 'text'
+                             AND json_valid(e.data)
+                             AND json_extract(e.data, '$.call') IN (SELECT call_id FROM local_preview_calls)
+                            THEN 1 ELSE 0 END AS is_previewed
+                  FROM event e
                  WHERE e.aggregate_family = 'session' AND e.aggregate_id = ?1
                    AND (e.seq >= ?2 OR e.seq < 0) AND (?3 IS NULL OR e.seq < ?3)
                    AND e.type = 'session.tool.terminal.1'
-                   AND NOT EXISTS (SELECT 1 FROM event n
-                     WHERE n.aggregate_family = 'session' AND n.aggregate_id = e.aggregate_id
-                       AND n.type = 'session.tool.nested.started.1' AND json_valid(n.data)
-                       AND json_valid(e.data)
-                       AND json_extract(n.data, '$.attempt') = json_extract(e.data, '$.attempt')
-                       AND json_extract(n.data, '$.call') = json_extract(e.data, '$.call')))
+                   AND CASE
+                         WHEN typeof(e.data) = 'text' AND json_valid(e.data)
+                         THEN NOT EXISTS (SELECT 1 FROM event n
+                           WHERE n.aggregate_family = 'session' AND n.aggregate_id = e.aggregate_id
+                             AND n.type = 'session.tool.nested.started.1'
+                             AND typeof(n.data) = 'text' AND json_valid(n.data)
+                             AND json_extract(n.data, '$.attempt') = json_extract(e.data, '$.attempt')
+                             AND json_extract(n.data, '$.call') = json_extract(e.data, '$.call'))
+                         ELSE 1
+                       END = 1)
              ORDER BY seq"
         ))
         .map_err(probe)?;
     let mut rows = statement
-        .query((session.as_str(), from, until, cap_sql))
+        .query((session.as_str(), from, until, cap_sql, unpreviewed_json))
         .map_err(probe)?;
     let mut total = 0f64;
     while let Some(row) = rows.next().map_err(probe)? {
         let seq: i64 = row.get(0).map_err(probe)?;
         let terminal = crate::stored_terminal::classify_optional(row, 2).map_err(probe)?;
         total += match terminal {
-            Some(terminal) => terminal_bytes(terminal).min(cap) as f64,
+            Some(terminal) => {
+                let is_previewed: i64 = row.get(3).map_err(probe)?;
+                let row_cap = if is_previewed != 0 { preview_cap } else { cap };
+                terminal_bytes(terminal).min(row_cap) as f64
+            }
             None => row.get::<_, f64>(1).map_err(probe)?,
         };
         if total > limit as f64 {
@@ -230,4 +287,215 @@ fn terminal_bytes(terminal: grapt_event::session_tool_terminal::StoredTerminal) 
     artifact.map_or(0, |artifact| {
         usize::try_from(artifact.reference().length()).unwrap_or(usize::MAX)
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    struct ScratchDir(std::path::PathBuf);
+    impl Drop for ScratchDir {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    fn open_fixture() -> Result<(EventStore, rusqlite::Connection, SessionId, ScratchDir), String> {
+        static ORDINAL: AtomicUsize = AtomicUsize::new(0);
+        let root = loop {
+            let candidate = std::env::temp_dir().join(format!(
+                "grapt-boundary-test-{}-{}",
+                std::process::id(),
+                ORDINAL.fetch_add(1, Ordering::Relaxed)
+            ));
+            match std::fs::create_dir(&candidate) {
+                Ok(()) => break candidate,
+                Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
+                Err(error) => return Err(error.to_string()),
+            }
+        };
+        let scratch = ScratchDir(root.clone());
+        let database = root.join("events.sqlite3");
+        let store =
+            EventStore::open(&database, "boundary-test").map_err(|error| error.to_string())?;
+        let raw = rusqlite::Connection::open(&database).map_err(|error| error.to_string())?;
+        raw.execute_batch(
+            "CREATE TABLE session_message (
+                id TEXT PRIMARY KEY, session_id TEXT NOT NULL, type TEXT NOT NULL,
+                text TEXT NOT NULL, delivery TEXT NOT NULL, seq INTEGER NOT NULL,
+                description TEXT, metadata_json TEXT
+            );",
+        )
+        .map_err(|error| error.to_string())?;
+        let session = "ses_boundary_test"
+            .parse::<SessionId>()
+            .map_err(|error| error.to_string())?;
+        raw.execute(
+            "INSERT INTO event_sequence (aggregate_family, aggregate_id, seq) VALUES ('session', ?1, 0)",
+            [session.as_str()],
+        )
+        .map_err(|error| error.to_string())?;
+        Ok((store, raw, session, scratch))
+    }
+
+    #[test]
+    fn undecodable_terminal_rows_charge_zero_bytes() -> Result<(), String> {
+        let (store, raw, session, _scratch) = open_fixture()?;
+        let corrupt_rows = [
+            r#"{"outcome":{"output":{"length":1000000}}}"#,
+            r#"{"call":"c1","outcome":{"kind":"completed","output":{"length":1000000}}}"#,
+            r#"{"attempt":"a1","outcome":{"kind":"completed","output":{"length":1000000}}}"#,
+            r#"{"attempt":"a2","call":"c2","outcome":{"output":{"length":1000000}}}"#,
+            r#"{"attempt":"a3","call":"c3","outcome":{"kind":"bogus","detail":{"length":1000000}}}"#,
+        ];
+        for (index, payload) in corrupt_rows.iter().enumerate() {
+            let seq = i64::try_from(index + 1).map_err(|_| "seq overflow")?;
+            raw.execute(
+                "INSERT INTO event (id, aggregate_family, aggregate_id, seq, created, type, data, writer_epoch)
+                 VALUES (?1, 'session', ?2, ?3, 0, 'session.tool.terminal.1', ?4, 1)",
+                (format!("ev_corrupt_{seq}"), session.as_str(), seq, *payload),
+            )
+            .map_err(|error| error.to_string())?;
+        }
+
+        let over = declared_bytes_over(
+            &store,
+            &session,
+            None,
+            None,
+            1024 * 1024,
+            4 * 1024 * 1024,
+            Some(PreviewBudget {
+                cap: 32 * 1024,
+                unpreviewed_tools: &["read"],
+            }),
+        )?;
+        assert_eq!(over, None);
+        let strict = declared_bytes_over(&store, &session, None, None, 1024 * 1024, 0, None)?;
+        assert_eq!(strict, None);
+        Ok(())
+    }
+
+    #[test]
+    fn failed_terminals_missing_reason_charge_zero_bytes() -> Result<(), String> {
+        let (store, raw, session, _scratch) = open_fixture()?;
+        for seq in 1i64..=5 {
+            let payload = format!(
+                r#"{{"attempt":"pat_{seq}","call":"call_{seq}","outcome":{{"kind":"failed","detail":{{"id":"art_{seq}","length":1000000,"digest":"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef","disposition":"complete"}}}}}}"#
+            );
+            raw.execute(
+                "INSERT INTO event (id, aggregate_family, aggregate_id, seq, created, type, data, writer_epoch)
+                 VALUES (?1, 'session', ?2, ?3, 0, 'session.tool.terminal.1', ?4, 1)",
+                (format!("ev_missing_reason_{seq}"), session.as_str(), seq, payload),
+            )
+            .map_err(|error| error.to_string())?;
+        }
+
+        let over = declared_bytes_over(
+            &store,
+            &session,
+            None,
+            None,
+            1024 * 1024,
+            4 * 1024 * 1024,
+            Some(PreviewBudget {
+                cap: 32 * 1024,
+                unpreviewed_tools: &["read"],
+            }),
+        )?;
+        assert_eq!(over, None);
+        let strict = declared_bytes_over(&store, &session, None, None, 1024 * 1024, 0, None)?;
+        assert_eq!(strict, None);
+        Ok(())
+    }
+
+    #[test]
+    fn malformed_terminal_alongside_valid_nested_start_does_not_abort_query() -> Result<(), String>
+    {
+        let (store, raw, session, _scratch) = open_fixture()?;
+        raw.execute(
+            "INSERT INTO event (id, aggregate_family, aggregate_id, seq, created, type, data, writer_epoch)
+             VALUES ('ev_nested_1', 'session', ?1, 1, 0, 'session.tool.nested.started.1', ?2, 1)",
+            (
+                session.as_str(),
+                r#"{"attempt":"pat_nested","call":"call_nested"}"#,
+            ),
+        )
+        .map_err(|error| error.to_string())?;
+        raw.execute(
+            "INSERT INTO event (id, aggregate_family, aggregate_id, seq, created, type, data, writer_epoch)
+             VALUES ('ev_malformed_term', 'session', ?1, 2, 0, 'session.tool.terminal.1', '{not-json', 1)",
+            [session.as_str()],
+        )
+        .map_err(|error| error.to_string())?;
+
+        let over = declared_bytes_over(
+            &store,
+            &session,
+            None,
+            None,
+            1024 * 1024,
+            4 * 1024 * 1024,
+            Some(PreviewBudget {
+                cap: 32 * 1024,
+                unpreviewed_tools: &["read"],
+            }),
+        )?;
+        assert_eq!(over, None);
+        Ok(())
+    }
+
+    #[test]
+    fn invalid_utf8_terminal_text_charges_zero_bytes_without_aborting() -> Result<(), String> {
+        let (store, raw, session, _scratch) = open_fixture()?;
+        raw.execute(
+            "INSERT INTO event (id, aggregate_family, aggregate_id, seq, created, type, data, writer_epoch)
+             VALUES ('ev_bad_utf8', 'session', ?1, 1, 0, 'session.tool.terminal.1',
+                     CAST(X'7b2261223a22ff227d' AS TEXT), 1)",
+            [session.as_str()],
+        )
+        .map_err(|error| error.to_string())?;
+        let valid: i64 = raw
+            .query_row(
+                "SELECT json_valid(data) FROM event WHERE id = 'ev_bad_utf8'",
+                [],
+                |row| row.get(0),
+            )
+            .map_err(|error| error.to_string())?;
+        assert_eq!(valid, 1);
+
+        let over = declared_bytes_over(
+            &store,
+            &session,
+            None,
+            None,
+            1024 * 1024,
+            0,
+            Some(PreviewBudget {
+                cap: 32 * 1024,
+                unpreviewed_tools: &["read"],
+            }),
+        )?;
+        assert_eq!(over, None);
+        Ok(())
+    }
+
+    #[test]
+    fn fractional_real_content_length_below_budget_does_not_abort() -> Result<(), String> {
+        let (store, raw, session, _scratch) = open_fixture()?;
+        raw.execute(
+            "INSERT INTO event (id, aggregate_family, aggregate_id, seq, created, type, data, writer_epoch)
+             VALUES ('ev_real_len', 'session', ?1, 1, 0, 'session.content.appended.1',
+                     '{\"item\":{\"kind\":\"text\",\"payload\":{\"length\":12.5}}}', 1)",
+            [session.as_str()],
+        )
+        .map_err(|error| error.to_string())?;
+
+        let under = declared_bytes_over(&store, &session, None, None, 1024 * 1024, 100, None)?;
+        assert_eq!(under, None);
+        let over = declared_bytes_over(&store, &session, None, None, 1024 * 1024, 12, None)?;
+        assert_eq!(over, Some(EventSeq::new(1)));
+        Ok(())
+    }
 }

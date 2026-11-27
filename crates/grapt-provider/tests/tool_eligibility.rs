@@ -44,3 +44,22 @@ fn no_reason_variant_ships_wordless() {
         assert!(!reason.as_str().is_empty(), "reason {reason:?}");
     }
 }
+
+#[test]
+fn descriptions_up_to_4k_are_admitted_and_oversized_descriptions_report_reason() {
+    use grapt_provider::tool_eligibility::MAX_TOOL_DESCRIPTION_BYTES;
+    let mut medium = tool("{}");
+    medium.description = Some("d".repeat(1024));
+    assert_eq!(eligibility(&medium), Eligibility::Eligible);
+
+    let mut at_limit = tool("{}");
+    at_limit.description = Some("d".repeat(MAX_TOOL_DESCRIPTION_BYTES));
+    assert_eq!(eligibility(&at_limit), Eligibility::Eligible);
+
+    let mut over_limit = tool("{}");
+    over_limit.description = Some("d".repeat(MAX_TOOL_DESCRIPTION_BYTES + 1));
+    assert_eq!(
+        eligibility(&over_limit),
+        Eligibility::Excluded(ExclusionReason::DescriptionTooLarge)
+    );
+}

@@ -121,9 +121,10 @@ pub(super) fn submit(
                 &cancel_message,
                 FollowupCancelReason::Interrupted,
             ) {
-                cancel_app
-                    .hub
-                    .invalidate_because(&format!("followup cancellation failed: {error}"));
+                cancel_app.hub.invalidate_session_because(
+                    &cancel_child,
+                    &format!("followup cancellation failed: {error}"),
+                );
             }
         });
         let failed_app = Arc::clone(app);
@@ -145,9 +146,10 @@ pub(super) fn submit(
                 &failed_execution,
                 reason,
             ) {
-                failed_app
-                    .hub
-                    .invalidate_because(&format!("followup abandonment failed: {error}"));
+                failed_app.hub.invalidate_session_because(
+                    &failed_child,
+                    &format!("followup abandonment failed: {error}"),
+                );
             }
         });
         let application = Arc::clone(app);
@@ -172,9 +174,10 @@ pub(super) fn submit(
                 )
                 .await
                 {
-                    application
-                        .hub
-                        .invalidate_because(&format!("agent followup could not start: {error}"));
+                    application.hub.invalidate_session_because(
+                        &target,
+                        &format!("agent followup could not start: {error}"),
+                    );
                 }
             }),
             cancel_work,
@@ -275,9 +278,10 @@ impl Drop for PendingFollowup {
             &self.execution,
             reason,
         ) {
-            self.app
-                .hub
-                .invalidate_because(&format!("owned followup cleanup failed: {error}"));
+            self.app.hub.invalidate_session_because(
+                &self.child,
+                &format!("owned followup cleanup failed: {error}"),
+            );
         }
     }
 }

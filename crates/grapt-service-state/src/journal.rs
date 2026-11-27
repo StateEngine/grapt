@@ -51,7 +51,6 @@ impl Change {
 }
 
 #[derive(Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
 struct Data {
     #[serde(rename = "sessionID")]
     session: String,

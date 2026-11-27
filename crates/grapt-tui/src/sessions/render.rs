@@ -84,6 +84,7 @@ impl Picker {
         area: Rect,
         agents: &[Agent],
         pins: &Pins,
+        catalog: CatalogReach,
         p: Palette,
     ) {
         frame.render_widget(Clear, area);
@@ -175,11 +176,7 @@ impl Picker {
         let count = entries.len();
         drop(entries);
         if count == 0 {
-            rows.push(ListItem::new(if self.query.is_empty() {
-                "No sessions available"
-            } else {
-                "No matching sessions"
-            }));
+            rows.push(ListItem::new(self.empty_note(catalog)));
         }
         let mut state = ListState::default()
             .with_offset(self.offset)
@@ -194,7 +191,7 @@ impl Picker {
         );
         self.offset = state.offset();
         frame.render_widget(
-            Paragraph::new(self.search_hint()).style(p.normal().fg(p.muted)),
+            Paragraph::new(self.search_hint(catalog)).style(p.normal().fg(p.muted)),
             Rect {
                 y: inner.bottom().saturating_sub(2),
                 height: 1,

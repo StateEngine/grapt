@@ -193,13 +193,13 @@ fn uncaught_mcp_census_failures_name_the_server_tool_and_actual_cause() {
             "call_census_limit_200",
             "stateengine_msg_list",
             serde_json::json!({"unread_only":true,"limit":200}),
-            "32768",
+            "1048576",
         ),
         (
             "call_census_limit_100",
             "stateengine_msg_list",
             serde_json::json!({"unread_only":true,"limit":100}),
-            "32768",
+            "1048576",
         ),
         (
             "call_census_before",

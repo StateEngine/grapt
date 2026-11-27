@@ -13,7 +13,6 @@ pub struct ConfigBinding {
     pub agent: SourcePrincipalId,
 }
 #[derive(Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
 struct RawBinding {
     path: String,
     project: String,
@@ -65,7 +64,6 @@ impl ConfigBinding {
     }
 }
 #[derive(Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
 struct Data {
     #[serde(rename = "sessionID")]
     session: String,

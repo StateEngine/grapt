@@ -204,3 +204,54 @@ async fn stopped_stderr_drops_samples_and_releases_session_wake(
         .contains("GRAPT_PROVIDER_TAIL_LOSS tail_count_at_least="));
     Ok(())
 }
+
+#[test]
+fn a_dispatched_call_exports_its_cache_read_share() -> Result<(), String> {
+    use grapt_provider::TokenUsage;
+    use grapt_types::{TokenCount, UsageField, UsageObservationPhase};
+    let field = |value| {
+        TokenCount::new(value)
+            .map(UsageField::reported)
+            .map_err(|error| error.to_string())
+    };
+    let usage = TokenUsage::new(
+        field(1_000)?,
+        UsageField::ABSENT,
+        UsageField::ABSENT,
+        UsageField::ABSENT,
+        field(900)?,
+        field(0)?,
+        UsageField::ABSENT,
+    );
+    let session: SessionId = "ses_cache_export"
+        .parse()
+        .map_err(|error| format!("{error}"))?;
+    let sample = grapt_provider::DispatchSample {
+        attempt: PhysicalAttemptId::new("att_cache_export").ok_or("attempt")?,
+        session: Some(session.clone()),
+        request: None,
+        model: None,
+        at_ms: 0,
+        response_head_at_ms: None,
+        first_stream_byte_at_ms: None,
+        http_status: Some(200),
+        usage: vec![(UsageObservationPhase::Terminal, usage)],
+        usage_overflowed: false,
+        usage_warning: None,
+        usage_detail: None,
+        terminal_observed: true,
+    };
+    // The same producer and exporter the dispatch drain uses.
+    let calibrations = crate::dogfood::continuation::admission::SessionCalibrations::default();
+    calibrations.observe_request(&sample, 0);
+    let metadata = calibrations.request_observation(&session, &sample.attempt);
+    let exported = cache::record(Some(&session), metadata.as_ref());
+    assert_eq!(exported["metadata"]["cacheReadShare"], 0.9);
+    // Without a request to compare, prefix reuse is unknown, and exported so.
+    let metadata = exported["metadata"].as_object().ok_or("metadata")?;
+    assert_eq!(
+        metadata.get("localPrefixUnchanged"),
+        Some(&serde_json::Value::Null)
+    );
+    Ok(())
+}

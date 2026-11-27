@@ -12,6 +12,18 @@ pub const MAX_FORM_CATALOG_ROWS: usize = 128;
 const MAX_FORM_EVENT_BYTES: usize = 256 * 1024;
 const MAX_FORM_CATALOG_BYTES: usize = 4 * 1024 * 1024;
 
+/// Unsettled session forms, newest first; text over its bound reads as NULL.
+const PENDING_SQL: &str = "SELECT CASE WHEN length(CAST(id AS BLOB)) <= 512 THEN id END,
+                CASE WHEN length(CAST(session_id AS BLOB)) <= 512 THEN session_id END,
+                CASE WHEN length(CAST(title AS BLOB)) <= 262144 THEN title END,
+                CASE WHEN length(CAST(status AS BLOB)) <= 32 THEN status END,
+                CASE WHEN suspended_reason IS NULL THEN NULL
+                     WHEN length(CAST(suspended_reason AS BLOB)) <= 32 THEN suspended_reason
+                     ELSE 'invalid-oversized-reason' END
+         FROM form_request WHERE status NOT IN ('answered', 'cancelled') AND session_id IS NOT NULL
+           AND (?1 IS NULL OR session_id = ?1)
+         ORDER BY rowid DESC LIMIT 129";
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct PendingForm {
     pub id: FormId,
@@ -36,18 +48,7 @@ pub fn pending_forms_for(
     store: &EventStore,
     session: Option<&SessionId>,
 ) -> Result<Vec<PendingForm>, FormCatalogError> {
-    let mut statement = store.connection().prepare(
-        "SELECT CASE WHEN length(CAST(id AS BLOB)) <= 512 THEN id END,
-                CASE WHEN length(CAST(session_id AS BLOB)) <= 512 THEN session_id END,
-                CASE WHEN length(CAST(title AS BLOB)) <= 262144 THEN title END,
-                CASE WHEN length(CAST(status AS BLOB)) <= 32 THEN status END,
-                CASE WHEN suspended_reason IS NULL THEN NULL
-                     WHEN length(CAST(suspended_reason AS BLOB)) <= 32 THEN suspended_reason
-                     ELSE 'invalid-oversized-reason' END
-         FROM form_request WHERE status NOT IN ('answered', 'cancelled') AND session_id IS NOT NULL
-           AND (?1 IS NULL OR session_id = ?1)
-         ORDER BY rowid DESC LIMIT 129",
-    )?;
+    let mut statement = store.connection().prepare(PENDING_SQL)?;
     let mut rows = statement.query([session.map(SessionId::as_str)])?;
     let mut result = Vec::new();
     let mut bytes = 0usize;
@@ -57,36 +58,139 @@ pub fn pending_forms_for(
                 "unsettled forms exceed the 128-row response bound",
             ));
         }
-        let id: FormId = row
-            .get::<_, String>(0)?
-            .parse()
-            .map_err(|_| evidence("invalid form id"))?;
-        let session: SessionId = row
-            .get::<_, String>(1)?
-            .parse()
-            .map_err(|_| evidence("invalid session id"))?;
-        let title: String = row.get(2)?;
-        let status: String = row.get(3)?;
-        let reason: Option<String> = row.get(4)?;
-        let suspended = match (status.as_str(), reason.as_deref()) {
-            ("pending", None) => None,
-            ("suspended", Some("shutdown")) => Some(FormSuspensionReason::Shutdown),
-            ("suspended", Some("process-loss")) => Some(FormSuspensionReason::ProcessLoss),
-            _ => return Err(evidence("unsettled form has an invalid status/reason pair")),
-        };
-        let (info, size) = verified_creation_form(store, &session, &id, &title)?;
+        let (form, size) = decode_pending(store, row)?;
         bytes = bytes.saturating_add(size);
         if bytes > MAX_FORM_CATALOG_BYTES {
             return Err(evidence("form response exceeds its aggregate byte bound"));
         }
-        result.push(PendingForm {
+        result.push(form);
+    }
+    Ok(result)
+}
+
+/// A form a recovery pass could not read, named so startup can warn and go on.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SkippedForm {
+    /// The form, when its identity is still readable.
+    pub id: Option<FormId>,
+    pub reason: String,
+}
+
+impl std::fmt::Display for SkippedForm {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match &self.id {
+            Some(id) => write!(formatter, "form {id}: {}", self.reason),
+            None => write!(formatter, "form with unreadable identity: {}", self.reason),
+        }
+    }
+}
+
+/// What one recovery pass can act on, and what it had to leave.
+#[derive(Debug, Default)]
+pub struct RecoverableForms {
+    pub forms: Vec<PendingForm>,
+    pub skipped: Vec<SkippedForm>,
+}
+
+/// Every unsettled session form a startup recovery pass can read.
+///
+/// Unlike [`pending_forms`], a form whose evidence is incomplete is skipped
+/// and named instead of failing the read, so one bad form cannot stop the
+/// server from starting. Forms past the row or byte bound wait for the next
+/// pass, which sees fewer once this one settles them. A database failure
+/// still fails the read; a value of the wrong type in one row does not.
+pub fn pending_forms_for_recovery(
+    store: &EventStore,
+) -> Result<RecoverableForms, FormCatalogError> {
+    let mut statement = store.connection().prepare(PENDING_SQL)?;
+    let mut rows = statement.query([None::<&str>])?;
+    let mut recoverable = RecoverableForms::default();
+    let mut bytes = 0usize;
+    while let Some(row) = rows.next()? {
+        if recoverable.forms.len() + recoverable.skipped.len() == MAX_FORM_CATALOG_ROWS {
+            recoverable.skipped.push(SkippedForm {
+                id: None,
+                reason: "more unsettled forms than one recovery pass reads; the rest wait for the next start".into(),
+            });
+            break;
+        }
+        match decode_pending(store, row) {
+            Ok((form, size)) => {
+                bytes = bytes.saturating_add(size);
+                if bytes > MAX_FORM_CATALOG_BYTES {
+                    recoverable.skipped.push(SkippedForm {
+                        id: Some(form.id),
+                        reason: "unsettled forms exceed one recovery pass's byte bound; the rest wait for the next start".into(),
+                    });
+                    break;
+                }
+                recoverable.forms.push(form);
+            }
+            Err(FormCatalogError::Evidence(reason)) => recoverable.skipped.push(SkippedForm {
+                id: form_hint(row),
+                reason,
+            }),
+            // A value of the wrong type is this row's damage, not the
+            // database's: the row is skipped like any other bad evidence.
+            Err(FormCatalogError::Database(error))
+                if !grapt_store::sqlite_storage_failure(&error) =>
+            {
+                recoverable.skipped.push(SkippedForm {
+                    id: form_hint(row),
+                    reason: format!("form row is unreadable: {error}"),
+                });
+            }
+            Err(error) => return Err(error),
+        }
+    }
+    Ok(recoverable)
+}
+
+/// The form a skipped row belongs to, when its identity still reads.
+fn form_hint(row: &rusqlite::Row<'_>) -> Option<FormId> {
+    row.get::<_, Option<String>>(0)
+        .ok()
+        .flatten()
+        .and_then(|raw| raw.parse().ok())
+}
+
+fn decode_pending(
+    store: &EventStore,
+    row: &rusqlite::Row<'_>,
+) -> Result<(PendingForm, usize), FormCatalogError> {
+    let id: FormId = row
+        .get::<_, Option<String>>(0)?
+        .ok_or_else(|| evidence("form id is absent or oversized"))?
+        .parse()
+        .map_err(|_| evidence("invalid form id"))?;
+    let session: SessionId = row
+        .get::<_, Option<String>>(1)?
+        .ok_or_else(|| evidence("session id is absent or oversized"))?
+        .parse()
+        .map_err(|_| evidence("invalid session id"))?;
+    let title: String = row
+        .get::<_, Option<String>>(2)?
+        .ok_or_else(|| evidence("form title is absent or oversized"))?;
+    let status: String = row
+        .get::<_, Option<String>>(3)?
+        .ok_or_else(|| evidence("form status is absent or oversized"))?;
+    let reason: Option<String> = row.get(4)?;
+    let suspended = match (status.as_str(), reason.as_deref()) {
+        ("pending", None) => None,
+        ("suspended", Some("shutdown")) => Some(FormSuspensionReason::Shutdown),
+        ("suspended", Some("process-loss")) => Some(FormSuspensionReason::ProcessLoss),
+        _ => return Err(evidence("unsettled form has an invalid status/reason pair")),
+    };
+    let (info, size) = verified_creation_form(store, &session, &id, &title)?;
+    Ok((
+        PendingForm {
             id,
             session,
             info,
             suspended,
-        });
-    }
-    Ok(result)
+        },
+        size,
+    ))
 }
 
 /// The creation event's form specification, verified against the projection row.
@@ -104,9 +208,13 @@ fn verified_creation_form(
         "SELECT length(CAST(data AS BLOB)),
                 CASE WHEN length(CAST(data AS BLOB)) <= 262144 THEN data ELSE NULL END
          FROM event WHERE aggregate_family = 'session' AND aggregate_id = ?1
-           AND type = 'form.created.1' AND json_extract(data, '$.form.id') = ?2
+           AND type = 'form.created.1'
+           AND CASE WHEN typeof(data) = 'text' AND json_valid(data)
+                    THEN json_extract(data, '$.form.id') END = ?2
          ORDER BY seq LIMIT 2",
     )?;
+    // CASE fixes the order: a malformed creation event is never handed to
+    // json_extract, whose refusal would read as the database failing.
     let mut events = events.query(rusqlite::params![session.as_str(), id.as_str()])?;
     let event = events
         .next()?

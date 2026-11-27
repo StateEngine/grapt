@@ -154,7 +154,7 @@ impl ToolProjection {
                     MAX_CONTINUATION_ROWS,
                 )?;
                 let calls = assemble_calls(page, permissions, identities, artifacts, None)?;
-                let outputs = assemble_outputs(
+                let outputs = assemble_raw_outputs(
                     output
                         .ok_or("selected output page is absent")??
                         .into_iter()
@@ -163,6 +163,7 @@ impl ToolProjection {
                     artifacts,
                     None,
                     None,
+                    false,
                 )?;
                 finish_projection(store, artifacts, session, &target, calls, outputs)
             })();

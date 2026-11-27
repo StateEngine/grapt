@@ -50,10 +50,12 @@ mod summary_owner;
 mod test_support;
 mod unknown_effects;
 pub(in crate::dogfood) use artifact_reads::read_text;
-use artifact_reads::{fetch_bytes, OutputReads};
+use artifact_reads::{fetch_bytes, fetch_bytes_bounded, tool_artifact_read_bound, OutputReads};
 pub(super) use compaction::{CompactionAuthorities, ProductCompactor, REFUSED_SUMMARY};
+#[cfg(test)]
+use history_tool::stored_outputs;
 pub(super) use history_tool::{history, tool_projection};
-use history_tool::{stored_calls, stored_calls_for, stored_outputs, stored_outputs_for};
+use history_tool::{stored_calls, stored_calls_for, stored_outputs_for, stored_outputs_projected};
 #[cfg(test)]
 use test_support::promote_test_input;
 #[cfg(test)]
@@ -98,8 +100,6 @@ struct StoredOutput {
     call: ToolCallId,
     output: CodexToolText,
     error: Option<String>,
-    failure_reason: Option<grapt_types::ToolFailureReason>,
-    capture_failed: bool,
 }
 
 pub(super) type ToolProjections = HashMap<ToolCallId, Result<ToolProjection, String>>;
@@ -238,15 +238,11 @@ impl DurableContinuation {
     pub(super) fn with_compaction_recovery(
         mut self,
         registry: compaction_recovery::Registry,
-        target: &grapt_types::ResolvedModelTarget,
-        budget: Option<u64>,
     ) -> Self {
         self.recovery = Some(compaction_recovery::Session::new(
             registry,
             self.session.clone(),
             self.input.clone(),
-            target,
-            budget,
         ));
         self
     }
@@ -269,15 +265,6 @@ impl DurableContinuation {
         self.recovery
             .as_ref()
             .is_some_and(|recovery| recovery.trim_requested())
-    }
-
-    pub(super) fn compaction_suppressed(
-        &self,
-    ) -> Result<Option<compaction_recovery::Cause>, String> {
-        self.read_projection(|reader| match &reader.recovery {
-            Some(recovery) => recovery.blocked(&lock(&reader.inbox)),
-            None => Ok(None),
-        })
     }
 
     /// The same continuation, sharing its selected target, for the compactor.

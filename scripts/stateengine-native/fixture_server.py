@@ -190,7 +190,7 @@ def serve(mode, calls_file=None):
                 elif "before" in args:
                     detail = "Error: before/retry_key on msg_list require dismiss=true"
                 else:
-                    detail = "bounded oversized inbox result " + "x" * 40000
+                    detail = "bounded oversized inbox result " + "x" * 1_100_000
                 body = {"isError": params["name"] == "stateengine_msg_send" or "before" in args,
                         "content": [{"type": "text", "text": detail}]}
             elif mode == "transport":
@@ -206,7 +206,7 @@ def serve(mode, calls_file=None):
             raise ValueError("unknown fixture method")
         reply = json.dumps({"jsonrpc": "2.0", "id": message["id"],
                             **({"error": error} if error else {"result": body})})
-        if len(reply.encode()) > (65536 if mode == "census-failures" else MAX_REPLY):
+        if len(reply.encode()) > (1_200_000 if mode == "census-failures" else MAX_REPLY):
             raise ValueError("fixture reply exceeds its bound")
         print(reply, flush=True)
     raise ValueError("fixture request-count bound reached")
