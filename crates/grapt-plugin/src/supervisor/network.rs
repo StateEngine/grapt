@@ -185,10 +185,12 @@ where
     .map_err(|_| "plugin_network_dns: resolver worker failed".to_owned())?
 }
 
+const MAX_DNS_ANSWERS: usize = 32;
+
 fn os_lookup(host: &str, port: u16) -> Result<Vec<SocketAddr>, String> {
     (host, port)
         .to_socket_addrs()
-        .map(|iter| iter.collect())
+        .map(|iter| iter.take(MAX_DNS_ANSWERS + 1).collect())
         .map_err(|_| "plugin_network_dns: lookup failed".to_owned())
 }
 
@@ -302,7 +304,31 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use reqwest::dns::Resolve;
+    use std::io::{Read, Write};
     use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, TcpListener};
+    use std::str::FromStr;
+
+    #[tokio::test]
+    async fn pinned_dns_serves_only_admitted_host_addresses(
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        let pinned = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(198, 51, 100, 1)), 443);
+        let resolver = PinnedDns {
+            host: "api.example".to_owned(),
+            addresses: vec![pinned],
+        };
+        let resolved: Vec<SocketAddr> = resolver
+            .resolve(dns::Name::from_str("api.example")?)
+            .await?
+            .collect();
+        assert_eq!(resolved, vec![pinned]);
+
+        let refused = resolver
+            .resolve(dns::Name::from_str("rebound.example")?)
+            .await;
+        assert!(refused.is_err());
+        Ok(())
+    }
 
     #[tokio::test]
     async fn exchange_refuses_non_public_dns_answers_before_transport(
@@ -311,7 +337,7 @@ mod tests {
         listener.set_nonblocking(true)?;
         let loopback = listener.local_addr()?;
 
-        let public = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(93, 184, 216, 34)), 443);
+        let doc_public = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(198, 51, 100, 1)), 443);
         let metadata = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(169, 254, 169, 254)), 80);
         let private = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(10, 0, 0, 1)), 443);
         let link_local_v6 =
@@ -320,9 +346,9 @@ mod tests {
         let url = url::Url::parse("https://rebind.example/data")?;
         for answers in [
             vec![loopback],
-            vec![public, loopback],
+            vec![doc_public, loopback],
             vec![metadata],
-            vec![public, metadata],
+            vec![doc_public, metadata],
             vec![private],
             vec![link_local_v6],
         ] {
@@ -369,6 +395,45 @@ mod tests {
             listener.accept(),
             Err(err) if err.kind() == std::io::ErrorKind::WouldBlock
         ));
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn exchange_dials_injected_pinned_dns_address_for_domain_host(
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0))?;
+        let addr = listener.local_addr()?;
+        let port = addr.port();
+        let peer = std::thread::spawn(move || -> Result<(), String> {
+            let (mut stream, _) = listener.accept().map_err(|err| err.to_string())?;
+            let mut buf = [0u8; 512];
+            let _ = stream.read(&mut buf);
+            stream
+                .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok")
+                .map_err(|err| err.to_string())?;
+            Ok(())
+        });
+
+        let url = url::Url::parse(&format!("http://pinned.example:{port}/ping"))?;
+        let response = exchange_with_lookup(
+            url,
+            Method::GET,
+            header::HeaderMap::new(),
+            Vec::new(),
+            1024,
+            true,
+            move |host, req_port| {
+                if host == "pinned.example" && req_port == port {
+                    Ok(vec![addr])
+                } else {
+                    Err("unexpected lookup".to_owned())
+                }
+            },
+        )
+        .await?;
+        peer.join().map_err(|_| "peer thread panicked")??;
+        assert_eq!(response["status"], 200);
+        assert_eq!(response["body"], STANDARD.encode(b"ok"));
         Ok(())
     }
 }
