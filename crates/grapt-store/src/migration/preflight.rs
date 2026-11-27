@@ -184,12 +184,14 @@ pub(crate) fn preflight_unfenced(path: &Path, validation: Validation) -> StoreRe
         }
     };
     let connection = log.conn.get_mut();
+    let mut slow = false;
     match walk_database(connection, validation.walk_budget()) {
         WalkOutcome::Skipped => {}
         WalkOutcome::Finished(DatabaseWalk::Clean) => {}
         // A spent budget says the check did not finish, never that the database
-        // is damaged. Callers treat this as a visible, slow readiness.
-        WalkOutcome::Finished(DatabaseWalk::BudgetSpent) => return StoreReadiness::Slow,
+        // is damaged. The compatibility checks below still run: only a store
+        // that passes them and owes no migration is a visible, slow readiness.
+        WalkOutcome::Finished(DatabaseWalk::BudgetSpent) => slow = true,
         WalkOutcome::Failed(PreflightFailure::HotJournal) => return StoreReadiness::HotJournal,
         WalkOutcome::Failed(PreflightFailure::Obstruction(other)) => {
             return StoreReadiness::QuarantinedOrCorrupt(other)
@@ -231,7 +233,11 @@ pub(crate) fn preflight_unfenced(path: &Path, validation: Validation) -> StoreRe
         Err(error) => return StoreReadiness::QuarantinedOrCorrupt(Obstruction::Migration(error)),
     };
     if pending.is_empty() {
-        return StoreReadiness::Ready;
+        return if slow {
+            StoreReadiness::Slow
+        } else {
+            StoreReadiness::Ready
+        };
     }
     StoreReadiness::MigrationNeeded(MigrationPlan {
         pending,

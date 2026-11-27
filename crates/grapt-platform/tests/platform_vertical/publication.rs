@@ -68,20 +68,20 @@ fn first_contact_keeps_all_five_states_distinct_and_read_only() -> TestResult {
 fn a_store_pending_migration_is_migrated_when_opened() -> TestResult {
     let root = scratch("authority")?;
     legacy_database(&root.join("database.sqlite3"))?;
-    let owner = PlatformFirstContact::inspect(&root).open_with_authorities(
+    // A refusal fails this assertion too, so opening as ready reaches it.
+    let opened = PlatformFirstContact::inspect(&root).open_with_authorities(
         "df0-test",
         &FixedAuthorities,
         &FixedAuthorities,
-    )?;
+    );
     assert!(
         matches!(
-            owner.receipt(),
-            grapt_store::OwnedOpenReceipt::Migrated { .. }
+            &opened,
+            Ok(owner) if matches!(owner.receipt(), grapt_store::OwnedOpenReceipt::Migrated { .. })
         ),
-        "a store pending migration was not migrated: {:?}",
-        owner.receipt()
+        "a store pending migration was not migrated: {opened:?}"
     );
-    drop(owner);
+    drop(opened);
     assert_eq!(
         PlatformFirstContact::inspect(&root).kind(),
         FirstContactKind::Ready

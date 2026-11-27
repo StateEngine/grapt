@@ -1,6 +1,6 @@
 //! Ordinary startup must exercise both platform inspection and the owned opener.
-use super::shared::{scratch, FixedAuthorities, TestResult};
-use grapt_platform::{FirstContactKind, PlatformFirstContact};
+use super::shared::{legacy_database, scratch, FixedAuthorities, TestResult};
+use grapt_platform::{FirstContactKind, PlatformFirstContact, PlatformStoreRefusal};
 use grapt_store::{preflight_read_only, OwnedEventStore, StoreReadiness};
 use grapt_types::ClockAuthority;
 use rusqlite::Connection;
@@ -98,4 +98,54 @@ fn a_large_ready_store_opens_without_a_historical_integrity_walk() -> TestResult
     drop(conn);
     std::fs::remove_dir_all(root)?;
     Ok(())
+}
+
+/// A store another process created after first contact is opened as it is now.
+#[test]
+fn a_store_created_after_first_contact_is_opened() -> TestResult {
+    let root = scratch("concurrent-creator")?;
+    let late = PlatformFirstContact::inspect(&root);
+    assert_eq!(late.kind(), FirstContactKind::Absent);
+    drop(open_ready_or_create(PlatformFirstContact::inspect(&root))?);
+    let opened = open_ready_or_create(late);
+    assert!(
+        matches!(&opened, Ok(owner) if matches!(owner.receipt(), grapt_store::OwnedOpenReceipt::OpenedReady)),
+        "a store created by another process was not opened: {opened:?}"
+    );
+    drop(opened);
+    std::fs::remove_dir_all(root)?;
+    Ok(())
+}
+
+/// A store that disappears before its migration is refused, never replaced
+/// by a new empty one.
+#[test]
+fn a_store_that_vanishes_before_migration_is_not_recreated() -> TestResult {
+    let root = scratch("vanished-before-migration")?;
+    let database = root.join("database.sqlite3");
+    legacy_database(&database)?;
+    let found = PlatformFirstContact::inspect(&root);
+    assert_eq!(found.kind(), FirstContactKind::MigrationNeeded);
+    std::fs::remove_file(&database)?;
+    let opened = open_ready_or_create(found);
+    assert!(
+        matches!(opened, Err(PlatformStoreRefusal::Receded { .. })),
+        "a vanished store was not refused: {opened:?}"
+    );
+    assert!(
+        !database.exists(),
+        "an empty store replaced the vanished one"
+    );
+    std::fs::remove_dir_all(root)?;
+    Ok(())
+}
+
+fn open_ready_or_create(
+    found: PlatformFirstContact,
+) -> Result<OwnedEventStore, PlatformStoreRefusal> {
+    found.open_with_authorities(
+        "warm-ready-integration",
+        &FixedAuthorities,
+        &FixedAuthorities,
+    )
 }

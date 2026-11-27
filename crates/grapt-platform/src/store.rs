@@ -32,6 +32,19 @@ pub enum PlatformStoreRefusal {
     CorruptOrQuarantined(Box<Obstruction>),
     #[error("authority-bound owned open was refused: {0}")]
     OwnedOpen(#[from] OwnedOpenError),
+    /// The store went back, not forward, while it was being opened: an
+    /// existing store vanished or an open one turned older. Nothing was
+    /// created in its place.
+    #[error(
+        "the store at {database} was found as {found:?} but is now {now:?}; it was moved, \
+         deleted or replaced while being opened, and no store was created in its place. Put \
+         the database back, or close the other process changing it, and start again"
+    )]
+    Receded {
+        database: PathBuf,
+        found: FirstContactKind,
+        now: FirstContactKind,
+    },
 }
 
 impl PlatformFirstContact {
@@ -106,6 +119,7 @@ impl PlatformFirstContact {
     /// The authority the observed state grants, before anything is written.
     pub(crate) fn authorize(self) -> Result<PreparedStoreOpen, PlatformStoreRefusal> {
         Ok(PreparedStoreOpen {
+            found: kind(&self.readiness),
             authority: authority(self.readiness)?,
             database: self.database,
         })
@@ -130,6 +144,7 @@ fn authority(readiness: StoreReadiness) -> Result<OwnedOpenAuthority, PlatformSt
 #[derive(Debug)]
 pub(crate) struct PreparedStoreOpen {
     database: PathBuf,
+    found: FirstContactKind,
     authority: OwnedOpenAuthority,
 }
 
@@ -145,9 +160,11 @@ impl PreparedStoreOpen {
     }
 
     /// Another process may create or migrate the store between the read-only
-    /// observation and this open. The store refuses that change rather than
-    /// act on a stale observation; it is observed once more and opened as it
-    /// is now. A second change in that window refuses.
+    /// observation and this open, and a rolled-back hot journal may reveal a
+    /// pending migration. The store refuses to act on a stale observation; it
+    /// is observed once more and opened as it is now, but only if it moved
+    /// forward. A store that vanished or turned older refuses, so an existing
+    /// store is never replaced by a new empty one. A second change refuses.
     fn open_with_authorities(
         self,
         engine_version: &str,
@@ -163,14 +180,41 @@ impl PreparedStoreOpen {
                 ids,
             )
         };
+        let found = self.found;
         match open(self.authority) {
             Err(
                 OwnedOpenError::InitializationConflict(_)
-                | OwnedOpenError::StaleMigrationPlan { .. },
-            ) => open(authority(preflight_metadata_read_only(&self.database))?)
-                .map_err(PlatformStoreRefusal::OwnedOpen),
+                | OwnedOpenError::StaleMigrationPlan { .. }
+                | OwnedOpenError::AuthorityMismatch { .. }
+                | OwnedOpenError::PostActionNotReady(_),
+            ) => {
+                let now = preflight_metadata_read_only(&self.database);
+                let now_kind = kind(&now);
+                // An obstructed store refuses as itself.
+                let granted = authority(now)?;
+                if progress(now_kind) < progress(found) {
+                    return Err(PlatformStoreRefusal::Receded {
+                        database: self.database.clone(),
+                        found,
+                        now: now_kind,
+                    });
+                }
+                open(granted).map_err(PlatformStoreRefusal::OwnedOpen)
+            }
             result => result.map_err(PlatformStoreRefusal::OwnedOpen),
         }
+    }
+}
+
+/// How far a store has come: absent, then created with work pending (a hot
+/// journal hides which), then ready. A retry may only hold or advance.
+fn progress(kind: FirstContactKind) -> u8 {
+    match kind {
+        FirstContactKind::Absent => 0,
+        FirstContactKind::MigrationNeeded | FirstContactKind::HotJournal => 1,
+        FirstContactKind::Ready => 2,
+        // Never compared: authority() refuses these states first.
+        FirstContactKind::Unreadable | FirstContactKind::CorruptOrQuarantined => 0,
     }
 }
 

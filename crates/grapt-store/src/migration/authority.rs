@@ -275,12 +275,24 @@ pub(super) fn future_backup(path: &Path, metadata: &std::fs::Metadata) -> Future
         BackupCapacity, BackupDirectory, BackupPermissions, CreateBackupFile, WriteBackupFile,
     };
 
-    let location = path.parent().map(Path::to_path_buf).unwrap_or_default();
+    // A database reached through a file link is backed up beside the file
+    // it names, so the copy and its capacity check use that file's
+    // filesystem. A link that cannot be resolved leaves no place to back up.
+    let resolved = match std::fs::symlink_metadata(path) {
+        Ok(link) if link.file_type().is_symlink() => std::fs::canonicalize(path).ok(),
+        Ok(_) => Some(path.to_path_buf()),
+        Err(_) => None,
+    };
+    let location = resolved
+        .as_deref()
+        .and_then(Path::parent)
+        .map(Path::to_path_buf)
+        .unwrap_or_default();
     let minimum_free_bytes = metadata.len();
-    let directory = match std::fs::read_dir(&location) {
-        Ok(_) => BackupDirectory::Readable,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => BackupDirectory::Absent,
-        Err(_) => BackupDirectory::Unreadable,
+    let directory = match resolved.as_ref().map(|_| std::fs::read_dir(&location)) {
+        Some(Ok(_)) => BackupDirectory::Readable,
+        Some(Err(error)) if error.kind() == std::io::ErrorKind::NotFound => BackupDirectory::Absent,
+        Some(Err(_)) | None => BackupDirectory::Unreadable,
     };
     let directory_writable = std::fs::metadata(&location)
         .map(|value| !value.permissions().readonly())
