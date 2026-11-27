@@ -40,11 +40,7 @@ try {
     $request = $line | ConvertFrom-Json
     $data = [Convert]::FromBase64String($request.data)
     switch -Exact ($request.operation) {
-        'seal' {
-            $failure = 'seal'
-            Add-Type -AssemblyName System.Security
-            $result = [Security.Cryptography.ProtectedData]::Protect($data, $null, [Security.Cryptography.DataProtectionScope]::CurrentUser)
-        }
+        # Opens credentials DPAPI sealed before the keystore envelope.
         'open' {
             $failure = 'open'
             Add-Type -AssemblyName System.Security

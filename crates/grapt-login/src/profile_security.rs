@@ -1,5 +1,10 @@
 //! Protection for the existing profile files; never a second credential store.
 //!
+//! On Windows a credential is sealed with AES-256-GCM under one key per user
+//! that Windows Credential Manager holds; the file stays the only store of the
+//! credential itself. Credentials sealed earlier with DPAPI stay readable and
+//! are sealed the new way when next written.
+//!
 //! The DPAPI operation.
 //! Copyright 2025 OpenAI. Modified by Grapt; see licenses/openai-codex/.
 //! Unlike that sandbox's machine scope, credentials use CurrentUser. The
@@ -24,12 +29,21 @@ mod refusal;
 pub(crate) use refusal::child_refusal;
 pub use refusal::{failure_code, failure_diagnostic};
 
-const ENVELOPE: &[u8] = b"secode.dpapi.current-user.v1\n";
+#[cfg(windows)]
+mod entropy;
+#[cfg(any(windows, test))]
+mod envelope;
+#[cfg(windows)]
+mod keystore;
 
-/// Whether bytes carry the protected format, without attempting decryption.
+/// The earlier Windows format, still opened so existing credentials migrate.
+const DPAPI_ENVELOPE: &[u8] = b"secode.dpapi.current-user.v1\n";
+const KEYSTORE_ENVELOPE: &[u8] = b"grapt.credential.aes-256-gcm.v1\n";
+
+/// Whether bytes carry a protected format, without attempting decryption.
 #[must_use]
 pub fn is_protected(bytes: &[u8]) -> bool {
-    bytes.starts_with(ENVELOPE)
+    bytes.starts_with(KEYSTORE_ENVELOPE) || bytes.starts_with(DPAPI_ENVELOPE)
 }
 
 /// Finite room for DPAPI's header, padding and authentication data.
@@ -46,10 +60,10 @@ pub const fn stored_bound(plaintext_bound: usize) -> usize {
 pub fn seal(bytes: &[u8]) -> io::Result<Vec<u8>> {
     #[cfg(windows)]
     {
-        let protected = windows::run("seal", bytes)?;
-        let mut result = ENVELOPE.to_vec();
-        result.extend(protected);
-        Ok(result)
+        let key = keystore::get_or_create()?;
+        let mut nonce = [0; envelope::NONCE_BYTES];
+        entropy::fill(&mut nonce)?;
+        envelope::seal(&key, nonce, bytes)
     }
     #[cfg(not(windows))]
     Ok(bytes.to_vec())
@@ -58,7 +72,27 @@ pub fn seal(bytes: &[u8]) -> io::Result<Vec<u8>> {
 /// Decode an envelope in memory, bounding the plaintext independently of storage.
 /// Legacy plaintext remains readable; an invalid envelope never falls back to it.
 pub fn open(bytes: &[u8], plaintext_bound: usize) -> io::Result<Vec<u8>> {
-    let plaintext = if let Some(protected) = bytes.strip_prefix(ENVELOPE) {
+    let plaintext = if let Some(sealed) = bytes.strip_prefix(KEYSTORE_ENVELOPE) {
+        #[cfg(windows)]
+        {
+            let key = keystore::existing()?.ok_or_else(|| {
+                io::Error::new(
+                    io::ErrorKind::NotFound,
+                    "this credential's sealing key is missing from Windows Credential Manager; \
+                     sign in again or add the credential again",
+                )
+            })?;
+            envelope::open(&key, sealed)?
+        }
+        #[cfg(not(windows))]
+        {
+            let _ = sealed;
+            return Err(io::Error::new(
+                io::ErrorKind::Unsupported,
+                "a credential sealed with Windows Credential Manager opens only for its Windows account",
+            ));
+        }
+    } else if let Some(protected) = bytes.strip_prefix(DPAPI_ENVELOPE) {
         #[cfg(windows)]
         {
             windows::run("open", protected)?

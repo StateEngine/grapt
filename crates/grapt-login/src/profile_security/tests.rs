@@ -4,9 +4,11 @@ use super::*;
 fn plaintext_input_remains_bounded_and_an_envelope_never_falls_back() -> io::Result<()> {
     assert_eq!(open(b"legacy-token", 12)?, b"legacy-token");
     assert!(open(b"legacy-token", 11).is_err());
-    let mut damaged = ENVELOPE.to_vec();
-    damaged.extend_from_slice(b"not a DPAPI blob");
-    assert!(open(&damaged, 4096).is_err());
+    for format in [DPAPI_ENVELOPE, KEYSTORE_ENVELOPE] {
+        let mut damaged = format.to_vec();
+        damaged.extend_from_slice(b"not a sealed blob");
+        assert!(open(&damaged, 4096).is_err());
+    }
     Ok(())
 }
 
