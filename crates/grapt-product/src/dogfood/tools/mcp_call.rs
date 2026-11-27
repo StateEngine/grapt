@@ -243,23 +243,25 @@ pub(super) async fn run_mcp(
     // A tool that ran and reported failure is a FAILED effect carrying the
     // server's own message, not a successful one with sad text: the model must
     // be able to tell the two apart, and so must a receipt.
+    // The full payload (up to the MCP frame cap) is returned here so the tool
+    // executor records it as the tool terminal's single durable output artifact
+    // for `history` / `read_history`, while `shell_preview::project` keeps the
+    // model-visible inline summary under 32 KiB.
     if outcome.is_error() {
         let cause = super::mcp_failure::server_refusal(bound_stateengine, outcome.text());
         let detail = super::mcp_failure::capture(cause, outcome.text(), machine.is_some());
-        return Err(if machine.is_some() {
+        let detail = if machine.is_some() {
             super::mcp_failure::routed(&detail, route, private.as_deref())
         } else {
             detail
-        }
-        .into());
+        };
+        return Err(detail.into());
     }
-    if machine.is_some() {
+    if let Some(artifacts) = machine {
         validate_output(route.output_schema.as_deref(), outcome.structured())?;
+        return machine_result(&outcome, artifacts).map_err(Into::into);
     }
-    match machine {
-        Some(artifacts) => machine_result(&outcome, artifacts).map_err(Into::into),
-        None => Ok(outcome.text().as_bytes().to_vec()),
-    }
+    Ok(outcome.text().as_bytes().to_vec())
 }
 
 fn validate_output(schema: Option<&str>, value: Option<&serde_json::Value>) -> Result<(), String> {
@@ -339,7 +341,16 @@ fn machine_result(
             "length":reference.length(),"mimeType":media,"sensitivity":"secret-bearing"}),
         );
     }
-    let value = outcome.structured().cloned().unwrap_or_else(|| {
+    let value = machine_value(outcome);
+    grapt_codemode::bounded_json(
+        &serde_json::json!({"value":value,"artifacts":files}),
+        grapt_codemode::ARGUMENT_BYTES,
+    )
+    .map_err(|_| "MCP machine output exceeds its bound".into())
+}
+
+fn machine_value(outcome: &grapt_mcp::ToolCallOutcome) -> serde_json::Value {
+    outcome.structured().cloned().unwrap_or_else(|| {
         let text = outcome
             .content()
             .iter()
@@ -357,12 +368,7 @@ fn machine_result(
         } else {
             serde_json::Value::String(text)
         }
-    });
-    grapt_codemode::bounded_json(
-        &serde_json::json!({"value":value,"artifacts":files}),
-        grapt_codemode::ARGUMENT_BYTES,
-    )
-    .map_err(|_| "MCP machine output exceeds its bound".into())
+    })
 }
 
 /// How long one MCP tool call may take when the registry holds no live server
@@ -511,5 +517,35 @@ mod tests {
         assert!(validate_output(Some(schema), None).is_err());
         assert!(validate_output(Some(schema), Some(&serde_json::json!({"sum":"SECRET"}))).is_err());
         assert!(validate_output(Some(schema), Some(&serde_json::Value::Null)).is_err());
+    }
+
+    #[test]
+    fn oversized_declared_structured_output_validates_and_preserves_machine_value() {
+        let bounds = grapt_mcp::McpBounds::conservative()
+            .unwrap_or_else(|error| panic!("conservative bounds: {error}"));
+        let big = "a".repeat(36_000);
+        let raw = serde_json::json!({
+            "content": [{"type": "text", "text": big}],
+            "structuredContent": {"payload": big},
+            "isError": false
+        });
+        let outcome = grapt_mcp::accept_call_up_to(bounds, &raw, bounds.max_frame_bytes())
+            .unwrap_or_else(|error| panic!("accept_call_up_to failed: {error}"));
+        let schema = r#"{"type":"object","required":["payload"],"properties":{"payload":{"type":"string"}}}"#;
+        validate_output(Some(schema), outcome.structured())
+            .unwrap_or_else(|error| panic!("declared >32 KiB structured output failed: {error}"));
+        assert_eq!(
+            machine_value(&outcome)["payload"],
+            serde_json::Value::String(big.clone())
+        );
+
+        let raw_text = serde_json::json!({
+            "content": [{"type": "text", "text": big}],
+            "isError": false
+        });
+        let text_outcome =
+            grapt_mcp::accept_call_up_to(bounds, &raw_text, bounds.max_frame_bytes())
+                .unwrap_or_else(|error| panic!("accept_call_up_to text failed: {error}"));
+        assert_eq!(machine_value(&text_outcome), serde_json::Value::String(big));
     }
 }

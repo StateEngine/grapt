@@ -214,17 +214,24 @@ impl DurableContinuation {
 }
 
 /// The first row at which the content a request over `[from, until)` reads
-/// passes [`MAX_CONTEXT_BYTES`], charging every tool argument, tool output,
-/// failure detail and text payload at its declared length up to the
-/// per-artifact text bound, and every human or synthetic input at its text.
-/// It reads no artifact: a window past it is refused before its payloads are
-/// held, where the request's own byte bound applied only after.
+/// passes [`MAX_CONTEXT_BYTES`], charging every tool argument, unpreviewed
+/// tool output, failure detail and text payload at its declared length up to
+/// the per-artifact text bound, previewed local tool terminals (shell and
+/// external/MCP tools) at [`shell_preview::MAX_BYTES`], and every human or
+/// synthetic input at its text. It reads no artifact: a window past it is
+/// refused before its payloads are held, where the request's own byte bound
+/// applied only after.
 fn declared_bytes_over(
     inbox: &Inbox,
     session: &SessionId,
     from: Option<grapt_types::EventSeq>,
     until: Option<grapt_types::EventSeq>,
 ) -> Result<Option<grapt_types::EventSeq>, String> {
+    let unpreviewed_builtins: Vec<&str> = crate::dogfood::tools::BUILTIN_TOOL_NAMES
+        .iter()
+        .copied()
+        .filter(|tool| !shell_preview::is_previewed_tool(tool))
+        .collect();
     boundary::declared_bytes_over(
         inbox.store(),
         session,
@@ -232,6 +239,10 @@ fn declared_bytes_over(
         until,
         MAX_CODEX_TOOL_TEXT_BYTES,
         MAX_CONTEXT_BYTES,
+        Some(boundary::PreviewBudget {
+            cap: shell_preview::MAX_BYTES,
+            unpreviewed_tools: &unpreviewed_builtins,
+        }),
     )
 }
 

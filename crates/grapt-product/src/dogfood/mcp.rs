@@ -183,17 +183,18 @@ async fn run_call_with<R: AsyncRead + Unpin, W: AsyncWrite + Unpin>(
     settled.map_err(|error| McpCallRefusal::Session(error.to_string()))?;
 
     // A tool that RAN and reported failure is a completed call with an error
-    // result, not a refusal: the caller continues from it. Only the wire being
-    // unusable is a refusal here.
-    accept_call(bounds, &result).map_err(|error| {
-        let detail = match error {
-            grapt_mcp::McpProtocolError::CallResultTooLarge { limit, .. } => {
-                format!("MCP output exceeded {limit} bytes; use a smaller limit")
-            }
-            other => other.to_string(),
-        };
-        McpCallRefusal::Protocol(detail)
-    })
+    // result, not a refusal: the caller continues from it. When the output
+    // exceeds the inline text cap (but fits inside the wire frame bound),
+    // accept the intact outcome so structured/machine consumers can validate it
+    // and inline text consumers can spill it to a workspace-readable file.
+    match accept_call(bounds, &result) {
+        Ok(outcome) => Ok(outcome),
+        Err(grapt_mcp::McpProtocolError::CallResultTooLarge { .. }) => {
+            grapt_mcp::accept_call_up_to(bounds, &result, bounds.max_frame_bytes())
+                .map_err(|error| McpCallRefusal::Protocol(error.to_string()))
+        }
+        Err(other) => Err(McpCallRefusal::Protocol(other.to_string())),
+    }
 }
 
 mod spawn;

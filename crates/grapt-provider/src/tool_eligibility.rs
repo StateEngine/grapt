@@ -9,7 +9,9 @@
 use crate::{ToolDefinition, ToolInputFormat};
 
 /// The largest model-facing description a single tool may carry.
-pub const MAX_TOOL_DESCRIPTION_BYTES: usize = 512;
+/// Matches `McpBounds::conservative()` so valid MCP tool descriptions are not
+/// artificially dropped at request construction.
+pub const MAX_TOOL_DESCRIPTION_BYTES: usize = 4 * 1024;
 /// The largest text-tool grammar a single tool may carry.
 pub const MAX_TEXT_TOOL_GRAMMAR_BYTES: usize = 64 * 1024;
 /// The most tool definitions one request may carry, including its native-tool

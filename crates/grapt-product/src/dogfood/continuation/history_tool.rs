@@ -48,6 +48,16 @@ pub(in crate::dogfood) fn tool_projection(
     project_tool(inbox.store(), artifacts, session, target)
 }
 
+#[derive(Debug)]
+struct RawStoredOutput {
+    seq: u64,
+    call: ToolCallId,
+    output: String,
+    error: Option<String>,
+    failure_reason: Option<grapt_types::ToolFailureReason>,
+    capture_failed: bool,
+}
+
 fn project_tool(
     store: &EventStore,
     artifacts: &FilesystemArtifactStore,
@@ -60,7 +70,18 @@ fn project_tool(
         max_rows: MAX_CONTINUATION_ROWS,
     };
     let calls = stored_calls_for(store, session, artifacts, window, Some(target), None)?;
-    let outputs = stored_outputs_for(store, session, artifacts, window, Some(target), None)?;
+    let rows = scoped_terminals(
+        store,
+        session,
+        window.from,
+        window.until,
+        Scope::Model(Some(target)),
+        window.max_rows,
+    )?
+    .into_iter()
+    .map(|row| (row.seq, row.terminal))
+    .collect();
+    let outputs = assemble_raw_outputs(rows, artifacts, None, None, false)?;
 
     finish_projection(store, artifacts, session, target, calls, outputs)
 }
@@ -71,7 +92,7 @@ fn finish_projection(
     session: &SessionId,
     target: &ToolCallId,
     calls: Vec<StoredCall>,
-    outputs: Vec<StoredOutput>,
+    outputs: Vec<RawStoredOutput>,
 ) -> Result<ToolProjection, String> {
     let mut matching_calls = calls.iter().filter(|entry| entry.call == *target);
     let call = matching_calls
@@ -148,7 +169,7 @@ fn finish_projection(
 }
 
 /// Why a settled local image read's receipt does not parse, when it does not.
-fn corrupt_image_receipt(call: &StoredCall, output: &StoredOutput) -> Option<String> {
+fn corrupt_image_receipt(call: &StoredCall, output: &RawStoredOutput) -> Option<String> {
     use crate::dogfood::tools::image;
     let receipt = output.output.as_str();
     let image_read = call.execution == grapt_types::ToolExecution::Local
@@ -342,6 +363,7 @@ fn local_image_read(
     }
 }
 
+#[cfg(test)]
 pub(super) fn stored_outputs(
     store: &EventStore,
     session: &SessionId,
@@ -362,6 +384,28 @@ pub(super) fn stored_outputs(
         None,
     )
     .map_err(String::from)
+}
+
+pub(super) fn stored_outputs_projected(
+    store: &EventStore,
+    session: &SessionId,
+    artifacts: &FilesystemArtifactStore,
+    from: Option<grapt_types::EventSeq>,
+    until: Option<grapt_types::EventSeq>,
+    calls: &[StoredCall],
+) -> Result<Vec<StoredOutput>, String> {
+    let rows = scoped_terminals(
+        store,
+        session,
+        from,
+        until,
+        Scope::Model(None),
+        MAX_CONTINUATION_ROWS,
+    )?
+    .into_iter()
+    .map(|row| (row.seq, row.terminal))
+    .collect();
+    assemble_outputs(rows, artifacts, None, Some(calls), true).map_err(String::from)
 }
 
 pub(super) fn stored_outputs_for(
@@ -391,16 +435,50 @@ pub(super) fn stored_outputs_for(
         .into_iter()
         .map(|row| (row.seq, row.terminal))
         .collect();
-    assemble_outputs(rows, artifacts, budget, context_calls.as_deref())
+    assemble_outputs(rows, artifacts, budget, context_calls.as_deref(), false)
+}
+
+fn assemble_outputs(
+    rows: Vec<(u64, StoredTerminal)>,
+    artifacts: &FilesystemArtifactStore,
+    budget: Option<(&mut usize, &[StoredCall])>,
+    context_calls: Option<&[StoredCall]>,
+    project_preview: bool,
+) -> Result<Vec<StoredOutput>, recent::WindowError> {
+    assemble_raw_outputs(rows, artifacts, budget, context_calls, project_preview)?
+        .into_iter()
+        .map(|raw| {
+            Ok(StoredOutput {
+                seq: raw.seq,
+                call: raw.call,
+                output: CodexToolText::try_new(raw.output).map_err(|error| error.to_string())?,
+                error: raw.error,
+            })
+        })
+        .collect()
 }
 
 #[expect(clippy::too_many_lines, reason = "legacy")]
-fn assemble_outputs(
+fn assemble_raw_outputs(
     rows: Vec<(u64, StoredTerminal)>,
     artifacts: &FilesystemArtifactStore,
     mut budget: Option<(&mut usize, &[StoredCall])>,
     context_calls: Option<&[StoredCall]>,
-) -> Result<Vec<StoredOutput>, recent::WindowError> {
+    project_preview: bool,
+) -> Result<Vec<RawStoredOutput>, recent::WindowError> {
+    let previewed_calls: HashMap<&ToolCallId, &str> = if project_preview {
+        context_calls
+            .into_iter()
+            .flatten()
+            .filter(|call| call.execution == grapt_types::ToolExecution::Local)
+            .filter_map(|call| {
+                let tool = call.tool.as_ref()?.as_str();
+                shell_preview::is_previewed_tool(tool).then_some((&call.call, tool))
+            })
+            .collect()
+    } else {
+        HashMap::new()
+    };
     let native_calls: HashMap<_, _> = budget.as_ref().map_or_else(HashMap::new, |(_, calls)| {
         calls
             .iter()
@@ -641,10 +719,9 @@ fn assemble_outputs(
             },
             None if public_cause.is_some() => public_cause.unwrap_or_default(),
             None => match artifact {
-                Some(artifact) => reads
-                    .text(artifact.reference(), artifact.disposition(), "tool output")?
-                    .as_str()
-                    .to_owned(),
+                Some(artifact) => {
+                    reads.string(artifact.reference(), artifact.disposition(), "tool output")?
+                }
                 None => String::new(),
             },
         };
@@ -659,8 +736,14 @@ fn assemble_outputs(
         } else {
             text
         };
-        let output_text = CodexToolText::try_new(text).map_err(|error| error.to_string())?;
-        outputs.push(StoredOutput {
+        let output_text = if let Some(tool) = previewed_calls.get(fact.call()) {
+            shell_preview::project_str(tool, fact.call(), &text)?
+                .as_str()
+                .to_owned()
+        } else {
+            text
+        };
+        outputs.push(RawStoredOutput {
             capture_failed: matches!(
                 fact.outcome(),
                 ToolTerminalOutcome::Failed {
@@ -690,14 +773,16 @@ fn read_first_chunk(
     if !disposition.is_complete() {
         return Err(format!("{label} artifact is truncated"));
     }
-    if reference.length() > MAX_CODEX_TOOL_TEXT_BYTES as u64 {
+    let max_bytes = tool_artifact_read_bound();
+    if reference.length() > max_bytes as u64 {
         return Err(format!("{label} artifact exceeds the continuation bound"));
     }
     const FIRST_CHUNK_BYTES: u64 = 65_536;
     let (artifacts, unreadable) = (reads.artifacts, || reads.notice(label).into_bytes());
     if reference.length() <= FIRST_CHUNK_BYTES {
         return Ok(
-            fetch_bytes(artifacts, reference, disposition, label)?.unwrap_or_else(|_| unreadable())
+            fetch_bytes_bounded(artifacts, reference, disposition, label, max_bytes)?
+                .unwrap_or_else(|_| unreadable()),
         );
     }
     let budget = ReadBudget::new(FIRST_CHUNK_BYTES)
@@ -705,7 +790,7 @@ fn read_first_chunk(
     let page = match artifacts.fetch(reference, 0, budget) {
         Ok(page) => page,
         Err(grapt_artifact::FetchError::BudgetTooSmall { minimum }) => {
-            if minimum > MAX_CODEX_TOOL_TEXT_BYTES as u64 {
+            if minimum > max_bytes as u64 {
                 return Err(format!("{label} artifact exceeds the continuation bound"));
             }
             let retry = ReadBudget::new(minimum)

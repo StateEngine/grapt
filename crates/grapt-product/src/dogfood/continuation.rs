@@ -50,10 +50,12 @@ mod summary_owner;
 mod test_support;
 mod unknown_effects;
 pub(in crate::dogfood) use artifact_reads::read_text;
-use artifact_reads::{fetch_bytes, OutputReads};
+use artifact_reads::{fetch_bytes, fetch_bytes_bounded, tool_artifact_read_bound, OutputReads};
 pub(super) use compaction::{CompactionAuthorities, ProductCompactor, REFUSED_SUMMARY};
+#[cfg(test)]
+use history_tool::stored_outputs;
 pub(super) use history_tool::{history, tool_projection};
-use history_tool::{stored_calls, stored_calls_for, stored_outputs, stored_outputs_for};
+use history_tool::{stored_calls, stored_calls_for, stored_outputs_for, stored_outputs_projected};
 #[cfg(test)]
 use test_support::promote_test_input;
 #[cfg(test)]
@@ -98,8 +100,6 @@ struct StoredOutput {
     call: ToolCallId,
     output: CodexToolText,
     error: Option<String>,
-    failure_reason: Option<grapt_types::ToolFailureReason>,
-    capture_failed: bool,
 }
 
 pub(super) type ToolProjections = HashMap<ToolCallId, Result<ToolProjection, String>>;

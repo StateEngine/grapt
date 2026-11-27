@@ -66,6 +66,7 @@ fn recent_skill_failure_retains_recovery_and_charges_it_without_foreign_text() -
             &artifacts,
             Some((&mut remaining, &calls)),
             None,
+            false,
         )
         .map_err(|e| e.to_string())?;
         let output = outputs.first().ok_or("output missing")?.output.as_str();
@@ -85,7 +86,8 @@ fn recent_skill_failure_retains_recovery_and_charges_it_without_foreign_text() -
             vec![(2, StoredTerminal::Readable(fact.clone()))],
             &artifacts,
             Some((&mut exhausted, &calls)),
-            None
+            None,
+            false
         )
         .is_err());
     }
