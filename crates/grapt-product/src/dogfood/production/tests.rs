@@ -748,7 +748,7 @@ fn recovery_trim_sizes_a_switched_target_without_foreign_thinking() -> Result<()
     let concrete = targets(ProtocolFamily::OpenAiCompatible)?;
     let step = StepNumber::new(1).ok_or("Step")?;
     let (continuation, _scratch) = DurableContinuation::empty_for_test("switched-trim")?;
-    let continuation = continuation.after_no_progress_for_test(&concrete.issue()?)?;
+    let continuation = continuation.after_no_progress_for_test()?;
     let mut plan = ProductPlan::new(
         ProtocolFamily::OpenAiCompatible,
         "hello".into(),
