@@ -3,9 +3,8 @@
 // Copyright 2025 OpenAI. See licenses/openai-codex/.
 // Public metadata: models.dev, MIT; see licenses/models-dev/.
 mod compatible;
-mod endpoint;
 pub use compatible::requires_reasoning_content_replay;
-pub use endpoint::{endpoint_provider, EndpointProvider};
+pub use grapt_connections_catalog::{endpoint_provider, EndpointProvider};
 
 use crate::store::Family;
 use serde_json::Value;

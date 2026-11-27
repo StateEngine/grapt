@@ -88,8 +88,13 @@
    "deps": [
     "grapt-config",
     "grapt-login",
-    "grapt-types"
+    "grapt-types",
+    "grapt-connections-catalog"
    ],
+   "dev": []
+  },
+  "grapt-connections-catalog": {
+   "deps": [],
    "dev": []
   },
   "grapt-console": {
@@ -210,8 +215,13 @@
    "deps": [
     "grapt-diagnostics",
     "grapt-sandbox",
-    "grapt-types"
+    "grapt-types",
+    "grapt-plugin-prompt"
    ],
+   "dev": []
+  },
+  "grapt-plugin-prompt": {
+   "deps": [],
    "dev": []
   },
   "grapt-policy": {
@@ -398,12 +408,12 @@
     "grapt-api",
     "grapt-cli",
     "grapt-client",
-    "grapt-connections",
     "grapt-console",
     "grapt-image",
-    "grapt-plugin",
     "grapt-schema",
-    "grapt-types"
+    "grapt-types",
+    "grapt-connections-catalog",
+    "grapt-plugin-prompt"
    ],
    "dev": []
   },

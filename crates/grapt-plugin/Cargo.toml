@@ -17,6 +17,7 @@ path = "tests/envelope.rs"
 
 [dependencies]
 grapt-diagnostics = { path = "../grapt-diagnostics" }
+grapt-plugin-prompt = { path = "../grapt-plugin-prompt" }
 grapt-sandbox = { path = "../grapt-sandbox" }
 base64 = "0.22.1"
 url = "2.5.8"
