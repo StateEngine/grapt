@@ -33,6 +33,7 @@ members = [
     "crates/grapt-mcp-client",
     "crates/grapt-web",
     "crates/grapt-provider",
+    "crates/grapt-run-store",
     "crates/grapt-runtime",
     "crates/grapt-instruction",
     "crates/grapt-mail-transport",

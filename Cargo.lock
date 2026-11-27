@@ -2160,6 +2160,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "grapt-run-store"
+version = "0.1.0"
+dependencies = [
+ "fs2",
+ "grapt-types",
+ "rusqlite",
+ "sha2 0.10.9",
+ "tempfile",
+ "thiserror 2.0.20",
+ "tokio",
+]
+
+[[package]]
 name = "grapt-runtime"
 version = "0.1.0"
 dependencies = [
