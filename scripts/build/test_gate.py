@@ -292,6 +292,7 @@ class ExecutionTests(unittest.TestCase):
             'grapt-connections/loopback-testkit',
             'grapt-login/loopback-testkit',
             'grapt-mcp-client/loopback-testkit',
+            'grapt-plugin/loopback-testkit',
             'grapt-product/checkpoint-fixture',
             'grapt-product/handover-crash-fixture',
             'grapt-product/loopback-provider-testkit',
