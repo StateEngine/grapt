@@ -156,8 +156,10 @@ fn decode(
                 return Err("retry diagnostic contains a provider reset".into());
             }
             let classes = data.classes.ok_or("retry diagnostic has no classes")?;
+            let attempts = data.attempts.ok_or("retry diagnostic has no count")?;
             if classes.len() > 5
-                || classes.len() as u32 != data.attempts.ok_or("retry diagnostic has no count")?
+                || attempts < classes.len() as u32
+                || attempts > RetryExhaustion::MAX_TOTAL_ATTEMPTS
             {
                 return Err("retry diagnostic count or bound is invalid".into());
             }
@@ -174,7 +176,7 @@ fn decode(
                 .iter()
                 .map(|word| RetryFailureClass::from_word(word))
                 .collect::<Option<Vec<_>>>()
-                .and_then(|classes| RetryExhaustion::new(&classes))
+                .and_then(|classes| RetryExhaustion::with_total_attempts(&classes, attempts))
                 .map(StepFailureDiagnostic::RetryExhausted)
         } else if data.field == "admission" {
             if data.attempts.is_some()

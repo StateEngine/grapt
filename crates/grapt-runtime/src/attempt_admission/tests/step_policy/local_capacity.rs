@@ -191,6 +191,67 @@ async fn local_capacity_cancellation_stops_waiting_without_a_provider_send() {
 }
 
 #[tokio::test(start_paused = true)]
+async fn local_capacity_saturated_fifo_waits_cancellably_without_spending_attempts() {
+    // Simulate a saturated FIFO refusal that clears after two waits.
+    struct SaturatedSource {
+        inner: ScriptSource,
+        saturated: usize,
+        calls: usize,
+        notices: Vec<Option<RetryNotice>>,
+    }
+    impl AttemptSource for SaturatedSource {
+        type Reader = Reader;
+        fn prepare(
+            &mut self,
+            step: StepNumber,
+            ordinal: u32,
+            generation: HistoryGeneration,
+        ) -> AttemptPreparation<Self::Reader> {
+            self.calls += 1;
+            if self.calls <= self.saturated {
+                return AttemptPreparation::refused(AttemptAdmissionRefusal::Saturated {
+                    detail: "provider waiter queue is full".into(),
+                });
+            }
+            self.inner.prepare(step, ordinal, generation)
+        }
+        fn retrying(&mut self, notice: Option<RetryNotice>) {
+            self.notices.push(notice);
+        }
+    }
+    let mut source = SaturatedSource {
+        inner: ScriptSource::new(vec![vec![stop()]]),
+        saturated: 2,
+        calls: 0,
+        notices: Vec::new(),
+    };
+    let mut history = FakeHistory::new();
+    let (_interrupt, cancel) = step_interrupt();
+    let (owner, report) = tokio::time::timeout(
+        Duration::from_secs(120),
+        StepDriver::run(
+            step(),
+            policy(1),
+            &mut source,
+            &mut history,
+            Arc::new(InstantTools),
+            RecordingOwner::new(),
+            cancel,
+        ),
+    )
+    .await
+    .unwrap_or_else(|_| panic!("saturated FIFO recovery never completed"));
+    assert!(
+        matches!(report.result, StepResult::Ended { .. }),
+        "{report:?}"
+    );
+    assert_eq!(source.calls, 3);
+    assert_eq!(report.receipts.len(), 1);
+    assert_eq!(owner.step_terminal_count(), 1);
+    assert_eq!(source.notices.iter().flatten().count(), 2);
+}
+
+#[tokio::test(start_paused = true)]
 async fn local_capacity_genuine_refusals_stay_terminal_despite_capacity_like_text() {
     for refusal in [
         AttemptAdmissionRefusal::PlanRefused {

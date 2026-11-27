@@ -31,7 +31,7 @@ use crate::fragment::{AttemptFragment, ProviderFailureClass};
 use crate::request::{ProtocolFamily, ProviderRequest};
 use crate::route::ProviderEndpoint;
 use crate::transport::capture::CaptureExchange;
-use crate::transport::classify::{classify_error, failure, parse_retry_after};
+use crate::transport::classify::{classify_error, failure, parse_retry_after_at};
 use crate::transport::client_pool::{ClientFactory, ScopedClients};
 use crate::transport::slot::{ActiveAttempts, AttemptSlot};
 use crate::transport::stream::{ProviderStream, RouteDecoder};
@@ -822,10 +822,14 @@ impl StagedAttempt {
             // error's failure message carries only the masked, 512-byte
             // preview of that body; unknown, oversized or unreadable bodies
             // keep the ordinary status classification.
-            let retry_after = parse_retry_after(
+            let retry_after = parse_retry_after_at(
                 response
                     .headers()
                     .get("retry-after")
+                    .and_then(|value| value.to_str().ok()),
+                response
+                    .headers()
+                    .get("date")
                     .and_then(|value| value.to_str().ok()),
             );
             let details = tokio::time::timeout(

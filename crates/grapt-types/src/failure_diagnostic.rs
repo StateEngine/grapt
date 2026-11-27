@@ -93,32 +93,45 @@ impl RetryFailureClass {
             .find(|value| value.word() == word)
     }
 }
-/// One initial attempt plus at most four retries, matching the ruled cap.
+/// Retry exhaustion summary retaining up to the last 5 failure classes
+/// alongside the true total attempt count (including Retry-After waits).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct RetryExhaustion {
     classes: [RetryFailureClass; 5],
-    attempts: usize,
+    class_count: usize,
+    total_attempts: u32,
 }
 impl RetryExhaustion {
+    pub const MAX_TOTAL_ATTEMPTS: u32 = 32;
+
     pub fn new(classes: &[RetryFailureClass]) -> Option<Self> {
-        if classes.is_empty() || classes.len() > 5 {
+        let total = u32::try_from(classes.len()).ok()?;
+        Self::with_total_attempts(classes, total)
+    }
+    pub fn with_total_attempts(classes: &[RetryFailureClass], total_attempts: u32) -> Option<Self> {
+        if classes.is_empty()
+            || classes.len() > 5
+            || total_attempts < classes.len() as u32
+            || total_attempts > Self::MAX_TOTAL_ATTEMPTS
+        {
             return None;
         }
         let mut held = [RetryFailureClass::Transport; 5];
         held[..classes.len()].copy_from_slice(classes);
         Some(Self {
             classes: held,
-            attempts: classes.len(),
+            class_count: classes.len(),
+            total_attempts,
         })
     }
     pub fn classes(&self) -> &[RetryFailureClass] {
-        &self.classes[..self.attempts]
+        &self.classes[..self.class_count]
     }
     pub fn attempts(&self) -> u32 {
-        self.attempts as u32
+        self.total_attempts
     }
     pub fn last(&self) -> RetryFailureClass {
-        self.classes[self.attempts - 1]
+        self.classes[self.class_count - 1]
     }
 }
 /// The closed admission-refusal classes that end a Step before any provider

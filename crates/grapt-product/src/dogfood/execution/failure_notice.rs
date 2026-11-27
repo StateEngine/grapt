@@ -20,12 +20,25 @@ pub(super) fn record(sink: &LiveSink, failure: &grapt_runtime::owner::StepFailur
             diagnostic,
         )
     };
-    if let Err(error) = result {
-        crate::diagnostics::report(format!(
-            "session {} step {}: failure explanation unavailable: {error}",
-            sink.session,
-            sink.step.value()
-        ));
+    match result {
+        Ok(Some(_)) => {
+            sink.hub.reconcile_because(
+                grapt_api::ReconcileReason::UnpublishedAdvisoryNotice,
+                &format!(
+                    "session {} step {}: step failure notice recorded",
+                    sink.session,
+                    sink.step.value()
+                ),
+            );
+        }
+        Ok(None) => {}
+        Err(error) => {
+            crate::diagnostics::report(format!(
+                "session {} step {}: failure explanation unavailable: {error}",
+                sink.session,
+                sink.step.value()
+            ));
+        }
     }
 }
 pub(crate) fn row(

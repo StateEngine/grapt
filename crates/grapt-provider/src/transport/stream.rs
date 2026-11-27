@@ -196,6 +196,16 @@ impl ProviderStream {
         }
         for fragment in self.pending.iter_mut().skip(from) {
             if let AttemptFragment::ProviderFailure { message, .. } = fragment {
+                if let Some(rest) = message.strip_prefix("Bedrock returned a stream exception (") {
+                    if let Some((kind, suffix)) = rest.split_once(')') {
+                        if let Some(body) = suffix.strip_prefix(": ") {
+                            let redacted = self.redactor.text(body);
+                            *message =
+                                format!("Bedrock returned a stream exception ({kind}): {redacted}");
+                        }
+                        continue;
+                    }
+                }
                 *message = self.redactor.text(message);
             }
         }

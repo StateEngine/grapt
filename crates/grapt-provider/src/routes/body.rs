@@ -219,11 +219,13 @@ pub(crate) fn openai_responses_body_with_model(
         "model".to_owned(),
         serde_json::Value::String(wire_model.as_str().to_owned()),
     );
+    let mut include = Vec::new();
     if let Some(effort) = request.model.variant() {
         body.insert(
             "reasoning".to_owned(),
-            serde_json::json!({"effort": effort.as_str()}),
+            serde_json::json!({"effort": effort.as_str(), "summary": "auto"}),
         );
+        include.push("reasoning.encrypted_content");
     }
     body.insert(
         "input".to_owned(),
@@ -246,10 +248,10 @@ pub(crate) fn openai_responses_body_with_model(
     if let Some(search) = &request.web_search {
         // Native tools keep a fixed prefix as deferred function tools activate.
         tools.insert(0, search.wire());
-        body.insert(
-            "include".to_owned(),
-            serde_json::json!(["web_search_call.action.sources"]),
-        );
+        include.push("web_search_call.action.sources");
+    }
+    if !include.is_empty() {
+        body.insert("include".to_owned(), serde_json::json!(include));
     }
     if !tools.is_empty() {
         body.insert("tools".to_owned(), serde_json::Value::Array(tools));
