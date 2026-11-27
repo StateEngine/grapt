@@ -223,3 +223,29 @@ fn deletion_clears_owned_staging_and_preserves_foreign_links() -> TestResult {
     assert!(staged.exists());
     Ok(())
 }
+
+#[cfg(windows)]
+#[test]
+fn an_entry_whose_key_is_gone_can_be_replaced_and_removed() -> TestResult {
+    let profile = Profile::new("missing-key")?;
+    let mut vault = SealedFileVault::open(&profile.0)?;
+    let key = key("fixture", "fixture.credential")?;
+    let api = DestinationBinding::key(ApiDestination::parse("https://api.example/v1")?);
+    let orphan = || crate::profile_security::fixtures::sealed_with_missing_key(b"fixture-orphan");
+    crate::profile_security::replace_private_file(&profile.0, "fixture.credential", &orphan()?)?;
+    assert!(matches!(vault.get(&key, &api), Err(VaultError::KeyMissing)));
+    vault.put(
+        &key,
+        &api,
+        secret("replacement-key")?,
+        Timestamp::from_millis(1),
+    )?;
+    assert!(matches!(
+        vault.get(&key, &api)?.ok_or("missing key")?.expose(),
+        CredentialView::ApiKey("replacement-key")
+    ));
+    crate::profile_security::replace_private_file(&profile.0, "fixture.credential", &orphan()?)?;
+    assert!(vault.remove(&key)?);
+    assert!(vault.get(&key, &api)?.is_none());
+    Ok(())
+}

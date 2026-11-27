@@ -33,12 +33,42 @@ pub use refusal::{failure_code, failure_diagnostic};
 mod entropy;
 #[cfg(any(windows, test))]
 mod envelope;
+#[cfg(all(windows, test))]
+pub(crate) mod fixtures;
 #[cfg(windows)]
 mod keystore;
 
 /// The earlier Windows format, still opened so existing credentials migrate.
 const DPAPI_ENVELOPE: &[u8] = b"secode.dpapi.current-user.v1\n";
 const KEYSTORE_ENVELOPE: &[u8] = b"grapt.credential.aes-256-gcm.v1\n";
+
+/// Why a sealed credential cannot be opened when its key is gone, and the step
+/// that replaces it. Fixed text: it names no path, key or account.
+pub const KEY_MISSING: &str =
+    "this credential's sealing key is missing from the system keystore; sign in again or add \
+     the credential again";
+
+/// Marks an [`open`] refusal whose envelope names a key the keystore no longer
+/// holds. Only replacing the credential gets past it.
+#[derive(Debug)]
+struct KeyMissing;
+
+impl std::fmt::Display for KeyMissing {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(KEY_MISSING)
+    }
+}
+
+impl std::error::Error for KeyMissing {}
+
+/// Whether an [`open`] refusal means the credential's sealing key is gone, so
+/// the credential can only be replaced, never read.
+#[must_use]
+pub fn is_key_missing(error: &io::Error) -> bool {
+    error
+        .get_ref()
+        .is_some_and(|inner| inner.downcast_ref::<KeyMissing>().is_some())
+}
 
 /// Whether bytes carry a protected format, without attempting decryption.
 #[must_use]
@@ -60,10 +90,10 @@ pub const fn stored_bound(plaintext_bound: usize) -> usize {
 pub fn seal(bytes: &[u8]) -> io::Result<Vec<u8>> {
     #[cfg(windows)]
     {
-        let key = keystore::get_or_create()?;
+        let key = keystore::current()?;
         let mut nonce = [0; envelope::NONCE_BYTES];
         entropy::fill(&mut nonce)?;
-        envelope::seal(&key, nonce, bytes)
+        envelope::seal(&key.id, &key.secret, nonce, bytes)
     }
     #[cfg(not(windows))]
     Ok(bytes.to_vec())
@@ -75,14 +105,9 @@ pub fn open(bytes: &[u8], plaintext_bound: usize) -> io::Result<Vec<u8>> {
     let plaintext = if let Some(sealed) = bytes.strip_prefix(KEYSTORE_ENVELOPE) {
         #[cfg(windows)]
         {
-            let key = keystore::existing()?.ok_or_else(|| {
-                io::Error::new(
-                    io::ErrorKind::NotFound,
-                    "this credential's sealing key is missing from Windows Credential Manager; \
-                     sign in again or add the credential again",
-                )
-            })?;
-            envelope::open(&key, sealed)?
+            let key = keystore::by_id(&envelope::key_id(sealed)?)?
+                .ok_or_else(|| io::Error::other(KeyMissing))?;
+            envelope::open(&key.secret, sealed)?
         }
         #[cfg(not(windows))]
         {

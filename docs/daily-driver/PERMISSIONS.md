@@ -47,17 +47,21 @@ are accepted only from protected storage; a foreign or unverifiable owner/ACL
 refuses rather than silently trusting existing records.
 
 Provider keys and ChatGPT access/refresh tokens are sealed with AES-256-GCM in
-the existing profile files, under one key per Windows user that Windows
-Credential Manager holds. The key remains with Windows, not in the repository
-or a profile file. Files sealed earlier with DPAPI **CurrentUser** stay
+the existing profile files, under a key that Windows Credential Manager holds.
+Each key has its own `grapt-credential-key` entry, written once and never
+replaced, and each sealed file names the key that sealed it. A small file in
+`%LOCALAPPDATA%\grapt` records which key seals next on this machine; losing it
+only creates a new key. Keys stay with Windows, not in the repository or a
+profile file. Files sealed earlier with DPAPI **CurrentUser** stay
 readable and are sealed the new way when next written. Atomic replacement writes
 only protected bytes to the private temporary file. Legacy ChatGPT state is
 migrated under the existing renewal lock before contacting a provider; explicitly
 imported legacy API keys are protected in the new profile. A damaged protected
 file never falls back to plaintext. Moving a protected profile to another
-Windows account or machine, or deleting the `grapt` entry from Credential
-Manager, requires signing in again or explicitly supplying the account's
-credential. Protection failure refuses the write and preserves
+Windows account or machine, or deleting a `grapt-credential-key` entry from
+Credential Manager, requires signing in again or explicitly supplying the
+account's credential; a credential whose key is gone says so, and can still be
+replaced or removed. Protection failure refuses the write and preserves
 the previous generation. An already private directory is verified without
 rewriting its ACL, including repeated starts by a non-elevated user.
 

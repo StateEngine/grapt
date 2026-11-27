@@ -92,10 +92,14 @@ impl SealedFileVault {
         if !profile_security::is_protected(&stored) {
             return Err(VaultError::LegacyImportRequired);
         }
-        let plaintext = Zeroizing::new(
-            profile_security::open(&stored, BYTE_CAP)
-                .map_err(unavailable(StorageOperation::OpenEnvelope))?,
-        );
+        let plaintext =
+            Zeroizing::new(profile_security::open(&stored, BYTE_CAP).map_err(|error| {
+                if profile_security::is_key_missing(&error) {
+                    VaultError::KeyMissing
+                } else {
+                    unavailable(StorageOperation::OpenEnvelope)(error)
+                }
+            })?);
         self.check_root()?;
         let bytes = plaintext
             .strip_prefix(PREFIX)
@@ -193,6 +197,16 @@ impl SealedFileVault {
     }
 }
 
+/// Whether an entry exists that may be replaced or removed: a readable one of
+/// this connection, or one whose sealing key is gone. Anything else refuses.
+fn replaceable(read: Result<Option<Document>, VaultError>) -> Result<bool, VaultError> {
+    match read {
+        Ok(document) => Ok(document.is_some()),
+        Err(VaultError::KeyMissing) => Ok(true),
+        Err(error) => Err(error),
+    }
+}
+
 impl CredentialVault for SealedFileVault {
     fn put(
         &mut self,
@@ -206,8 +220,10 @@ impl CredentialVault for SealedFileVault {
         }
         let _lock = self.lock()?;
         // Never replace an entry belonging to another connection or silently
-        // erase corrupt/legacy storage while trying to reconnect.
-        let _previous = self.read(key)?;
+        // erase corrupt/legacy storage while trying to reconnect. An entry
+        // whose sealing key is gone can only be replaced, so replacing it is
+        // the way back.
+        replaceable(self.read(key))?;
         self.discard_staged(key)?;
         let document = Document {
             schema: SCHEMA.into(),
@@ -250,10 +266,12 @@ impl CredentialVault for SealedFileVault {
     fn remove(&mut self, key: &VaultKey) -> Result<bool, VaultError> {
         let _lock = self.lock()?;
         self.discard_staged(key)?;
-        let Some(_document) = self.read(key)? else {
+        // An entry whose sealing key is gone cannot be read; removing the file
+        // this key names is how it is cleared.
+        if !replaceable(self.read(key))? {
             self.sync()?;
             return Ok(false);
-        };
+        }
         self.check_root()?;
         std::fs::remove_file(self.root.join(&key.file))
             .map_err(unavailable(StorageOperation::RemoveEntry))?;

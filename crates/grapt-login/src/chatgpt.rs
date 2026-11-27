@@ -719,8 +719,14 @@ fn read_bounded(path: &Path, cap: usize) -> Result<Option<Vec<u8>>, SignInError>
     let name = path
         .file_name()
         .map_or_else(String::new, |name| name.to_string_lossy().into_owned());
+    // Only an error's kind is shown, so nothing a file holds can leak; a
+    // missing sealing key keeps its own reason, because it says what to do.
     let failed = |error: std::io::Error| {
-        SignInError::Store(format!("{name} is unreadable: {:?}", error.kind()))
+        if crate::profile_security::is_key_missing(&error) {
+            SignInError::Store(format!("{name}: {}", crate::profile_security::KEY_MISSING))
+        } else {
+            SignInError::Store(format!("{name} is unreadable: {:?}", error.kind()))
+        }
     };
     let irregular = || SignInError::Store(format!("{name} is not a regular file"));
     let protected = name.ends_with(".oauth.json") || name.ends_with(".credential");

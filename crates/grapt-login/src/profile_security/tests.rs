@@ -32,6 +32,32 @@ fn protected_storage_round_trips_binary_input_with_independent_plaintext_bound()
     Ok(())
 }
 
+#[cfg(windows)]
+#[test]
+fn a_dpapi_credential_opens_and_is_resealed_under_the_keystore() -> io::Result<()> {
+    let secret = b"fixture-dpapi-secret";
+    let legacy = fixtures::dpapi_sealed(secret)?;
+    assert!(is_protected(&legacy));
+    let opened = open(&legacy, secret.len())?;
+    assert_eq!(opened, secret);
+    let resealed = seal(&opened)?;
+    assert!(resealed.starts_with(KEYSTORE_ENVELOPE));
+    assert_eq!(open(&resealed, secret.len())?, secret);
+    Ok(())
+}
+
+#[cfg(windows)]
+#[test]
+fn a_credential_whose_key_is_gone_names_that_reason() -> io::Result<()> {
+    let orphan = fixtures::sealed_with_missing_key(b"fixture-orphan")?;
+    let error = open(&orphan, 4096)
+        .err()
+        .ok_or_else(|| io::Error::other("opened"))?;
+    assert!(is_key_missing(&error));
+    assert_eq!(error.to_string(), KEY_MISSING);
+    Ok(())
+}
+
 static NEXT_SCRATCH: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
 
 struct ScratchDir(std::path::PathBuf);
