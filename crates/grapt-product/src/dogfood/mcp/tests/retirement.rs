@@ -27,7 +27,7 @@ fn poll_until_queued<F: std::future::Future>(call: &mut std::pin::Pin<Box<F>>) {
     }
 }
 
-pub(super) fn held_connection_for_test() -> HeldIo<LiveIo> {
+pub(crate) fn held_connection_for_test() -> HeldIo<LiveIo> {
     held_connection()
 }
 

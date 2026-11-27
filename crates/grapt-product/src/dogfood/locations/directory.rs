@@ -5,7 +5,7 @@
 use super::{location, ResolvedLocation};
 use std::path::Path;
 
-pub(super) fn resolve(path: &Path) -> Result<ResolvedLocation, String> {
+pub(crate) fn resolve(path: &Path) -> Result<ResolvedLocation, String> {
     let root =
         std::fs::canonicalize(path).map_err(|error| format!("location is unreadable: {error}"))?;
     let directory = root.to_str().ok_or("location is not UTF-8")?;

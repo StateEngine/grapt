@@ -10,7 +10,7 @@ use super::*;
 use grapt_api::u3a::{SessionReconcileApplicationError as Error, SessionReconcileResponseDto};
 
 impl DogfoodApplication {
-    pub(super) fn reconcile(
+    pub(crate) fn reconcile(
         &self,
         session: SessionId,
     ) -> Result<SessionReconcileResponseDto, Error> {

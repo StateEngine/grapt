@@ -38,7 +38,7 @@ use materialize::{materialize_commands, materialize_integrations, materialize_we
 
 /// The plugin declarations one source set resolves to, each under its
 /// document's origin.
-pub(super) fn resolve_sources(
+pub(in crate::dogfood) fn resolve_sources(
     sources: &CatalogSources,
 ) -> Result<grapt_plugin::ResolvedDeclarations, String> {
     let documents = sources
@@ -58,7 +58,7 @@ pub(super) fn resolve_sources(
 
 /// The blocked declarations a project adds to the service's own `listed`
 /// ones: those from documents that are not the user's, each once.
-pub(super) fn project_blocked(
+pub(crate) fn project_blocked(
     resolved: &grapt_plugin::ResolvedDeclarations,
     listed: &[Value],
 ) -> Result<Vec<Value>, String> {
@@ -73,7 +73,7 @@ pub(super) fn project_blocked(
         .collect()
 }
 
-pub(super) fn list(
+pub(crate) fn list(
     application: &super::DogfoodApplication,
     query: grapt_api::u3a::ProjectCurrentLocationQueryDto,
 ) -> grapt_api::u3a::ApplicationFuture<
@@ -121,7 +121,7 @@ pub(super) fn list(
     })
 }
 
-pub(super) fn catalog_draft(application: &super::DogfoodApplication) -> Result<Value, String> {
+pub(crate) fn catalog_draft(application: &super::DogfoodApplication) -> Result<Value, String> {
     let providers = super::model_inventory::providers(&application.catalog_snapshot())
         .as_array()
         .cloned()

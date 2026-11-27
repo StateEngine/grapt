@@ -227,7 +227,7 @@ impl DogfoodApplication {
     /// same span. The span is the page's own cursor range, not the returned
     /// rows': an unreadable row usually has no rendered peer, so a span taken
     /// from the rows would miss exactly the case this reports.
-    pub(super) fn public_page(
+    pub(crate) fn public_page(
         &self,
         session: &SessionId,
         page: &MessagePage,
@@ -335,7 +335,7 @@ impl DogfoodApplication {
         Ok((rows, omissions))
     }
 
-    pub(super) fn public_message(
+    pub(crate) fn public_message(
         &self,
         session: &SessionId,
         id: &MessageId,
@@ -477,7 +477,7 @@ impl DogfoodApplication {
 }
 
 /// A bounded identity probe into visible durable history, without reading payloads.
-pub(in crate::dogfood) fn recovery_point(
+pub(crate) fn recovery_point(
     inbox: &grapt_inbox::Inbox,
     session: &SessionId,
     before: grapt_types::EventSeq,

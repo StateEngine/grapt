@@ -6,7 +6,7 @@ use std::{
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(in crate::dogfood) struct Revision(u64);
+pub(crate) struct Revision(u64);
 
 #[derive(Debug)]
 struct Lease {
@@ -35,14 +35,14 @@ impl Default for Authority {
 }
 
 impl Authority {
-    pub(super) fn revision(&self) -> Result<Revision, String> {
+    pub(crate) fn revision(&self) -> Result<Revision, String> {
         self.revision
             .filter(|_| self.editing == 0)
             .map(Revision)
             .ok_or_else(|| "MCP configuration is changing; retry roots discovery".into())
     }
 
-    pub(super) fn validate(&self, revision: Revision) -> Result<(), String> {
+    pub(crate) fn validate(&self, revision: Revision) -> Result<(), String> {
         if self.revision()? != revision {
             return Err("MCP configuration changed while reading roots; retry".into());
         }
@@ -53,7 +53,7 @@ impl Authority {
         self.revision = self.revision.and_then(|value| value.checked_add(1));
     }
 
-    pub(super) fn edit(
+    pub(crate) fn edit(
         authority: &Arc<Mutex<Self>>,
         workspace: Option<&str>,
         server: &str,
@@ -80,7 +80,7 @@ impl Authority {
         Ok(EditGuard(Arc::clone(authority)))
     }
 
-    pub(super) fn configure(
+    pub(crate) fn configure(
         &mut self,
         location: &str,
         roots: &Config,
@@ -100,7 +100,7 @@ impl Authority {
         Ok(())
     }
 
-    pub(super) fn connect(
+    pub(crate) fn connect(
         &mut self,
         location: &str,
         server: &str,
@@ -136,7 +136,7 @@ impl Authority {
 
 /// Owned by the actual configuration writer: cancellation of its HTTP waiter
 /// cannot publish a new revision before the blocking write has finished.
-pub(in crate::dogfood) struct EditGuard(Arc<Mutex<Authority>>);
+pub(crate) struct EditGuard(Arc<Mutex<Authority>>);
 impl Drop for EditGuard {
     fn drop(&mut self) {
         if let Ok(mut held) = self.0.lock() {

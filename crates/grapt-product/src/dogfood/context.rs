@@ -21,20 +21,20 @@ use super::support::{decode, invalid, not_found};
 use super::DogfoodApplication;
 
 #[derive(Debug, Default)]
-pub(super) struct SessionCapabilities {
-    pub(super) values: BTreeMap<SessionId, Arc<Secret<String>>>,
+pub(crate) struct SessionCapabilities {
+    pub(crate) values: BTreeMap<SessionId, Arc<Secret<String>>>,
     /// Resource ownership only, bounded by the same 128 capability Sessions.
     /// Replacing a binding invalidates even tokens held by an older refresh.
-    pub(super) producer_bindings: BTreeMap<SessionId, Arc<std::sync::atomic::AtomicBool>>,
-    pub(super) native_principals: BTreeMap<SessionId, grapt_api::SealedPrincipal>,
-    pub(super) resumes: BTreeMap<SessionId, Arc<super::stateengine_resume::Checkpoint>>,
-    pub(super) packets: super::stateengine_resume::packet::Cache,
+    pub(crate) producer_bindings: BTreeMap<SessionId, Arc<std::sync::atomic::AtomicBool>>,
+    pub(crate) native_principals: BTreeMap<SessionId, grapt_api::SealedPrincipal>,
+    pub(in crate::dogfood) resumes: BTreeMap<SessionId, Arc<super::stateengine_resume::Checkpoint>>,
+    pub(in crate::dogfood) packets: super::stateengine_resume::packet::Cache,
     /// The authenticated provision each held capability came from, bounded by
     /// the same Sessions; minted process-wide, so a generation never repeats.
-    pub(super) generations: BTreeMap<SessionId, ProvisionGeneration>,
+    pub(crate) generations: BTreeMap<SessionId, ProvisionGeneration>,
     minted: Option<ProvisionGeneration>,
     /// Where each Session's continuity level is published.
-    pub(super) attention: Option<Arc<super::continuity_attention::ContinuityAttention>>,
+    pub(in crate::dogfood) attention: Option<Arc<super::continuity_attention::ContinuityAttention>>,
     bytes: usize,
 }
 
@@ -53,7 +53,7 @@ impl SessionCapabilities {
         }
         Ok(bytes)
     }
-    pub(super) fn put(&mut self, session: SessionId, capability: &str) -> Result<(), String> {
+    pub(crate) fn put(&mut self, session: SessionId, capability: &str) -> Result<(), String> {
         let bytes = self.check_put(&session, capability)?;
         // Checked before any custody changes: an exhausted counter refuses.
         let generation = match self.minted {
@@ -80,12 +80,12 @@ impl SessionCapabilities {
         self.packets.remove(&session);
         Ok(())
     }
-    pub(super) fn retire_producer(&mut self, session: &SessionId) {
+    pub(crate) fn retire_producer(&mut self, session: &SessionId) {
         if let Some(token) = self.producer_bindings.remove(session) {
             token.store(false, std::sync::atomic::Ordering::Release);
         }
     }
-    pub(super) fn remove(&mut self, session: &SessionId) {
+    pub(crate) fn remove(&mut self, session: &SessionId) {
         self.retire_producer(session);
         if let Some(capability) = self.values.remove(session) {
             self.bytes -= capability.expose().len();
@@ -98,7 +98,7 @@ impl SessionCapabilities {
 }
 
 /// Delete the durable session before releasing its process-private resources.
-pub(super) fn delete_session(
+pub(crate) fn delete_session(
     application: &DogfoodApplication,
     session: SessionId,
 ) -> Result<NoContent, SessionLookupApplicationError> {
@@ -133,7 +133,7 @@ fn remove_session(application: &DogfoodApplication, session: &SessionId) {
     }
 }
 
-pub(super) fn retire_producer(application: &DogfoodApplication, session: &SessionId) {
+pub(crate) fn retire_producer(application: &DogfoodApplication, session: &SessionId) {
     application.mcp.end_resource_subscriptions(Some(session));
     match application.session_capabilities.lock() {
         Ok(mut custody) => custody.retire_producer(session),
@@ -143,7 +143,7 @@ pub(super) fn retire_producer(application: &DogfoodApplication, session: &Sessio
 
 /// Only this product boundary knows the StateEngine metadata keys. An absent
 /// process capability for a durable binding is a rebind refusal.
-pub(super) fn call_metadata(
+pub(crate) fn call_metadata(
     inbox: &grapt_inbox::Inbox,
     custody: &SessionCapabilities,
     session: &SessionId,
@@ -191,14 +191,14 @@ fn refused(error: impl ToString) -> SessionLookupApplicationError {
     SessionLookupApplicationError::InvalidRequest(invalid(error))
 }
 
-pub(super) fn require_session(
+pub(crate) fn require_session(
     application: &DogfoodApplication,
     session: &SessionId,
 ) -> Result<(), SessionLookupApplicationError> {
     session_record(application, session).map(|_| ())
 }
 
-pub(super) fn session_record(
+pub(crate) fn session_record(
     application: &DogfoodApplication,
     session: &SessionId,
 ) -> Result<grapt_session::SessionRecord, SessionLookupApplicationError> {
@@ -209,7 +209,7 @@ pub(super) fn session_record(
 
 /// A read route's lookup: the record, with the structural carry check only.
 /// Every carried byte the route serves is digested by the fetch that reads it.
-pub(super) fn require_readable_session(
+pub(crate) fn require_readable_session(
     application: &DogfoodApplication,
     session: &SessionId,
 ) -> Result<(), SessionLookupApplicationError> {
@@ -234,7 +234,7 @@ fn stored_record(
         })
 }
 
-pub(super) fn capability(
+pub(crate) fn capability(
     application: &DogfoodApplication,
     principal: grapt_api::SealedPrincipal,
     session: SessionId,
@@ -296,7 +296,7 @@ pub(super) fn capability(
 
 /// Inspect the last durable capture without resampling files or changing epochs.
 /// Session-entry values (including private seat packets) are deliberately absent.
-pub(super) fn inspect(
+pub(crate) fn inspect(
     application: &DogfoodApplication,
     session: SessionId,
 ) -> Result<grapt_api::u3a::InstructionInspectionDto, SessionLookupApplicationError> {
@@ -317,7 +317,7 @@ pub(super) fn inspect(
     decode(json!({"captured":captured,"ambient":ambient,"keys":keys})).map_err(refused)
 }
 
-pub(super) fn entries(
+pub(crate) fn entries(
     application: &DogfoodApplication,
     session: SessionId,
 ) -> Result<InstructionEntryListDto, SessionLookupApplicationError> {
@@ -334,7 +334,7 @@ pub(super) fn entries(
     decode(json!({"data":data})).map_err(refused)
 }
 
-pub(super) fn put(
+pub(crate) fn put(
     application: &DogfoodApplication,
     session: SessionId,
     key: InstructionEntryKeyDto,
@@ -365,7 +365,7 @@ pub(super) fn put(
     Ok(NoContent)
 }
 
-pub(super) fn remove(
+pub(crate) fn remove(
     application: &DogfoodApplication,
     session: SessionId,
     key: InstructionEntryKeyDto,

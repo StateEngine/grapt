@@ -4,7 +4,7 @@ use super::*;
 use grapt_session::title::{name_from_first_prompt, rename_session, TitleError};
 use grapt_session::SessionStoreError;
 
-pub(super) fn automatic(application: &DogfoodApplication, session: &SessionId) {
+pub(crate) fn automatic(application: &DogfoodApplication, session: &SessionId) {
     let authorities = DeterministicAuthorities::new(&*application.clock, &*application.ids);
     let mut held = application.lock_inbox();
     let result = name_from_first_prompt(held.store_mut(), &authorities, session);
@@ -22,7 +22,7 @@ pub(super) fn automatic(application: &DogfoodApplication, session: &SessionId) {
     }
 }
 
-pub(super) fn manual(
+pub(crate) fn manual(
     application: &DogfoodApplication,
     session: SessionId,
     request: grapt_api::u3a::SessionRenameRequestDto,

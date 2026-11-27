@@ -13,7 +13,7 @@ use grapt_api::u3a::{
 use serde_json::{Map, Value};
 use std::{collections::BTreeSet, path::Path};
 
-pub(super) fn request(
+pub(crate) fn request(
     application: DogfoodApplication,
     query: ProjectCurrentLocationQueryDto,
     request: HookImportRequestDto,

@@ -7,7 +7,7 @@ const SECRET_COUNT: usize = 256;
 const PRIVATE: &[u8] = b"[private]";
 
 #[derive(Default)]
-pub(in crate::dogfood) struct Tail {
+pub(crate) struct Tail {
     patterns: Vec<Vec<u8>>,
     pattern_bytes: usize,
     pending: Vec<u8>,
@@ -17,7 +17,7 @@ pub(in crate::dogfood) struct Tail {
 }
 
 impl Tail {
-    pub(in crate::dogfood) fn protect(&mut self, value: &str) {
+    pub(crate) fn protect(&mut self, value: &str) {
         if value.is_empty() || self.suppressed {
             return;
         }
@@ -53,7 +53,7 @@ impl Tail {
 
     /// Input chunks are capped by the reader, so pending is bounded by one
     /// chunk plus the longest admitted private value, even without newlines.
-    pub(in crate::dogfood) fn push(&mut self, chunk: &[u8]) {
+    pub(crate) fn push(&mut self, chunk: &[u8]) {
         if self.suppressed {
             return;
         }
@@ -88,7 +88,7 @@ impl Tail {
         }
     }
 
-    pub(in crate::dogfood) fn finish(&mut self) {
+    pub(crate) fn finish(&mut self) {
         if !self.pending.is_empty() {
             // EOF or cancellation in the middle of a value must not publish a
             // suffix that a bounded-tail cut would later disguise as ordinary text.
@@ -109,15 +109,15 @@ impl Tail {
         }
     }
 
-    pub(in crate::dogfood) fn sanitise(&self, text: &str) -> String {
+    pub(crate) fn sanitise(&self, text: &str) -> String {
         self.sanitise_with_lines(text, false, false)
     }
 
-    pub(in crate::dogfood) fn sanitise_lines(&self, text: &str) -> String {
+    pub(crate) fn sanitise_lines(&self, text: &str) -> String {
         self.sanitise_with_lines(text, true, false)
     }
 
-    pub(in crate::dogfood) fn sanitise_prefix(&self, text: &str) -> String {
+    pub(crate) fn sanitise_prefix(&self, text: &str) -> String {
         self.sanitise_with_lines(text, true, true)
     }
 
@@ -134,11 +134,11 @@ impl Tail {
         copy.render(lines)
     }
 
-    pub(super) fn text(&self) -> String {
+    pub(crate) fn text(&self) -> String {
         self.render(false)
     }
 
-    pub(in crate::dogfood) fn text_lines(&self) -> String {
+    pub(crate) fn text_lines(&self) -> String {
         self.render(true)
     }
 

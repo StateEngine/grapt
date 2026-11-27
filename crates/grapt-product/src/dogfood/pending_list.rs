@@ -3,7 +3,7 @@
 use super::*;
 
 impl DogfoodApplication {
-    pub(super) fn pending_list(
+    pub(crate) fn pending_list(
         &self,
         session_id: WireId<SessionId>,
     ) -> Result<grapt_api::u3a::SessionPendingListResponseDto, SessionLookupApplicationError> {

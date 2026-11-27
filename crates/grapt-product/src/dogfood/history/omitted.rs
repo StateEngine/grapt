@@ -13,10 +13,10 @@ const MAX_ROW_GAPS: usize = 16;
 /// One page's unreadable owned items, addressed by durable coordinate so a row
 /// can report only the gaps that fall inside it.
 #[derive(Debug, Default)]
-pub(in crate::dogfood) struct OmittedItems(Vec<grapt_session::HistoryOmission>);
+pub(crate) struct OmittedItems(Vec<grapt_session::HistoryOmission>);
 
 impl OmittedItems {
-    pub(super) fn new(omissions: Vec<grapt_session::HistoryOmission>) -> Self {
+    pub(crate) fn new(omissions: Vec<grapt_session::HistoryOmission>) -> Self {
         Self(omissions)
     }
 
@@ -37,7 +37,7 @@ impl OmittedItems {
     /// failure a splice must avoid. A row that already carries `metadata` has
     /// its object extended in place; a row without one gets the field inserted
     /// immediately after its tag.
-    pub(super) fn annotate(&self, from: u64, until: u64, raw: String) -> Result<String, String> {
+    pub(crate) fn annotate(&self, from: u64, until: u64, raw: String) -> Result<String, String> {
         let gaps = self.within(from, until);
         if gaps.is_empty() {
             return Ok(raw);

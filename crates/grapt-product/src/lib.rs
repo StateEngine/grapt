@@ -25,6 +25,7 @@ mod compose;
 mod compose_host;
 mod diagnostics;
 mod dogfood;
+mod dogfood_application_port;
 mod dogfood_composition;
 mod fixture_seam;
 mod handover;

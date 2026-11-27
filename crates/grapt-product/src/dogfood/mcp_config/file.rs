@@ -102,7 +102,7 @@ impl Drop for Temporary {
     }
 }
 
-pub(super) fn update(
+pub(in crate::dogfood) fn update(
     environment: crate::dogfood::catalog_config::CatalogEnvironment,
     location: &str,
     name: &str,

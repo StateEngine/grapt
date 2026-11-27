@@ -17,9 +17,9 @@ use super::CatalogProjection;
 mod directory;
 mod program;
 mod saved;
-pub(super) use saved::resolve_for;
+pub(crate) use saved::resolve_for;
 mod session;
-pub(super) use session::SessionLocations;
+pub(crate) use session::SessionLocations;
 
 const MAX_PATH_BYTES: usize = 4_096;
 const MAX_ANCESTORS: usize = 256;
@@ -27,7 +27,7 @@ const MAX_DISCOVERY_BYTES: u64 = 64 * 1_024;
 const DISCOVERY_DEADLINE: Duration = Duration::from_secs(3);
 
 #[derive(Debug)]
-pub(super) struct ResolvedLocation {
+pub(crate) struct ResolvedLocation {
     pub directory: String,
     pub project: ProjectId,
     pub project_directory: String,
@@ -41,14 +41,14 @@ impl ResolvedLocation {
     }
 }
 
-pub(super) async fn resolve(
+pub(crate) async fn resolve(
     default: &CatalogProjection,
     query: &ProjectCurrentLocationQueryDto,
 ) -> Result<ResolvedLocation, String> {
     resolve_default(&default.directory, query).await
 }
 
-pub(super) async fn resolve_default(
+pub(crate) async fn resolve_default(
     default: &str,
     query: &ProjectCurrentLocationQueryDto,
 ) -> Result<ResolvedLocation, String> {
@@ -69,7 +69,7 @@ pub(super) async fn resolve_default(
     resolve_directory(directory).await
 }
 
-pub(super) async fn resolve_directory(directory: &str) -> Result<ResolvedLocation, String> {
+pub(crate) async fn resolve_directory(directory: &str) -> Result<ResolvedLocation, String> {
     if directory.len() > MAX_PATH_BYTES {
         return Err("location directory exceeds its byte bound".to_owned());
     }
@@ -162,11 +162,11 @@ async fn discover(directory: &str) -> Result<ResolvedLocation, String> {
 /// The repository a directory belongs to: the nearest ancestor holding
 /// `.git`, read from the filesystem alone, or `None` outside any repository.
 /// The one rule for "what is this directory's repo root".
-pub(super) fn repository_root(path: &Path) -> Result<Option<&Path>, String> {
+pub(crate) fn repository_root(path: &Path) -> Result<Option<&Path>, String> {
     repository_root_with_limit(path, MAX_ANCESTORS)
 }
 
-pub(super) fn repository_root_with_limit(
+pub(crate) fn repository_root_with_limit(
     path: &Path,
     max_ancestors: usize,
 ) -> Result<Option<&Path>, String> {
@@ -309,7 +309,7 @@ async fn output(stream: impl AsyncRead + Unpin) -> Result<Vec<u8>, String> {
     Ok(bytes)
 }
 
-pub(super) async fn git(cwd: &Path, args: &[&str]) -> Result<(i32, String), String> {
+pub(crate) async fn git(cwd: &Path, args: &[&str]) -> Result<(i32, String), String> {
     let executable = program::resolve(cwd).await;
     run(command(cwd, args, &executable)).await
 }

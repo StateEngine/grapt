@@ -10,12 +10,12 @@ use super::{
 use grapt_mcp::session::Unusable;
 #[cfg(test)]
 use grapt_mcp::McpBounds;
-pub(super) use grapt_mcp_host::startup::start_with;
+pub(crate) use grapt_mcp_host::startup::start_with;
 #[cfg(test)]
 use std::time::Duration;
 use tokio::io::{AsyncRead, AsyncWrite};
 
-pub(in crate::dogfood) fn registry_with_forms(
+pub(crate) fn registry_with_forms(
     auth_root: Option<&std::path::Path>,
     inbox: std::sync::Arc<std::sync::Mutex<grapt_inbox::Inbox>>,
     ids: std::sync::Arc<grapt_store::OsRandomIds>,
@@ -44,7 +44,7 @@ pub(in crate::dogfood) fn registry_with_forms(
 }
 
 impl super::McpRegistry {
-    pub(super) async fn start_channel<R: AsyncRead + Unpin, W: AsyncWrite + Unpin>(
+    pub(crate) async fn start_channel<R: AsyncRead + Unpin, W: AsyncWrite + Unpin>(
         &self,
         channel: &mut McpChannel<R, W>,
         session: &mut McpSession,
@@ -87,7 +87,7 @@ impl super::McpRegistry {
 }
 
 #[cfg(test)]
-pub(super) async fn start<R: AsyncRead + Unpin, W: AsyncWrite + Unpin>(
+pub(crate) async fn start<R: AsyncRead + Unpin, W: AsyncWrite + Unpin>(
     channel: &mut McpChannel<R, W>,
     session: &mut McpSession,
     bounds: McpBounds,
@@ -108,7 +108,7 @@ pub(super) async fn start<R: AsyncRead + Unpin, W: AsyncWrite + Unpin>(
 }
 
 #[cfg(test)]
-pub(super) struct RefuseStartupElicitation;
+pub(crate) struct RefuseStartupElicitation;
 
 #[cfg(test)]
 impl ServerRequestHandler for RefuseStartupElicitation {

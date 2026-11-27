@@ -5,23 +5,23 @@ use grapt_session::selection::{
 use grapt_session::{SessionListProjector, SessionStoreError};
 
 /// Composed identities accepted by explicit ID, not the default selection.
-pub(super) const PRODUCTION_AGENT_IDS: &[&str] = &["agt_live_headless1"];
+pub(crate) const PRODUCTION_AGENT_IDS: &[&str] = &["agt_live_headless1"];
 
 /// Test-kit fixture agents. The permission witness agent exists only in test
 /// builds; the shipped product never publishes or accepts it.
 #[cfg(feature = "loopback-provider-testkit")]
-pub(super) const FIXTURE_AGENT_IDS: &[&str] = &["agt_dogfood_allow"];
+pub(crate) const FIXTURE_AGENT_IDS: &[&str] = &["agt_dogfood_allow"];
 #[cfg(not(feature = "loopback-provider-testkit"))]
-pub(super) const FIXTURE_AGENT_IDS: &[&str] = &[];
+pub(crate) const FIXTURE_AGENT_IDS: &[&str] = &[];
 
-pub(super) fn composed_agent_ids() -> impl Iterator<Item = &'static str> {
+pub(crate) fn composed_agent_ids() -> impl Iterator<Item = &'static str> {
     PRODUCTION_AGENT_IDS
         .iter()
         .chain(FIXTURE_AGENT_IDS)
         .copied()
 }
 
-pub(super) fn validate_agent(
+pub(crate) fn validate_agent(
     service: &Path,
     directory: &Path,
     agent: &str,
@@ -33,7 +33,7 @@ pub(super) fn validate_agent(
     Ok(())
 }
 
-pub(super) fn resolve_model(
+pub(crate) fn resolve_model(
     application: &DogfoodApplication,
     model: &Value,
 ) -> Result<Value, String> {
@@ -50,7 +50,7 @@ fn failure(error: SelectionError, session: &SessionId) -> SessionLookupApplicati
     }
 }
 
-pub(super) fn subagent_get(
+pub(crate) fn subagent_get(
     application: &DogfoodApplication,
     session: SessionId,
 ) -> Result<grapt_api::u3a::SessionSubagentModelResponseDto, SessionLookupApplicationError> {
@@ -61,7 +61,7 @@ pub(super) fn subagent_get(
         .map_err(|error| SessionLookupApplicationError::InvalidRequest(invalid(error)))
 }
 
-pub(super) fn subagent_set(
+pub(crate) fn subagent_set(
     application: &DogfoodApplication,
     session: SessionId,
     request: Option<grapt_api::u3a::SessionModelSelectDto>,
@@ -90,7 +90,7 @@ pub(super) fn subagent_set(
     Ok(NoContent)
 }
 
-pub(super) fn agent(
+pub(crate) fn agent(
     application: &DogfoodApplication,
     session: SessionId,
     request: grapt_api::u3a::SessionAgentSelectDto,
@@ -135,7 +135,7 @@ pub(super) fn agent(
 
 /// Read selection and effective trust from the same resolver used at execution
 /// admission. Release each store read before looking up an ancestor.
-pub(super) fn preset_get(
+pub(crate) fn preset_get(
     application: &DogfoodApplication,
     session: SessionId,
 ) -> Result<grapt_api::u3a::SessionPresetResponseDto, SessionLookupApplicationError> {
@@ -158,7 +158,7 @@ pub(super) fn preset_get(
 /// Set the Session's permission preset. A mistyped name says which exist,
 /// rather than leaving the user believing a trust level is in force. The
 /// selection has no live event: clients read it from the Session.
-pub(super) fn preset(
+pub(crate) fn preset(
     application: &DogfoodApplication,
     session: SessionId,
     request: grapt_api::u3a::SessionPresetSelectDto,
@@ -185,7 +185,7 @@ pub(super) fn preset(
     Ok(NoContent)
 }
 
-pub(super) fn model(
+pub(crate) fn model(
     application: &DogfoodApplication,
     session: SessionId,
     request: grapt_api::u3a::SessionModelSelectDto,
@@ -213,7 +213,7 @@ pub(super) fn model(
 /// The product's agent inventory, shared by the HTTP route and plugin hosts so
 /// there is exactly one list to maintain. Internal identities stay hidden;
 /// explicit selections can still resolve them.
-pub(super) fn agent_inventory(
+pub(crate) fn agent_inventory(
     catalog: &CatalogProjection,
     service: &Path,
     directory: &Path,

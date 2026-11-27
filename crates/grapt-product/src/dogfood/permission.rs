@@ -1,7 +1,7 @@
 //! Product-owned permission application seam over the shared durable store.
 
 use std::sync::MutexGuard;
-pub(super) mod grants;
+pub(crate) mod grants;
 
 use grapt_api::u3a::{
     ApplicationFuture, NoContent, PermissionApplicationError, PermissionCreateRequestDto,
@@ -23,7 +23,7 @@ use serde_json::{json, Value};
 
 use super::{decode, invalid, ready, static_dto, DogfoodApplication};
 
-pub(super) fn saved(
+pub(crate) fn saved(
     application: &DogfoodApplication,
     project: Option<grapt_types::ProjectId>,
 ) -> Result<grapt_api::u3a::PermissionSavedListResponseDto, grapt_api::u3a::InvalidRequestErrorDto>
@@ -44,7 +44,7 @@ pub(super) fn saved(
     decode(json!({"data":data})).map_err(invalid)
 }
 
-pub(super) fn list(
+pub(crate) fn list(
     application: &DogfoodApplication,
     principal: SealedPrincipal,
     query: PermissionLocationQueryDto,
@@ -64,7 +64,7 @@ pub(super) fn list(
 }
 
 #[expect(clippy::too_many_lines, reason = "legacy")]
-pub(super) fn create(
+pub(crate) fn create(
     application: &DogfoodApplication,
     principal: SealedPrincipal,
     session_id: WireId<SessionId>,
@@ -212,7 +212,7 @@ pub(super) fn create(
     })
 }
 
-pub(super) fn session_list(
+pub(crate) fn session_list(
     application: &DogfoodApplication,
     principal: SealedPrincipal,
     session_id: WireId<SessionId>,
@@ -221,7 +221,7 @@ pub(super) fn session_list(
     ready(list_for(application, &principal, Some(&session)))
 }
 
-pub(super) fn get(
+pub(crate) fn get(
     application: &DogfoodApplication,
     principal: SealedPrincipal,
     session_id: WireId<SessionId>,
@@ -245,7 +245,7 @@ pub(super) fn get(
     })
 }
 
-pub(super) fn reply(
+pub(crate) fn reply(
     application: &DogfoodApplication,
     principal: SealedPrincipal,
     session_id: WireId<SessionId>,
@@ -396,7 +396,7 @@ fn list_for(
 /// One session's pending requests read from the store alone (the snapshot's
 /// lease), never from the published generation and never under the writer's
 /// permission lock, typed by the same decode the permission list route uses.
-pub(super) fn pinned_rows(
+pub(crate) fn pinned_rows(
     store: &grapt_store::EventStore,
     principal: &SealedPrincipal,
     session: &SessionId,
@@ -515,7 +515,7 @@ fn permission_source(value: Option<&Value>) -> Result<Option<PermissionHttpSourc
     }))
 }
 
-pub(super) fn permission_json(row: &PermissionHttpRequest) -> Value {
+pub(crate) fn permission_json(row: &PermissionHttpRequest) -> Value {
     let mut value = json!({
         "id": row.id.as_str(),
         "sessionID": row.session.as_str(),
@@ -555,7 +555,7 @@ pub(super) fn permission_json(row: &PermissionHttpRequest) -> Value {
 /// HTTP, live SSE and capture replay expose the same stored display context.
 /// Legacy metadata was arbitrary: a malformed display value must not make an
 /// otherwise valid stored permission impossible to answer.
-pub(super) fn include_preview(value: &mut Value) {
+pub(crate) fn include_preview(value: &mut Value) {
     if let Some(preview) = value.pointer("/metadata/request/approvalPreview").cloned() {
         value["preview"] = if serde_json::from_value::<grapt_api::u3a::PermissionPreviewDto>(
             preview.clone(),

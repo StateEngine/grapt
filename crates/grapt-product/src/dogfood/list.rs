@@ -250,7 +250,7 @@ fn degraded_reason(row: &grapt_session::SessionListDegradedRow) -> String {
     }
 }
 
-pub(super) fn response(
+pub(crate) fn response(
     application: &DogfoodApplication,
     query: SessionListQueryDto,
 ) -> Result<SessionsResponseDto, SessionListApplicationError> {

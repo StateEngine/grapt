@@ -3,7 +3,7 @@
 
 use super::*;
 
-pub(super) async fn connect(
+pub(crate) async fn connect(
     registry: &McpRegistry,
     location: &str,
     server: &str,

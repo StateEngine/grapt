@@ -19,7 +19,7 @@ use tokio::sync::Semaphore;
 
 #[derive(Debug, thiserror::Error)]
 #[error("MCP authentication failed: {0}")]
-pub(crate) struct AuthError(pub(super) &'static str);
+pub(crate) struct AuthError(pub(crate) &'static str);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum LoginState {

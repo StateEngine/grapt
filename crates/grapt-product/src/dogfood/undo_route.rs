@@ -10,13 +10,13 @@ use grapt_types::WorkspaceCheckpointId;
 use std::path::PathBuf;
 
 /// Only this native command boundary can mint a file restore approval.
-pub(in crate::dogfood) struct ApprovedUndo {
+pub(crate) struct ApprovedUndo {
     root: PathBuf,
     target: WorkspaceCheckpointId,
     _principal: SealedPrincipal,
 }
 impl ApprovedUndo {
-    pub(in crate::dogfood) fn permission(
+    pub(crate) fn permission(
         &self,
         plan: &grapt_types::SettledRestorePlan,
     ) -> Option<PermissionId> {
@@ -35,7 +35,7 @@ impl ApprovedUndo {
         format!("per_native_undo_{digest}").parse().ok()
     }
 
-    pub(in crate::dogfood) fn permits(&self, root: &Path, target: &WorkspaceCheckpointId) -> bool {
+    pub(crate) fn permits(&self, root: &Path, target: &WorkspaceCheckpointId) -> bool {
         self.root == root && &self.target == target
     }
 }

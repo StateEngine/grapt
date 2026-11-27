@@ -24,7 +24,7 @@ use super::DogfoodApplication;
 #[path = "form_tests.rs"]
 mod tests;
 
-pub(super) fn form_missing(id: &FormId) -> grapt_api::u3a::FormNotFoundErrorDto {
+pub(crate) fn form_missing(id: &FormId) -> grapt_api::u3a::FormNotFoundErrorDto {
     static_dto(json!({
         "_tag": "FormNotFoundError",
         "id": id.as_str(),
@@ -32,7 +32,7 @@ pub(super) fn form_missing(id: &FormId) -> grapt_api::u3a::FormNotFoundErrorDto 
     }))
 }
 
-pub(super) fn form_settled(id: &FormId) -> grapt_api::u3a::FormAlreadySettledErrorDto {
+pub(crate) fn form_settled(id: &FormId) -> grapt_api::u3a::FormAlreadySettledErrorDto {
     static_dto(json!({
         "_tag": "FormAlreadySettledError",
         "id": id.as_str(),
@@ -40,7 +40,7 @@ pub(super) fn form_settled(id: &FormId) -> grapt_api::u3a::FormAlreadySettledErr
     }))
 }
 
-pub(super) fn form_invalid_answer(
+pub(crate) fn form_invalid_answer(
     id: &FormId,
     message: &str,
 ) -> grapt_api::u3a::FormInvalidAnswerErrorDto {
@@ -83,7 +83,7 @@ fn record(
 /// caller asking "what is still blocking" must not be handed a form that has
 /// already been answered, and `state` is the route that answers the other
 /// question.
-pub(super) fn get(
+pub(crate) fn get(
     application: &DogfoodApplication,
     session: SessionId,
     id: FormId,
@@ -100,7 +100,7 @@ pub(super) fn get(
 ///
 /// This is the read a client polls after replying, so an answered form has to
 /// hand its answer back rather than report absence.
-pub(super) fn state(
+pub(crate) fn state(
     application: &DogfoodApplication,
     session: SessionId,
     id: FormId,
@@ -109,7 +109,7 @@ pub(super) fn state(
     state_response(&record.state)
 }
 
-pub(super) fn state_response(
+pub(crate) fn state_response(
     state: &FormState,
 ) -> Result<grapt_api::u3a::FormStateResponseDto, FormLookupApplicationError> {
     use grapt_api::u3a::*;
@@ -143,7 +143,7 @@ pub(super) fn state_response(
     Ok(FormStateResponseDto::new(Required::new(state)))
 }
 
-pub(super) fn create_and_notify(
+pub(crate) fn create_and_notify(
     application: &DogfoodApplication,
     session: SessionId,
     request: grapt_api::u3a::FormCreateRequestDto,
@@ -169,7 +169,7 @@ pub(super) fn create_and_notify(
     })
 }
 
-pub(super) fn create(
+pub(crate) fn create(
     application: &DogfoodApplication,
     session: SessionId,
     request: grapt_api::u3a::FormCreateRequestDto,
@@ -248,7 +248,7 @@ pub(super) fn create(
         .map_err(|error| FormCreateApplicationError::InvalidRequest(invalid(error)))
 }
 
-pub(super) fn reply(
+pub(crate) fn reply(
     application: &DogfoodApplication,
     session: SessionId,
     id: FormId,
@@ -304,7 +304,7 @@ pub(super) fn reply(
     }
 }
 
-pub(super) fn cancel(
+pub(crate) fn cancel(
     application: &DogfoodApplication,
     session: SessionId,
     id: FormId,
@@ -339,7 +339,7 @@ pub(super) fn cancel(
 
 // A lookup refusal carries into a settlement route unchanged: the same absence
 // must not become a different answer because the caller was writing.
-pub(super) fn reply_lookup(error: FormLookupApplicationError) -> FormReplyApplicationError {
+pub(crate) fn reply_lookup(error: FormLookupApplicationError) -> FormReplyApplicationError {
     match error {
         FormLookupApplicationError::InvalidRequest(value) => {
             FormReplyApplicationError::InvalidRequest(value)
@@ -353,7 +353,7 @@ pub(super) fn reply_lookup(error: FormLookupApplicationError) -> FormReplyApplic
     }
 }
 
-pub(super) fn cancel_lookup(error: FormLookupApplicationError) -> FormCancelApplicationError {
+pub(crate) fn cancel_lookup(error: FormLookupApplicationError) -> FormCancelApplicationError {
     match error {
         FormLookupApplicationError::InvalidRequest(value) => {
             FormCancelApplicationError::InvalidRequest(value)

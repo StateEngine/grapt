@@ -22,7 +22,7 @@ const MAX_FILTER_DRIVERS: usize = 64;
 const DIFF_DEADLINE: Duration = Duration::from_secs(10);
 const NULL_DEVICE: &str = if cfg!(windows) { "NUL" } else { "/dev/null" };
 
-pub(super) fn response(
+pub(crate) fn response(
     catalog: Arc<CatalogProjection>,
     query: ProjectCurrentLocationQueryDto,
 ) -> ApplicationFuture<WorkspaceDiffResponseDto, InvalidRequestErrorDto> {

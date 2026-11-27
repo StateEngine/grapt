@@ -41,7 +41,7 @@ impl Publication {
 }
 
 impl super::DogfoodApplication {
-    pub(super) fn catalog_snapshot(&self) -> Arc<CatalogProjection> {
+    pub(crate) fn catalog_snapshot(&self) -> Arc<CatalogProjection> {
         Arc::clone(&self.providers.snapshot().catalog)
     }
 }

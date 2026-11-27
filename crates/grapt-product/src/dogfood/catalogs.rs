@@ -21,19 +21,19 @@ use super::{locations, CatalogProjection};
 mod tests;
 
 /// Validate a candidate user configuration before making its prompt sources active.
-pub(super) fn validate_prompt_catalog(sources: &CatalogSources) -> Result<(), String> {
+pub(in crate::dogfood) fn validate_prompt_catalog(sources: &CatalogSources) -> Result<(), String> {
     let _ = commands(sources, &sources.directory.to_string_lossy())?;
     let _ = skills(sources, &sources.directory)?;
     Ok(())
 }
 
-pub(super) enum Kind {
+pub(crate) enum Kind {
     Commands,
     Skills,
     References,
 }
 
-pub(super) fn response<T: DeserializeOwned + Send + 'static>(
+pub(crate) fn response<T: DeserializeOwned + Send + 'static>(
     catalog: Arc<CatalogProjection>,
     query: ProjectCurrentLocationQueryDto,
     kind: Kind,
@@ -70,7 +70,7 @@ pub(super) fn response<T: DeserializeOwned + Send + 'static>(
     })
 }
 
-pub(super) fn transformed_response<T: DeserializeOwned + Send + 'static>(
+pub(crate) fn transformed_response<T: DeserializeOwned + Send + 'static>(
     catalog: Arc<CatalogProjection>,
     plugins: Arc<super::plugins::PluginRuntime>,
     query: ProjectCurrentLocationQueryDto,
@@ -121,7 +121,7 @@ pub(super) fn transformed_response<T: DeserializeOwned + Send + 'static>(
 
 /// The skill catalog for `directory`, after plugin transforms. The HTTP catalog,
 /// the model's skill guidance and the skill tool all read this one list.
-pub(super) async fn current_skills(
+pub(crate) async fn current_skills(
     plugins: &Arc<super::plugins::PluginRuntime>,
     directory: &Path,
 ) -> Result<SkillCatalog, String> {
@@ -139,16 +139,16 @@ pub(super) async fn current_skills(
 
 /// What the model is told about a skill before it activates one.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(super) struct SkillSummary {
-    pub(super) id: String,
-    pub(super) name: String,
-    pub(super) description: String,
+pub(crate) struct SkillSummary {
+    pub(crate) id: String,
+    pub(crate) name: String,
+    pub(crate) description: String,
 }
 
 /// Skills offered to the model: those with a description that have not opted
 /// out of model invocation (`autoinvoke: false`), ordered by id. Content stays
 /// in the catalog until the skill tool loads one deliberately.
-pub(super) fn offered(skills: &[Value]) -> Vec<SkillSummary> {
+pub(crate) fn offered(skills: &[Value]) -> Vec<SkillSummary> {
     let mut offered: Vec<SkillSummary> = skills
         .iter()
         .filter(|skill| skill.get("autoinvoke").and_then(Value::as_bool) != Some(false))
@@ -175,12 +175,12 @@ pub(super) fn offered(skills: &[Value]) -> Vec<SkillSummary> {
 mod command;
 #[cfg(test)]
 use command::model_ref;
-pub(super) use command::response as command_response;
+pub(crate) use command::response as command_response;
 fn commands(sources: &CatalogSources, project: &str) -> Result<Vec<Value>, String> {
     command::commands(sources, project)
         .map(|rows| rows.into_iter().map(command::strip_source).collect())
 }
-pub(super) fn command_draft(catalog: &CatalogProjection) -> Result<Value, String> {
+pub(crate) fn command_draft(catalog: &CatalogProjection) -> Result<Value, String> {
     let root = Path::new(&catalog.directory);
     let sources = CatalogSources::read(root, CatalogEnvironment::read(root)?)?;
     Ok(json!({"items":commands(&sources, &catalog.directory)?}))
@@ -244,9 +244,9 @@ fn skills(sources: &CatalogSources, directory: &Path) -> Result<Vec<Value>, Stri
     Ok(skills_from_sources(&source_values, false)?.entries)
 }
 
-pub(super) struct SkillCatalog {
-    pub(super) entries: Vec<Value>,
-    pub(super) warnings: Vec<String>,
+pub(crate) struct SkillCatalog {
+    pub(crate) entries: Vec<Value>,
+    pub(crate) warnings: Vec<String>,
 }
 
 fn skill_source_warnings(sources: &[Value]) -> Result<Vec<String>, String> {
@@ -609,7 +609,7 @@ fn repository_path(root: &Path, repository: &str, branch: Option<&str>) -> Resul
     Ok(result)
 }
 
-pub(super) fn yaml_field<'a>(value: &'a Yaml, key: &str) -> Option<&'a Yaml> {
+pub(crate) fn yaml_field<'a>(value: &'a Yaml, key: &str) -> Option<&'a Yaml> {
     value.as_hash()?.get(&Yaml::String(key.to_owned()))
 }
 
@@ -658,7 +658,7 @@ fn check_catalog(entries: &BTreeMap<String, Value>) -> Result<(), String> {
     Ok(())
 }
 
-pub(super) fn config_json(value: &ConfigValue) -> Result<Value, String> {
+pub(crate) fn config_json(value: &ConfigValue) -> Result<Value, String> {
     match value {
         ConfigValue::Null => Ok(Value::Null),
         ConfigValue::Bool(value) => Ok(Value::Bool(*value)),
@@ -678,7 +678,7 @@ pub(super) fn config_json(value: &ConfigValue) -> Result<Value, String> {
     }
 }
 
-pub(super) fn yaml_json(value: &Yaml) -> Result<Value, String> {
+pub(crate) fn yaml_json(value: &Yaml) -> Result<Value, String> {
     match value {
         Yaml::Null => Ok(Value::Null),
         Yaml::Boolean(value) => Ok(Value::Bool(*value)),

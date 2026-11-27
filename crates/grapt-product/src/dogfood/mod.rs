@@ -10,13 +10,13 @@ mod catalog_config;
 mod catalog_markdown;
 mod catalog_mcp;
 mod catalog_origin;
-mod catalogs;
+pub(crate) mod catalogs;
 pub(crate) mod claude_plugins;
 mod compact_route;
 mod compaction_config;
 pub(crate) mod connection_setup;
-mod connections;
-mod context;
+pub(crate) mod connections;
+pub(crate) mod context;
 mod context_projection;
 mod continuation;
 mod continuity_attention;
@@ -28,15 +28,15 @@ mod execution;
 pub(crate) mod first_use;
 mod followup;
 mod fork_route;
-mod form;
-mod form_catalog;
-mod global_form;
+pub(crate) mod form;
+pub(crate) mod form_catalog;
+pub(crate) mod global_form;
 mod global_form_events;
-mod history;
+pub(crate) mod history;
 mod history_compaction;
 mod history_json;
 mod history_notices;
-mod hook_import;
+pub(crate) mod hook_import;
 mod hooks;
 mod host_control;
 mod host_resume;
@@ -48,25 +48,25 @@ mod interrupt_pending;
 mod launch_mode;
 mod legacy_names;
 pub(crate) mod lifecycle;
-mod list;
+pub(crate) mod list;
 mod list_metadata;
-mod locations;
-mod mcp;
-mod mcp_config;
-mod mcp_content;
+pub(crate) mod locations;
+pub(crate) mod mcp;
+pub(crate) mod mcp_config;
+pub(crate) mod mcp_content;
 mod metadata_bound;
 mod model_inventory;
 mod native_mail;
 mod path_display;
 mod pending_list;
-mod permission;
+pub(crate) mod permission;
 mod permission_preset;
 mod permission_view;
 #[cfg(feature = "loopback-provider-testkit")]
 mod permission_view_fault;
 pub(crate) mod plugins;
 pub(crate) mod production;
-mod projects;
+pub(crate) mod projects;
 pub(crate) mod prompt_driver;
 mod prompt_images;
 mod prompt_submission;
@@ -77,16 +77,16 @@ mod public_terminal;
 mod read_projection;
 mod reconcile_route;
 mod rewind_route;
-mod sandbox_worktree_config;
+pub(crate) mod sandbox_worktree_config;
 mod schemas;
-mod selection;
+pub(crate) mod selection;
 mod session_config;
 mod session_cost;
 mod session_create;
 mod session_info;
 mod session_snapshot;
 mod session_status;
-mod session_title;
+pub(crate) mod session_title;
 mod side_route;
 mod skills_watch;
 mod source_cache;
@@ -97,7 +97,7 @@ mod stateengine_resume;
 mod step_events;
 pub(crate) mod stream_diagnostics;
 mod subagent;
-mod support;
+pub(crate) mod support;
 #[cfg(test)]
 mod test_provider;
 mod tools;
@@ -109,28 +109,20 @@ pub(crate) use tools::shim_main as terminal_shim_main;
 mod undo_route;
 mod usage;
 mod web_search;
-mod workspace_diff;
-mod workspace_worktree;
+pub(crate) mod workspace_diff;
+pub(crate) mod workspace_worktree;
 
 use std::num::NonZeroU32;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard};
 
+#[cfg(test)]
+use grapt_api::u3a::SessionListQueryDto;
 use grapt_api::u3a::{
-    AgentListResponseDto, AgentLocationQueryDto, ApplicationFuture, CatalogApplicationError,
-    DogfoodApplicationPort, FormCancelApplicationError, FormCreateApplicationError,
-    FormLookupApplicationError, FormReplyApplicationError, InterruptRequestDto,
-    InvalidRequestErrorDto, LocationInfoDto, MessageListQueryDto, ModelDefaultLocationQueryDto,
-    ModelDefaultResponseDto, ModelListResponseDto, ModelLocationQueryDto, NoContent,
-    PermissionApplicationError, PermissionCreateRequestDto, PermissionCreateResponseDto,
-    PermissionGlobalListResponseDto, PermissionListResponseDto, PermissionLocationQueryDto,
-    PermissionReplyRequestDto, PermissionResponseDto, PluginListResponseDto, ProjectCurrentDto,
-    ProjectCurrentLocationQueryDto, ProjectListResponseDto, PromptRequestDto, PromptResponseDto,
-    ProviderListResponseDto, ProviderLocationQueryDto, ServerConnectedEvent,
-    SessionActiveResponseDto, SessionCreateRequestDto, SessionListApplicationError,
-    SessionListQueryDto, SessionLookupApplicationError, SessionMessagesApplicationError,
-    SessionMessagesResponseDto, SessionPromptApplicationError, SessionResponseDto,
-    SessionsResponseDto, SseLimits, WireId,
+    ApplicationFuture, InterruptRequestDto, InvalidRequestErrorDto, NoContent,
+    ProjectCurrentLocationQueryDto, PromptRequestDto, PromptResponseDto, ServerConnectedEvent,
+    SessionLookupApplicationError, SessionPromptApplicationError, SessionResponseDto, SseLimits,
+    WireId,
 };
 use grapt_api::{DogfoodEventHub, SealedPrincipal};
 use grapt_artifact::{ArtifactStore, ReadBudget};
@@ -143,8 +135,8 @@ use grapt_store::{AggregateId, AttemptRecordCeiling, OsRandomIds, SystemClock, W
 #[cfg(test)]
 use grapt_types::ResolvedModelTarget;
 use grapt_types::{
-    ClockAuthority, DeliveryMode, DeterministicAuthorities, EventId, ExecutionId, FormId,
-    IdAuthority, MessageId, PermissionId, ProjectId, SessionId,
+    ClockAuthority, DeliveryMode, DeterministicAuthorities, EventId, ExecutionId, IdAuthority,
+    MessageId, PermissionId, ProjectId, SessionId,
 };
 use serde_json::{json, Value};
 use tokio::sync::watch;
@@ -154,8 +146,8 @@ use self::execution::{LiveDependencies, LiveExecutor};
 use self::production::ProductionProviderLimits;
 pub(crate) use self::public_terminal::{public_terminal, terminal_fragments};
 use self::support::{
-    active_read_failure, conflict, decode, invalid, not_found, public_content, ready,
-    should_execute, static_dto, unknown,
+    conflict, decode, invalid, not_found, public_content, ready, should_execute, static_dto,
+    unknown,
 };
 use self::usage::CompleteUsage;
 
@@ -317,16 +309,18 @@ pub enum DogfoodRefusal {
 }
 
 #[derive(Debug, Clone)]
-struct CatalogProjection {
-    accounts: std::collections::BTreeMap<grapt_types::ProviderId, grapt_types::AccountId>,
-    protocols: std::collections::BTreeMap<grapt_types::ProviderId, grapt_provider::ProtocolFamily>,
-    inventory: Option<Arc<grapt_platform::ModelInventory>>,
-    project: ProjectId,
-    directory: String,
-    provider: String,
-    model: String,
-    default_effort: Option<grapt_types::ModelVariantId>,
-    credential_record: Option<String>,
+pub(crate) struct CatalogProjection {
+    pub(crate) accounts:
+        std::collections::BTreeMap<grapt_types::ProviderId, grapt_types::AccountId>,
+    pub(crate) protocols:
+        std::collections::BTreeMap<grapt_types::ProviderId, grapt_provider::ProtocolFamily>,
+    pub(crate) inventory: Option<Arc<grapt_platform::ModelInventory>>,
+    pub(crate) project: ProjectId,
+    pub(crate) directory: String,
+    pub(crate) provider: String,
+    pub(crate) model: String,
+    pub(crate) default_effort: Option<grapt_types::ModelVariantId>,
+    pub(crate) credential_record: Option<String>,
 }
 
 #[allow(
@@ -345,9 +339,9 @@ pub struct DogfoodApplication {
     prompt_mailbox: prompt_driver::PromptMailbox,
     agent_activity: tokio::sync::watch::Sender<()>,
     hub: Arc<DogfoodEventHub>,
-    inbox: Arc<Mutex<Inbox>>,
-    ids: Arc<OsRandomIds>,
-    clock: Arc<SystemClock>,
+    pub(crate) inbox: Arc<Mutex<Inbox>>,
+    pub(crate) ids: Arc<OsRandomIds>,
+    pub(crate) clock: Arc<SystemClock>,
     providers: provider_generation::Publication,
     skills_watch: Arc<skills_watch::Watch>,
     executor: Arc<ExecutionBackend>,
@@ -360,7 +354,7 @@ pub struct DogfoodApplication {
     /// the application rather than on a request so a status poll reports a
     /// live session instead of forking a process per call.
     mcp: Arc<mcp::McpRegistry>,
-    plugins: Arc<plugins::PluginRuntime>,
+    pub(crate) plugins: Arc<plugins::PluginRuntime>,
     /// This process's subagent runtime generation, taken once at composition.
     /// It separates the operations this runtime owns from those a dead one
     /// left behind; see [`subagent::adopt_runtime`].
@@ -663,7 +657,7 @@ impl DogfoodApplication {
             .map_err(|_| "event identity was invalid".to_owned())
     }
 
-    fn lock_inbox(&self) -> MutexGuard<'_, Inbox> {
+    pub(crate) fn lock_inbox(&self) -> MutexGuard<'_, Inbox> {
         match self.inbox.lock() {
             Ok(guard) => guard,
             Err(poisoned) => poisoned.into_inner(),
@@ -685,14 +679,17 @@ impl DogfoodApplication {
         }
     }
 
-    fn session_response(
+    pub(crate) fn session_response(
         &self,
         record: &grapt_session::SessionRecord,
     ) -> Result<SessionResponseDto, InvalidRequestErrorDto> {
         decode(json!({"data": self.session_info(record).map_err(invalid)?})).map_err(invalid)
     }
 
-    fn get_record(&self, session: &SessionId) -> Result<grapt_session::SessionRecord, String> {
+    pub(crate) fn get_record(
+        &self,
+        session: &SessionId,
+    ) -> Result<grapt_session::SessionRecord, String> {
         let authorities = DeterministicAuthorities::new(&*self.clock, &*self.ids);
         let record = SessionPorts::new(Arc::clone(&self.inbox), &authorities)
             .get(session)
@@ -734,953 +731,6 @@ impl DogfoodApplication {
             }
         }
         String::from_utf8(bytes).map_err(|_| "artifact is not UTF-8".to_owned())
-    }
-}
-
-impl DogfoodApplicationPort for DogfoodApplication {
-    fn session_rename(
-        &self,
-        _principal: SealedPrincipal,
-        session_id: WireId<SessionId>,
-        request: grapt_api::u3a::SessionRenameRequestDto,
-    ) -> ApplicationFuture<NoContent, SessionLookupApplicationError> {
-        ready(session_title::manual(
-            self,
-            session_id.into_inner(),
-            request,
-        ))
-    }
-    fn session_agent_select(
-        &self,
-        _principal: SealedPrincipal,
-        session_id: WireId<SessionId>,
-        request: grapt_api::u3a::SessionAgentSelectDto,
-    ) -> ApplicationFuture<NoContent, SessionLookupApplicationError> {
-        ready(selection::agent(self, session_id.into_inner(), request))
-    }
-
-    fn session_model_select(
-        &self,
-        _principal: SealedPrincipal,
-        session_id: WireId<SessionId>,
-        request: grapt_api::u3a::SessionModelSelectDto,
-    ) -> ApplicationFuture<NoContent, SessionLookupApplicationError> {
-        ready(selection::model(self, session_id.into_inner(), request))
-    }
-    fn session_preset_get(
-        &self,
-        _principal: SealedPrincipal,
-        session_id: WireId<SessionId>,
-    ) -> ApplicationFuture<grapt_api::u3a::SessionPresetResponseDto, SessionLookupApplicationError>
-    {
-        ready(selection::preset_get(self, session_id.into_inner()))
-    }
-
-    fn session_preset_select(
-        &self,
-        _principal: SealedPrincipal,
-        session_id: WireId<SessionId>,
-        request: grapt_api::u3a::SessionPresetSelectDto,
-    ) -> ApplicationFuture<NoContent, SessionLookupApplicationError> {
-        ready(selection::preset(self, session_id.into_inner(), request))
-    }
-
-    fn session_subagent_model_get(
-        &self,
-        _principal: SealedPrincipal,
-        session_id: WireId<SessionId>,
-    ) -> ApplicationFuture<
-        grapt_api::u3a::SessionSubagentModelResponseDto,
-        SessionLookupApplicationError,
-    > {
-        ready(selection::subagent_get(self, session_id.into_inner()))
-    }
-    fn session_subagent_model_set(
-        &self,
-        _principal: SealedPrincipal,
-        session_id: WireId<SessionId>,
-        request: grapt_api::u3a::SessionModelSelectDto,
-    ) -> ApplicationFuture<NoContent, SessionLookupApplicationError> {
-        ready(selection::subagent_set(
-            self,
-            session_id.into_inner(),
-            Some(request),
-        ))
-    }
-    fn session_subagent_model_clear(
-        &self,
-        _principal: SealedPrincipal,
-        session_id: WireId<SessionId>,
-    ) -> ApplicationFuture<NoContent, SessionLookupApplicationError> {
-        ready(selection::subagent_set(self, session_id.into_inner(), None))
-    }
-    fn sandbox_grant_list(
-        &self,
-        _principal: SealedPrincipal,
-        session: WireId<SessionId>,
-    ) -> ApplicationFuture<
-        grapt_api::u3a::SandboxGrantListResponseDto,
-        grapt_api::u3a::PermissionApplicationError,
-    > {
-        ready(permission::grants::list(self, session.into_inner()))
-    }
-    fn sandbox_grant_revoke(
-        &self,
-        principal: SealedPrincipal,
-        session: WireId<SessionId>,
-        request: grapt_api::u3a::SandboxGrantDto,
-    ) -> ApplicationFuture<
-        grapt_api::u3a::SandboxGrantRevokeResponseDto,
-        grapt_api::u3a::PermissionApplicationError,
-    > {
-        permission::grants::revoke(self, principal, session.into_inner(), request)
-    }
-    fn permission_saved_list(
-        &self,
-        _principal: SealedPrincipal,
-        project: Option<WireId<ProjectId>>,
-    ) -> ApplicationFuture<grapt_api::u3a::PermissionSavedListResponseDto, InvalidRequestErrorDto>
-    {
-        ready(permission::saved(self, project.map(WireId::into_inner)))
-    }
-    fn session_form_list(
-        &self,
-        _principal: SealedPrincipal,
-        session_id: WireId<SessionId>,
-    ) -> ApplicationFuture<grapt_api::u3a::SessionFormListResponseDto, SessionLookupApplicationError>
-    {
-        ready((|| {
-            let session = session_id.into_inner();
-            context::require_session(self, &session)?;
-            let held = self.lock_inbox();
-            let forms = grapt_form::catalog::pending_forms_for(held.store(), Some(&session))
-                .map_err(|error| SessionLookupApplicationError::InvalidRequest(invalid(error)))?;
-            decode(json!({"data": forms.into_iter().map(|form| form.info).collect::<Vec<_>>()}))
-                .map_err(|error| SessionLookupApplicationError::InvalidRequest(invalid(error)))
-        })())
-    }
-
-    fn global_form_get(
-        &self,
-        _principal: SealedPrincipal,
-        form_id: WireId<grapt_types::FormId>,
-        query: ProjectCurrentLocationQueryDto,
-    ) -> ApplicationFuture<
-        grapt_api::u3a::FormResponseDto,
-        grapt_api::u3a::FormLookupApplicationError,
-    > {
-        Box::pin(global_form::get(self.clone(), form_id.into_inner(), query))
-    }
-    fn global_form_state(
-        &self,
-        _principal: SealedPrincipal,
-        form_id: WireId<grapt_types::FormId>,
-        query: ProjectCurrentLocationQueryDto,
-    ) -> ApplicationFuture<
-        grapt_api::u3a::FormStateResponseDto,
-        grapt_api::u3a::FormLookupApplicationError,
-    > {
-        Box::pin(global_form::state(
-            self.clone(),
-            form_id.into_inner(),
-            query,
-        ))
-    }
-    fn global_form_reply(
-        &self,
-        _principal: SealedPrincipal,
-        form_id: WireId<grapt_types::FormId>,
-        query: ProjectCurrentLocationQueryDto,
-        request: grapt_api::u3a::FormReplyRequestDto,
-    ) -> ApplicationFuture<NoContent, grapt_api::u3a::FormReplyApplicationError> {
-        Box::pin(global_form::reply(
-            self.clone(),
-            form_id.into_inner(),
-            query,
-            request,
-        ))
-    }
-    fn global_form_cancel(
-        &self,
-        _principal: SealedPrincipal,
-        form_id: WireId<grapt_types::FormId>,
-        query: ProjectCurrentLocationQueryDto,
-    ) -> ApplicationFuture<NoContent, grapt_api::u3a::FormCancelApplicationError> {
-        Box::pin(global_form::cancel(
-            self.clone(),
-            form_id.into_inner(),
-            query,
-        ))
-    }
-
-    fn session_form_create(
-        &self,
-        _principal: SealedPrincipal,
-        session_id: WireId<SessionId>,
-        request: grapt_api::u3a::FormCreateRequestDto,
-    ) -> ApplicationFuture<grapt_api::u3a::FormResponseDto, FormCreateApplicationError> {
-        form::create_and_notify(self, session_id.into_inner(), request)
-    }
-
-    fn session_form_get(
-        &self,
-        _principal: SealedPrincipal,
-        session_id: WireId<SessionId>,
-        form_id: WireId<FormId>,
-    ) -> ApplicationFuture<grapt_api::u3a::FormResponseDto, FormLookupApplicationError> {
-        ready(form::get(
-            self,
-            session_id.into_inner(),
-            form_id.into_inner(),
-        ))
-    }
-
-    fn session_form_state(
-        &self,
-        _principal: SealedPrincipal,
-        session_id: WireId<SessionId>,
-        form_id: WireId<FormId>,
-    ) -> ApplicationFuture<grapt_api::u3a::FormStateResponseDto, FormLookupApplicationError> {
-        ready(form::state(
-            self,
-            session_id.into_inner(),
-            form_id.into_inner(),
-        ))
-    }
-
-    fn session_form_reply(
-        &self,
-        _principal: SealedPrincipal,
-        session_id: WireId<SessionId>,
-        form_id: WireId<FormId>,
-        request: grapt_api::u3a::FormReplyRequestDto,
-    ) -> ApplicationFuture<NoContent, FormReplyApplicationError> {
-        ready(form::reply(
-            self,
-            session_id.into_inner(),
-            form_id.into_inner(),
-            request,
-        ))
-    }
-
-    fn session_form_cancel(
-        &self,
-        _principal: SealedPrincipal,
-        session_id: WireId<SessionId>,
-        form_id: WireId<FormId>,
-    ) -> ApplicationFuture<NoContent, FormCancelApplicationError> {
-        ready(form::cancel(
-            self,
-            session_id.into_inner(),
-            form_id.into_inner(),
-        ))
-    }
-
-    fn session_pending_list(
-        &self,
-        _principal: SealedPrincipal,
-        session_id: WireId<SessionId>,
-    ) -> ApplicationFuture<
-        grapt_api::u3a::SessionPendingListResponseDto,
-        SessionLookupApplicationError,
-    > {
-        ready(self.pending_list(session_id))
-    }
-
-    fn shell_list(
-        &self,
-        _principal: SealedPrincipal,
-        query: ProjectCurrentLocationQueryDto,
-    ) -> ApplicationFuture<grapt_api::u3a::ShellListResponseDto, InvalidRequestErrorDto> {
-        let application = self.clone();
-        Box::pin(async move {
-            let location = locations::resolve(&application.catalog_snapshot(), &query)
-                .await
-                .map_err(invalid)?;
-            // The route stays for the desktop renderer's route contract, which
-            // lists GET /api/shell. Nothing populates a durable shell inventory,
-            // so the answer is an empty scoped list and no store is read.
-            let data: Vec<grapt_api::u3a::ShellInfoDto> = Vec::new();
-            decode(json!({"location": location.wire(), "data":data})).map_err(invalid)
-        })
-    }
-    fn session_capability_put(
-        &self,
-        principal: SealedPrincipal,
-        session_id: WireId<SessionId>,
-        request: grapt_api::u3a::SessionCapabilityPutDto,
-    ) -> ApplicationFuture<NoContent, SessionLookupApplicationError> {
-        ready(context::capability(
-            self,
-            principal,
-            session_id.into_inner(),
-            request,
-        ))
-    }
-    fn instruction_entry_list(
-        &self,
-        _principal: SealedPrincipal,
-        session_id: WireId<SessionId>,
-    ) -> ApplicationFuture<grapt_api::u3a::InstructionEntryListDto, SessionLookupApplicationError>
-    {
-        ready(context::entries(self, session_id.into_inner()))
-    }
-    fn instruction_inspect(
-        &self,
-        _principal: SealedPrincipal,
-        session_id: WireId<SessionId>,
-    ) -> ApplicationFuture<grapt_api::u3a::InstructionInspectionDto, SessionLookupApplicationError>
-    {
-        ready(context::inspect(self, session_id.into_inner()))
-    }
-    fn instruction_entry_put(
-        &self,
-        _principal: SealedPrincipal,
-        session_id: WireId<SessionId>,
-        key: grapt_api::u3a::InstructionEntryKeyDto,
-        request: grapt_api::u3a::InstructionEntryPutDto,
-    ) -> ApplicationFuture<NoContent, SessionLookupApplicationError> {
-        ready(context::put(self, session_id.into_inner(), key, request))
-    }
-    fn instruction_entry_remove(
-        &self,
-        _principal: SealedPrincipal,
-        session_id: WireId<SessionId>,
-        key: grapt_api::u3a::InstructionEntryKeyDto,
-    ) -> ApplicationFuture<NoContent, SessionLookupApplicationError> {
-        ready(context::remove(self, session_id.into_inner(), key))
-    }
-    fn integration_list(
-        &self,
-        _principal: SealedPrincipal,
-        query: ProjectCurrentLocationQueryDto,
-    ) -> ApplicationFuture<grapt_api::u3a::IntegrationListResponseDto, InvalidRequestErrorDto> {
-        connections::integrations(self, query)
-    }
-
-    fn plugin_list(
-        &self,
-        _principal: SealedPrincipal,
-        query: ProjectCurrentLocationQueryDto,
-    ) -> ApplicationFuture<PluginListResponseDto, InvalidRequestErrorDto> {
-        plugins::list(self, query)
-    }
-
-    fn workspace_diff(
-        &self,
-        _principal: SealedPrincipal,
-        query: ProjectCurrentLocationQueryDto,
-    ) -> ApplicationFuture<grapt_api::u3a::WorkspaceDiffResponseDto, InvalidRequestErrorDto> {
-        workspace_diff::response(Arc::clone(&self.catalog_snapshot()), query)
-    }
-
-    fn workspace_worktree(
-        &self,
-        _principal: SealedPrincipal,
-        query: ProjectCurrentLocationQueryDto,
-        request: grapt_api::u3a::WorkspaceWorktreeRequestDto,
-    ) -> ApplicationFuture<grapt_api::u3a::WorkspaceWorktreeResponseDto, InvalidRequestErrorDto>
-    {
-        workspace_worktree::response(self.clone(), query, request)
-    }
-
-    fn hook_import(
-        &self,
-        _principal: SealedPrincipal,
-        query: ProjectCurrentLocationQueryDto,
-        request: grapt_api::u3a::HookImportRequestDto,
-    ) -> ApplicationFuture<grapt_api::u3a::HookImportResponseDto, InvalidRequestErrorDto> {
-        hook_import::request(self.clone(), query, request)
-    }
-
-    fn mcp_inspect(
-        &self,
-        _principal: SealedPrincipal,
-        query: ProjectCurrentLocationQueryDto,
-    ) -> ApplicationFuture<grapt_api::u3a::McpInspectionResponseDto, InvalidRequestErrorDto> {
-        connections::inspect(self, query)
-    }
-
-    fn mcp_list(
-        &self,
-        _principal: SealedPrincipal,
-        query: ProjectCurrentLocationQueryDto,
-    ) -> ApplicationFuture<grapt_api::u3a::McpListResponseDto, InvalidRequestErrorDto> {
-        connections::response(self.clone(), query, connections::Kind::McpServers)
-    }
-
-    fn mcp_configuration_list(
-        &self,
-        _principal: SealedPrincipal,
-        query: ProjectCurrentLocationQueryDto,
-    ) -> ApplicationFuture<grapt_api::u3a::McpConfigurationListResponseDto, InvalidRequestErrorDto>
-    {
-        connections::configuration(self, query)
-    }
-
-    fn mcp_add(
-        &self,
-        _principal: SealedPrincipal,
-        server: String,
-        query: ProjectCurrentLocationQueryDto,
-        request: grapt_api::u3a::McpAddRequestDto,
-    ) -> ApplicationFuture<NoContent, InvalidRequestErrorDto> {
-        connections::add_runtime(self.clone(), server, query, request)
-    }
-
-    fn mcp_approval(
-        &self,
-        _principal: SealedPrincipal,
-        server: String,
-        query: ProjectCurrentLocationQueryDto,
-    ) -> ApplicationFuture<grapt_api::u3a::McpApprovalPreviewDto, InvalidRequestErrorDto> {
-        mcp_config::preview(self.clone(), server, query)
-    }
-
-    fn mcp_configuration(
-        &self,
-        _principal: SealedPrincipal,
-        server: String,
-        query: ProjectCurrentLocationQueryDto,
-        request: grapt_api::u3a::McpConfigurationRequestDto,
-    ) -> ApplicationFuture<NoContent, InvalidRequestErrorDto> {
-        mcp_config::request(self.clone(), server, query, request)
-    }
-
-    fn mcp_reconnect(
-        &self,
-        _principal: SealedPrincipal,
-        server: String,
-        query: ProjectCurrentLocationQueryDto,
-    ) -> ApplicationFuture<NoContent, InvalidRequestErrorDto> {
-        connections::reconnect(self.clone(), server, query)
-    }
-
-    fn mcp_auth(
-        &self,
-        _principal: SealedPrincipal,
-        server: String,
-        query: ProjectCurrentLocationQueryDto,
-        request: grapt_api::u3a::McpAuthRequestDto,
-    ) -> ApplicationFuture<grapt_api::u3a::McpAuthResponseDto, InvalidRequestErrorDto> {
-        mcp::auth_api::respond(self.clone(), server, query, request)
-    }
-
-    fn mcp_content(
-        &self,
-        _principal: SealedPrincipal,
-        server: String,
-        query: ProjectCurrentLocationQueryDto,
-        request: grapt_api::u3a::McpContentRequestDto,
-    ) -> ApplicationFuture<grapt_api::u3a::McpContentResponseDto, InvalidRequestErrorDto> {
-        mcp_content::respond(self.clone(), server, query, request)
-    }
-
-    fn mcp_resources(
-        &self,
-        _principal: SealedPrincipal,
-        query: ProjectCurrentLocationQueryDto,
-    ) -> ApplicationFuture<grapt_api::u3a::McpResourcesResponseDto, InvalidRequestErrorDto> {
-        mcp_content::all_resources(self.clone(), query)
-    }
-
-    fn question_request_list(
-        &self,
-        _principal: SealedPrincipal,
-        query: ProjectCurrentLocationQueryDto,
-    ) -> ApplicationFuture<grapt_api::u3a::QuestionListResponseDto, InvalidRequestErrorDto> {
-        let catalog = Arc::clone(&self.catalog_snapshot());
-        Box::pin(async move {
-            let location = locations::resolve(&catalog, &query)
-                .await
-                .map_err(invalid)?;
-            // Rust emits forms, not legacy question events. Do not turn forms
-            // into questions or hide an invalid/unreadable location as empty.
-            decode(json!({"location": location.wire(), "data": []})).map_err(invalid)
-        })
-    }
-
-    fn form_request_list(
-        &self,
-        _principal: SealedPrincipal,
-        query: ProjectCurrentLocationQueryDto,
-    ) -> ApplicationFuture<grapt_api::u3a::FormListResponseDto, InvalidRequestErrorDto> {
-        form_catalog::list(self.clone(), query)
-    }
-
-    fn command_inspect(
-        &self,
-        _principal: SealedPrincipal,
-        query: ProjectCurrentLocationQueryDto,
-    ) -> ApplicationFuture<grapt_api::u3a::CommandInspectionResponseDto, InvalidRequestErrorDto>
-    {
-        catalogs::command_response(self.clone(), query, true)
-    }
-
-    fn command_list(
-        &self,
-        _principal: SealedPrincipal,
-        query: ProjectCurrentLocationQueryDto,
-    ) -> ApplicationFuture<grapt_api::u3a::CommandListResponseDto, InvalidRequestErrorDto> {
-        catalogs::command_response(self.clone(), query, false)
-    }
-
-    fn skill_list(
-        &self,
-        _principal: SealedPrincipal,
-        query: ProjectCurrentLocationQueryDto,
-    ) -> ApplicationFuture<grapt_api::u3a::SkillListResponseDto, InvalidRequestErrorDto> {
-        catalogs::transformed_response(
-            Arc::clone(&self.catalog_snapshot()),
-            Arc::clone(&self.plugins),
-            query,
-            catalogs::Kind::Skills,
-        )
-    }
-
-    fn reference_list(
-        &self,
-        _principal: SealedPrincipal,
-        query: ProjectCurrentLocationQueryDto,
-    ) -> ApplicationFuture<grapt_api::u3a::ReferenceListResponseDto, InvalidRequestErrorDto> {
-        catalogs::transformed_response(
-            Arc::clone(&self.catalog_snapshot()),
-            Arc::clone(&self.plugins),
-            query,
-            catalogs::Kind::References,
-        )
-    }
-
-    fn location_get(
-        &self,
-        _principal: SealedPrincipal,
-        query: ProjectCurrentLocationQueryDto,
-    ) -> ApplicationFuture<LocationInfoDto, InvalidRequestErrorDto> {
-        let catalog = Arc::clone(&self.catalog_snapshot());
-        Box::pin(async move {
-            let resolved = locations::resolve(&catalog, &query)
-                .await
-                .map_err(invalid)?;
-            decode(resolved.wire()).map_err(invalid)
-        })
-    }
-
-    fn project_list(
-        &self,
-        _principal: SealedPrincipal,
-    ) -> ApplicationFuture<ProjectListResponseDto, InvalidRequestErrorDto> {
-        ready(projects::list(self).map_err(invalid))
-    }
-
-    fn project_current(
-        &self,
-        _principal: SealedPrincipal,
-        query: ProjectCurrentLocationQueryDto,
-    ) -> ApplicationFuture<ProjectCurrentDto, InvalidRequestErrorDto> {
-        let application = self.clone();
-        Box::pin(async move {
-            let resolved = locations::resolve_for(&application, &query)
-                .await
-                .map_err(invalid)?;
-            decode(
-                json!({"id": resolved.project.as_str(), "directory": resolved.project_directory}),
-            )
-            .map_err(invalid)
-        })
-    }
-
-    fn provider_list(
-        &self,
-        _principal: SealedPrincipal,
-        query: ProviderLocationQueryDto,
-    ) -> ApplicationFuture<ProviderListResponseDto, CatalogApplicationError> {
-        let application = self.clone();
-        let plugins = Arc::clone(&self.plugins);
-        let draft = match plugins::catalog_draft(self) {
-            Ok(draft) => draft,
-            Err(error) => {
-                return ready(Err(CatalogApplicationError::InvalidRequest(invalid(error))));
-            }
-        };
-        Box::pin(async move {
-            let query = serde_json::to_value(query)
-                .map_err(|error| CatalogApplicationError::InvalidRequest(invalid(error)))?;
-            let query = decode(query)
-                .map_err(|error| CatalogApplicationError::InvalidRequest(invalid(error)))?;
-            let location = locations::resolve_for(&application, &query)
-                .await
-                .map_err(|error| CatalogApplicationError::InvalidRequest(invalid(error)))?;
-            let transformed = plugins
-                .transform_current("catalog", draft)
-                .await
-                .map_err(|error| CatalogApplicationError::InvalidRequest(invalid(error)))?;
-            let data = transformed["providers"]
-                .as_array()
-                .ok_or_else(|| {
-                    CatalogApplicationError::InvalidRequest(invalid(
-                        "plugin catalog transform removed the provider list",
-                    ))
-                })?
-                .iter()
-                .map(|record| record["provider"].clone())
-                .collect::<Vec<_>>();
-            decode(json!({"location":location.wire(),"data":data}))
-                .map_err(|error| CatalogApplicationError::InvalidRequest(invalid(error)))
-        })
-    }
-
-    fn model_list(
-        &self,
-        _principal: SealedPrincipal,
-        query: ModelLocationQueryDto,
-    ) -> ApplicationFuture<ModelListResponseDto, CatalogApplicationError> {
-        let plugins = Arc::clone(&self.plugins);
-        let draft = match plugins::catalog_draft(self) {
-            Ok(draft) => draft,
-            Err(error) => {
-                return ready(Err(CatalogApplicationError::InvalidRequest(invalid(error))));
-            }
-        };
-        let application = self.clone();
-        Box::pin(async move {
-            let query = serde_json::to_value(query)
-                .map_err(|error| CatalogApplicationError::InvalidRequest(invalid(error)))?;
-            let query = decode(query)
-                .map_err(|error| CatalogApplicationError::InvalidRequest(invalid(error)))?;
-            let location = locations::resolve_for(&application, &query)
-                .await
-                .map_err(|error| CatalogApplicationError::InvalidRequest(invalid(error)))?;
-            let transformed = plugins
-                .transform_current("catalog", draft)
-                .await
-                .map_err(|error| CatalogApplicationError::InvalidRequest(invalid(error)))?;
-            let data = transformed["providers"]
-                .as_array()
-                .ok_or_else(|| {
-                    CatalogApplicationError::InvalidRequest(invalid(
-                        "plugin catalog transform removed the provider list",
-                    ))
-                })?
-                .iter()
-                .flat_map(|record| record["models"].as_array().into_iter().flatten().cloned())
-                .collect::<Vec<_>>();
-            decode(json!({"location":location.wire(),"data":data}))
-                .map_err(|error| CatalogApplicationError::InvalidRequest(invalid(error)))
-        })
-    }
-
-    fn model_default(
-        &self,
-        _principal: SealedPrincipal,
-        query: ModelDefaultLocationQueryDto,
-    ) -> ApplicationFuture<ModelDefaultResponseDto, CatalogApplicationError> {
-        let plugins = Arc::clone(&self.plugins);
-        let draft = match plugins::catalog_draft(self) {
-            Ok(draft) => draft,
-            Err(error) => {
-                return ready(Err(CatalogApplicationError::InvalidRequest(invalid(error))));
-            }
-        };
-        let application = self.clone();
-        Box::pin(async move {
-            let query = serde_json::to_value(query)
-                .map_err(|error| CatalogApplicationError::InvalidRequest(invalid(error)))?;
-            let query = decode(query)
-                .map_err(|error| CatalogApplicationError::InvalidRequest(invalid(error)))?;
-            let location = locations::resolve_for(&application, &query)
-                .await
-                .map_err(|error| CatalogApplicationError::InvalidRequest(invalid(error)))?;
-            let transformed = plugins
-                .transform_current("catalog", draft)
-                .await
-                .map_err(|error| CatalogApplicationError::InvalidRequest(invalid(error)))?;
-            let selected = transformed.get("default").cloned().unwrap_or(Value::Null);
-            let provider = selected.get("providerID").and_then(Value::as_str);
-            let model = selected.get("modelID").and_then(Value::as_str);
-            let data = transformed["providers"]
-                .as_array()
-                .into_iter()
-                .flatten()
-                .filter(|record| record["provider"]["id"].as_str() == provider)
-                .flat_map(|record| record["models"].as_array().into_iter().flatten())
-                .find(|item| item["id"].as_str() == model)
-                .cloned()
-                .unwrap_or(Value::Null);
-            decode(json!({"location":location.wire(),"data":data}))
-                .map_err(|error| CatalogApplicationError::InvalidRequest(invalid(error)))
-        })
-    }
-
-    fn agent_list(
-        &self,
-        _principal: SealedPrincipal,
-        query: AgentLocationQueryDto,
-    ) -> ApplicationFuture<AgentListResponseDto, InvalidRequestErrorDto> {
-        let plugins = Arc::clone(&self.plugins);
-        let application = self.clone();
-        Box::pin(async move {
-            let query = serde_json::to_value(query).map_err(invalid)?;
-            let query = decode(query).map_err(invalid)?;
-            let location = locations::resolve_for(&application, &query)
-                .await
-                .map_err(invalid)?;
-            let agents = selection::agent_inventory(
-                &application.catalog_snapshot(),
-                plugins.service_root(),
-                Path::new(&location.directory),
-            )
-            .map_err(invalid)?;
-            let transformed = plugins
-                .transform_current("agent", json!({"items":agents,"default":null}))
-                .await
-                .map_err(invalid)?;
-            let data = transformed
-                .get("items")
-                .cloned()
-                .ok_or_else(|| invalid("plugin agent transform removed the item list"))?;
-            decode(json!({"location":location.wire(),"data":data})).map_err(invalid)
-        })
-    }
-
-    fn session_list(
-        &self,
-        _principal: SealedPrincipal,
-        query: SessionListQueryDto,
-    ) -> ApplicationFuture<SessionsResponseDto, SessionListApplicationError> {
-        self.read_projection(
-            move |application| list::response(application, query),
-            |_| SessionListApplicationError::Unavailable,
-        )
-    }
-
-    fn session_active(
-        &self,
-        _principal: SealedPrincipal,
-    ) -> ApplicationFuture<SessionActiveResponseDto, grapt_api::u3a::SessionActiveApplicationError>
-    {
-        self.read_projection(
-            // Both the projection's own refusal and the reader wait go through one
-            // classifier, so a busy wait cannot become a bad request on either path.
-            |application| {
-                application
-                    .active_session_response()
-                    .map_err(|detail| active_read_failure(&detail))
-            },
-            |detail| active_read_failure(&detail),
-        )
-    }
-
-    fn session_create(
-        &self,
-        _principal: SealedPrincipal,
-        request: SessionCreateRequestDto,
-        launch: Option<grapt_types::SessionLaunch>,
-    ) -> ApplicationFuture<SessionResponseDto, InvalidRequestErrorDto> {
-        let application = self.clone();
-        Box::pin(async move {
-            let requested_id = request.id().as_value().map(|id| id.as_inner().clone());
-            let request = serde_json::to_value(request).map_err(invalid)?;
-            let prepared = application
-                .prepare_create(&request, requested_id, launch)
-                .await?;
-            let created = {
-                let authorities =
-                    DeterministicAuthorities::new(&*application.clock, &*application.ids);
-                SessionPorts::new(Arc::clone(&application.inbox), &authorities)
-                    .create(&prepared.seed)
-                    .map_err(invalid)?
-            };
-            let record = application.get_record(&created.session).map_err(invalid)?;
-            sandbox_worktree_config::observe(
-                &application,
-                &created.session,
-                Path::new(record.placement.directory()),
-            )
-            .await;
-            application.session_response(&record)
-        })
-    }
-
-    fn session_get(
-        &self,
-        _principal: SealedPrincipal,
-        session_id: WireId<SessionId>,
-    ) -> ApplicationFuture<SessionResponseDto, SessionLookupApplicationError> {
-        self.read_session(session_id.into_inner())
-    }
-
-    fn session_sandbox_worktree_config_get(
-        &self,
-        _principal: SealedPrincipal,
-        session: WireId<SessionId>,
-    ) -> ApplicationFuture<
-        grapt_api::u3a::SandboxWorktreeConfigResponseDto,
-        SessionLookupApplicationError,
-    > {
-        sandbox_worktree_config::get(self.clone(), session.into_inner())
-    }
-
-    fn session_sandbox_worktree_config_create(
-        &self,
-        _principal: SealedPrincipal,
-        session: WireId<SessionId>,
-        request: grapt_api::u3a::SandboxWorktreeConfigRequestDto,
-    ) -> ApplicationFuture<
-        grapt_api::u3a::SandboxWorktreeConfigResponseDto,
-        SessionLookupApplicationError,
-    > {
-        sandbox_worktree_config::create(self.clone(), session.into_inner(), request)
-    }
-
-    fn session_delete(
-        &self,
-        _principal: SealedPrincipal,
-        session_id: WireId<SessionId>,
-    ) -> ApplicationFuture<NoContent, SessionLookupApplicationError> {
-        ready(context::delete_session(self, session_id.into_inner()))
-    }
-
-    fn side_question(
-        &self,
-        _principal: SealedPrincipal,
-        session_id: WireId<SessionId>,
-        request: grapt_api::u3a::SideQuestionRequestDto,
-    ) -> ApplicationFuture<grapt_api::u3a::SideQuestionResponseDto, SessionLookupApplicationError>
-    {
-        self.answer_side_question(session_id.into_inner(), request)
-    }
-
-    fn session_fork(
-        &self,
-        _principal: SealedPrincipal,
-        session_id: WireId<SessionId>,
-        request: grapt_api::u3a::SessionForkRequestDto,
-    ) -> ApplicationFuture<SessionResponseDto, SessionLookupApplicationError> {
-        ready(self.fork_session_request(session_id.into_inner(), request))
-    }
-
-    fn session_messages(
-        &self,
-        principal: SealedPrincipal,
-        session_id: WireId<SessionId>,
-        query: MessageListQueryDto,
-    ) -> ApplicationFuture<SessionMessagesResponseDto, SessionMessagesApplicationError> {
-        self.session_messages_view(
-            principal,
-            session_id,
-            query,
-            grapt_api::u3a::MessageListView::Durable,
-        )
-    }
-
-    fn session_messages_view(
-        &self,
-        _principal: SealedPrincipal,
-        session_id: WireId<SessionId>,
-        query: MessageListQueryDto,
-        view: grapt_api::u3a::MessageListView,
-    ) -> ApplicationFuture<SessionMessagesResponseDto, SessionMessagesApplicationError> {
-        self.read_projection(
-            move |application| {
-                history::messages_get(application, &session_id.into_inner(), query, view)
-            },
-            |_| SessionMessagesApplicationError::Unavailable,
-        )
-    }
-
-    fn session_message(
-        &self,
-        _principal: SealedPrincipal,
-        session_id: WireId<SessionId>,
-        message_id: WireId<MessageId>,
-    ) -> ApplicationFuture<
-        grapt_api::u3a::SessionMessageResponseDto,
-        grapt_api::u3a::SessionMessageApplicationError,
-    > {
-        self.read_projection(
-            move |application| {
-                history::message_get(
-                    application,
-                    &session_id.into_inner(),
-                    &message_id.into_inner(),
-                )
-            },
-            |_| grapt_api::u3a::SessionMessageApplicationError::Unavailable,
-        )
-    }
-
-    fn session_prompt(
-        &self,
-        principal: SealedPrincipal,
-        session_id: WireId<SessionId>,
-        request: PromptRequestDto,
-    ) -> ApplicationFuture<PromptResponseDto, SessionPromptApplicationError> {
-        self.submit_prompt(principal, session_id, request)
-    }
-
-    fn session_interrupt(
-        &self,
-        principal: SealedPrincipal,
-        session_id: WireId<SessionId>,
-        request: InterruptRequestDto,
-    ) -> ApplicationFuture<NoContent, SessionLookupApplicationError> {
-        self.interrupt_with_pending(principal, session_id, request)
-    }
-
-    fn session_compact(
-        &self,
-        _principal: SealedPrincipal,
-        session_id: WireId<SessionId>,
-        request: grapt_api::u3a::CompactRequestDto,
-    ) -> ApplicationFuture<
-        grapt_api::u3a::CompactResponseDto,
-        grapt_api::u3a::SessionCompactApplicationError,
-    > {
-        ready(self.submit_compact(session_id, request))
-    }
-
-    fn permission_list(
-        &self,
-        principal: SealedPrincipal,
-        query: PermissionLocationQueryDto,
-    ) -> ApplicationFuture<PermissionGlobalListResponseDto, PermissionApplicationError> {
-        permission::list(self, principal, query)
-    }
-
-    fn session_permission_create(
-        &self,
-        principal: SealedPrincipal,
-        session_id: WireId<SessionId>,
-        request: PermissionCreateRequestDto,
-    ) -> ApplicationFuture<PermissionCreateResponseDto, PermissionApplicationError> {
-        permission::create(self, principal, session_id, request)
-    }
-
-    fn session_permission_list(
-        &self,
-        principal: SealedPrincipal,
-        session_id: WireId<SessionId>,
-    ) -> ApplicationFuture<PermissionListResponseDto, PermissionApplicationError> {
-        permission::session_list(self, principal, session_id)
-    }
-
-    fn session_permission_get(
-        &self,
-        principal: SealedPrincipal,
-        session_id: WireId<SessionId>,
-        request_id: WireId<PermissionId>,
-    ) -> ApplicationFuture<PermissionResponseDto, PermissionApplicationError> {
-        permission::get(self, principal, session_id, request_id)
-    }
-
-    fn session_permission_reply(
-        &self,
-        principal: SealedPrincipal,
-        session_id: WireId<SessionId>,
-        request_id: WireId<PermissionId>,
-        request: PermissionReplyRequestDto,
-    ) -> ApplicationFuture<NoContent, PermissionApplicationError> {
-        permission::reply(self, principal, session_id, request_id, request)
     }
 }
 

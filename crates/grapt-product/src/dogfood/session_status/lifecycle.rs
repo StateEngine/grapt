@@ -5,7 +5,7 @@ use grapt_api::u3a::{
 };
 use grapt_session::execution::{Observation, Outcome};
 
-pub(in crate::dogfood) fn project(observation: Observation) -> Result<DogfoodEvent, String> {
+pub(crate) fn project(observation: Observation) -> Result<DogfoodEvent, String> {
     let id = WireId::parse(observation.position.event.as_str().to_owned())
         .ok_or("execution event identity is invalid")?;
     let created = FiniteF64::try_new(observation.position.created_ms as f64)?;

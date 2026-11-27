@@ -13,12 +13,12 @@ type StartupObserver = watch::Receiver<Option<HumanWait>>;
 /// Only the worker's bounded nested-call set can register observers. These
 /// retain clocks, never startup reservation leases or a registry handle.
 #[derive(Default)]
-pub(in crate::dogfood) struct NestedStartups {
+pub(crate) struct NestedStartups {
     calls: Mutex<Vec<StartupObserver>>,
 }
 
 impl NestedStartups {
-    pub(in crate::dogfood) fn observe<T>(
+    pub(crate) fn observe<T>(
         &self,
         operation: impl Future<Output = T>,
     ) -> Result<impl Future<Output = T>, HttpError> {
@@ -32,7 +32,7 @@ impl NestedStartups {
         Ok(NESTED_STARTUP.scope(owner, operation))
     }
 
-    pub(in crate::dogfood) fn is_waiting(&self) -> Result<bool, HttpError> {
+    pub(crate) fn is_waiting(&self) -> Result<bool, HttpError> {
         let calls = self.calls.lock().map_err(|_| HttpError::State)?;
         Ok(calls.iter().any(|call| {
             call.has_changed().is_ok() && call.borrow().as_ref().is_some_and(HumanWait::is_waiting)
@@ -43,7 +43,7 @@ impl NestedStartups {
 /// Called only after recovery selected the exact server's reservation. A
 /// task-local scope crosses inline nested execution, but is not inherited by
 /// independent catalog/startup tasks or another VM's nested calls.
-pub(super) fn join(clock: &HumanWait) -> JoinedStartup {
+pub(crate) fn join(clock: &HumanWait) -> JoinedStartup {
     JoinedStartup(
         NESTED_STARTUP
             .try_with(|owner| {
@@ -54,7 +54,7 @@ pub(super) fn join(clock: &HumanWait) -> JoinedStartup {
     )
 }
 
-pub(super) struct JoinedStartup(Option<watch::Sender<Option<HumanWait>>>);
+pub(crate) struct JoinedStartup(Option<watch::Sender<Option<HumanWait>>>);
 
 impl Drop for JoinedStartup {
     fn drop(&mut self) {

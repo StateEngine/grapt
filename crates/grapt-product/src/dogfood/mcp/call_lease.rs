@@ -6,20 +6,20 @@
 //! Synchronous terminal custody for the adapter's exclusively held session.
 use grapt_mcp::session::{CallLease, CallOutcome, McpSession, SessionError};
 
-pub(super) struct CallLeaseGuard<'a> {
+pub(crate) struct CallLeaseGuard<'a> {
     session: &'a mut McpSession,
     lease: Option<CallLease>,
 }
 
 impl<'a> CallLeaseGuard<'a> {
-    pub(super) fn new(session: &'a mut McpSession, lease: CallLease) -> Self {
+    pub(crate) fn new(session: &'a mut McpSession, lease: CallLease) -> Self {
         Self {
             session,
             lease: Some(lease),
         }
     }
 
-    pub(super) fn finish(mut self, outcome: CallOutcome) -> Result<(), SessionError> {
+    pub(crate) fn finish(mut self, outcome: CallOutcome) -> Result<(), SessionError> {
         match self.lease.take() {
             Some(lease) => self.session.settle(lease, outcome),
             None => Ok(()),

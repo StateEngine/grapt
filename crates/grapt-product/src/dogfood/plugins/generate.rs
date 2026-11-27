@@ -14,7 +14,7 @@ const MAX_CONTEXT_ITEMS: usize = 512;
 const MAX_CONTEXT_BYTES: usize = 4 * 1024 * 1024;
 
 impl ProductPluginHost {
-    pub(super) fn session_generate(
+    pub(crate) fn session_generate(
         &self,
         context: &PluginHostContext,
         application: &Arc<super::super::DogfoodApplication>,

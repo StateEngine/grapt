@@ -6,10 +6,7 @@ use grapt_session::execution::StateEngineServerFailure as Failure;
 impl McpRegistry {
     /// A turn owns its registry location through provider work and local tools.
     /// Weak retention needs no async cleanup and cannot outlive the turn drain.
-    pub(in crate::dogfood) async fn hold_location(
-        &self,
-        location: &str,
-    ) -> Option<std::sync::Arc<()>> {
+    pub(crate) async fn hold_location(&self, location: &str) -> Option<std::sync::Arc<()>> {
         let mut locations = self.entries.lock().await;
         if !super::release_over_bound(
             &mut locations,
@@ -33,7 +30,7 @@ impl McpRegistry {
     /// Required continuity may recover a timed-out initial handshake once,
     /// before its catalog snapshot is frozen for provider preparation.
     #[cfg(test)]
-    pub(in crate::dogfood) async fn with_continuity_status<T>(
+    pub(crate) async fn with_continuity_status<T>(
         &self,
         location: &str,
         declared: &std::collections::BTreeMap<String, super::Declaration>,
@@ -44,7 +41,7 @@ impl McpRegistry {
             .await
     }
 
-    pub(in crate::dogfood) async fn with_continuity_status_at<T>(
+    pub(crate) async fn with_continuity_status_at<T>(
         &self,
         key: &str,
         directory: &str,
@@ -67,7 +64,7 @@ impl McpRegistry {
     /// Re-admit an unsent call from a fresh configuration read, never its old
     /// approval snapshot. Return excluded human time for the eventual dispatch.
     /// Runtime declarations retain their usual precedence.
-    pub(in crate::dogfood) async fn readmit_missing(
+    pub(crate) async fn readmit_missing(
         &self,
         location: &str,
         directory: &str,
@@ -166,7 +163,7 @@ impl McpRegistry {
         Ok(human_paused)
     }
 
-    pub(in crate::dogfood) async fn server_unavailable(
+    pub(crate) async fn server_unavailable(
         &self,
         location: &str,
         server: &str,

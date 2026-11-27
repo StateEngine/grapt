@@ -54,7 +54,7 @@ fn safe_name(name: &str, origin: grapt_plugin::PluginOrigin) -> String {
     }
 }
 
-pub(in crate::dogfood) fn response<T: DeserializeOwned + Send + 'static>(
+pub(crate) fn response<T: DeserializeOwned + Send + 'static>(
     application: super::super::DogfoodApplication,
     query: ProjectCurrentLocationQueryDto,
     inspection: bool,

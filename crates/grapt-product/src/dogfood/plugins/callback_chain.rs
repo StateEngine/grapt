@@ -15,7 +15,7 @@ pub(crate) enum OnCallbackFailure {
 /// counts as that callback's failure. A skipped callback leaves the value it
 /// was given, and its warning is added to `skipped`. With no callback applied
 /// the result is `None`: nothing changed, so there is nothing to apply.
-pub(super) fn run(
+pub(crate) fn run(
     callbacks: Vec<(String, u64)>,
     (domain, name): (&str, &str),
     mut value: Value,

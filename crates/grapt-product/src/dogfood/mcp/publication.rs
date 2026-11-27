@@ -80,7 +80,7 @@ pub(crate) fn tool_definitions_from(
     tool_definitions_from_bound(connected, builtins, false)
 }
 
-pub(super) fn tool_definitions_from_bound(
+pub(crate) fn tool_definitions_from_bound(
     connected: &[ConnectedCatalog<'_>],
     builtins: &[&str],
     bound_resume: bool,

@@ -1,8 +1,8 @@
 //! Persistent user configuration, separate from temporary ACP registrations.
 mod approval;
-pub(super) mod edit;
-pub(super) mod file;
-pub(super) use approval::preview;
+pub(crate) mod edit;
+pub(crate) mod file;
+pub(crate) use approval::preview;
 
 use crate::dogfood::{
     catalog_config::CatalogEnvironment, session_config, support::invalid, DogfoodApplication,
@@ -13,7 +13,7 @@ use grapt_api::u3a::{
 };
 use std::path::Path;
 
-pub(super) enum Edit {
+pub(crate) enum Edit {
     Add(serde_json::Value),
     Remove,
     SetEnabled(bool),
@@ -21,7 +21,7 @@ pub(super) enum Edit {
     RevokeProjectApproval,
 }
 
-pub(super) fn request(
+pub(crate) fn request(
     application: DogfoodApplication,
     name: String,
     query: ProjectCurrentLocationQueryDto,

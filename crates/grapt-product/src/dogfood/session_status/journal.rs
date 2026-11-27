@@ -4,23 +4,20 @@ use grapt_service_state::{Change, Snapshot, State};
 use grapt_types::{DeterministicAuthorities, ExecutionId};
 
 #[derive(Clone, Debug, PartialEq)]
-pub(in crate::dogfood) struct Presentation {
+pub(crate) struct Presentation {
     pub status: SessionStatusInfo,
     pub phase: Option<grapt_api::u3a::SessionStatusPhase>,
 }
 
 impl SessionStatusEmitter {
-    pub(in crate::dogfood) fn with_journal(
-        mut self,
-        inbox: Arc<Mutex<grapt_inbox::Inbox>>,
-    ) -> Self {
+    pub(crate) fn with_journal(mut self, inbox: Arc<Mutex<grapt_inbox::Inbox>>) -> Self {
         self.journal = Some(inbox);
         self
     }
 
     /// Store callbacks cannot await. Presentation is confirmed again under
     /// the hub lock so a delayed offer cannot replace a newer legacy phase.
-    pub(in crate::dogfood) fn observe_owned(
+    pub(crate) fn observe_owned(
         &self,
         session: &SessionId,
         execution: &ExecutionId,
@@ -69,7 +66,7 @@ impl SessionStatusEmitter {
         self.publish_snapshot(session, snapshot, present)
     }
 
-    pub(in crate::dogfood) fn publish_current(
+    pub(crate) fn publish_current(
         &self,
         session: &SessionId,
         present: impl Fn(&Snapshot) -> Result<Presentation, String>,
@@ -90,9 +87,7 @@ impl SessionStatusEmitter {
     }
 }
 
-pub(in crate::dogfood) fn wire(
-    snapshot: Snapshot,
-) -> Result<grapt_api::u3a::SessionStateDto, String> {
+pub(crate) fn wire(snapshot: Snapshot) -> Result<grapt_api::u3a::SessionStateDto, String> {
     let mut value = serde_json::to_value(snapshot.state).map_err(|error| error.to_string())?;
     value["revision"] = serde_json::json!(snapshot.position.seq);
     if let Some(execution) = snapshot.execution {

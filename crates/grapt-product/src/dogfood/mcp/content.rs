@@ -9,7 +9,7 @@ use grapt_mcp::{
 use serde_json::{json, Value};
 use std::{collections::BTreeMap, sync::Arc, time::Duration};
 
-pub(in crate::dogfood) struct ContentServer {
+pub(crate) struct ContentServer {
     pub name: String,
     io: Arc<HeldIo<LiveIo>>,
     bounds: McpBounds,
@@ -22,7 +22,7 @@ pub(in crate::dogfood) struct ContentServer {
 }
 
 impl McpRegistry {
-    pub(in crate::dogfood) async fn content_servers(
+    pub(crate) async fn content_servers(
         &self,
         key: &str,
         directory: &str,
@@ -229,7 +229,7 @@ impl ContentServer {
     }
 }
 
-pub(in crate::dogfood) fn prompt_command_name(server: &str, prompt: &str) -> String {
+pub(crate) fn prompt_command_name(server: &str, prompt: &str) -> String {
     format!(
         "mcp__{}__{}",
         super::publication::sanitize_name(server),

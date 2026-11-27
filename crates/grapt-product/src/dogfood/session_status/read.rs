@@ -27,7 +27,7 @@ fn session_state(
     crate::dogfood::session_status::state_wire(snapshot).map_err(ReadError::Encoding)
 }
 
-pub(in crate::dogfood) fn fields(
+pub(crate) fn fields(
     active: &LiveActiveExecutions,
     connection: &rusqlite::Connection,
     session: &SessionId,

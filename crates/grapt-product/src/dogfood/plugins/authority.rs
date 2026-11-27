@@ -104,27 +104,27 @@ const fn class(operation: HostOperation) -> Class {
 }
 
 /// Authority established for one host operation.
-pub(super) struct Authorized<'a> {
+pub(crate) struct Authorized<'a> {
     /// The admitted declaration identity that owns durable plugin state.
-    pub(super) owner: &'a str,
-    pub(super) process: u64,
-    pub(super) call: Option<AuthorizedCall<'a>>,
+    pub(crate) owner: &'a str,
+    pub(crate) process: u64,
+    pub(crate) call: Option<AuthorizedCall<'a>>,
 }
 
-pub(super) struct AuthorizedCall<'a> {
-    pub(super) grant: &'a ActiveGrant,
-    pub(super) scope: &'a PluginCallScope,
+pub(crate) struct AuthorizedCall<'a> {
+    pub(crate) grant: &'a ActiveGrant,
+    pub(crate) scope: &'a PluginCallScope,
 }
 
 impl<'a> Authorized<'a> {
-    pub(super) fn call(&self) -> Result<&AuthorizedCall<'a>, String> {
+    pub(crate) fn call(&self) -> Result<&AuthorizedCall<'a>, String> {
         self.call
             .as_ref()
             .ok_or_else(|| "plugin operation requires an active plugin call".to_owned())
     }
 }
 
-pub(super) fn authorize<'a>(
+pub(crate) fn authorize<'a>(
     context: &'a PluginHostContext,
     operation: HostOperation,
     payload: &Value,
@@ -172,7 +172,7 @@ fn require_granted_session(
     Ok(())
 }
 
-pub(super) fn session_id(
+pub(crate) fn session_id(
     payload: &Value,
     operation: HostOperation,
 ) -> Result<grapt_types::SessionId, String> {

@@ -12,7 +12,7 @@ use grapt_types::DeterministicAuthorities;
 use serde_json::json;
 use std::sync::Arc;
 
-pub(super) fn list(
+pub(crate) fn list(
     application: DogfoodApplication,
     query: ProjectCurrentLocationQueryDto,
 ) -> ApplicationFuture<FormListResponseDto, InvalidRequestErrorDto> {
