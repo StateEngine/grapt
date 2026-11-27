@@ -9,12 +9,32 @@ use std::collections::BTreeMap;
 use std::path::Path;
 use std::process::Stdio;
 
+/// A local server's process and the OS container that owns its whole tree.
+///
+/// A server is often a launcher (`npx`, `uvx`) whose real server is a
+/// grandchild, so killing the direct child alone would leave it running. The
+/// group is a Job Object on Windows and a cgroup or process group on Unix;
+/// dropping this ends every descendant with the server.
+pub(in crate::dogfood) struct LocalProcess {
+    pub(in crate::dogfood) child: tokio::process::Child,
+    group: processkit::ProcessGroup,
+}
+
+impl LocalProcess {
+    /// Stop the whole tree now, ahead of the drop.
+    pub(in crate::dogfood) fn kill_tree(&self) -> Result<(), String> {
+        self.group
+            .kill_all()
+            .map_err(|error| format!("the local MCP server tree could not be stopped: {error}"))
+    }
+}
+
 /// Spawn a declared local server.
 ///
 /// The posture matches this crate's shell adapter deliberately: the
 /// environment is CLEARED and repopulated from an explicit allowlist, stdio is
-/// piped, and the child is killed on drop so an abandoned start cannot leave a
-/// process behind. An MCP server is configured code with the product's own
+/// piped, and the whole process tree is owned by one OS container, so an
+/// abandoned start cannot leave a process behind. An MCP server is configured code with the product's own
 /// privileges; inheriting this process's environment would hand it every
 /// secret in it.
 /// Spawn a declared local server, returning the child AND the program that
@@ -29,7 +49,7 @@ pub(in crate::dogfood) fn spawn_local(
     command: &[String],
     cwd: &Path,
     environment: &BTreeMap<String, String>,
-) -> Result<(tokio::process::Child, String), String> {
+) -> Result<(LocalProcess, String), String> {
     let (program, arguments) = command
         .split_first()
         .ok_or_else(|| "a local MCP command needs a program".to_owned())?;
@@ -78,10 +98,19 @@ pub(in crate::dogfood) fn spawn_local(
     // is the difference between an operator fixing a typo in seconds and
     // reading their whole configuration looking for it — and with several
     // servers declared, it does not even say which one failed.
-    let spawned = child.spawn().map_err(|error| {
+    let group = processkit::ProcessGroup::new().map_err(|error| {
+        format!("the local MCP server {program:?} has no process containment: {error}")
+    })?;
+    let spawned = group.spawn(child).map_err(|error| {
         format!("the local MCP server {program:?} could not be started: {error}")
     })?;
-    Ok((spawned, resolved_text))
+    Ok((
+        LocalProcess {
+            child: spawned,
+            group,
+        },
+        resolved_text,
+    ))
 }
 
 /// Find `program` on the parent's PATH, honouring PATHEXT on Windows.

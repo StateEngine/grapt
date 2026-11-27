@@ -190,6 +190,9 @@ pub(super) fn event_location(raw: Option<&str>) -> Result<EventLocationQuery, Qu
 pub(super) struct EventQuery {
     pub(super) location: EventLocationQuery,
     pub(super) session: Option<WireId<grapt_types::SessionId>>,
+    /// `retain=a,b`: Sessions this window showed before and still claims.
+    /// Accepted only beside `positions=1`.
+    pub(super) retained: Vec<grapt_types::SessionId>,
     /// `positions=1`: the opt-in positions subscriber class.
     pub(super) positions: bool,
 }
@@ -200,6 +203,11 @@ pub(super) fn event_query(raw: Option<&str>) -> Result<EventQuery, QueryError> {
         .take("session")
         .map(|value| wire_id(value, "session"))
         .transpose()?;
+    let retained = pairs
+        .take("retain")
+        .map(|value| retained_sessions(&value))
+        .transpose()?
+        .unwrap_or_default();
     let whole = pairs.take("location");
     let directory = pairs.take("location[directory]");
     let workspace = pairs.take("location[workspace]");
@@ -223,12 +231,34 @@ pub(super) fn event_query(raw: Option<&str>) -> Result<EventQuery, QueryError> {
         Some("1") => true,
         Some(_) => return Err(QueryError::InvalidValue { field: "positions" }),
     };
+    // A claim on a Session the window left is only meaningful to a client
+    // that resumes by position; any other subscriber must not hold one.
+    if !retained.is_empty() && !positions {
+        return Err(QueryError::InvalidValue { field: "retain" });
+    }
     pairs.finish()?;
     Ok(EventQuery {
         location,
         session,
+        retained,
         positions,
     })
+}
+
+/// A comma-separated, bounded list of distinct Session ids.
+fn retained_sessions(raw: &str) -> Result<Vec<grapt_types::SessionId>, QueryError> {
+    let invalid = QueryError::InvalidValue { field: "retain" };
+    let mut sessions = Vec::new();
+    for part in raw.split(',') {
+        let session: grapt_types::SessionId = part.parse().map_err(|_| invalid)?;
+        if sessions.contains(&session)
+            || sessions.len() == grapt_window_lease::MAX_RETAINED_SESSIONS
+        {
+            return Err(invalid);
+        }
+        sessions.push(session);
+    }
+    Ok(sessions)
 }
 
 fn page_order(value: String, field: &'static str) -> Result<PageOrderDto, QueryError> {

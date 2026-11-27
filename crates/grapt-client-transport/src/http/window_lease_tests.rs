@@ -90,3 +90,40 @@ fn incremental_reconnect_keeps_the_http_window_lease() -> TestResult {
     );
     Ok(())
 }
+
+/// Retained Sessions with long ids still leave the subscribe within the
+/// service's query bound: the oldest are dropped, never positions itself.
+#[test]
+fn long_retained_ids_drop_the_oldest_to_fit_the_query_bound() -> TestResult {
+    let mut connection = HttpConnection::attach(
+        "127.0.0.1:9".parse()?,
+        BasicCredential::new("fixture", "DUMMY_AUTH")?,
+        Bounds::PRODUCTION,
+    );
+    let long = |index: usize| format!("ses_{index:02}{}", "x".repeat(600));
+    for index in 0..=grapt_api::u3a::MAX_RETAINED_SESSIONS {
+        connection.watch_session(Some(long(index).parse()?));
+    }
+    let request = connection.subscribe_request(true)?;
+    assert!(
+        HttpConnection::encoded_query_bytes(request.query()) <= grapt_api::u3a::MAX_QUERY_BYTES
+    );
+    let value = |key: &str| {
+        request
+            .query()
+            .iter()
+            .find(|(name, _)| name == key)
+            .map(|(_, value)| value.clone())
+    };
+    assert_eq!(value("positions").as_deref(), Some("1"));
+    let retained = value("retain").ok_or("no Session was retained")?;
+    let kept: Vec<&str> = retained.split(',').collect();
+    assert!(kept.len() < grapt_api::u3a::MAX_RETAINED_SESSIONS);
+    let newest = long(grapt_api::u3a::MAX_RETAINED_SESSIONS - 1);
+    assert_eq!(
+        kept.first(),
+        Some(&newest.as_str()),
+        "the newest left Session is kept first"
+    );
+    Ok(())
+}

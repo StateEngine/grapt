@@ -17,6 +17,69 @@ struct HostCompletion {
 struct Process {
     child: Arc<tokio::sync::Mutex<Child>>,
     jobs: Jobs,
+    /// The OS container the worker runs in; the last clone dropped ends it and
+    /// anything it started.
+    group: Arc<processkit::ProcessGroup>,
+}
+
+impl Process {
+    /// End whatever the worker left running and wait, until `deadline`, to see
+    /// its tree empty: the worker itself exiting says nothing about what it
+    /// started, and a kill is not proof that its targets are gone.
+    async fn settle_tree(&self, deadline: tokio::time::Instant) -> Result<(), String> {
+        let report = self
+            .group
+            .stop(Duration::ZERO, true)
+            .await
+            .map_err(|error| format!("process tree did not drain: {error}"))?;
+        confirm_empty(report.members_after(), deadline, || {
+            self.group.members().ok().map(|members| members.len())
+        })
+        .await
+    }
+}
+
+/// How often an unconfirmed tree's membership is read again.
+const MEMBERSHIP_POLL: Duration = Duration::from_millis(10);
+
+/// Succeed only once the tree is observed empty by `deadline`: `first` and
+/// then each `probe` is a member count, `None` when membership could not be
+/// read. Survivors or an unreadable membership at `deadline`, or an empty
+/// tree first seen after it, fail, so the caller keeps custody of a worker it
+/// cannot prove gone in time.
+async fn confirm_empty(
+    first: Option<usize>,
+    deadline: tokio::time::Instant,
+    mut probe: impl FnMut() -> Option<usize>,
+) -> Result<(), String> {
+    let mut observed = first;
+    loop {
+        let now = tokio::time::Instant::now();
+        if now <= deadline && observed == Some(0) {
+            return Ok(());
+        }
+        if now >= deadline {
+            return Err(undrained(observed));
+        }
+        // Half the time left, so a probe still lands before the deadline when
+        // the timer wakes late; a sleep of all of it would wake past it.
+        let remaining = deadline - now;
+        let step = (remaining / 2).max(Duration::from_millis(1));
+        tokio::time::sleep(remaining.min(MEMBERSHIP_POLL).min(step)).await;
+        if tokio::time::Instant::now() > deadline {
+            continue;
+        }
+        observed = probe();
+    }
+}
+
+/// Why a tree was not confirmed empty by its deadline.
+fn undrained(observed: Option<usize>) -> String {
+    match observed {
+        Some(0) => "process tree was seen empty only after its deadline".into(),
+        Some(count) => format!("{count} process tree members survived the stop"),
+        None => "process tree membership is unreadable; it may not have drained".into(),
+    }
 }
 
 #[derive(Debug, Default)]
@@ -93,7 +156,15 @@ impl WorkerRegistry {
                 }),
             );
             match waited {
-                Ok(Ok(_)) => {}
+                Ok(Ok(_)) => {
+                    match tokio::time::timeout_at(deadline, process.settle_tree(deadline)).await {
+                        Ok(Ok(())) => {}
+                        Ok(Err(error)) => failures.push(format!("CodeMode worker {call}: {error}")),
+                        Err(_) => failures.push(format!(
+                            "CodeMode worker {call}: timed out draining its process tree"
+                        )),
+                    }
+                }
                 Ok(Err(error)) => {
                     failures.push(format!("CodeMode worker {call}: wait failed: {error}"));
                 }
@@ -206,8 +277,24 @@ impl Workers {
             }
             command.creation_flags(0x0800_0000);
         }
-        let mut child = command
-            .spawn()
+        let group = processkit::ProcessGroup::new().map_err(|_| ToolFailureReason::EffectFailed)?;
+        // On Windows the group's own spawn resets the creation flags to
+        // CREATE_SUSPENDED alone, dropping CREATE_NO_WINDOW. The worker starts
+        // nothing until it reads its first request, written only after this
+        // returns, so joining the job once spawned leaves nothing outside it.
+        #[cfg(windows)]
+        let mut child = {
+            let child = command
+                .spawn()
+                .map_err(|_| ToolFailureReason::EffectFailed)?;
+            group
+                .adopt(&child)
+                .map_err(|_| ToolFailureReason::EffectFailed)?;
+            child
+        };
+        #[cfg(not(windows))]
+        let mut child = group
+            .spawn(command)
             .map_err(|_| ToolFailureReason::EffectFailed)?;
         let pipes = child.stdin.take().zip(child.stdout.take());
         let jobs = Arc::new(tokio::sync::Mutex::new(JoinSet::new()));
@@ -216,6 +303,7 @@ impl Workers {
             Process {
                 child: Arc::new(tokio::sync::Mutex::new(child)),
                 jobs: Arc::clone(&jobs),
+                group: Arc::new(group),
             },
         );
         lock(&self.owned).insert(call.clone());
@@ -230,7 +318,8 @@ impl Workers {
         let Some(process) = process else {
             return Some(true);
         };
-        let result = tokio::time::timeout(Duration::from_secs(2), async {
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(2);
+        let result = tokio::time::timeout_at(deadline, async {
             let mut jobs = process.jobs.lock().await;
             jobs.abort_all();
             while jobs.join_next().await.is_some() {}
@@ -239,7 +328,10 @@ impl Workers {
             if kill {
                 let _kill = child.start_kill();
             }
-            child.wait().await
+            let status = child.wait().await.map_err(|error| error.to_string())?;
+            drop(child);
+            process.settle_tree(deadline).await?;
+            Ok::<_, String>(status)
         })
         .await;
         if let Ok(Ok(status)) = result {
@@ -784,5 +876,58 @@ mod failure_tests {
         ));
         let _ = std::fs::remove_dir_all(&root);
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod settle_tests {
+    use super::*;
+
+    fn soon() -> tokio::time::Instant {
+        tokio::time::Instant::now() + Duration::from_millis(60)
+    }
+
+    #[tokio::test]
+    async fn a_tree_not_observed_empty_is_never_reported_settled() {
+        let survivors = confirm_empty(Some(1), soon(), || Some(1)).await;
+        assert!(survivors.is_err_and(|reason| reason.contains("1 process tree members")));
+        let unreadable = confirm_empty(None, soon(), || None).await;
+        assert!(unreadable.is_err_and(|reason| reason.contains("unreadable")));
+    }
+
+    #[tokio::test]
+    async fn a_tree_that_empties_before_the_deadline_settles() {
+        let mut reads = [Some(2), None, Some(0)].into_iter();
+        let drained = confirm_empty(Some(3), soon(), || reads.next().flatten()).await;
+        assert_eq!(drained, Ok(()));
+    }
+
+    /// The waits shrink toward the deadline, so a tree that empties inside
+    /// the final poll interval still settles.
+    #[tokio::test(start_paused = true)]
+    async fn emptying_inside_the_last_interval_settles() {
+        let start = tokio::time::Instant::now();
+        let deadline = start + Duration::from_millis(17);
+        let empty_at = start + Duration::from_millis(13);
+        let drained = confirm_empty(Some(1), deadline, || {
+            Some(usize::from(tokio::time::Instant::now() < empty_at))
+        })
+        .await;
+        assert_eq!(drained, Ok(()));
+    }
+
+    /// A wake that lands past the deadline never confirms, even if the tree
+    /// would by then read empty.
+    #[tokio::test(start_paused = true)]
+    async fn a_wake_past_the_deadline_never_confirms() {
+        let deadline = tokio::time::Instant::now() + Duration::from_millis(17);
+        // The poll's wake is delayed past the deadline by a stalled runtime.
+        let late = confirm_empty(Some(1), deadline, || Some(0));
+        let stall = tokio::time::advance(Duration::from_millis(30));
+        let (late, ()) = tokio::join!(late, stall);
+        assert!(
+            late.is_err(),
+            "a late wake confirmed an empty tree: {late:?}"
+        );
     }
 }

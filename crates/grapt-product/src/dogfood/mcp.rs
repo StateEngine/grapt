@@ -247,10 +247,11 @@ pub(super) struct LiveIo {
     _slot: ConnectionSlot,
     pub(super) channel: McpChannel<BoxedRead, BoxedWrite>,
     pub(super) session: McpSession,
-    /// Held so the child outlives the channel. Dropping this kills the server,
-    /// which is why the channel is never handed out separately. `None` for a
-    /// connection with no spawned child, which only a witness has.
-    _child: Option<tokio::process::Child>,
+    /// Held so the child outlives the channel. Dropping this kills the server
+    /// and every descendant, which is why the channel is never handed out
+    /// separately. `None` for a connection with no spawned child, which only a
+    /// witness has.
+    _child: Option<spawn::LocalProcess>,
     _stderr: Option<stderr::Reader>,
     _remote: Option<grapt_mcp_client::RemoteTask>,
 }

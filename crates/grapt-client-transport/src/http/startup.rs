@@ -56,7 +56,7 @@ impl HttpConnection {
             bounds,
             startup_active_allowance,
             stream: None,
-            session: None,
+            watched: WatchedSessions::default(),
             reader: SseReader::new(bounds),
             expected_product: None,
             subscription_attempt: None,

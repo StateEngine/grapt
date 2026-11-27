@@ -55,7 +55,9 @@ impl HttpConnection {
     ///
     /// `positions` opts into stream positions. An older service refuses the
     /// unknown parameter with exactly 400, and the subscribe is then retried
-    /// once without it; every other refusal is reported unchanged.
+    /// once without it; every other refusal is reported unchanged. Retained
+    /// Sessions ride with positions, so that same retry also reaches a service
+    /// that predates them.
     pub(super) fn subscribe_request(&self, positions: bool) -> Result<WireRequest, TransportError> {
         let request = WireRequest::new(Operation::EventSubscribe, None, None)?;
         let request = match self.watched_session() {
@@ -64,11 +66,31 @@ impl HttpConnection {
             // and the service decides from its own registry.
             None => request,
         };
-        Ok(if positions {
-            request.with_query("positions", "1")
-        } else {
-            request
-        })
+        if !positions {
+            return Ok(request);
+        }
+        let request = request.with_query("positions", "1");
+        // Newest first, as many as keep the whole query within the service's
+        // bound: past it the service refuses the subscribe with 400, and the
+        // legacy retry would then drop positions and every claim with it.
+        let mut retain = String::new();
+        let mut bytes = Self::encoded_query_bytes(request.query()) + "&retain=".len();
+        for kept in self.retained_sessions() {
+            let separator = if retain.is_empty() { 0 } else { ",".len() * 3 };
+            let added = separator + Self::encode_query_value(kept.as_str()).len();
+            if bytes + added > grapt_api::u3a::MAX_QUERY_BYTES {
+                break;
+            }
+            bytes += added;
+            if !retain.is_empty() {
+                retain.push(',');
+            }
+            retain.push_str(kept.as_str());
+        }
+        if retain.is_empty() {
+            return Ok(request);
+        }
+        Ok(request.with_query("retain", &retain))
     }
 
     /// A reader for a stream in either class: a positioned frame may carry

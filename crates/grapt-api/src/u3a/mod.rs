@@ -73,7 +73,7 @@ mod permission;
 #[path = "vocabulary/permission_preview.rs"]
 mod permission_preview;
 pub use grapt_window_lease::{
-    CloseRegistry, WindowId, WindowWatch, DEFAULT_CLOSE_GRACE, STALL_TICK,
+    CloseRegistry, WindowId, WindowWatch, DEFAULT_CLOSE_GRACE, MAX_RETAINED_SESSIONS, STALL_TICK,
 };
 mod query;
 mod routes;

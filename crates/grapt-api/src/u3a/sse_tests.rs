@@ -48,6 +48,63 @@ async fn a_named_window_attaches_on_subscribe_and_detaches_when_its_stream_ends(
 }
 
 #[tokio::test]
+async fn a_window_that_switches_sessions_keeps_the_previous_session_claimed() -> Result<(), SseError>
+{
+    let hub = DogfoodEventHub::try_new(
+        limits(2, 8, MAX_SSE_EVENT_BYTES, MAX_SSE_FRAME_BYTES)?,
+        connected("window_switch"),
+    )?;
+    let parse =
+        |raw: &str| query::event_query(Some(raw)).unwrap_or_else(|e| panic!("query: {e:?}"));
+    let open = |raw: &str| {
+        let query = parse(raw);
+        let session = query.session.map(|wire| wire.as_inner().clone());
+        hub.subscribe_window(query.location, None, session, query.retained, true, None)
+    };
+    let first: grapt_types::SessionId = "ses_switch_first".parse().unwrap_or_else(|_| panic!("id"));
+    let second: grapt_types::SessionId =
+        "ses_switch_second".parse().unwrap_or_else(|_| panic!("id"));
+    let unwatched = |session: &grapt_types::SessionId| hub.windows().unwatched().contains(session);
+
+    let before = open("session=ses_switch_first&positions=1")?;
+    // The switch: the window drops its stream, then reconnects naming the
+    // Session it left. The gap between them sits inside the close grace.
+    drop(before);
+    let after = open("session=ses_switch_second&positions=1&retain=ses_switch_first")?;
+    assert!(
+        !unwatched(&first),
+        "switching away left the previous turn to the close grace"
+    );
+    assert!(!unwatched(&second));
+    drop(after);
+    assert!(
+        unwatched(&first) && unwatched(&second),
+        "a closed window releases every claim"
+    );
+    assert!(
+        query::event_query(Some("positions=1&retain=ses_switch_first,ses_switch_first")).is_err()
+    );
+    assert!(
+        query::event_query(Some("session=ses_switch_second&retain=ses_switch_first")).is_err(),
+        "a retained claim without positions was accepted"
+    );
+    let plain = hub.subscribe_window(
+        query::EventLocationQuery::Absent,
+        None,
+        Some(second.clone()),
+        vec![first.clone()],
+        false,
+        None,
+    )?;
+    assert!(
+        unwatched(&first),
+        "a window without positions claimed a retained Session"
+    );
+    drop(plain);
+    Ok(())
+}
+
+#[tokio::test]
 async fn mail_attention_hydration_and_live_frames_keep_owner_location_scope() -> Result<(), SseError>
 {
     use crate::u3a::{MailAttentionData, MailAttentionInfo};

@@ -73,7 +73,8 @@ impl McpRegistry {
             Err(reason) => return ServerEntry::unusable(Unusable::Failed(reason)),
         };
         trace.mark("spawn");
-        let (mut child, program) = launched;
+        let (mut process, program) = launched;
+        let child = &mut process.child;
         let capture = super::stderr::Capture::default();
         for value in environment.values().chain(command.iter().skip(1)) {
             capture.protect(value);
@@ -124,17 +125,17 @@ impl McpRegistry {
                     _slot: admitted,
                     channel,
                     session,
-                    _child: Some(child),
+                    _child: Some(process),
                     _stderr: Some(reader),
                     _remote: None,
                 })),
             })),
-            // The child is dropped here, and `kill_on_drop` ends it: a server
-            // that failed its startup does not keep running unattended.
+            // The process is dropped here, and its group ends the whole tree: a
+            // server that failed its startup does not keep running unattended.
             Err(failure) => {
-                // Stop the direct child first; a descendant retaining stderr
+                // Stop the whole tree first, so a descendant retaining stderr
                 // cannot extend the reader's 250 ms drain grace.
-                let _ = child.start_kill();
+                let _ = process.kill_tree();
                 let tail = reader.finish().await;
                 let reason = match failure.reason {
                     Unusable::Failed(detail) => Unusable::Failed(capture.sanitise(&detail)),

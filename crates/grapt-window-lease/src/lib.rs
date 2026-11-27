@@ -44,6 +44,22 @@ pub const DEFAULT_CLOSE_GRACE: std::time::Duration = std::time::Duration::from_s
 /// cannot spend the grace that a usable window was still going to use.
 pub const STALL_TICK: std::time::Duration = std::time::Duration::from_secs(5);
 
+/// The most Sessions one window keeps a claim on besides the one it shows.
+///
+/// A window that switches Sessions, or opens a subagent's view, can still go
+/// back, so it is still a window onto the Session it left: leaving one is not
+/// closing it. It names those Sessions on each subscription, newest first, and
+/// the service holds each claim for as long as that subscription lives. When
+/// the window itself goes, every claim enters the grace together. Past this
+/// bound the oldest Session is no longer named and its claim ends.
+pub const MAX_RETAINED_SESSIONS: usize = 16;
+
+/// The most Sessions the registry tracks at once, watched or within their
+/// grace. A window naming a Session the registry does not track yet is refused
+/// past this bound, so reconnects naming fresh ids cannot grow it without end;
+/// a Session already tracked can always be claimed again.
+pub const MAX_TRACKED_SESSIONS: usize = 1024;
+
 /// The longest name a window may use for itself.
 ///
 /// A window's name is compared, never parsed, and never becomes a durable fact,
@@ -131,11 +147,28 @@ impl CloseRegistry {
     /// its earlier claim rather than counting twice, so a resumed stream cannot
     /// keep a turn alive after its socket is gone. A window that returns within
     /// the grace cancels the pending stop, whether or not it resumed a stream.
-    pub fn attach_window(&mut self, session: &SessionId, window: WindowId) {
+    ///
+    /// Returns `false`, attaching nothing, for a Session not tracked yet once
+    /// [`MAX_TRACKED_SESSIONS`] are.
+    pub fn attach_window(&mut self, session: &SessionId, window: WindowId) -> bool {
+        if !self.sessions.contains_key(session) && self.sessions.len() >= MAX_TRACKED_SESSIONS {
+            return false;
+        }
         let held = self.sessions.entry(session.clone()).or_default();
         held.windows.insert(window);
         // A window is present again, so nothing is waiting to expire.
         held.absent_since = None;
+        true
+    }
+
+    /// Keep a window's claim on a Session it showed before.
+    ///
+    /// A window that left a Session left it within this registry's sight: the
+    /// Session is still watched, or its grace is still running. A Session the
+    /// registry does not track was never shown here, or its grace already
+    /// ended, so there is nothing to keep and nothing is attached.
+    pub fn retain_window(&mut self, session: &SessionId, window: WindowId) -> bool {
+        self.sessions.contains_key(session) && self.attach_window(session, window)
     }
 
     /// Record that one window's subscription ended without saying why.
@@ -268,20 +301,37 @@ impl WindowWatch {
         }
     }
 
-    /// Register one window on `session`, returning its claim.
+    /// Register one window on `session`, returning its claim; `None` when the
+    /// registry is at [`MAX_TRACKED_SESSIONS`] and does not track it yet.
     ///
     /// The claim releases the window on drop, and this process names it: two
     /// windows on one Session must not collapse into one claim, or closing
     /// either would look like closing both.
-    pub fn attach(self: &Arc<Self>, session: &SessionId) -> WindowClaim {
+    pub fn attach(self: &Arc<Self>, session: &SessionId) -> Option<WindowClaim> {
+        self.claim(session, CloseRegistry::attach_window)
+    }
+
+    /// Keep a window's claim on a Session it showed before; `None` when the
+    /// registry no longer tracks it (see [`CloseRegistry::retain_window`]).
+    pub fn retain(self: &Arc<Self>, session: &SessionId) -> Option<WindowClaim> {
+        self.claim(session, CloseRegistry::retain_window)
+    }
+
+    fn claim(
+        self: &Arc<Self>,
+        session: &SessionId,
+        attach: impl FnOnce(&mut CloseRegistry, &SessionId, WindowId) -> bool,
+    ) -> Option<WindowClaim> {
         let window = WindowId::from_ordinal(self.next_ordinal.fetch_add(1, Ordering::Relaxed));
-        self.with_registry(|registry| registry.attach_window(session, window.clone()));
+        if !self.with_registry(|registry| attach(registry, session, window.clone())) {
+            return None;
+        }
         self.changed.send_replace(());
-        WindowClaim {
+        Some(WindowClaim {
             session: session.clone(),
             window,
             watch: Arc::clone(self),
-        }
+        })
     }
 
     /// Every Session whose grace has expired at `now`, already forgotten.
@@ -647,7 +697,7 @@ mod tests {
         let one = session("ses_close_claim")?;
         let watch = Arc::new(WindowWatch::new());
         let start = tokio::time::Instant::now();
-        let claim = watch.attach(&one);
+        let claim = watch.attach(&one).ok_or("attach refused")?;
         // While the claim is alive the Session is watched, so no grace runs.
         assert!(watch.next_deadline(start).is_none());
         drop(claim);
@@ -659,6 +709,36 @@ mod tests {
         assert!(
             deadline >= start + DEFAULT_CLOSE_GRACE,
             "the grace cannot end before it begins"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn only_a_session_shown_before_is_retained_and_new_ones_stop_at_the_bound() -> Result {
+        let mut registry = CloseRegistry::new();
+        let shown = session("ses_lease_shown")?;
+        assert!(
+            !registry.retain_window(&shown, window("window-invented")?),
+            "an id this registry never tracked was kept"
+        );
+        assert!(registry.sessions.is_empty());
+        assert!(registry.attach_window(&shown, window("window-first")?));
+        registry.detach_window(
+            &shown,
+            &window("window-first")?,
+            tokio::time::Instant::now(),
+        );
+        assert!(registry.retain_window(&shown, window("window-second")?));
+        for index in 1..MAX_TRACKED_SESSIONS {
+            let filler = session(&format!("ses_lease_fill_{index}"))?;
+            assert!(registry.attach_window(&filler, window("window-fill")?));
+        }
+        let fresh = session("ses_lease_fresh")?;
+        assert!(!registry.attach_window(&fresh, window("window-fresh")?));
+        assert_eq!(registry.sessions.len(), MAX_TRACKED_SESSIONS);
+        assert!(
+            registry.attach_window(&shown, window("window-third")?),
+            "a tracked Session must still be claimable at the bound"
         );
         Ok(())
     }
