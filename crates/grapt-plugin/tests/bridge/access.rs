@@ -52,14 +52,18 @@ export default { id: "fixture.access", async setup(ctx) {
     const refused = async (action, reason) => {
       try { await action(); return false } catch (error) { return reason === undefined || error.message.startsWith(reason) }
     }
-    fs.writeFileSync(new URL("./own.txt", import.meta.url), "own")
+    const ownWriteDenied = await refused(() => fs.writeFileSync(new URL("./own.txt", import.meta.url), "own"))
+    const tmpFile = `${process.env.TMPDIR || process.env.TEMP}/plugin-scratch.txt`
+    fs.writeFileSync(tmpFile, "scratch")
     return {
-      own: fs.readFileSync(new URL("./own.txt", import.meta.url), "utf8"),
+      ownWriteDenied,
+      scratch: fs.readFileSync(tmpFile, "utf8"),
       declared: fs.readFileSync(input.allowed, "utf8"),
       readDenied: await refused(() => fs.readFileSync(input.private, "utf8")),
       writeDenied: await refused(() => fs.writeFileSync(input.allowed, "overwritten")),
       fetched: await (await fetch(input.origin)).text(),
       networkDenied: await refused(() => fetch("http://127.0.0.1:1")),
+      metadataDenied: await refused(() => fetch(input.metadataUrl), "plugin_network_blocked:"),
       socketDenied: await refused(() => import("node:net")),
       globalSocketDenied: await refused(() => new WebSocket("ws://127.0.0.1:1"), "plugin_network_api_denied:"),
     }
@@ -67,31 +71,41 @@ export default { id: "fixture.access", async setup(ctx) {
 }}
 "#,
     )?;
-    let resolved = resolve_declarations(&[ConfigDocument {
+    let mut resolved = resolve_declarations(&[ConfigDocument {
         directory: root.clone(),
         source: "explicit-fixture".into(),
         origin: PluginOrigin::LaunchExplicit,
         value: serde_json::json!({"plugins":[{"package":"./fixture.mjs","permissions":{
-            "read":[readable.path()],"network":[origin]
+            "read":[readable.path()]
         }}]}),
     }])?;
     assert!(resolved.blocked.is_empty(), "{:?}", resolved.blocked);
+    resolved
+        .active
+        .first_mut()
+        .ok_or("active plugin")?
+        .permissions
+        .allow_loopback_origin_for_tests(&origin)?;
     let (runtime, _cleanup) = runtime()?;
     let supervisor = PluginSupervisor::new(runtime, DEFAULT_BRIDGE_LIMITS)?;
     let generation = gated_activate(&supervisor, resolved.active, serde_json::json!({}))?;
     let registration = generation.registrations().first().ok_or("registration")?;
     let tool = registration.tools.first().ok_or("tool")?;
+    let metadata_url = format!(
+        "http://{}/latest/meta-data/",
+        std::net::Ipv4Addr::new(169, 254, 169, 254)
+    );
     let result = supervisor.invoke(
         generation.id(),
         &registration.plugin_id,
         tool.callback,
-        serde_json::json!({"allowed":allowed_file,"private":private_file,"origin":origin}),
+        serde_json::json!({"allowed":allowed_file,"private":private_file,"origin":origin,"metadataUrl":metadata_url}),
         serde_json::json!({}),
         CallAuthority::Unscoped,
     )?;
     assert_eq!(
-        result.get("own").and_then(serde_json::Value::as_str),
-        Some("own")
+        result.get("scratch").and_then(serde_json::Value::as_str),
+        Some("scratch")
     );
     assert_eq!(
         result.get("declared").and_then(serde_json::Value::as_str),
@@ -102,9 +116,11 @@ export default { id: "fixture.access", async setup(ctx) {
         Some("declared")
     );
     for key in [
+        "ownWriteDenied",
         "readDenied",
         "writeDenied",
         "networkDenied",
+        "metadataDenied",
         "socketDenied",
         "globalSocketDenied",
     ] {
@@ -276,13 +292,18 @@ fn killing_a_generation_closes_its_stalled_http_exchange() -> Result<(), Box<dyn
         }}"#,
     )?;
     let _cleanup = RootCleanup(root.clone());
-    let resolved = resolve_declarations(&[ConfigDocument {
+    let mut resolved = resolve_declarations(&[ConfigDocument {
         directory: root,
         source: "explicit-fixture".into(),
         origin: PluginOrigin::LaunchExplicit,
-        value: serde_json::json!({"plugins":[{"package":"./fixture.mjs",
-            "permissions":{"network":[origin]}}]}),
+        value: serde_json::json!({"plugins":[{"package":"./fixture.mjs"}]}),
     }])?;
+    resolved
+        .active
+        .first_mut()
+        .ok_or("active plugin")?
+        .permissions
+        .allow_loopback_origin_for_tests(&origin)?;
     let (runtime, _runtime_cleanup) = runtime()?;
     let supervisor = Arc::new(PluginSupervisor::new(runtime, DEFAULT_BRIDGE_LIMITS)?);
     let generation = gated_activate(&supervisor, resolved.active, serde_json::json!({}))?;
@@ -319,5 +340,43 @@ fn killing_a_generation_closes_its_stalled_http_exchange() -> Result<(), Box<dyn
     );
     assert_eq!(supervisor.live_processes(), 0);
     assert!(supervisor.current()?.is_none());
+    Ok(())
+}
+
+#[test]
+fn plugin_network_declarations_block_private_loopback_and_metadata_origins(
+) -> Result<(), Box<dyn Error>> {
+    use std::net::{Ipv4Addr, Ipv6Addr};
+    let (root, _) = fixture(
+        "ssrf-blocked",
+        r#"export default { id: "fixture.ssrf", async setup() {} }"#,
+    )?;
+    let _cleanup = RootCleanup(root.clone());
+    for blocked in [
+        format!("http://{}:8080", Ipv4Addr::LOCALHOST),
+        format!("http://[{}]:8080", Ipv6Addr::LOCALHOST),
+        format!("http://{}", Ipv4Addr::new(169, 254, 169, 254)),
+        format!("http://{}", Ipv4Addr::new(10, 0, 0, 1)),
+        format!("http://{}", Ipv4Addr::new(172, 16, 0, 1)),
+        format!("http://{}", Ipv4Addr::new(192, 168, 1, 1)),
+        "https://metadata.example.internal".to_owned(),
+        "https://service.localhost".to_owned(),
+    ] {
+        let resolved = resolve_declarations(&[ConfigDocument {
+            directory: root.clone(),
+            source: "explicit-fixture".into(),
+            origin: PluginOrigin::LaunchExplicit,
+            value: serde_json::json!({"plugins":[{"package":"./fixture.mjs","permissions":{"network":[blocked]}}]}),
+        }])?;
+        assert!(resolved.active.is_empty(), "{blocked} was admitted");
+        assert!(
+            resolved
+                .blocked
+                .iter()
+                .any(|entry| entry.reason.contains("plugin_network_blocked:")),
+            "expected plugin_network_blocked for {blocked}, got {:?}",
+            resolved.blocked
+        );
+    }
     Ok(())
 }

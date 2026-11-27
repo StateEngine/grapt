@@ -277,5 +277,5 @@ pub fn client() -> Result<MetadataHttp, Box<dyn std::error::Error>> {
     .with_safe_default_protocol_versions()?
     .with_root_certificates(roots)
     .with_no_client_auth();
-    Ok(MetadataHttp::with_tls(tls)?)
+    Ok(MetadataHttp::with_tls_loopback(tls)?)
 }

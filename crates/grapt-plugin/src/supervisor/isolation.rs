@@ -36,7 +36,9 @@ impl ProcessAccess {
             .iter()
             .map(|path| child_path(path))
             .collect::<Vec<_>>();
+        let snapshot_root = child_path(snapshot.root());
         readable.extend([
+            snapshot_root.clone(),
             runtime.executable().to_path_buf(),
             runtime.bridge().to_path_buf(),
         ]);
@@ -45,11 +47,12 @@ impl ProcessAccess {
             .iter()
             .map(|path| child_path(path))
             .collect::<Vec<_>>();
-        writable.extend([child_path(snapshot.root()), temp_path.clone()]);
+        writable.push(temp_path.clone());
         let policy = Policy {
             readable_roots: readable,
             writable_roots: writable,
             protected_paths: vec![
+                snapshot_root,
                 runtime.executable().to_path_buf(),
                 runtime.bridge().to_path_buf(),
             ],

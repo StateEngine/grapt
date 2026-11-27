@@ -302,15 +302,26 @@ pub fn attribute(root: &Path, pin: &Path, disk_bytes: &[u8]) -> Result<PinAttrib
     })
 }
 
+fn git_command(root: &Path, args: &[&str]) -> std::process::Command {
+    let mut command = std::process::Command::new("git");
+    command
+        .args(args)
+        .current_dir(root)
+        .stdin(std::process::Stdio::null())
+        .env("GIT_TERMINAL_PROMPT", "0")
+        .env("GIT_EDITOR", "true")
+        .env("GCM_INTERACTIVE", "never")
+        .env("GIT_ASKPASS", "")
+        .env("SSH_ASKPASS", "")
+        .env("SSH_ASKPASS_REQUIRE", "never");
+    command
+}
+
 /// Fixed-argv git plumbing: no shell, no interpolation. `None` covers both a
 /// missing git executable and a non-zero exit; the caller maps that to the
 /// workspace-state refusal that names it.
 fn run_git(root: &Path, args: &[&str]) -> Option<String> {
-    let output = std::process::Command::new("git")
-        .args(args)
-        .current_dir(root)
-        .output()
-        .ok()?;
+    let output = git_command(root, args).output().ok()?;
     if !output.status.success() {
         return None;
     }
@@ -321,11 +332,7 @@ fn run_git(root: &Path, args: &[&str]) -> Option<String> {
 /// dirty check compares committed bytes to disk bytes, and bytes are not
 /// text.
 fn run_git_bytes(root: &Path, args: &[&str]) -> Option<Vec<u8>> {
-    let output = std::process::Command::new("git")
-        .args(args)
-        .current_dir(root)
-        .output()
-        .ok()?;
+    let output = git_command(root, args).output().ok()?;
     if !output.status.success() {
         return None;
     }

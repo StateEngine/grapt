@@ -5,6 +5,7 @@ FEATURES = {
     "grapt-connections": ("loopback-testkit",),
     "grapt-login": ("loopback-testkit",),
     "grapt-mcp-client": ("loopback-testkit",),
+    "grapt-plugin": ("loopback-testkit",),
     "grapt-product": ("checkpoint-fixture", "handover-crash-fixture",
                        "loopback-provider-testkit"),
     "grapt-provider": ("deterministic-testkit", "loopback-testkit"),

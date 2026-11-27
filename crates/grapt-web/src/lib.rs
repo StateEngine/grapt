@@ -6,7 +6,7 @@ mod policy;
 mod render;
 
 pub use fetch::{fetch, FetchOutcome, Page};
-pub use policy::WebUrl;
+pub use policy::{is_public_ip, validate_public_addresses, validate_public_host, WebUrl};
 
 pub const MAX_BODY_BYTES: usize = 512 * 1024;
 pub const MAX_TEXT_BYTES: usize = 1024 * 1024;

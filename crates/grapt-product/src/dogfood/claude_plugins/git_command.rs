@@ -26,12 +26,7 @@ impl From<&str> for Error {
     }
 }
 
-pub(super) async fn run(
-    program: &OsStr,
-    scratch: &Path,
-    arguments: &[&str],
-    output_bytes: usize,
-) -> Result<Vec<u8>, Error> {
+fn build_command(program: &OsStr, scratch: &Path, arguments: &[&str]) -> tokio::process::Command {
     let mut command = tokio::process::Command::new(program);
     command
         .arg(format!("--git-dir={}", scratch.display()))
@@ -77,13 +72,27 @@ pub(super) async fn run(
         .env("GIT_CONFIG_SYSTEM", null)
         .env("GIT_CONFIG_GLOBAL", null)
         .env("GIT_TERMINAL_PROMPT", "0")
+        .env("GIT_EDITOR", "true")
         .env("GCM_INTERACTIVE", "never")
+        .env("GIT_ASKPASS", "")
+        .env("SSH_ASKPASS", "")
+        .env("SSH_ASKPASS_REQUIRE", "never")
         .env("GIT_NO_REPLACE_OBJECTS", "1")
         .env("HOME", scratch)
         .env("USERPROFILE", scratch)
         .env("XDG_CONFIG_HOME", scratch)
         .env("GIT_TEMPLATE_DIR", OsString::new());
     grapt_service::launcher_environment::scrub(command.as_std_mut());
+    command
+}
+
+pub(super) async fn run(
+    program: &OsStr,
+    scratch: &Path,
+    arguments: &[&str],
+    output_bytes: usize,
+) -> Result<Vec<u8>, Error> {
+    let command = build_command(program, scratch, arguments);
     let group = processkit::ProcessGroup::new()
         .map_err(|_| "plugin Git containment could not be created")?;
     let mut child = group.spawn(command).map_err(|_| {

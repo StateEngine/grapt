@@ -8,6 +8,7 @@
 mod access;
 pub mod claude;
 mod declaration;
+mod error;
 mod generation;
 mod protocol;
 mod source;
@@ -18,6 +19,7 @@ pub use declaration::{
     resolve_declarations, ConfigDocument, DeclarationError, PluginDeclaration, PluginOrigin,
     PluginSource, ResolvedDeclarations,
 };
+pub use error::PluginError;
 pub use generation::{
     ActivePlugin, PluginCallback, PluginGeneration, PluginGenerationId, PluginRegistration,
     PluginTool, PluginToolRoute,
@@ -29,8 +31,8 @@ pub use protocol::{
 pub use source::{PinnedFile, SnapshotError, SourceSnapshot};
 pub use supervisor::{
     ActiveGrant, BridgeRuntime, CallAuthority, CandidateGeneration, ContainmentKind, GrantScope,
-    PluginError, PluginHost, PluginHostContext, PluginSupervisor, RecoveryJournal, RuntimeIdentity,
-    RuntimePin, SkippedPlugin,
+    PluginHost, PluginHostContext, PluginSupervisor, RecoveryJournal, RuntimeIdentity, RuntimePin,
+    SkippedPlugin,
 };
 
 /// Exists only for this compile-time witness (SC-MAC-02b): the authority to
