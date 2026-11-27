@@ -111,8 +111,10 @@ async fn missing_mail_capability_allows_requests_after_each_cleanup() -> Result<
     Ok(())
 }
 
+/// No StateEngine failure fails a turn: even an unreadable mail identity
+/// degrades, the plan goes ahead without mail, and the model is told why.
 #[tokio::test]
-async fn malformed_mail_identity_still_refuses_preparation() -> Result<(), String> {
+async fn malformed_mail_identity_degrades_with_a_notice() -> Result<(), String> {
     let family = ProtocolFamily::ChatGptCodex;
     let step = StepNumber::new(1).ok_or("step")?;
     let (continuation, _scratch) = DurableContinuation::empty_for_test("mail-identity")?;
@@ -127,15 +129,20 @@ async fn malformed_mail_identity_still_refuses_preparation() -> Result<(), Strin
         step,
     );
     plan.native_mail = Some(mail(r#"{"project_id":"fixture"}"#)?);
-    assert_eq!(
-        plan.refresh_context(step, HistoryGeneration::new(1)).await,
-        Err(
-            grapt_runtime::provider_source::ContextPreparationFailure::Continuity(
-                grapt_session::execution::ContinuityFailure::Binding
-            )
-        )
-    );
-    plan.finish_context(true).await?;
+    plan.refresh_context(step, HistoryGeneration::new(1))
+        .await
+        .map_err(|e| format!("a mail identity failure refused preparation: {e:?}"))?;
+    let prepared = plan
+        .plan(step, 1, HistoryGeneration::new(1))
+        .map_err(|e| e.detail)?;
+    let ProviderRequest::ChatGptCodex(request) = &prepared.request else {
+        return Err("unexpected family".into());
+    };
+    assert!(request.input.iter().any(|item| matches!(item,
+        grapt_provider::CodexInputItem::Message(message)
+            if message.content.starts_with("StateEngine mail is unavailable this turn:"))));
+    assert!(prepared.mail.is_none());
+    plan.finish_context(false).await?;
     plan.shutdown().await?;
     Ok(())
 }

@@ -182,9 +182,8 @@ impl NativeMailPlan {
         }
         self.lease.as_ref().ok_or(E::Incomplete)?.decode_warning()
     }
-    /// Proceed without mail after an outage: nothing is taken, so the mail
-    /// stays pending, and the plan tells the model why. The caller refuses
-    /// every other failure.
+    /// Proceed without mail after any failure: nothing is taken, so the mail
+    /// stays pending, and the plan tells the model why.
     pub(in crate::dogfood) fn degrade(&mut self, failure: E) {
         crate::diagnostics::report(format!(
             "stateengine-continuity stage=inbox state=degraded failure={failure:?}"
@@ -220,7 +219,8 @@ impl NativeMailPlan {
         }
         // A degraded preparation failed part-way, exactly as a refused one did
         // before it stopped failing the turn; it is cleaned up the same way.
-        let cancelled = cancelled || std::mem::take(&mut self.cleanup_owed);
+        let owed = std::mem::take(&mut self.cleanup_owed);
+        let cancelled = cancelled || owed;
         // Before this plan acquires its lease, the retained service still owns
         // every transport operation. A timeout in an earlier preparation stage
         // must not close or wait for that unrelated transport.
@@ -257,7 +257,18 @@ impl NativeMailPlan {
         };
         self.lease = None;
         self.planning = None;
-        result
+        match result {
+            // A degraded step already told the model mail is unavailable. Its
+            // failed close stays recorded on the context for the next step to
+            // recover, and never refuses this attempt.
+            Err(reason) if owed => {
+                crate::diagnostics::report(format!(
+                    "stateengine-continuity stage=cleanup state=degraded failure={reason}"
+                ));
+                Ok(())
+            }
+            other => other,
+        }
     }
     pub(in crate::dogfood) async fn shutdown(&mut self) -> Result<(), String> {
         self.finish(!self.service_owned).await
