@@ -126,7 +126,8 @@ const AUTOCOMMIT_SITES: &[(&str, usize)] = &[
     ("grapt-runtime", 2),
     // Three session-list fixtures tamper a projection digest to prove bad rows
     // degrade instead of failing the page, the next page or the store open.
-    ("grapt-session", 12),
+    // Test-only corrupt-row witnesses in tests/session_list_degraded.rs and tests/session_list_support/mod.rs.
+    ("grapt-session", 21),
     // Followup schema creation stays in the existing schema owner; two
     // in-memory recovery writes remove only its additive tables.
     ("grapt-subagent", 26),
