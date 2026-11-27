@@ -100,6 +100,14 @@ impl Environment {
             "never".into(),
             cfg!(windows),
         )?;
+        insert(&mut self.0, "GIT_ASKPASS".into(), "".into(), cfg!(windows))?;
+        insert(&mut self.0, "SSH_ASKPASS".into(), "".into(), cfg!(windows))?;
+        insert(
+            &mut self.0,
+            "SSH_ASKPASS_REQUIRE".into(),
+            "never".into(),
+            cfg!(windows),
+        )?;
         if self.0.len() > MAX_ENTRIES
             || self.0.iter().map(|(k, v)| k.len() + v.len()).sum::<usize>() > MAX_BYTES
         {

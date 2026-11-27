@@ -2,13 +2,17 @@
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
+const BLOCKED_MSG: &str =
+    "plugin_network_blocked: private, loopback, link-local and metadata addresses are denied";
+
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
 pub struct PluginAccess {
     read: Vec<PathBuf>,
     write: Vec<PathBuf>,
     network: Vec<String>,
+    #[cfg(any(test, feature = "loopback-testkit"))]
     #[serde(skip)]
-    allow_loopback: bool,
+    loopback_origins: Vec<String>,
 }
 
 #[derive(Default, Deserialize)]
@@ -50,7 +54,8 @@ impl PluginAccess {
             read: resolve_roots(declaration.read, directory)?,
             write: resolve_roots(declaration.write, directory)?,
             network,
-            allow_loopback: false,
+            #[cfg(any(test, feature = "loopback-testkit"))]
+            loopback_origins: Vec::new(),
         })
     }
 
@@ -61,12 +66,21 @@ impl PluginAccess {
         &self.write
     }
 
-    pub(crate) fn allows_loopback(&self) -> bool {
-        self.allow_loopback
+    pub(crate) fn allows_loopback_origin(&self, origin: &str) -> bool {
+        #[cfg(any(test, feature = "loopback-testkit"))]
+        {
+            self.loopback_origins.iter().any(|entry| entry == origin)
+        }
+        #[cfg(not(any(test, feature = "loopback-testkit")))]
+        {
+            let _ = origin;
+            false
+        }
     }
 
-    /// Explicitly admit a loopback origin for integration test fixtures while
-    /// keeping private, link-local, and metadata IP ranges blocked.
+    /// Explicitly admit one exact loopback origin for test fixtures while
+    /// keeping private, link-local, metadata, and all other origins blocked.
+    #[cfg(any(test, feature = "loopback-testkit"))]
     #[doc(hidden)]
     pub fn allow_loopback_origin_for_tests(&mut self, raw: &str) -> Result<(), String> {
         let url = parse_url(raw, true)?;
@@ -75,20 +89,26 @@ impl PluginAccess {
         }
         let origin = url.origin().ascii_serialization();
         if !self.network.contains(&origin) {
-            self.network.push(origin);
+            self.network.push(origin.clone());
             self.network.sort();
         }
-        self.allow_loopback = true;
+        if !self.loopback_origins.contains(&origin) {
+            self.loopback_origins.push(origin);
+            self.loopback_origins.sort();
+        }
         Ok(())
     }
 
-    pub(crate) fn admit_url(&self, raw: &str) -> Result<url::Url, String> {
-        let url = parse_url(raw, self.allow_loopback)?;
-        let origin = url.origin().ascii_serialization();
+    pub(crate) fn admit_url(&self, raw: &str) -> Result<(url::Url, bool), String> {
+        let candidate = parse_url_shape(raw)?;
+        let origin = candidate.origin().ascii_serialization();
+        let allow_loopback = self.allows_loopback_origin(&origin);
+        grapt_web::validate_public_host(&candidate, allow_loopback)
+            .map_err(|_| BLOCKED_MSG.to_owned())?;
         if !self.network.contains(&origin) {
             return Err(format!("plugin_network_denied: add {origin} to this plugin's permissions.network in user-global or launch-explicit configuration"));
         }
-        Ok(url)
+        Ok((candidate, allow_loopback))
     }
 }
 
@@ -115,7 +135,7 @@ fn resolve_roots(paths: Vec<String>, directory: &Path) -> Result<Vec<PathBuf>, S
     Ok(roots)
 }
 
-fn parse_url(raw: &str, allow_loopback: bool) -> Result<url::Url, String> {
+fn parse_url_shape(raw: &str) -> Result<url::Url, String> {
     if raw.len() > 8192 || raw.chars().any(char::is_control) {
         return Err("plugin_network_invalid: URL exceeds its bound or contains controls".into());
     }
@@ -129,6 +149,11 @@ fn parse_url(raw: &str, allow_loopback: bool) -> Result<url::Url, String> {
     {
         return Err("plugin_network_invalid: use a bounded HTTP(S) URL without credentials or wildcard hosts".into());
     }
-    crate::ssrf::validate_host(&url, allow_loopback)?;
+    Ok(url)
+}
+
+fn parse_url(raw: &str, allow_loopback: bool) -> Result<url::Url, String> {
+    let url = parse_url_shape(raw)?;
+    grapt_web::validate_public_host(&url, allow_loopback).map_err(|_| BLOCKED_MSG.to_owned())?;
     Ok(url)
 }

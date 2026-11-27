@@ -11,7 +11,6 @@ mod declaration;
 mod generation;
 mod protocol;
 mod source;
-mod ssrf;
 mod supervisor;
 
 pub use access::PluginAccess;

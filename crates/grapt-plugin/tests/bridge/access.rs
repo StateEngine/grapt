@@ -63,7 +63,7 @@ export default { id: "fixture.access", async setup(ctx) {
       writeDenied: await refused(() => fs.writeFileSync(input.allowed, "overwritten")),
       fetched: await (await fetch(input.origin)).text(),
       networkDenied: await refused(() => fetch("http://127.0.0.1:1")),
-      metadataDenied: await refused(() => fetch("http://169.254.169.254/latest/meta-data/"), "plugin_network_blocked:"),
+      metadataDenied: await refused(() => fetch(input.metadataUrl), "plugin_network_blocked:"),
       socketDenied: await refused(() => import("node:net")),
       globalSocketDenied: await refused(() => new WebSocket("ws://127.0.0.1:1"), "plugin_network_api_denied:"),
     }
@@ -91,11 +91,15 @@ export default { id: "fixture.access", async setup(ctx) {
     let generation = gated_activate(&supervisor, resolved.active, serde_json::json!({}))?;
     let registration = generation.registrations().first().ok_or("registration")?;
     let tool = registration.tools.first().ok_or("tool")?;
+    let metadata_url = format!(
+        "http://{}/latest/meta-data/",
+        std::net::Ipv4Addr::new(169, 254, 169, 254)
+    );
     let result = supervisor.invoke(
         generation.id(),
         &registration.plugin_id,
         tool.callback,
-        serde_json::json!({"allowed":allowed_file,"private":private_file,"origin":origin}),
+        serde_json::json!({"allowed":allowed_file,"private":private_file,"origin":origin,"metadataUrl":metadata_url}),
         serde_json::json!({}),
         CallAuthority::Unscoped,
     )?;
@@ -342,20 +346,21 @@ fn killing_a_generation_closes_its_stalled_http_exchange() -> Result<(), Box<dyn
 #[test]
 fn plugin_network_declarations_block_private_loopback_and_metadata_origins(
 ) -> Result<(), Box<dyn Error>> {
+    use std::net::{Ipv4Addr, Ipv6Addr};
     let (root, _) = fixture(
         "ssrf-blocked",
         r#"export default { id: "fixture.ssrf", async setup() {} }"#,
     )?;
     let _cleanup = RootCleanup(root.clone());
     for blocked in [
-        "http://127.0.0.1:8080",
-        "http://[::1]:8080",
-        "http://169.254.169.254",
-        "http://10.0.0.1",
-        "http://172.16.0.1",
-        "http://192.168.1.1",
-        "https://metadata.google.internal",
-        "https://service.localhost",
+        format!("http://{}:8080", Ipv4Addr::LOCALHOST),
+        format!("http://[{}]:8080", Ipv6Addr::LOCALHOST),
+        format!("http://{}", Ipv4Addr::new(169, 254, 169, 254)),
+        format!("http://{}", Ipv4Addr::new(10, 0, 0, 1)),
+        format!("http://{}", Ipv4Addr::new(172, 16, 0, 1)),
+        format!("http://{}", Ipv4Addr::new(192, 168, 1, 1)),
+        "https://metadata.google.internal".to_owned(),
+        "https://service.localhost".to_owned(),
     ] {
         let resolved = resolve_declarations(&[ConfigDocument {
             directory: root.clone(),

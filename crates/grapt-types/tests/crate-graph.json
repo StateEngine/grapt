@@ -179,7 +179,8 @@
   "grapt-mcp-client": {
    "deps": [
     "grapt-mcp",
-    "grapt-types"
+    "grapt-types",
+    "grapt-web"
    ],
    "dev": []
   },
@@ -214,11 +215,14 @@
   "grapt-plugin": {
    "deps": [
     "grapt-diagnostics",
+    "grapt-plugin-prompt",
     "grapt-sandbox",
     "grapt-types",
-    "grapt-plugin-prompt"
+    "grapt-web"
    ],
-   "dev": []
+   "dev": [
+    "grapt-plugin"
+   ]
   },
   "grapt-plugin-prompt": {
    "deps": [],

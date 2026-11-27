@@ -254,19 +254,27 @@ async fn oversized_encoded_and_ambiguous_token_responses_are_refused_before_expo
 #[tokio::test]
 async fn production_discovery_blocks_private_loopback_link_local_and_metadata_hosts() -> TestResult
 {
+    use std::net::{Ipv4Addr, Ipv6Addr};
+    let metadata_v4 = Ipv4Addr::new(169, 254, 169, 254);
+    let rfc1918_10 = Ipv4Addr::new(10, 0, 0, 1);
+    let rfc1918_172 = Ipv4Addr::new(172, 16, 0, 1);
+    let rfc1918_192 = Ipv4Addr::new(192, 168, 1, 1);
+    let ula_v6 = Ipv6Addr::new(0xfc00, 0, 0, 0, 0, 0, 0, 1);
+    let link_local_v6 = Ipv6Addr::new(0xfe80, 0, 0, 0, 0, 0, 0, 1);
+
     let prod = MetadataHttp::new()?;
     for blocked in [
-        "https://127.0.0.1:443/mcp",
-        "https://[::1]:443/mcp",
-        "https://169.254.169.254/latest/meta-data/",
-        "https://10.0.0.1/mcp",
-        "https://172.16.0.1/mcp",
-        "https://192.168.1.1/mcp",
-        "https://metadata.google.internal/computeMetadata/v1/",
-        "https://service.localhost/mcp",
+        format!("https://{}:443/mcp", Ipv4Addr::LOCALHOST),
+        format!("https://[{}]:443/mcp", Ipv6Addr::LOCALHOST),
+        format!("https://{metadata_v4}/latest/meta-data/"),
+        format!("https://{rfc1918_10}/mcp"),
+        format!("https://{rfc1918_172}/mcp"),
+        format!("https://{rfc1918_192}/mcp"),
+        "https://metadata.google.internal/computeMetadata/v1/".to_owned(),
+        "https://service.localhost/mcp".to_owned(),
     ] {
         let error = prod
-            .discover(blocked, Duration::from_secs(2))
+            .discover(&blocked, Duration::from_secs(2))
             .await
             .err()
             .ok_or_else(|| format!("expected SSRF refusal for {blocked}"))?;
@@ -275,14 +283,14 @@ async fn production_discovery_blocks_private_loopback_link_local_and_metadata_ho
 
     let loopback = client()?;
     for still_blocked in [
-        "https://169.254.169.254/latest/meta-data/",
-        "https://10.0.0.1/mcp",
-        "https://192.168.1.1/mcp",
-        "https://[fc00::1]/mcp",
-        "https://[fe80::1]/mcp",
+        format!("https://{metadata_v4}/latest/meta-data/"),
+        format!("https://{rfc1918_10}/mcp"),
+        format!("https://{rfc1918_192}/mcp"),
+        format!("https://[{ula_v6}]/mcp"),
+        format!("https://[{link_local_v6}]/mcp"),
     ] {
         let error = loopback
-            .discover(still_blocked, Duration::from_secs(2))
+            .discover(&still_blocked, Duration::from_secs(2))
             .await
             .err()
             .ok_or_else(|| format!("expected SSRF refusal for {still_blocked}"))?;

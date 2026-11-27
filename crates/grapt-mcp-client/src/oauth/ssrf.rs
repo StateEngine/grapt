@@ -1,5 +1,5 @@
-//! Public-only SSRF host and IP address policy for MCP OAuth HTTP discovery
-//! and token requests, with bounded DNS resolution pinned to the connection.
+//! DNS-pinned SSRF boundary for MCP OAuth HTTP requests, backed by
+//! `grapt-web`'s single public-only host and IP policy.
 
 use reqwest::dns;
 use std::net::{IpAddr, SocketAddr, ToSocketAddrs};
@@ -35,47 +35,12 @@ impl dns::Resolve for PinnedDns {
     }
 }
 
-/// Reject private, loopback, link-local, metadata, and reserved hosts/IPs.
-///
-/// When `allow_loopback` is true (explicit loopback test fixtures only),
-/// loopback IPs (`127.0.0.0/8`, `::1`) are admitted while all other non-public
-/// ranges (private RFC1918, link-local / cloud metadata `169.254.0.0/16`, ULA)
-/// remain blocked.
 pub(crate) fn validate_host(url: &Url, allow_loopback: bool) -> Result<(), ()> {
-    match url.host() {
-        Some(Host::Ipv4(ip)) => ensure_admitted_ip(IpAddr::V4(ip), allow_loopback),
-        Some(Host::Ipv6(ip)) => ensure_admitted_ip(IpAddr::V6(ip), allow_loopback),
-        Some(Host::Domain(host)) => {
-            let host = host.trim_end_matches('.');
-            if allow_loopback && host.eq_ignore_ascii_case("localhost") {
-                return Ok(());
-            }
-            if !host.contains('.')
-                || [
-                    "localhost",
-                    "local",
-                    "internal",
-                    "home.arpa",
-                    "test",
-                    "invalid",
-                    "onion",
-                ]
-                .iter()
-                .any(|suffix| {
-                    host.eq_ignore_ascii_case(suffix)
-                        || host.to_ascii_lowercase().ends_with(&format!(".{suffix}"))
-                })
-            {
-                return Err(());
-            }
-            Ok(())
-        }
-        None => Err(()),
-    }
+    grapt_web::validate_public_host(url, allow_loopback).map_err(|_| ())
 }
 
 /// Resolve `(host, port)` under a bounded concurrency slot and validate every
-/// returned address against the SSRF IP policy before pinning.
+/// returned address against `grapt-web`'s SSRF policy before pinning.
 pub(crate) async fn resolve_pinned(
     url: &Url,
     allow_loopback: bool,
@@ -103,62 +68,53 @@ pub(crate) async fn resolve_pinned(
         let resolved = (resolve_host.as_str(), port)
             .to_socket_addrs()
             .map_err(|_| ())?;
-        validate_addresses(resolved, allow_loopback)
+        grapt_web::validate_public_addresses(resolved, allow_loopback).map_err(|_| ())
     })
     .await
     .map_err(|_| ())??;
     Ok((host, addresses))
 }
 
-pub(crate) fn validate_addresses(
-    addresses: impl IntoIterator<Item = SocketAddr>,
-    allow_loopback: bool,
-) -> Result<Vec<SocketAddr>, ()> {
-    let mut pinned = Vec::new();
-    for address in addresses.into_iter().take(33) {
-        ensure_admitted_ip(address.ip(), allow_loopback)?;
-        if pinned.len() == 32 {
-            return Err(());
-        }
-        pinned.push(address);
-    }
-    if pinned.is_empty() {
-        return Err(());
-    }
-    Ok(pinned)
-}
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use reqwest::dns::Resolve;
+    use std::net::{Ipv4Addr, Ipv6Addr};
+    use std::str::FromStr;
 
-pub(crate) fn ensure_admitted_ip(ip: IpAddr, allow_loopback: bool) -> Result<(), ()> {
-    if allow_loopback && ip.is_loopback() {
-        return Ok(());
+    #[test]
+    fn non_public_dns_answers_are_rejected_even_when_mixed_with_public_ips() {
+        let public = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(93, 184, 216, 34)), 443);
+        for non_public in [
+            SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 443),
+            SocketAddr::new(IpAddr::V4(Ipv4Addr::new(169, 254, 169, 254)), 443),
+            SocketAddr::new(IpAddr::V4(Ipv4Addr::new(10, 0, 0, 1)), 443),
+            SocketAddr::new(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1)), 443),
+            SocketAddr::new(IpAddr::V6(Ipv6Addr::LOCALHOST), 443),
+            SocketAddr::new(IpAddr::V6(Ipv6Addr::new(0xfe80, 0, 0, 0, 0, 0, 0, 1)), 443),
+        ] {
+            assert!(grapt_web::validate_public_addresses([non_public], false).is_err());
+            assert!(grapt_web::validate_public_addresses([public, non_public], false).is_err());
+        }
+        assert!(grapt_web::validate_public_addresses([public], false).is_ok());
     }
-    if is_public_ip(ip) {
+
+    #[tokio::test]
+    async fn pinned_dns_returns_only_validated_addresses_for_exact_host(
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        let pinned_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(93, 184, 216, 34)), 443);
+        let resolver = PinnedDns::new("auth.example".to_owned(), vec![pinned_addr]);
+
+        let resolved: Vec<SocketAddr> = resolver
+            .resolve(dns::Name::from_str("auth.example")?)
+            .await?
+            .collect();
+        assert_eq!(resolved, vec![pinned_addr]);
+
+        let refused = resolver
+            .resolve(dns::Name::from_str("other.example")?)
+            .await;
+        assert!(refused.is_err());
         Ok(())
-    } else {
-        Err(())
-    }
-}
-
-/// Conservative subset of public unicast matching `grapt-web`'s SSRF policy.
-/// Excludes private, loopback, link-local/metadata, CGNAT, multicast, and reserved ranges.
-pub(crate) fn is_public_ip(ip: IpAddr) -> bool {
-    match ip {
-        IpAddr::V4(ip) => {
-            let [a, b, c, _] = ip.octets();
-            !(matches!(a, 0 | 10 | 127 | 224..=255)
-                || (a == 100 && (64..=127).contains(&b))
-                || (a == 169 && b == 254)
-                || (a == 172 && (16..=31).contains(&b))
-                || (a == 192 && (b == 0 && matches!(c, 0 | 2) || b == 168 || b == 88 && c == 99))
-                || (a == 198 && (matches!(b, 18 | 19) || b == 51 && c == 100))
-                || (a == 203 && b == 0 && c == 113))
-        }
-        IpAddr::V6(ip) => {
-            let s = ip.segments();
-            (0x2000..=0x3fff).contains(&s[0])
-                && !(s[0] == 0x2001 && (s[1] < 0x200 || s[1] == 0xdb8))
-                && s[0] != 0x2002
-                && !(s[0] == 0x3fff && s[1] < 0x1000)
-        }
     }
 }

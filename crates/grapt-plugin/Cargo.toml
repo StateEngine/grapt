@@ -6,6 +6,9 @@ edition.workspace = true
 license.workspace = true
 description = "Authority-bound external plugin generations and the constrained JavaScript compatibility bridge."
 
+[features]
+loopback-testkit = []
+
 [[test]]
 name = "integration"
 path = "tests/integration/main.rs"
@@ -19,6 +22,7 @@ path = "tests/envelope.rs"
 grapt-diagnostics = { path = "../grapt-diagnostics" }
 grapt-plugin-prompt = { path = "../grapt-plugin-prompt" }
 grapt-sandbox = { path = "../grapt-sandbox" }
+grapt-web = { path = "../grapt-web" }
 base64 = "0.22.1"
 url = "2.5.8"
 tempfile = "=3.27.0"
@@ -38,6 +42,9 @@ nix = { version = "=0.30.1", default-features = false, features = ["signal", "pr
 
 [target.'cfg(windows)'.dependencies]
 processkit = { version = "=3.3.4", default-features = false, features = ["limits", "process-control"] }
+
+[dev-dependencies]
+grapt-plugin = { path = ".", features = ["loopback-testkit"] }
 
 [target.'cfg(windows)'.dev-dependencies]
 windows-spawn = "=0.1.0"

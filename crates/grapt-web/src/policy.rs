@@ -36,24 +36,7 @@ impl WebUrl {
         match url.host() {
             Some(Host::Ipv4(ip)) => ensure_public(IpAddr::V4(ip))?,
             Some(Host::Ipv6(ip)) => ensure_public(IpAddr::V6(ip))?,
-            Some(Host::Domain(host)) => {
-                let host = host.trim_end_matches('.');
-                if !host.contains('.')
-                    || [
-                        "localhost",
-                        "local",
-                        "internal",
-                        "home.arpa",
-                        "test",
-                        "invalid",
-                        "onion",
-                    ]
-                    .iter()
-                    .any(|suffix| host == *suffix || host.ends_with(&format!(".{suffix}")))
-                {
-                    return Err(FetchError::Url);
-                }
-            }
+            Some(Host::Domain(_)) => validate_public_host(&url, false)?,
             None => return Err(FetchError::Url),
         }
         url.set_fragment(None);
@@ -105,12 +88,53 @@ impl WebUrl {
     }
 }
 
-pub(crate) fn validate_addresses(
+/// Validate a URL host against the public-only SSRF policy.
+///
+/// When `allow_loopback` is true (explicit loopback test fixtures only),
+/// loopback hosts (`127.0.0.0/8`, `::1`, `localhost`) are admitted while
+/// private, link-local/metadata, and reserved ranges remain blocked.
+pub fn validate_public_host(url: &Url, allow_loopback: bool) -> Result<(), FetchError> {
+    match url.host() {
+        Some(Host::Ipv4(ip)) => ensure_admitted_ip(IpAddr::V4(ip), allow_loopback),
+        Some(Host::Ipv6(ip)) => ensure_admitted_ip(IpAddr::V6(ip), allow_loopback),
+        Some(Host::Domain(host)) => {
+            let host = host.trim_end_matches('.');
+            if allow_loopback && host.eq_ignore_ascii_case("localhost") {
+                return Ok(());
+            }
+            if !host.contains('.')
+                || [
+                    "localhost",
+                    "local",
+                    "internal",
+                    "home.arpa",
+                    "test",
+                    "invalid",
+                    "onion",
+                ]
+                .iter()
+                .any(|suffix| {
+                    host.eq_ignore_ascii_case(suffix)
+                        || host.to_ascii_lowercase().ends_with(&format!(".{suffix}"))
+                })
+            {
+                return Err(FetchError::Url);
+            }
+            Ok(())
+        }
+        None => Err(FetchError::Url),
+    }
+}
+
+/// Validate a bounded list (1..=32) of DNS-resolved socket addresses against
+/// the public-only SSRF policy.
+pub fn validate_public_addresses(
     addresses: impl IntoIterator<Item = SocketAddr>,
+    allow_loopback: bool,
 ) -> Result<Vec<SocketAddr>, FetchError> {
     let mut pinned = Vec::new();
     for address in addresses.into_iter().take(33) {
-        ensure_public(address.ip())?;
+        ensure_admitted_ip(address.ip(), allow_loopback)?;
         if pinned.len() == 32 {
             return Err(FetchError::Dns);
         }
@@ -122,11 +146,24 @@ pub(crate) fn validate_addresses(
     Ok(pinned)
 }
 
+pub(crate) fn validate_addresses(
+    addresses: impl IntoIterator<Item = SocketAddr>,
+) -> Result<Vec<SocketAddr>, FetchError> {
+    validate_public_addresses(addresses, false)
+}
+
+fn ensure_admitted_ip(ip: IpAddr, allow_loopback: bool) -> Result<(), FetchError> {
+    if allow_loopback && ip.is_loopback() {
+        return Ok(());
+    }
+    ensure_public(ip)
+}
+
 /// Conservative subset of public unicast. Special-purpose ranges are excluded
 /// even where IANA permits individual globally reachable exceptions.
 /// IANA IPv4/IPv6 special-purpose registries, reviewed 2026-10-15.
-pub(crate) fn ensure_public(ip: IpAddr) -> Result<(), FetchError> {
-    let public = match ip {
+pub fn is_public_ip(ip: IpAddr) -> bool {
+    match ip {
         IpAddr::V4(ip) => {
             let [a, b, c, _] = ip.octets();
             !(matches!(a, 0 | 10 | 127 | 224..=255)
@@ -144,8 +181,11 @@ pub(crate) fn ensure_public(ip: IpAddr) -> Result<(), FetchError> {
                 && s[0] != 0x2002
                 && !(s[0] == 0x3fff && s[1] < 0x1000)
         }
-    };
-    if public {
+    }
+}
+
+pub(crate) fn ensure_public(ip: IpAddr) -> Result<(), FetchError> {
+    if is_public_ip(ip) {
         Ok(())
     } else {
         Err(FetchError::Address)
