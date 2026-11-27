@@ -4,18 +4,6 @@
   "crates/grapt-event/src/envelope.rs": [
    "crates/grapt-event/src/envelope/tests.rs"
   ],
-  "crates/grapt-permission/src/service.rs": [
-   "crates/grapt-permission/src/service/operations.rs"
-  ],
-  "crates/grapt-permission/src/service/http.rs": [
-   "crates/grapt-permission/src/service/http/helpers.rs"
-  ],
-  "crates/grapt-product/src/dogfood/execution.rs": [
-   "crates/grapt-product/src/dogfood/execution/helpers.rs"
-  ],
-  "crates/grapt-product/src/dogfood/mod.rs": [
-   "crates/grapt-product/src/dogfood/application_port.rs"
-  ],
   "crates/grapt-provider/src/codex.rs": [
    "crates/grapt-provider/src/codex/tests/ordinals_capacity_and_eof.rs",
    "crates/grapt-provider/src/codex/tests/support_and_units.rs",
@@ -40,11 +28,6 @@
    "crates/grapt-store/src/attempt_receipt/tests/quarantine_and_terminal.rs",
    "crates/grapt-store/src/attempt_receipt/tests/send_permit_contradiction.rs",
    "crates/grapt-store/src/attempt_receipt/tests/shared_terminal.rs"
-  ],
-  "crates/grapt-store/src/session_list.rs": [
-   "crates/grapt-store/src/session_list/budget.rs",
-   "crates/grapt-store/src/session_list/migration.rs",
-   "crates/grapt-store/src/session_list/schema.rs"
   ],
   "crates/grapt-store/src/write/tests.rs": [
    "crates/grapt-store/src/write/tests/append_and_replay.rs",

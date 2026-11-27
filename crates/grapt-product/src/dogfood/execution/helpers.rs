@@ -1,4 +1,6 @@
-fn promoted_text(
+use super::*;
+
+pub(super) fn promoted_text(
     inbox: &Arc<Mutex<Inbox>>,
     session: &SessionId,
     promotion: &Promotion,
@@ -13,7 +15,7 @@ fn promoted_text(
         .map_err(|error| format!("promoted input text is unavailable: {error}"))
 }
 
-pub(super) fn next_step(
+pub(in crate::dogfood) fn next_step(
     inbox: &Arc<Mutex<Inbox>>,
     session: &SessionId,
 ) -> Result<StepNumber, String> {
@@ -38,31 +40,34 @@ pub(super) fn next_step(
         .ok_or_else(|| "next Step identity was refused".to_owned())
 }
 
-fn dto_string(value: &str) -> Result<grapt_api::u3a::DtoString, ExecutionRefusal> {
+pub(super) fn dto_string(value: &str) -> Result<grapt_api::u3a::DtoString, ExecutionRefusal> {
     grapt_api::u3a::DtoString::try_new(value.to_owned())
         .map_err(|error| ExecutionRefusal::Run(error.to_owned()))
 }
 
-fn finite(value: i64) -> Result<FiniteF64, ExecutionRefusal> {
+pub(super) fn finite(value: i64) -> Result<FiniteF64, ExecutionRefusal> {
     FiniteF64::try_new(value as f64).map_err(|error| ExecutionRefusal::Run(error.to_owned()))
 }
 
-fn wire_event(event: &EventId) -> Result<WireId<EventId>, ExecutionRefusal> {
+pub(super) fn wire_event(event: &EventId) -> Result<WireId<EventId>, ExecutionRefusal> {
     WireId::parse(event.as_str().to_owned())
         .ok_or_else(|| ExecutionRefusal::Run("wire event identity was invalid".to_owned()))
 }
 
-fn wire_session(session: &SessionId) -> Result<WireId<SessionId>, ExecutionRefusal> {
+pub(super) fn wire_session(session: &SessionId) -> Result<WireId<SessionId>, ExecutionRefusal> {
     WireId::parse(session.as_str().to_owned())
         .ok_or_else(|| ExecutionRefusal::Run("wire session identity was invalid".to_owned()))
 }
 
-fn wire_message(message: &MessageId) -> Result<WireId<MessageId>, ExecutionRefusal> {
+pub(super) fn wire_message(message: &MessageId) -> Result<WireId<MessageId>, ExecutionRefusal> {
     WireId::parse(message.as_str().to_owned())
         .ok_or_else(|| ExecutionRefusal::Run("wire message identity was invalid".to_owned()))
 }
 
-fn durable_ref(session: &SessionId, seq: u64) -> Result<DurableEventRef, ExecutionRefusal> {
+pub(super) fn durable_ref(
+    session: &SessionId,
+    seq: u64,
+) -> Result<DurableEventRef, ExecutionRefusal> {
     let aggregate = AggregateIdDto::try_new(session.as_str().to_owned())
         .map_err(|error| ExecutionRefusal::Run(error.to_owned()))?;
     Ok(DurableEventRef::new(aggregate, seq.into()))

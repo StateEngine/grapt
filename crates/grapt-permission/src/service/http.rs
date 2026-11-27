@@ -832,7 +832,8 @@ pub struct SavedPermissionRule {
     pub resource: String,
 }
 
-include!("http/helpers.rs");
+mod helpers;
+use helpers::*;
 
 #[cfg(test)]
 mod reliability;

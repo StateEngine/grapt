@@ -1,3 +1,107 @@
+use rusqlite::{Connection, Transaction};
+
+use super::budget::DeferredVmBudget;
+use super::EMPTY_SHA256;
+
+/// The columns a table named `session` must carry to BE a legacy session
+/// source. One list serves both the migration preflight and the open guard, so
+/// "is this a legacy source" cannot mean two different things in the two places
+/// that ask it.
+pub(super) const LEGACY_SESSION_COLUMNS: [&str; 7] = [
+    "id",
+    "project_id",
+    "workspace_id",
+    "parent_id",
+    "directory",
+    "title",
+    "time_updated",
+];
+
+/// True only for a table named `session` that carries the legacy shape AND
+/// holds at least one row — the exact state whose rows an `empty-rust-store`
+/// projection would hide.
+fn legacy_source_is_populated(conn: &Connection) -> rusqlite::Result<bool> {
+    if !table_exists(conn, "session")? {
+        return Ok(false);
+    }
+    let columns = columns_of(conn, "session")?;
+    if !LEGACY_SESSION_COLUMNS
+        .iter()
+        .all(|required| columns.iter().any(|present| present == required))
+    {
+        return Ok(false);
+    }
+    // EXISTS, not COUNT(*): the question is whether ANY row is at risk, and a
+    // full count over a large legacy table would be unbounded work at open.
+    conn.query_row("SELECT EXISTS(SELECT 1 FROM session)", [], |row| {
+        row.get::<_, i64>(0)
+    })
+    .map(|value| value != 0)
+}
+
+pub(super) fn table_exists(conn: &Connection, table: &str) -> rusqlite::Result<bool> {
+    conn.query_row(
+        "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?1)",
+        [table],
+        |row| row.get::<_, i64>(0),
+    )
+    .map(|value| value != 0)
+}
+
+pub(super) fn columns_of(conn: &Connection, table: &str) -> rusqlite::Result<Vec<String>> {
+    let mut statement = conn.prepare(&format!("PRAGMA table_info(\"{table}\")"))?;
+    let columns = statement
+        .query_map([], |row| row.get::<_, String>(1))?
+        .collect();
+    columns
+}
+
+fn verify_index(
+    conn: &Connection,
+    name: &str,
+    expected: &[&str],
+) -> Result<(), SessionListSchemaError> {
+    let exists: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM sqlite_master WHERE type = 'index' AND name = ?1",
+        [name],
+        |row| row.get(0),
+    )?;
+    if exists != 1 {
+        return Err(SessionListSchemaError::Corrupt(format!(
+            "required index {name} is missing"
+        )));
+    }
+    let mut statement = conn.prepare(&format!("PRAGMA index_xinfo(\"{name}\")"))?;
+    let actual = statement
+        .query_map([], |row| {
+            let key: i64 = row.get(5)?;
+            if key == 0 {
+                Ok(None)
+            } else {
+                Ok(Some((row.get::<_, String>(2)?, row.get::<_, String>(4)?)))
+            }
+        })?
+        .collect::<Result<Vec<_>, _>>()?
+        .into_iter()
+        .flatten()
+        .collect::<Vec<_>>();
+    let actual_columns = actual
+        .iter()
+        .map(|(column, _)| column.as_str())
+        .collect::<Vec<_>>();
+    if actual_columns != expected {
+        return Err(SessionListSchemaError::Corrupt(format!(
+            "index {name} columns are {actual_columns:?}, expected {expected:?}"
+        )));
+    }
+    if actual.iter().any(|(_, collation)| collation != "BINARY") {
+        return Err(SessionListSchemaError::Corrupt(format!(
+            "index {name} collations are {actual:?}, expected BINARY"
+        )));
+    }
+    Ok(())
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum SessionListSchemaError {
     #[error("session-list projection is unavailable")]

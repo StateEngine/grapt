@@ -16,6 +16,13 @@ fn is_production_src(path: &str) -> bool {
     )
 }
 
+/// Only legacy test-only fragments (`*/tests.rs` or `*/tests/*.rs`) may remain
+/// in `include-ratchet.json`; zero non-test production `src/` fragments are
+/// permitted.
+fn is_test_only_fragment(path: &str) -> bool {
+    path.ends_with("/tests.rs") || path.contains("/tests/")
+}
+
 type FragmentCounts = BTreeMap<String, usize>;
 
 fn listed(root: &Path) -> Result<BTreeMap<String, FragmentCounts>, String> {
@@ -40,6 +47,11 @@ fn listed(root: &Path) -> Result<BTreeMap<String, FragmentCounts>, String> {
             let name = fragment
                 .as_str()
                 .ok_or_else(|| format!("{RATCHET}: {carrier} has a non-string fragment"))?;
+            if !is_test_only_fragment(name) {
+                return Err(format!(
+                    "{RATCHET}: {carrier} lists non-test production fragment {name}; zero non-test src/ include!() stitches are permitted"
+                ));
+            }
             *counts.entry(name.to_owned()).or_insert(0) += 1;
         }
         if counts.is_empty() {
@@ -179,5 +191,10 @@ fn ratchet_tracks_only_production_src_and_refuses_growth_or_stale_entries(
     assert_eq!(duplicate_problems.len(), 1);
     assert!(duplicate_problems[0].contains("new include!"));
     assert!(duplicate_problems[0].contains("2 > 1"));
+
+    // Zero non-test production src/ fragments are permitted in include-ratchet.json.
+    assert!(!is_test_only_fragment("crates/example/src/helpers.rs"));
+    assert!(is_test_only_fragment("crates/example/src/foo/tests.rs"));
+    assert!(is_test_only_fragment("crates/example/src/foo/tests/bar.rs"));
     Ok(())
 }

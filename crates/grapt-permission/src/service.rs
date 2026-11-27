@@ -360,7 +360,7 @@ struct Row {
     status: Status,
 }
 
-include!("service/operations.rs");
+mod operations;
 
 mod http;
 pub use http::{

@@ -1,4 +1,6 @@
-fn source_json(source: &PermissionHttpSource) -> Value {
+use super::*;
+
+pub(super) fn source_json(source: &PermissionHttpSource) -> Value {
     match source {
         PermissionHttpSource::Tool {
             message_id,
@@ -7,7 +9,7 @@ fn source_json(source: &PermissionHttpSource) -> Value {
     }
 }
 
-fn decode_source(
+pub(super) fn decode_source(
     raw: Option<&str>,
     corrupt: &impl Fn(String) -> PermissionHttpError,
 ) -> Result<Option<PermissionHttpSource>, PermissionHttpError> {
@@ -46,7 +48,7 @@ fn decode_source(
     }))
 }
 
-fn saved_rule_patterns(
+pub(super) fn saved_rule_patterns(
     store: &EventStore,
     project: &ProjectId,
     action: &str,
@@ -76,7 +78,7 @@ fn saved_rule_patterns(
     Ok(patterns)
 }
 
-fn saved_patterns(
+pub(super) fn saved_patterns(
     tx: &grapt_store::GovernedTransaction<'_>,
     id: &PermissionId,
 ) -> Result<Vec<String>, PermissionHttpError> {
@@ -98,7 +100,7 @@ fn saved_patterns(
     Ok(patterns)
 }
 
-fn admit_rule_patterns(
+pub(super) fn admit_rule_patterns(
     tx: &grapt_store::GovernedTransaction<'_>,
     project: &ProjectId,
     action: &str,
@@ -149,7 +151,7 @@ fn admit_rule_patterns(
     Ok(())
 }
 
-fn exact_retry(
+pub(super) fn exact_retry(
     tx: &grapt_store::GovernedTransaction<'_>,
     command: &PermissionReplyCommand<'_>,
 ) -> Result<bool, PermissionHttpError> {
@@ -200,7 +202,7 @@ fn exact_retry(
         && attribution.source == PermissionReplySource::DirectReply)
 }
 
-fn cascade_reject(
+pub(super) fn cascade_reject(
     tx: &grapt_store::GovernedTransaction<'_>,
     held: &grapt_store::HeldWriters,
     command: &PermissionReplyCommand<'_>,
@@ -279,7 +281,7 @@ fn cascade_reject(
     }
 }
 
-fn append_v2_reply(
+pub(super) fn append_v2_reply(
     tx: &grapt_store::GovernedTransaction<'_>,
     held: &grapt_store::HeldWriters,
     command: &PermissionReplyCommand<'_>,
@@ -309,7 +311,7 @@ fn append_v2_reply(
     Ok(())
 }
 
-type RawHttpRow = (
+pub(super) type RawHttpRow = (
     String,
     String,
     String,
@@ -322,7 +324,7 @@ type RawHttpRow = (
     Option<String>,
 );
 
-fn decode_row(raw: RawHttpRow) -> Result<PermissionHttpRequest, PermissionHttpError> {
+pub(super) fn decode_row(raw: RawHttpRow) -> Result<PermissionHttpRequest, PermissionHttpError> {
     let id: PermissionId =
         raw.0.parse().map_err(
             |error: grapt_types::IdError| PermissionHttpError::Corruption {
@@ -383,21 +385,21 @@ fn decode_row(raw: RawHttpRow) -> Result<PermissionHttpRequest, PermissionHttpEr
     })
 }
 
-fn decode_json<T: serde::de::DeserializeOwned>(
+pub(super) fn decode_json<T: serde::de::DeserializeOwned>(
     raw: &str,
     corrupt: &impl Fn(String) -> PermissionHttpError,
 ) -> Result<T, PermissionHttpError> {
     serde_json::from_str(raw).map_err(|error| corrupt(error.to_string()))
 }
 
-fn decode_optional_json<T: serde::de::DeserializeOwned>(
+pub(super) fn decode_optional_json<T: serde::de::DeserializeOwned>(
     raw: Option<&str>,
     corrupt: &impl Fn(String) -> PermissionHttpError,
 ) -> Result<Option<T>, PermissionHttpError> {
     raw.map(|value| decode_json(value, corrupt)).transpose()
 }
 
-fn fallback_id() -> PermissionId {
+pub(super) fn fallback_id() -> PermissionId {
     match "per_corrupt".parse() {
         Ok(id) => id,
         Err(_) => unreachable!("static permission fallback identity is valid"),

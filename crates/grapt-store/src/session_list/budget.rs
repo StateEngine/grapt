@@ -1,3 +1,9 @@
+use std::num::NonZeroU64;
+
+use rusqlite::{Connection, Transaction};
+
+use super::{MAX_OPEN_VERIFY_VM_STEPS, MAX_SQLITE_VM_STEPS};
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SqliteVmBudget(NonZeroU64);
 
@@ -136,7 +142,7 @@ impl DeferredVmBudget {
         Ok(VmBudgetScope(self))
     }
 
-    fn exhausted(&self) -> bool {
+    pub(super) fn exhausted(&self) -> bool {
         self.exhausted.load(std::sync::atomic::Ordering::SeqCst)
     }
 }

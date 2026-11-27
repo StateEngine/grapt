@@ -5,10 +5,10 @@
 //! guard used by synchronous readers. Keeping this module free of
 //! `grapt-session` preserves the ruled dependency direction.
 
-use grapt_types::{LocationRef, Platform, ProjectId, SessionId, WorkspaceId};
-use rusqlite::{Connection, Transaction};
+#[cfg(test)]
+use rusqlite::Connection;
+#[cfg(test)]
 use sha2::{Digest, Sha256};
-use std::num::NonZeroU64;
 
 pub const SESSION_LIST_PROJECTION: crate::ProjectionId =
     crate::ProjectionId::new("session-list-v1");
@@ -33,9 +33,22 @@ pub const MAX_OPEN_VERIFY_VM_STEPS: u64 = MAX_IMPORTED_ROWS as u64 * OPEN_VERIFY
 const EMPTY_SHA256: &str = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
 const LEGACY_SOURCE: &str = "typescript-session-v1@42e4888cc0";
 
-include!("session_list/budget.rs");
-include!("session_list/schema.rs");
-include!("session_list/migration.rs");
+mod budget;
+mod migration;
+mod schema;
+
+pub(crate) use budget::DeferredVmBudget;
+pub use budget::{install_vm_budget, SqliteVmBudget, VmBudgetGuard};
+pub(crate) use migration::{import_legacy, validate_legacy_source};
+pub(crate) use schema::ensure_schema;
+pub use schema::{
+    verify_projection_rows, verify_schema, verify_schema_shape, SessionListSchemaError,
+};
+
+#[cfg(test)]
+use migration::{feed_row, projected_domain, verify_import_postcondition, LegacyRow};
+#[cfg(test)]
+use schema::create_schema;
 
 #[cfg(test)]
 mod tests {
