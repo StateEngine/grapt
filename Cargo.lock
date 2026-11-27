@@ -1836,6 +1836,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "grapt-fault-harness"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "thiserror 2.0.20",
+ "tokio",
+]
+
+[[package]]
 name = "grapt-form"
 version = "0.1.0"
 dependencies = [
@@ -2179,6 +2189,7 @@ dependencies = [
  "fs2",
  "grapt-types",
  "rusqlite",
+ "same-file",
  "sha2 0.10.9",
  "tempfile",
  "thiserror 2.0.20",
@@ -2200,6 +2211,7 @@ dependencies = [
  "grapt-types",
  "rusqlite",
  "serde_json",
+ "tempfile",
  "thiserror 2.0.20",
  "tokio",
  "trybuild",
@@ -2258,6 +2270,7 @@ dependencies = [
  "rusqlite",
  "serde",
  "serde_json",
+ "tempfile",
 ]
 
 [[package]]

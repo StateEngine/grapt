@@ -297,8 +297,13 @@ fn recover(row: &Value, state: &mut ScenarioState) -> RunResult<()> {
     // The corpus adapter calls the provider-free recovery owner directly. A
     // semantic mutant that increments provider_call_count here proves the
     // expected no-replay outcome is enforced by execution, not prose.
-    let report = recover_process_loss_attempts(state.inbox.store_mut(), &clock, ceiling(row)?)
-        .map_err(|error| error.to_string())?;
+    let report = recover_process_loss_attempts(
+        state.inbox.store_mut(),
+        &clock,
+        ceiling(row)?,
+        &mut |_, _| Ok(()),
+    )
+    .map_err(|error| error.to_string())?;
     state.recovery_reports.push(report);
     Ok(())
 }

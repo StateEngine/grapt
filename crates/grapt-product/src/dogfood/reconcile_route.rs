@@ -1,7 +1,8 @@
 //! `/reconcile`: what process loss left running is recorded as unknown.
 //!
-//! A nested start with no terminal blocks every prompt, rewind and undo, and
-//! names this route as the way out. The Session must be idle, so nothing can
+//! A restart records the runs a crash interrupted before admitting work (see
+//! `startup_recovery`). A nested start still without a terminal blocks every
+//! prompt, rewind and undo, and names this route as the way out. The Session must be idle, so nothing can
 //! still be running it; each orphan then gains exactly an unknown-effect
 //! terminal through the runtime's reconciliation owner, and the model is warned
 //! about it by the ordinary unknown-effect notice.

@@ -1,4 +1,4 @@
-use grapt_run_store::RunStore;
+use grapt_run_store::{MigrationSpec, RunStore};
 use grapt_session_actor::{
     load, ActorConfig, Event, SessionActor, SessionRuntimeState as S, SpawnError, SubmitError,
     SubmitKey, SCHEMA,
@@ -10,6 +10,9 @@ use std::time::Duration;
 use tempfile::TempDir;
 use tokio::sync::broadcast::error::{RecvError, TryRecvError};
 use tokio::time::{timeout, Instant};
+
+/// The run store's ledger as an owner that holds only this crate's tables.
+const LEDGER: &[MigrationSpec] = &[MigrationSpec::new(1, "session-actor", SCHEMA)];
 
 type TestResult = Result<(), Box<dyn Error + Send + Sync>>;
 
@@ -25,7 +28,7 @@ async fn start(
     path: &Path,
     config: ActorConfig,
 ) -> Result<(RunStore, SessionActor), Box<dyn Error + Send + Sync>> {
-    let store = RunStore::open(path, SCHEMA).await?;
+    let store = RunStore::open(path, LEDGER).await?;
     let actor = spawn(&store, config).await?;
     Ok((store, actor))
 }
