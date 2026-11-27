@@ -1,64 +1,4 @@
-use super::support_and_units::*;
-
-// -----------------------------------------------------------------------
-// Loopback fixtures. These bytes are authored by this module; they are not
-// and are never described as a capture of a live ChatGPT response.
-// -----------------------------------------------------------------------
-
-pub(super) async fn serve_once(body: &'static str, status_line: &'static str) -> String {
-    let listener = match TcpListener::bind("127.0.0.1:0").await {
-        Ok(listener) => listener,
-        Err(error) => panic!("loopback bind: {error}"),
-    };
-    let address = match listener.local_addr() {
-        Ok(address) => address,
-        Err(error) => panic!("loopback addr: {error}"),
-    };
-    tokio::spawn(async move {
-        if let Ok((mut socket, _)) = listener.accept().await {
-            let mut scratch = [0_u8; 4096];
-            let _ = socket.read(&mut scratch).await;
-            let response = format!(
-                    "{status_line}\r\ncontent-type: text/event-stream\r\ncontent-length: {}\r\n\r\n{body}",
-                    body.len()
-                );
-            let _ = socket.write_all(response.as_bytes()).await;
-            let _ = socket.flush().await;
-        }
-    });
-    format!("http://{address}")
-}
-
-pub(super) async fn drain(stream: &mut ProviderStream) -> Vec<AttemptFragment> {
-    let mut fragments = Vec::new();
-    while let Some(fragment) = stream.next_fragment().await {
-        fragments.push(fragment);
-    }
-    fragments
-}
-
-pub(super) fn input_for(base: &str, id: &str) -> AttemptInput {
-    let base = match crate::route::LoopbackBase::parse(base) {
-        Ok(base) => base,
-        Err(error) => panic!("loopback base: {error}"),
-    };
-    let endpoint =
-        ProviderEndpoint::loopback(&base, crate::request::ProtocolFamily::ChatGptCodex, route());
-    // Through the carrier, because there is no longer any other way in.
-    // Custody leaves by its own door and the aggregate would retain it;
-    // these transport tests drive only the wire half.
-    match input_from_carrier(carrier(id, endpoint), "grapt-test/0.1") {
-        Ok((input, _custody)) => input,
-        Err(error) => panic!("attempt input: {error}"),
-    }
-}
-
-pub(super) const TEXT_STREAM: &str = concat!(
-        "data: {\"type\":\"response.output_text.delta\",\"delta\":\"Hel\"}\n\n",
-        "data: {\"type\":\"response.output_text.delta\",\"delta\":\"lo\"}\n\n",
-        "data: {\"type\":\"response.output_text.done\"}\n\n",
-        "data: {\"type\":\"response.completed\",\"response\":{\"usage\":{\"input_tokens\":11,\"output_tokens\":2,\"total_tokens\":13}}}\n\n"
-    );
+use super::support::*;
 
 #[tokio::test]
 async fn a_text_stream_normalizes_into_the_alphabet_and_validates() {
@@ -111,11 +51,6 @@ async fn a_text_stream_normalizes_into_the_alphabet_and_validates() {
     assert_eq!(text, "Hello");
 }
 
-pub(super) const LENGTH_STREAM: &str = concat!(
-        "data: {\"type\":\"response.output_text.delta\",\"delta\":\"partial\"}\n\n",
-        "data: {\"type\":\"response.incomplete\",\"response\":{\"incomplete_details\":{\"reason\":\"max_output_tokens\"}}}\n\n"
-    );
-
 #[tokio::test]
 async fn an_incomplete_response_is_length_and_closes_its_open_block() {
     let base = serve_once(LENGTH_STREAM, "HTTP/1.1 200 OK").await;
@@ -151,11 +86,6 @@ async fn an_incomplete_response_is_length_and_closes_its_open_block() {
         "{fragments:?}"
     );
 }
-
-pub(super) const TOOL_STREAM: &str = concat!(
-        "data: {\"type\":\"response.output_item.added\",\"item\":{\"type\":\"function_call\",\"id\":\"fc_1\"}}\n\n",
-        "data: {\"type\":\"response.completed\",\"response\":{}}\n\n"
-    );
 
 #[tokio::test]
 async fn a_tool_call_fails_closed_rather_than_being_dropped() {

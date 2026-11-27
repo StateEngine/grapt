@@ -1,4 +1,4 @@
-use super::lifecycle::*;
+use super::*;
 #[test]
 fn scc_recovery_shares_one_terminal_across_permitted_attempts() -> TestResult {
     let mut store = elected_store()?;

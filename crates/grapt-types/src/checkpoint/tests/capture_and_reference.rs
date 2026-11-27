@@ -1,40 +1,4 @@
-pub(super) use super::super::*;
-pub(super) use crate::authority::test_support::{FixedClock, FixedIds};
-pub(super) use crate::path::PathIdentity;
-pub(super) use crate::vcs::{BranchName, BranchState, GitCommitId, VcsBaseline};
-
-pub(super) fn checkpoint_ref() -> Option<WorkspaceCheckpointRef> {
-    Some(WorkspaceCheckpointRef::new(
-        CheckpointProviderId::new("stateengine")?,
-        CheckpointProviderVersion::new("1.2.0")?,
-        WorkspaceCheckpointId::new("ckpt-1")?,
-    ))
-}
-
-pub(super) fn baseline() -> Option<VcsBaseline> {
-    Some(VcsBaseline::Git {
-        head: GitCommitId::new("0123456789abcdef0123456789abcdef01234567")?,
-        branch: BranchState::Symbolic(BranchName::new("main")?),
-    })
-}
-
-pub(super) fn anchor_with(fidelity: CheckpointFidelity) -> Option<RecoveryAnchor> {
-    RecoveryAnchor::new(
-        crate::recovery::RecoveryAnchorId::new("anchor-1")?,
-        checkpoint_ref()?,
-        baseline()?,
-        baseline()?,
-        WorktreeIdentity::Plain {
-            root: PathIdentity::canonical("/work"),
-        },
-        vec![CheckpointLaneId::new("files")?],
-        fidelity,
-    )
-}
-
-pub(super) fn anchor() -> Option<RecoveryAnchor> {
-    anchor_with(CheckpointFidelity::Exact)
-}
+use super::support::*;
 
 #[test]
 fn skipped_capture_is_evidence_not_absence() {

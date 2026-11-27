@@ -1,15 +1,4 @@
-use super::lifecycle::*;
-// -----------------------------------------------------------------------
-// Corruption
-// -----------------------------------------------------------------------
-
-pub(super) fn stage(
-    store: &EventStore,
-    row: ForeignAttemptReceipt<'_>,
-) -> Result<(), Box<dyn std::error::Error>> {
-    hostile_rows::install_attempt_receipt(store.connection(), store.gate(), row)?;
-    Ok(())
-}
+use super::*;
 
 fn honest_bytes(step: u32) -> Vec<u8> {
     encode_record(&AttemptReceiptRecord::new(
@@ -17,22 +6,6 @@ fn honest_bytes(step: u32) -> Vec<u8> {
         WriterEpoch::FIRST,
         terminal(),
     ))
-}
-
-pub(super) fn base_row(bytes: &[u8]) -> ForeignAttemptReceipt<'_> {
-    ForeignAttemptReceipt {
-        attempt_id: ATTEMPT,
-        session_id: SESSION,
-        step: 3,
-        ordinal: 1,
-        writer_epoch: 1,
-        terminal_event_id: TERMINAL,
-        terminal_created_ms: TERMINAL_MS,
-        reserved_ms: RESERVED_MS,
-        request_sent_ms: None,
-        settled_ms: None,
-        record_bytes: bytes,
-    }
 }
 
 /// All TEN indexed columns are cross-checked against the decoded bytes, each

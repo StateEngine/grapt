@@ -291,4 +291,5 @@ mod tests {
     mod admission_and_preconditions;
     mod capture_and_reference;
     mod restore_plan_rescue_and_lease;
+    mod support;
 }

@@ -1,5 +1,4 @@
-use super::capture_and_reference::*;
-use super::restore_plan_rescue_and_lease::*;
+use super::support::*;
 
 #[test]
 fn an_admission_never_claims_the_external_effect_happened() -> Result<(), Box<dyn std::error::Error>>

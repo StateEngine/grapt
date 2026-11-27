@@ -1,4 +1,4 @@
-use super::append_and_replay::*;
+use super::*;
 /// The raw `event_sequence` cursor, read straight from the table.
 ///
 /// Deliberately not through [`read_sequence_cursor`]: a mutation inside the

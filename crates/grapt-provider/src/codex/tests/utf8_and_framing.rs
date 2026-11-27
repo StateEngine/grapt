@@ -1,4 +1,4 @@
-use super::support_and_units::*;
+use super::support::*;
 
 // -----------------------------------------------------------------------
 // Each test below witnesses one corrected decoder defect.

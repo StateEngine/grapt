@@ -231,6 +231,7 @@ mod tests {
     }
 
     mod ordinals_capacity_and_eof;
+    mod support;
     mod support_and_units;
     mod transport_stream;
     mod utf8_and_framing;

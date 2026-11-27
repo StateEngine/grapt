@@ -161,3 +161,28 @@ fn ratchet_tracks_only_production_src_and_refuses_growth_or_stale_entries(
     assert!(duplicate_problems[0].contains("2 > 1"));
     Ok(())
 }
+
+#[test]
+fn two_lifetimes_on_one_line_cannot_hide_include_macro() -> Result<(), Box<dyn Error>> {
+    let mut same_line = BTreeMap::new();
+    same_line.insert(
+        "crates/example/src/lib.rs".to_owned(),
+        b"fn f<'a>() { include!(\"part.rs\"); let _: &'a str = \"\"; }\n".to_vec(),
+    );
+    same_line.insert("crates/example/src/part.rs".to_owned(), b"".to_vec());
+    assert!(
+        stitched_src(&same_line).is_err(),
+        "two lifetimes on one line must not swallow include!() as a char literal"
+    );
+
+    let mut multi_line = BTreeMap::new();
+    multi_line.insert(
+        "crates/example/src/lib.rs".to_owned(),
+        b"fn f<'a>() {\n    include!(\"part.rs\");\n    let _: &'a str = \"\";\n}\n".to_vec(),
+    );
+    multi_line.insert("crates/example/src/part.rs".to_owned(), b"".to_vec());
+    let found = stitched_src(&multi_line)?;
+    assert_eq!(found.len(), 1);
+    assert_eq!(evaluate_ratchet(&found, &BTreeMap::new()).len(), 1);
+    Ok(())
+}

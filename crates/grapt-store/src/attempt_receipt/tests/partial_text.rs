@@ -1,4 +1,4 @@
-use super::lifecycle::*;
+use super::*;
 // CLAIM-2: process-loss recovery promotes only the Step's active attempt's
 // checkpointed text, whichever of the Step's receipts it settles first.
 
