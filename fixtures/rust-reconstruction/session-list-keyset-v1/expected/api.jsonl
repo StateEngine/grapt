@@ -4,4 +4,4 @@
 {"action":8,"outcome":"page","order":"ascending","ids":["ses_scope_root"],"filters_compose":"and","subpath_affects_store":false}
 {"action":9,"outcome":"refused","error":"PageLimitExceeded","actual":129,"maximum":128}
 {"action":10,"outcome":"refused","error":"SearchLimitExceeded","actual":1025,"maximum":1024}
-{"action":11,"outcome":"refused","error":"ProjectionCorrupt","before_decode_allocation":true}
+{"action":11,"outcome":"degraded","degraded":["ses_oversize"],"ids":["ses_scope_root"]}

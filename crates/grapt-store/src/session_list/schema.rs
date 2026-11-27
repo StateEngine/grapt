@@ -13,9 +13,12 @@ pub(crate) fn ensure_schema(
     budget: &DeferredVmBudget,
 ) -> rusqlite::Result<()> {
     if table_exists(tx, "session_list_projection")? {
-        // The open/restart invariant runs under its OWN declared bound.
+        // The open/restart check runs under its OWN declared bound. It proves
+        // the projection's shape only: a row that breaks the projection law
+        // is skipped and reported by the page that reads it, so one bad row
+        // can no longer keep the whole store from opening.
         let guard = budget.enter()?;
-        let verdict = verify_schema(tx);
+        let verdict = verify_schema_shape(tx);
         let exhausted = budget.exhausted();
         drop(guard);
         if exhausted {
@@ -124,9 +127,9 @@ pub(crate) fn create_schema(tx: &Transaction<'_>) -> rusqlite::Result<()> {
 /// Whole-projection verification: the O(1) shape check followed by the
 /// O(rows) integrity scan.
 ///
-/// This is the OPEN/RESTART invariant. `EventStore` cannot be constructed
-/// without it succeeding, which is what lets a bounded list request rely on it
-/// instead of rescanning the table on every page.
+/// Migrations require it before they build on an existing projection. Opening
+/// a store requires only [`verify_schema_shape`]; list pages validate every
+/// row they read and skip the ones that fail.
 pub fn verify_schema(conn: &Connection) -> Result<(), SessionListSchemaError> {
     verify_schema_shape(conn)?;
     verify_projection_rows(conn)
@@ -227,8 +230,8 @@ pub fn verify_schema_shape(conn: &Connection) -> Result<(), SessionListSchemaErr
 /// its legacy baseline, its provenance kind, its cutover sequence and its
 /// authoritative watermark.
 ///
-/// It belongs to open/restart, not to a page request. A bounded page request
-/// still validates every row it actually RETURNS — types, identities, location,
+/// It belongs to migration, not to open or to a page request. A bounded page
+/// request validates every row it actually READS — types, identities, location,
 /// provenance/baseline agreement and watermark-versus-head — while decoding it,
 /// so moving this scan off the request path does not let a corrupt row reach a
 /// caller. It changes which rows a single request pays to inspect: the ones it

@@ -90,6 +90,13 @@ pub enum WriteError {
     SequenceExhausted { aggregate: String },
     #[error("projector {name} failed: {message}")]
     Projector { name: String, message: String },
+    /// The database failed under a projector, which is not the projector
+    /// refusing the fact.
+    #[error("projector {name} failed: {source}")]
+    ProjectorStorage {
+        name: String,
+        source: rusqlite::Error,
+    },
     /// A projector that names itself with nothing cannot key a watermark: every
     /// unnamed projection would share one row and read as each other's progress.
     #[error("a projection must have a non-empty identity to key its watermark")]
@@ -274,4 +281,63 @@ pub enum WriteError {
     McpCredentialCorrupt,
     #[error("MCP credential revision exhausted")]
     McpCredentialExhausted,
+}
+
+impl WriteError {
+    /// Whether the database itself failed (unreadable, read-only, missing its
+    /// schema, out of space, locked) rather than one row or item it holds.
+    /// A caller that may skip a bad item must still fail on these.
+    pub fn is_storage_failure(&self) -> bool {
+        match self {
+            Self::Sqlite(error) => sqlite_storage_failure(error),
+            Self::Election(ElectionError::Sqlite(_)) | Self::ProjectorStorage { .. } => true,
+            _ => false,
+        }
+    }
+}
+
+/// Why a [`super::Projector`] did not project a fact: it refused the fact, or
+/// the database failed under it. Kept apart so a caller that may skip one bad
+/// item still fails on the database.
+#[derive(Debug, thiserror::Error)]
+pub enum ProjectorError {
+    #[error("{0}")]
+    Refused(String),
+    #[error("sqlite: {0}")]
+    Storage(rusqlite::Error),
+}
+
+impl From<String> for ProjectorError {
+    fn from(reason: String) -> Self {
+        Self::Refused(reason)
+    }
+}
+
+impl From<&str> for ProjectorError {
+    fn from(reason: &str) -> Self {
+        Self::Refused(reason.to_owned())
+    }
+}
+
+impl From<rusqlite::Error> for ProjectorError {
+    fn from(error: rusqlite::Error) -> Self {
+        if sqlite_storage_failure(&error) {
+            Self::Storage(error)
+        } else {
+            Self::Refused(error.to_string())
+        }
+    }
+}
+
+/// [`WriteError::is_storage_failure`] for a bare SQLite error. A constraint
+/// refusal is about the row written; a value that does not convert is about
+/// the row read. Every other engine failure is the database's.
+pub fn sqlite_storage_failure(error: &rusqlite::Error) -> bool {
+    match error {
+        rusqlite::Error::SqliteFailure(code, _) => {
+            code.code != rusqlite::ErrorCode::ConstraintViolation
+        }
+        rusqlite::Error::SqlInputError { .. } => true,
+        _ => false,
+    }
 }

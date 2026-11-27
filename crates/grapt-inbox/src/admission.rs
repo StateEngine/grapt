@@ -201,7 +201,7 @@ impl Projector for InboxProjector {
         &mut self,
         tx: &Transaction<'_>,
         event: &grapt_store::DecodedEvent,
-    ) -> Result<(), String> {
+    ) -> Result<(), grapt_store::ProjectorError> {
         let decoded =
             InboxEvent::decode(event.kind.name(), event.kind.version().value(), &event.data)
                 .map_err(|e| e.to_string())?;
@@ -296,12 +296,14 @@ impl Projector for InboxProjector {
                 if delivery_from_str(&delivery).is_none() {
                     return Err(format!(
                         "{input}: pending delivery {delivery:?} outside the closed vocabulary"
-                    ));
+                    )
+                    .into());
                 }
                 if PromotedInputKind::from_str(&input_type).is_none() {
                     return Err(format!(
                         "{input}: pending input type {input_type:?} outside the closed vocabulary"
-                    ));
+                    )
+                    .into());
                 }
                 if let Some(raw) = &metadata {
                     serde_json::from_str::<Value>(raw).map_err(|error| {
@@ -387,7 +389,8 @@ impl Projector for InboxProjector {
                 {
                     return Err(format!(
                         "{input}: a compaction is already pending in session {session}"
-                    ));
+                    )
+                    .into());
                 }
                 tx.execute(
                     "INSERT INTO session_pending

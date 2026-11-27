@@ -372,7 +372,7 @@ impl Projector for HostileProjector {
         &mut self,
         tx: &rusqlite::Transaction<'_>,
         _event: &DecodedEvent,
-    ) -> Result<(), String> {
+    ) -> Result<(), grapt_store::ProjectorError> {
         // Deliberately swallowed: the assertion belongs to the test, and a
         // projector error would roll the append back and hide WHY it failed.
         self.refusal = tx.execute("UPDATE event SET writer_epoch = NULL", []).err();
@@ -439,7 +439,7 @@ impl Projector for FailingProjector {
         &mut self,
         _tx: &rusqlite::Transaction<'_>,
         _event: &DecodedEvent,
-    ) -> Result<(), String> {
+    ) -> Result<(), grapt_store::ProjectorError> {
         Err("refused on purpose".into())
     }
 }

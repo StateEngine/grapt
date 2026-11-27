@@ -503,14 +503,20 @@ impl DogfoodApplication {
         let clock = Arc::new(SystemClock);
         let receipt_bytes = NonZeroU32::new(ATTEMPT_RECEIPT_BYTES)
             .ok_or_else(|| DogfoodRefusal::Compose("attempt receipt bound is zero".to_owned()))?;
-        recover_process_loss_attempts(
+        let attempts = recover_process_loss_attempts(
             &mut store,
             clock.as_ref(),
             AttemptRecordCeiling::new(receipt_bytes),
         )
         .map_err(|error| DogfoodRefusal::Compose(error.to_string()))?;
-        elicitation::recover(&mut store, ids.as_ref(), clock.as_ref())
+        for warning in &attempts.warnings {
+            eprintln!("startup warning reason=attempt-recovery-skipped detail={warning}");
+        }
+        let forms = elicitation::recover(&mut store, ids.as_ref(), clock.as_ref())
             .map_err(DogfoodRefusal::Compose)?;
+        for warning in &forms {
+            eprintln!("startup warning reason=form-recovery-skipped detail={warning}");
+        }
         session_status::SessionStatusEmitter::recover(&mut store, &clock, &ids);
         let inbox =
             Inbox::new(store).map_err(|error| DogfoodRefusal::Compose(error.to_string()))?;

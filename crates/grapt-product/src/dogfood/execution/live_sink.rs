@@ -379,7 +379,7 @@ impl LiveSink {
             self.hub
                 .reconcile_because(grapt_api::ReconcileReason::UnrepresentableFrame, &why);
         } else {
-            self.hub.invalidate_because(&why);
+            self.hub.invalidate_session_because(&self.session, &why);
         }
         self.publication.refuse(self.session.clone(), reason);
     }
@@ -448,10 +448,13 @@ impl CommittedFactSink for LiveSink {
         // Subscribers hold slices the durable history will never contain, so
         // they reload it. A refused block already made them reload.
         if published {
-            self.hub.invalidate_because(&format!(
-                "session {}: attempt retried; reload durable history",
-                self.session
-            ));
+            self.hub.invalidate_session_because(
+                &self.session,
+                &format!(
+                    "session {}: attempt retried; reload durable history",
+                    self.session
+                ),
+            );
         }
     }
 
@@ -543,17 +546,20 @@ impl CommittedFactSink for LiveSink {
                 Ok((message, event)) => {
                     self.message = Some(message);
                     if let Err(error) = self.hub.publish(&event) {
-                        self.hub.invalidate_because(&format!(
-                            "session {}: step opening could not be published: {error}",
-                            self.session
-                        ));
+                        self.hub.invalidate_session_because(
+                            &self.session,
+                            &format!(
+                                "session {}: step opening could not be published: {error}",
+                                self.session
+                            ),
+                        );
                     }
                 }
                 Err(reason) => {
-                    self.hub.invalidate_because(&format!(
-                        "session {}: step opening refused: {reason}",
-                        self.session
-                    ));
+                    self.hub.invalidate_session_because(
+                        &self.session,
+                        &format!("session {}: step opening refused: {reason}", self.session),
+                    );
                     self.publication.refuse(self.session.clone(), reason);
                 }
             }

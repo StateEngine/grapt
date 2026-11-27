@@ -169,9 +169,10 @@ impl LiveExecutor {
                 {
                     observed_start.store(true, std::sync::atomic::Ordering::Release);
                 } else {
-                    self.hub.invalidate_because(&format!(
-                        "session {session}: failed execution start could not be recorded"
-                    ));
+                    self.hub.invalidate_session_because(
+                        &session,
+                        &format!("session {session}: failed execution start could not be recorded"),
+                    );
                 }
             }
             let observed = if result.is_err() {
@@ -193,9 +194,12 @@ impl LiveExecutor {
                 Ok(observations::ObservationPublication::Unavailable)
             };
             if let Err(error) = &terminal {
-                self.hub.invalidate_because(&format!(
-                    "session {session}: execution terminal could not be recorded: {error}"
-                ));
+                self.hub.invalidate_session_because(
+                    &session,
+                    &format!(
+                        "session {session}: execution terminal could not be recorded: {error}"
+                    ),
+                );
             }
             drop(settle_span);
             self.report_tail_samples();

@@ -116,7 +116,7 @@ impl DogfoodApplication {
         // Every subscriber must re-read rather than retaining messages removed
         // from the conversation. This advisory failure cannot undo the commit.
         self.hub
-            .invalidate_because("conversation rewound; reload durable history");
+            .invalidate_session_because(&session, "conversation rewound; reload durable history");
         decode(json!({"data":{
             "sessionID":session.as_str(), "messageID":before.as_str(),
             "committedSeq":committed, "prompt":selection.prompt(),

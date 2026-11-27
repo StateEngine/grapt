@@ -12,6 +12,9 @@ use serde_json::json;
 #[path = "history_read_isolation.rs"]
 mod read_isolation;
 
+#[path = "session_list_cursor.rs"]
+mod session_list_cursor;
+
 /// Assistant Steps after the prompt.
 const STEPS: u32 = 30;
 

@@ -57,6 +57,35 @@ impl Connection for crate::double::ContractDouble {
     }
 }
 
+/// Whether a session-list read reached the Sessions it asked for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum CatalogReach {
+    /// The read listed what it found, or found nothing at all.
+    #[default]
+    Read,
+    /// The server stopped among rows it could not read before listing any,
+    /// and more remain: "none" would be untrue.
+    Stalled,
+}
+
+impl CatalogReach {
+    /// The reach of one page: no rows yet a continuation is a stall.
+    pub(crate) fn of<T>(rows: &[T], next: Option<&str>) -> Self {
+        if rows.is_empty() && next.is_some() {
+            Self::Stalled
+        } else {
+            Self::Read
+        }
+    }
+}
+
+/// A title search's matches and how far it reached.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SessionSearch {
+    pub rows: Vec<SessionSummary>,
+    pub reach: CatalogReach,
+}
+
 /// One row in the session picker.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SessionSummary {
@@ -275,6 +304,7 @@ pub struct Client<C: Connection> {
     /// way.
     quiescence_terminal_epoch: std::collections::HashMap<SessionWireId, u64>,
     sessions: Vec<SessionSummary>,
+    catalog_reach: CatalogReach,
     permissions: Vec<PermissionAsk>,
     permission_revision: u64,
     /// Bumped by every acknowledged close, rename, create, reply or cancel, so
@@ -385,6 +415,7 @@ impl<C: Connection> Client<C> {
             quiescence_fact_epoch: std::collections::HashMap::new(),
             quiescence_terminal_epoch: std::collections::HashMap::new(),
             sessions: Vec::new(),
+            catalog_reach: CatalogReach::Read,
             permissions: Vec::new(),
             permission_revision: 0,
             acknowledged: 0,
@@ -466,6 +497,11 @@ impl<C: Connection> Client<C> {
 
     pub fn sessions(&self) -> &[SessionSummary] {
         &self.sessions
+    }
+
+    /// Whether the last session-list read could list anything.
+    pub fn catalog_reach(&self) -> CatalogReach {
+        self.catalog_reach
     }
 
     pub fn permissions(&self) -> &[PermissionAsk] {
@@ -628,8 +664,13 @@ impl<C: Connection> Client<C> {
     }
 
     fn accept_sessions(&mut self, bytes: &[u8]) -> Result<(), ClientError> {
-        let (rows, more) = crate::wire::decode_sessions_page(bytes)?;
-        let incomplete = more || rows.len() > self.bounds.max_retained_sessions;
+        let (rows, next) = crate::wire::decode_sessions_page(bytes)?;
+        self.catalog_reach = CatalogReach::of(&rows, next.as_deref());
+        if self.catalog_reach == CatalogReach::Stalled {
+            // Nothing new was read: the catalog shown before stays.
+            return Ok(());
+        }
+        let incomplete = next.is_some() || rows.len() > self.bounds.max_retained_sessions;
         let current = self
             .sessions
             .iter()

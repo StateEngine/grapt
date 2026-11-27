@@ -260,7 +260,7 @@ impl Projector for InboxSubscriberProjection {
         &mut self,
         _tx: &rusqlite::Transaction<'_>,
         event: &DecodedEvent,
-    ) -> Result<(), String> {
+    ) -> Result<(), grapt_store::ProjectorError> {
         let decoded =
             InboxEvent::decode(event.kind_name(), event.kind_version().value(), &event.data)
                 .map_err(|error| format!("{}: {error}", event.id.as_str()))?;

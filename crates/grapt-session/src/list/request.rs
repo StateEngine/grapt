@@ -42,6 +42,82 @@ impl SessionListKey {
     }
 }
 
+/// Where a page starts reading: after a listed Session, or after one stored
+/// projection row. A page that stopped among rows it could not list continues
+/// after the last row it read, named by its `rowid`, so the position stays a
+/// few bytes whatever that row's key holds (a BLOB, or text of any size).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SessionListBoundary {
+    pub(super) after: BoundaryKey,
+}
+
+/// What a [`SessionListBoundary`] is after.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum BoundaryKey {
+    Session(SessionListKey),
+    /// A projection row's `rowid` and a digest of the time and key it held,
+    /// whether or not either reads. A cursor whose row has gone, or whose
+    /// `rowid` now holds another time or key, is stale and refused rather
+    /// than guessed at.
+    Row {
+        rowid: i64,
+        key: KeyDigest,
+    },
+}
+
+/// A fixed-size digest of one stored session-list row's time and key: the
+/// SQLite type, byte length and every byte of each.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct KeyDigest(pub(super) [u8; 16]);
+
+impl KeyDigest {
+    pub fn to_hex(self) -> String {
+        self.0.iter().map(|byte| format!("{byte:02x}")).collect()
+    }
+
+    /// A digest from its 32 lowercase hexadecimal characters.
+    pub fn from_hex(hex: &str) -> Option<Self> {
+        if hex.len() != 32
+            || !hex
+                .bytes()
+                .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+        {
+            return None;
+        }
+        let mut bytes = [0; 16];
+        for (index, byte) in bytes.iter_mut().enumerate() {
+            *byte = u8::from_str_radix(hex.get(index * 2..index * 2 + 2)?, 16).ok()?;
+        }
+        Some(Self(bytes))
+    }
+}
+
+impl SessionListBoundary {
+    pub fn after_row(rowid: i64, key: KeyDigest) -> Self {
+        Self {
+            after: BoundaryKey::Row { rowid, key },
+        }
+    }
+
+    pub fn after(&self) -> &BoundaryKey {
+        &self.after
+    }
+}
+
+impl From<&SessionListKey> for SessionListBoundary {
+    fn from(key: &SessionListKey) -> Self {
+        Self {
+            after: BoundaryKey::Session(key.clone()),
+        }
+    }
+}
+
+impl From<SessionListKey> for SessionListBoundary {
+    fn from(key: SessionListKey) -> Self {
+        Self::from(&key)
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SessionListOrder {
     Ascending,
@@ -158,7 +234,7 @@ pub struct SessionListCriteria {
     pub parent: ParentFilter,
     pub order: SessionListOrder,
     pub direction: SessionListDirection,
-    pub anchor: Option<SessionListKey>,
+    pub anchor: Option<SessionListBoundary>,
     pub(super) page_size: NonZeroUsize,
     pub(super) limits: SessionListLimits,
 }
@@ -172,7 +248,7 @@ impl SessionListCriteria {
         parent: ParentFilter,
         order: SessionListOrder,
         direction: SessionListDirection,
-        anchor: Option<SessionListKey>,
+        anchor: Option<SessionListBoundary>,
         page_size: usize,
         limits: SessionListLimits,
     ) -> Result<Self, SessionListError> {
@@ -236,14 +312,37 @@ pub struct SessionListItem {
     pub provenance: SessionListProvenance,
 }
 
+/// A row a page skipped because it breaks the projection law. The page still
+/// serves every healthy row; this records what it could not show and why.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SessionListDegradedRow {
+    /// The row's session, when its identity is still readable.
+    pub session_id: Option<SessionId>,
+    pub reason: String,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SessionListPage {
     pub(super) items: Vec<SessionListItem>,
+    pub(super) degraded: Vec<SessionListDegradedRow>,
+    pub(super) continue_after: Option<SessionListBoundary>,
 }
 
 impl SessionListPage {
     pub fn items(&self) -> &[SessionListItem] {
         &self.items
+    }
+
+    /// Rows this page skipped. Empty when every selected row decoded.
+    pub fn degraded(&self) -> &[SessionListDegradedRow] {
+        &self.degraded
+    }
+
+    /// Where the next page in this page's direction continues, when it
+    /// stopped at its skip bound before the list ended: after the last row it
+    /// read, not its last item, so skipped rows are not read again.
+    pub fn continue_after(&self) -> Option<&SessionListBoundary> {
+        self.continue_after.as_ref()
     }
 }
 
@@ -259,6 +358,9 @@ pub enum SessionListError {
     QueryBudgetExceeded,
     #[error("session-list projection is unavailable")]
     ProjectionUnavailable,
+    /// The row a continuation cursor named is gone or holds another key.
+    #[error("the session list changed under this cursor; list again from the start")]
+    StaleCursor,
     #[error("session-list projection is corrupt: {reason}")]
     ProjectionCorrupt { reason: String },
     #[error("session-list store operation failed: {source}")]

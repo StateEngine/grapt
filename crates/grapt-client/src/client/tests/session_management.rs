@@ -9,6 +9,11 @@ enum Fault {
     MalformedAck,
     LookupUnavailable,
     LostReply,
+    /// Every list page comes back with no rows and a cursor, as when the
+    /// server stopped among rows it could not read before listing any.
+    SkippedPage,
+    /// The list answers 503, as when every row to its end was unreadable.
+    ListUnavailable,
 }
 #[derive(Debug)]
 struct Peer {
@@ -51,9 +56,41 @@ impl Transport for Peer {
             }
             return Ok(response);
         }
+        let query = |key: &str| {
+            request
+                .query()
+                .iter()
+                .find(|(name, _)| name == key)
+                .map(|(_, value)| value.clone())
+        };
+        if request.operation() == Operation::SessionList
+            && matches!(self.fault, Fault::ListUnavailable)
+        {
+            return Ok(WireResponse {
+                status: 503,
+                body: Vec::new(),
+            });
+        }
+        if request.operation() == Operation::SessionList && matches!(self.fault, Fault::SkippedPage)
+        {
+            let mut empty: serde_json::Value =
+                serde_json::from_slice(&crate::wire::encode_sessions(Vec::new()).map_err(|e| {
+                    TransportError::Unavailable {
+                        reason: e.to_string(),
+                    }
+                })?)
+                .map_err(|e| TransportError::Unavailable {
+                    reason: e.to_string(),
+                })?;
+            empty["cursor"]["next"] = serde_json::Value::String("past-skipped".into());
+            return Ok(WireResponse {
+                status: 200,
+                body: empty.to_string().into_bytes(),
+            });
+        }
         let mut response = self.inner.call(request)?;
         if request.operation() == Operation::SessionList {
-            if let Some((_, search)) = request.query().iter().find(|(key, _)| key == "search") {
+            if let Some(search) = query("search") {
                 self.search = Some(request.query().to_vec());
                 let mut value: serde_json::Value =
                     serde_json::from_slice(&response.body).map_err(|e| {
@@ -114,7 +151,7 @@ fn kss_session_management_targets_rows_and_preserves_state_until_deletion_is_ack
     client.rename_session(&second, " Find me ")?;
     assert_eq!(client.selected(), Some(&first));
     let catalog = client.sessions().to_vec();
-    let found = client.search_sessions("find")?;
+    let found = client.search_sessions("find")?.rows;
     assert_eq!(found.len(), 1);
     assert_eq!(found[0].id, second);
     assert_eq!(found[0].detail.directory.as_deref(), Some("/work"));
@@ -213,5 +250,43 @@ fn kss_session_management_targets_rows_and_preserves_state_until_deletion_is_ack
         "a selected search result must survive a bounded catalog refresh"
     );
 
+    Ok(())
+}
+
+#[test]
+fn a_list_stalled_by_skipped_rows_keeps_the_catalog_and_says_so(
+) -> Result<(), Box<dyn std::error::Error>> {
+    let mut client = Client::new(
+        Peer {
+            inner: ContractDouble::new(),
+            fault: Fault::None,
+            search: None,
+        },
+        Bounds::PRODUCTION,
+    );
+    client.select_first_offer()?;
+    let session = client.create_session()?;
+    client.rename_session(&session, "Find me")?;
+    client.refresh_sessions()?;
+    let catalog = client.sessions().to_vec();
+    assert!(catalog.iter().any(|row| row.id == session));
+    client.peer_mut().fault = Fault::SkippedPage;
+    client.refresh_sessions()?;
+    assert_eq!(client.catalog_reach(), CatalogReach::Stalled);
+    assert_eq!(
+        client.sessions(),
+        catalog,
+        "a stalled read erased the catalog"
+    );
+    let found = client.search_sessions("find")?;
+    assert!(found.rows.is_empty());
+    assert_eq!(found.reach, CatalogReach::Stalled);
+    client.peer_mut().fault = Fault::ListUnavailable;
+    assert!(client.refresh_sessions().is_err());
+    assert_eq!(
+        client.sessions(),
+        catalog,
+        "an unavailable list erased the catalog"
+    );
     Ok(())
 }

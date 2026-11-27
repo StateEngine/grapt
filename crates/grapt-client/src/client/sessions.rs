@@ -14,25 +14,27 @@ impl<C: Connection> Client<C> {
         }
     }
 
-    /// Search a bounded server page without replacing the live session catalog.
-    pub fn search_sessions(&mut self, search: &str) -> Result<Vec<SessionSummary>, ClientError> {
+    /// Search a bounded server page without replacing the live session
+    /// catalog. A search the server stopped before it could list anything
+    /// says so, rather than passing for one with no matches.
+    pub fn search_sessions(&mut self, search: &str) -> Result<SessionSearch, ClientError> {
         if search.len() > 256 || search.chars().any(char::is_control) {
             return Err(ClientError::InvalidInput(
                 "Session search exceeds its bound",
             ));
         }
+        let limit = self.bounds.max_retained_sessions.min(SEARCH_PAGE_ROWS);
         let bytes = self.ingest(
             Operation::SessionList,
             None,
             None,
             None,
             None,
-            Some(Page::Sessions {
-                search,
-                limit: self.bounds.max_retained_sessions.min(SEARCH_PAGE_ROWS),
-            }),
+            Some(Page::Sessions { search, limit }),
         )?;
-        Ok(crate::wire::decode_sessions(&bytes)?
+        let (rows, next) = crate::wire::decode_sessions_page(&bytes)?;
+        let reach = CatalogReach::of(&rows, next.as_deref());
+        let rows = rows
             .into_iter()
             .take(self.bounds.max_retained_sessions)
             .map(|row| SessionSummary {
@@ -41,7 +43,8 @@ impl<C: Connection> Client<C> {
                 parent: row.parent,
                 detail: row.detail,
             })
-            .collect())
+            .collect();
+        Ok(SessionSearch { rows, reach })
     }
 
     /// Rename the addressed row without attaching it or rewriting saved choices.

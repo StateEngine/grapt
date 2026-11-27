@@ -15,7 +15,7 @@
 
 use grapt_store::{
     AggregateId, AppendInput, EventStore, GovernedTransaction, HeldWriters, ProjectionId,
-    Projector, WriteError,
+    Projector, ProjectorError, WriteError,
 };
 use grapt_types::{CasOutcome, EventId, EventVersion, FormId, FormSuspensionReason, SessionId};
 use rusqlite::Transaction;
@@ -37,6 +37,17 @@ pub enum FormError {
     InvalidPresentation { id: FormId },
     #[error("event version 1 must exist")]
     Version,
+}
+
+impl FormError {
+    /// Whether the database failed rather than this form's own record.
+    pub fn is_storage_failure(&self) -> bool {
+        match self {
+            Self::Store(error) => error.is_storage_failure(),
+            Self::Sqlite(error) => grapt_store::sqlite_storage_failure(error),
+            _ => false,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -82,12 +93,13 @@ fn affect_one(
     sql: &str,
     params: impl rusqlite::Params,
     form: &FormId,
-) -> Result<(), String> {
-    let n = tx.execute(sql, params).map_err(|e| e.to_string())?;
+) -> Result<(), ProjectorError> {
+    let n = tx.execute(sql, params)?;
     if n != 1 {
         return Err(format!(
             "form {form}: transition affected {n} rows (expected exactly 1; wrong session or unknown form)"
-        ));
+        )
+        .into());
     }
     Ok(())
 }
@@ -99,7 +111,7 @@ impl Projector for FormProjector {
         &mut self,
         tx: &Transaction<'_>,
         event: &grapt_store::DecodedFormFact,
-    ) -> Result<(), String> {
+    ) -> Result<(), ProjectorError> {
         crate::global::project(tx, event)
     }
     fn projection(&self) -> ProjectionId {
@@ -110,7 +122,7 @@ impl Projector for FormProjector {
         &mut self,
         tx: &Transaction<'_>,
         event: &grapt_store::DecodedEvent,
-    ) -> Result<(), String> {
+    ) -> Result<(), ProjectorError> {
         let decoded =
             crate::FormEvent::decode(event.kind.name(), event.kind.version().value(), &event.data)
                 .map_err(|e| e.to_string())?;
@@ -120,8 +132,7 @@ impl Projector for FormProjector {
                     "INSERT INTO form_request (id, session_id, title, status, suspended_reason, answer)
                      VALUES (?1, ?2, ?3, 'pending', NULL, NULL)",
                     rusqlite::params![id.as_str(), session.as_str(), title],
-                )
-                .map_err(|e| e.to_string())?;
+                )?;
             }
             Some(crate::FormEvent::Suspended {
                 form,

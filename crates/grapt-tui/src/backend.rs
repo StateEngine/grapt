@@ -396,6 +396,7 @@ fn serve(
                 start: delta.start,
                 rows: delta.rows,
                 agents,
+                catalog: client.catalog_reach(),
                 permission,
                 policy: client.preset_line(),
                 bypass_permissions: client.bypass_permissions_on(),

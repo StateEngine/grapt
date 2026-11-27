@@ -42,8 +42,10 @@ impl DogfoodApplication {
         .map_err(|error| Error::Unknown(unknown(error)))?;
         drop(inbox);
         if !orphans.is_empty() {
-            self.hub
-                .invalidate_because("lost tool runs reconciled; reload durable history");
+            self.hub.invalidate_session_because(
+                &session,
+                "lost tool runs reconciled; reload durable history",
+            );
         }
         decode(json!({"data":{"sessionID":session.as_str(),"reconciled":orphans.len()}}))
             .map_err(|error| Error::Unknown(unknown(error)))

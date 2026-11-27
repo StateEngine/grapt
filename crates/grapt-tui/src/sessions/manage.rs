@@ -15,6 +15,8 @@ pub enum Request {
 pub struct Search {
     pub query: String,
     pub result: Result<Vec<Agent>, String>,
+    /// Whether the server stopped before it could list any match.
+    pub reach: grapt_client::CatalogReach,
 }
 #[derive(Debug)]
 pub enum Message {

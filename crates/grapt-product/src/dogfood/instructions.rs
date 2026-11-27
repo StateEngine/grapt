@@ -396,6 +396,7 @@ impl EffectiveInstructions {
         let history = InstructionService::request_history(inbox.store(), &self.session)
             .map_err(RefreshError::history)?
             .ok_or("effective instructions have no durable baseline")?;
+        warn_skipped(&history.skipped);
         let mut prepared = epoch::prepare(history, [ambient_notice, skill_notice])?;
         if let Some(child) =
             grapt_subagent::SubagentService::child_context_on(inbox.store(), &self.session)
@@ -430,8 +431,16 @@ pub(in crate::dogfood) fn snapshot(
     let history = InstructionService::request_history(inbox.store(), session)
         .map_err(|error| error.to_string())?
         .ok_or("Complete a response in this Session before using /side.")?;
+    warn_skipped(&history.skipped);
     let prepared = epoch::prepare(history, [None, None])?;
     Ok(prepared.prefix(false, include_session))
+}
+
+/// Name each journal row the instruction fold left out; the turn goes on.
+pub(in crate::dogfood) fn warn_skipped(skipped: &[grapt_instruction::SkippedInstructionEvent]) {
+    for row in skipped {
+        eprintln!("instruction warning reason=undecodable-journal-row detail={row}");
+    }
 }
 
 /// Keep skill discovery fixed-size; metadata and complete content load on demand.

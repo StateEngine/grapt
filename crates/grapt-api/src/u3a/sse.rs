@@ -648,6 +648,15 @@ impl DogfoodEventHub {
         );
     }
 
+    /// [`Self::invalidate_because`] for a failure about one Session. Frames
+    /// reach subscribers by location interest, not by the Session a window is
+    /// bound to, so a window bound to another Session may already show this
+    /// one's state (its status, for one). Every subscriber is ended, so none
+    /// keeps a stale view without a gap signal.
+    pub fn invalidate_session_because(&self, session: &grapt_types::SessionId, reason: &str) {
+        self.invalidate_because(&format!("session {session}: {reason}"));
+    }
+
     /// End an advisory stream at a committed reconciliation boundary. Unlike
     /// a failed projection, its queued frames remain valid: dropping senders
     /// drains those bounded frames before EOF prompts durable hydration.

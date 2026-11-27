@@ -79,7 +79,6 @@ pub const MAX_NOTICE_DATA_BYTES: usize = 128 * 1024;
 
 /// One source a turn could not use, and why, in product words.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub struct Unavailable {
     pub source: String,
     pub reason: String,
@@ -127,7 +126,6 @@ pub struct Notice {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
 struct Data {
     #[serde(rename = "sessionID")]
     session: String,
@@ -254,7 +252,6 @@ pub struct NotRunYet {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
 struct NotRunYetData {
     #[serde(rename = "sessionID")]
     session: String,
@@ -352,7 +349,6 @@ pub struct ContextRepeated {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
 struct ExecutionNoticeData {
     #[serde(rename = "sessionID")]
     session: String,
@@ -524,7 +520,6 @@ pub struct ConfigIgnored {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
 struct ConfigIgnoredData {
     #[serde(rename = "sessionID")]
     session: String,

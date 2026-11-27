@@ -82,6 +82,8 @@ fn every_action_executes_against_the_implementation_and_matches_the_declared_out
                 expected["action"]
             );
             assert_eq!(produced["order"], expected["order"]);
+        } else if expected["outcome"] == "degraded" {
+            assert_eq!(produced, expected, "degraded action {}", expected["action"]);
         } else {
             assert_eq!(
                 produced["error"], expected["error"],

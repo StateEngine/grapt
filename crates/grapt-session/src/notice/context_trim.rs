@@ -3,7 +3,7 @@ use super::*;
 pub(super) const CONTEXT_TRIMMED: &str = "context-trimmed";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields, rename_all = "camelCase")]
+#[serde(rename_all = "camelCase")]
 pub struct ContextEstimate {
     pub before: u64,
     pub after: u64,
@@ -39,7 +39,6 @@ pub struct ContextTrimNotice {
     pub estimate: ContextEstimate,
 }
 #[derive(Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
 struct Data {
     #[serde(rename = "sessionID")]
     session: String,
