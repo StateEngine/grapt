@@ -8,7 +8,7 @@ description = "Bounded SQLite writer and WAL snapshots for Grapt runs"
 [dependencies]
 fs2 = "0.4.3"
 grapt-types = { path = "../grapt-types" }
-rusqlite = { version = "=0.41.1", features = ["bundled", "extra_check", "hooks", "limits"] }
+rusqlite = { version = "=0.41.1", features = ["backup", "bundled", "extra_check", "hooks", "limits"] }
 sha2 = "0.10"
 thiserror = "2"
 tokio = { version = "1", features = ["rt", "sync", "time"] }

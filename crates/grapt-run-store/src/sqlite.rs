@@ -15,9 +15,15 @@ mod plan;
 pub(crate) use plan::check_write_plan;
 
 pub(crate) const RECEIPTS: &str = "run_store_receipt";
+pub(crate) const LEDGER: &str = "rust_migration";
+/// Storage-owned tables that domain SQL can neither read nor write.
+pub(crate) const INTERNAL: [&str; 2] = [RECEIPTS, LEDGER];
+pub(crate) const RECEIPTS_DDL: &str = "CREATE TABLE run_store_receipt (
+    request_key TEXT PRIMARY KEY,
+    digest BLOB NOT NULL CHECK(length(digest) = 32),
+    receipt BLOB NOT NULL
+) WITHOUT ROWID;";
 pub(crate) const WRITE_BUSY: Duration = Duration::from_millis(50);
-const APPLICATION_ID: i64 = 0x4752_4150;
-const VERSION: i64 = 1;
 // The transfer optimizer can copy index entries in a separate VM loop.
 // Sample that loop as well as the ordinary row callbacks.
 const PROGRESS_STEPS: i32 = 8;
@@ -54,7 +60,8 @@ pub(crate) fn sidecar(path: &Path, suffix: &str) -> PathBuf {
     name.into()
 }
 
-pub(crate) fn writer(path: &Path, schema: &str) -> Result<Connection, OpenError> {
+/// The writer's connection before its schema is checked or changed.
+pub(crate) fn writer(path: &Path) -> Result<Connection, OpenError> {
     let connection = Connection::open(path)?;
     connection.busy_timeout(WRITE_BUSY)?;
     connection.set_limit(Limit::SQLITE_LIMIT_LENGTH, MAX_COMMAND_BYTES as i32)?;
@@ -62,36 +69,22 @@ pub(crate) fn writer(path: &Path, schema: &str) -> Result<Connection, OpenError>
         "PRAGMA temp_store=FILE; PRAGMA foreign_keys=ON; PRAGMA trusted_schema=OFF;
          PRAGMA synchronous=FULL;",
     )?;
-    let app: i64 = connection.pragma_query_value(None, "application_id", |row| row.get(0))?;
-    let version: i64 = connection.pragma_query_value(None, "user_version", |row| row.get(0))?;
-    let empty: bool = connection.query_row(
-        "SELECT NOT EXISTS (SELECT 1 FROM sqlite_schema)",
-        [],
-        |row| row.get(0),
-    )?;
-    if !(app == APPLICATION_ID && version == VERSION || app == 0 && version == 0 && empty) {
-        return Err(OpenError::Schema(version));
-    }
-    verify_pager(&connection)?;
+    Ok(connection)
+}
+
+/// Switch a recognized run store to WAL. Runs only after the schema check so a
+/// foreign or newer file is refused unchanged.
+pub(crate) fn enable_wal(connection: &Connection) -> Result<(), OpenError> {
+    verify_pager(connection)?;
     let mode: String = connection.query_row("PRAGMA journal_mode=WAL", [], |row| row.get(0))?;
     if mode != "wal" {
         return Err(OpenError::JournalMode(mode));
     }
-    if empty {
-        connection.execute_batch("BEGIN IMMEDIATE")?;
-        connection.execute_batch(schema)?;
-        verify_pager(&connection)?;
-        connection.execute_batch(
-            "CREATE TABLE run_store_receipt (
-                request_key TEXT PRIMARY KEY,
-                digest BLOB NOT NULL CHECK(length(digest) = 32),
-                receipt BLOB NOT NULL
-            ) WITHOUT ROWID;",
-        )?;
-        connection.pragma_update(None, "application_id", APPLICATION_ID)?;
-        connection.pragma_update(None, "user_version", VERSION)?;
-        connection.execute_batch("COMMIT")?;
-    }
+    Ok(())
+}
+
+/// The limits live writes run under, set once migrations are done.
+pub(crate) fn restrict(connection: &Connection) -> Result<(), OpenError> {
     connection.execute_batch(
         "PRAGMA temp_store=MEMORY; PRAGMA wal_autocheckpoint=0;
          PRAGMA cache_spill=ON; PRAGMA mmap_size=0; PRAGMA threads=0;",
@@ -104,10 +97,10 @@ pub(crate) fn writer(path: &Path, schema: &str) -> Result<Connection, OpenError>
     connection.set_limit(Limit::SQLITE_LIMIT_COLUMN, 32)?;
     connection.set_limit(Limit::SQLITE_LIMIT_VARIABLE_NUMBER, MAX_PARAMS as i32)?;
     connection.set_limit(Limit::SQLITE_LIMIT_VDBE_OP, 1024)?;
-    Ok(connection)
+    Ok(())
 }
 
-fn verify_pager(connection: &Connection) -> Result<(), OpenError> {
+pub(crate) fn verify_pager(connection: &Connection) -> Result<(), OpenError> {
     let auto_vacuum: i64 = connection.pragma_query_value(None, "auto_vacuum", |row| row.get(0))?;
     if auto_vacuum != 0 {
         return Err(OpenError::AutoVacuum);
@@ -173,7 +166,9 @@ pub(crate) fn install_guard(
         }
         match context.action {
             AuthAction::Read { table_name, .. }
-                if !table_name.eq_ignore_ascii_case(RECEIPTS)
+                if !INTERNAL
+                    .iter()
+                    .any(|internal| table_name.eq_ignore_ascii_case(internal))
                     && !table_name.starts_with("sqlite_")
                     && context.database_name == Some("main") =>
             {

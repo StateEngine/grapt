@@ -1,6 +1,7 @@
 use crate::checkpoint::WalState;
 use crate::command::{Command, Receipt};
 use crate::error::{OpenError, WriteError};
+use crate::migration::{Migrated, MigrationSpec};
 use crate::read::ReadPool;
 use crate::writer::{self, Request};
 use std::path::Path;
@@ -43,13 +44,18 @@ pub struct StoreStats {
 pub struct RunStore {
     writer: Writer,
     readers: ReadPool,
+    migrated: Migrated,
     worker: Option<JoinHandle<Result<(), OpenError>>>,
 }
 
 impl RunStore {
-    /// Opens a standalone run database or initializes it with trusted,
-    /// compiled domain DDL. The schema is used only on first open.
-    pub async fn open(path: impl AsRef<Path>, schema: &'static str) -> Result<Self, OpenError> {
+    /// Opens a standalone run database, creating it or applying the pending
+    /// migrations of `ledger`, the build's trusted compiled schema. An existing
+    /// database is backed up and verified before any migration changes it.
+    pub async fn open(
+        path: impl AsRef<Path>,
+        ledger: &'static [MigrationSpec],
+    ) -> Result<Self, OpenError> {
         let path = path.as_ref().to_owned();
         let (sender, queue) = sync_channel(SLOTS);
         let (ready, started) = oneshot::channel();
@@ -59,8 +65,8 @@ impl RunStore {
         let sink = notices.clone();
         let worker = thread::Builder::new()
             .name("run-store-writer".into())
-            .spawn(move || writer::run(path, schema, queue, ready, worker_wal, sink))?;
-        let readers = match started.await {
+            .spawn(move || writer::run(path, ledger, queue, ready, worker_wal, sink))?;
+        let (readers, migrated) = match started.await {
             Ok(result) => result?,
             Err(_) => {
                 return match join(worker).await {
@@ -78,8 +84,14 @@ impl RunStore {
                 notices,
             })),
             readers,
+            migrated,
             worker: Some(worker),
         })
+    }
+
+    /// What opening did to the schema, including any backup it took.
+    pub fn migrated(&self) -> &Migrated {
+        &self.migrated
     }
 
     pub fn writer(&self) -> Writer {
