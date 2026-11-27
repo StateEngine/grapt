@@ -26,13 +26,13 @@ pub(crate) fn check_write_plan(
         let previous = connection
             .set_limit(limit, (MAX_SQL_BYTES + EXPLAIN.len()) as i32)
             .map_err(WriteError::RolledBack)?;
-        let program = connection.prepare_cached(&explanation);
+        let program = connection.prepare(&explanation);
         connection
             .set_limit(limit, previous)
             .map_err(WriteError::RolledBack)?;
         program
     } else {
-        connection.prepare_cached(&explanation)
+        connection.prepare(&explanation)
     };
     let mut program = program.map_err(WriteError::RolledBack)?;
     let mut ops = program
