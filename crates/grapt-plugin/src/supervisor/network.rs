@@ -139,13 +139,14 @@ pub(super) fn fetch(
         })
         .as_ref()
         .map_err(Clone::clone)?;
+    let allow_loopback = access.allows_loopback();
     runtime.block_on(async {
         let retired = async {
             while live() { tokio::time::sleep(Duration::from_millis(20)).await; }
             Err("plugin_network_closed: this plugin call or generation was retired".to_owned())
         };
         tokio::select! {
-            result = tokio::time::timeout(Duration::from_secs(30), exchange(url, method, headers, body, limit)) =>
+            result = tokio::time::timeout(Duration::from_secs(30), exchange(url, method, headers, body, limit, allow_loopback)) =>
                 result.map_err(|_| "plugin_network_timeout: HTTP exchange exceeded 30 seconds".to_owned())?,
             result = retired => result,
         }
@@ -158,6 +159,7 @@ async fn exchange(
     headers: header::HeaderMap,
     body: Vec<u8>,
     limit: usize,
+    allow_loopback: bool,
 ) -> Result<Value, String> {
     let host = url
         .host_str()
@@ -180,13 +182,8 @@ async fn exchange(
         let _permit = permit;
         let addresses = (resolve_host.as_str(), port)
             .to_socket_addrs()
-            .map_err(|_| "plugin_network_dns: lookup failed".to_owned())?
-            .take(33)
-            .collect::<Vec<_>>();
-        if addresses.is_empty() || addresses.len() > 32 {
-            return Err("plugin_network_dns: lookup requires 1..32 addresses".to_owned());
-        }
-        Ok(addresses)
+            .map_err(|_| "plugin_network_dns: lookup failed".to_owned())?;
+        crate::ssrf::validate_addresses(addresses, allow_loopback)
     })
     .await
     .map_err(|_| "plugin_network_dns: resolver worker failed".to_owned())??;

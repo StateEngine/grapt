@@ -147,7 +147,7 @@ impl PluginHost for GrantHost {
 #[expect(clippy::too_many_lines, reason = "legacy")]
 fn concurrent_calls_are_serialized_and_a_finished_call_grant_cannot_be_replayed(
 ) -> Result<(), Box<dyn Error>> {
-    let (root, plugin) = fixture(
+    let (root, _plugin) = fixture(
         "grants",
         r#"
 import { rename, writeFile } from "node:fs/promises"
@@ -187,9 +187,17 @@ export default {
         DEFAULT_BRIDGE_LIMITS,
         Arc::clone(&host) as Arc<dyn PluginHost>,
     )?);
-    let generation = gated_activate(&supervisor, declarations(&plugin)?, serde_json::json!({}))?;
+    let scratch = tempfile::tempdir()?;
+    let resolved = resolve_declarations(&[ConfigDocument {
+        directory: root.clone(),
+        source: "explicit-fixture".into(),
+        origin: PluginOrigin::LaunchExplicit,
+        value: serde_json::json!({"plugins":[{"package":"./fixture.mjs","permissions":{"write":[scratch.path()]}}]}),
+    }])?;
+    assert!(resolved.blocked.is_empty(), "{:?}", resolved.blocked);
+    let generation = gated_activate(&supervisor, resolved.active, serde_json::json!({}))?;
     let callback = first_tool(&generation, "fixture.grants", "slow")?;
-    let replay = root.join("replay.txt");
+    let replay = scratch.path().join("replay.txt");
     let calls = ["call_one", "call_two"]
         .into_iter()
         .map(|call| {

@@ -250,3 +250,43 @@ async fn oversized_encoded_and_ambiguous_token_responses_are_refused_before_expo
     }
     server.finish()
 }
+
+#[tokio::test]
+async fn production_discovery_blocks_private_loopback_link_local_and_metadata_hosts() -> TestResult
+{
+    let prod = MetadataHttp::new()?;
+    for blocked in [
+        "https://127.0.0.1:443/mcp",
+        "https://[::1]:443/mcp",
+        "https://169.254.169.254/latest/meta-data/",
+        "https://10.0.0.1/mcp",
+        "https://172.16.0.1/mcp",
+        "https://192.168.1.1/mcp",
+        "https://metadata.google.internal/computeMetadata/v1/",
+        "https://service.localhost/mcp",
+    ] {
+        let error = prod
+            .discover(blocked, Duration::from_secs(2))
+            .await
+            .err()
+            .ok_or_else(|| format!("expected SSRF refusal for {blocked}"))?;
+        assert_eq!(error, OAuthHttpError::Endpoint, "for {blocked}");
+    }
+
+    let loopback = client()?;
+    for still_blocked in [
+        "https://169.254.169.254/latest/meta-data/",
+        "https://10.0.0.1/mcp",
+        "https://192.168.1.1/mcp",
+        "https://[fc00::1]/mcp",
+        "https://[fe80::1]/mcp",
+    ] {
+        let error = loopback
+            .discover(still_blocked, Duration::from_secs(2))
+            .await
+            .err()
+            .ok_or_else(|| format!("expected SSRF refusal for {still_blocked}"))?;
+        assert_eq!(error, OAuthHttpError::Endpoint, "for {still_blocked}");
+    }
+    Ok(())
+}

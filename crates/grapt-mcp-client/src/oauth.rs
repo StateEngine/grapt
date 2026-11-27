@@ -413,4 +413,5 @@ pub mod credential_lock;
 pub mod discovery;
 pub mod http;
 pub mod registration;
+pub(crate) mod ssrf;
 pub mod tokens;

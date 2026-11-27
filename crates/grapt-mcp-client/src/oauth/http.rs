@@ -8,7 +8,7 @@ use super::{
     challenge::BearerChallenge,
     discovery::{self, ProtectedResource},
     registration::PublicClient,
-    OAuthMetadata,
+    ssrf, OAuthMetadata,
 };
 use grapt_types::Secret;
 use reqwest::{header, StatusCode, Url};
@@ -48,7 +48,8 @@ impl std::fmt::Debug for Discovered {
 }
 #[derive(Clone)]
 pub struct MetadataHttp {
-    client: reqwest::Client,
+    tls: Arc<rustls::ClientConfig>,
+    allow_loopback: bool,
 }
 impl std::fmt::Debug for MetadataHttp {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -66,12 +67,14 @@ impl MetadataHttp {
         .with_platform_verifier()
         .map_err(|_| OAuthHttpError::Client)?
         .with_no_client_auth();
-        Self::with_tls(tls)
+        Self::with_tls(tls, false)
     }
 
-    fn with_tls(tls: rustls::ClientConfig) -> Result<Self, OAuthHttpError> {
-        let client = reqwest::Client::builder()
-            .use_preconfigured_tls(tls)
+    fn with_tls(tls: rustls::ClientConfig, allow_loopback: bool) -> Result<Self, OAuthHttpError> {
+        // Validate TLS configuration upfront by constructing a probe client.
+        let tls = Arc::new(tls);
+        let _ = reqwest::Client::builder()
+            .use_preconfigured_tls((*tls).clone())
             .https_only(true)
             .no_proxy()
             .redirect(reqwest::redirect::Policy::none())
@@ -81,7 +84,33 @@ impl MetadataHttp {
             .connect_timeout(Duration::from_secs(10))
             .build()
             .map_err(|_| OAuthHttpError::Client)?;
-        Ok(Self { client })
+        Ok(Self {
+            tls,
+            allow_loopback,
+        })
+    }
+
+    #[cfg(any(test, feature = "loopback-testkit"))]
+    fn with_tls_loopback(tls: rustls::ClientConfig) -> Result<Self, OAuthHttpError> {
+        Self::with_tls(tls, true)
+    }
+
+    async fn pinned_client(&self, url: &Url) -> Result<reqwest::Client, OAuthHttpError> {
+        let (host, addresses) = ssrf::resolve_pinned(url, self.allow_loopback)
+            .await
+            .map_err(|()| OAuthHttpError::Endpoint)?;
+        reqwest::Client::builder()
+            .use_preconfigured_tls((*self.tls).clone())
+            .dns_resolver(Arc::new(ssrf::PinnedDns::new(host, addresses)))
+            .https_only(true)
+            .no_proxy()
+            .redirect(reqwest::redirect::Policy::none())
+            .retry(reqwest::retry::never())
+            .pool_max_idle_per_host(0)
+            .http2_max_header_list_size(16384)
+            .connect_timeout(Duration::from_secs(10))
+            .build()
+            .map_err(|_| OAuthHttpError::Client)
     }
 
     pub async fn discover(
@@ -90,11 +119,11 @@ impl MetadataHttp {
         budget: Duration,
     ) -> Result<Discovered, OAuthHttpError> {
         timed(budget, async {
-            let endpoint = https(resource)?;
+            let endpoint = https(resource, self.allow_loopback)?;
+            let client = self.pinned_client(&endpoint).await?;
             // A GET probe has no configured resource headers or credentials.
             // Its body is never consumed: it may be an open MCP SSE stream.
-            let response = self
-                .client
+            let response = client
                 .get(endpoint)
                 .header(header::ACCEPT, "application/json, text/event-stream")
                 .header(header::ACCEPT_ENCODING, "identity")
@@ -185,9 +214,9 @@ impl MetadataHttp {
     }
 
     async fn metadata(&self, url: Url) -> Result<Option<Secret<Vec<u8>>>, OAuthHttpError> {
-        https(url.as_str())?;
-        let response = self
-            .client
+        let url = https(url.as_str(), self.allow_loopback)?;
+        let client = self.pinned_client(&url).await?;
+        let response = client
             .get(url)
             .header(header::ACCEPT, "application/json")
             .header(header::ACCEPT_ENCODING, "identity")
@@ -219,9 +248,10 @@ impl MetadataHttp {
         let request =
             PublicClient::registration_request(redirect).map_err(|_| OAuthHttpError::Document)?;
         timed(budget, async {
-            let response = self
-                .client
-                .post(https(endpoint.as_str())?)
+            let endpoint = https(endpoint.as_str(), self.allow_loopback)?;
+            let client = self.pinned_client(&endpoint).await?;
+            let response = client
+                .post(endpoint)
                 .header(header::ACCEPT, "application/json")
                 .header(header::ACCEPT_ENCODING, "identity")
                 .header(header::CONTENT_TYPE, "application/json")
@@ -249,9 +279,10 @@ impl MetadataHttp {
             return Err(OAuthHttpError::Document);
         }
         timed(budget, async {
-            let response = self
-                .client
-                .post(https(metadata.token_endpoint().as_str())?)
+            let endpoint = https(metadata.token_endpoint().as_str(), self.allow_loopback)?;
+            let client = self.pinned_client(&endpoint).await?;
+            let response = client
+                .post(endpoint)
                 .header(header::ACCEPT, "application/json")
                 .header(header::ACCEPT_ENCODING, "identity")
                 .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
@@ -286,7 +317,7 @@ impl MetadataHttp {
     }
 }
 
-fn https(raw: &str) -> Result<Url, OAuthHttpError> {
+fn https(raw: &str, allow_loopback: bool) -> Result<Url, OAuthHttpError> {
     if raw.len() > 8192 || raw.trim() != raw || raw.chars().any(char::is_control) {
         return Err(OAuthHttpError::Endpoint);
     }
@@ -299,6 +330,7 @@ fn https(raw: &str) -> Result<Url, OAuthHttpError> {
     {
         return Err(OAuthHttpError::Endpoint);
     }
+    ssrf::validate_host(&url, allow_loopback).map_err(|()| OAuthHttpError::Endpoint)?;
     Ok(url)
 }
 fn headers(values: &header::HeaderMap) -> Result<(), OAuthHttpError> {

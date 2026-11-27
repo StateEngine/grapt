@@ -77,6 +77,7 @@ pub(super) async fn run(
         .env("GIT_CONFIG_SYSTEM", null)
         .env("GIT_CONFIG_GLOBAL", null)
         .env("GIT_TERMINAL_PROMPT", "0")
+        .env("GIT_EDITOR", "true")
         .env("GCM_INTERACTIVE", "never")
         .env("GIT_NO_REPLACE_OBJECTS", "1")
         .env("HOME", scratch)

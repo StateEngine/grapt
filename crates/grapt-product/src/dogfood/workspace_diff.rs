@@ -261,6 +261,8 @@ async fn git(
         .args(args)
         .env("GIT_OPTIONAL_LOCKS", "0")
         .env("GIT_TERMINAL_PROMPT", "0")
+        .env("GIT_EDITOR", "true")
+        .env("GCM_INTERACTIVE", "never")
         .env("GIT_CONFIG_COUNT", filters.len().to_string())
         .stdin(Stdio::null())
         .stdout(Stdio::piped())

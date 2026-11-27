@@ -7,6 +7,8 @@ pub struct PluginAccess {
     read: Vec<PathBuf>,
     write: Vec<PathBuf>,
     network: Vec<String>,
+    #[serde(skip)]
+    allow_loopback: bool,
 }
 
 #[derive(Default, Deserialize)]
@@ -36,7 +38,7 @@ impl PluginAccess {
         }
         let mut network = Vec::new();
         for raw in declaration.network {
-            let url = parse_url(&raw)?;
+            let url = parse_url(&raw, false)?;
             if url.path() != "/" || url.query().is_some() || url.fragment().is_some() {
                 return Err("plugin network permissions require exact HTTP(S) origins without paths, queries or fragments".into());
             }
@@ -48,6 +50,7 @@ impl PluginAccess {
             read: resolve_roots(declaration.read, directory)?,
             write: resolve_roots(declaration.write, directory)?,
             network,
+            allow_loopback: false,
         })
     }
 
@@ -58,8 +61,29 @@ impl PluginAccess {
         &self.write
     }
 
+    pub(crate) fn allows_loopback(&self) -> bool {
+        self.allow_loopback
+    }
+
+    /// Explicitly admit a loopback origin for integration test fixtures while
+    /// keeping private, link-local, and metadata IP ranges blocked.
+    #[doc(hidden)]
+    pub fn allow_loopback_origin_for_tests(&mut self, raw: &str) -> Result<(), String> {
+        let url = parse_url(raw, true)?;
+        if url.path() != "/" || url.query().is_some() || url.fragment().is_some() {
+            return Err("plugin network permissions require exact HTTP(S) origins without paths, queries or fragments".into());
+        }
+        let origin = url.origin().ascii_serialization();
+        if !self.network.contains(&origin) {
+            self.network.push(origin);
+            self.network.sort();
+        }
+        self.allow_loopback = true;
+        Ok(())
+    }
+
     pub(crate) fn admit_url(&self, raw: &str) -> Result<url::Url, String> {
-        let url = parse_url(raw)?;
+        let url = parse_url(raw, self.allow_loopback)?;
         let origin = url.origin().ascii_serialization();
         if !self.network.contains(&origin) {
             return Err(format!("plugin_network_denied: add {origin} to this plugin's permissions.network in user-global or launch-explicit configuration"));
@@ -91,7 +115,7 @@ fn resolve_roots(paths: Vec<String>, directory: &Path) -> Result<Vec<PathBuf>, S
     Ok(roots)
 }
 
-fn parse_url(raw: &str) -> Result<url::Url, String> {
+fn parse_url(raw: &str, allow_loopback: bool) -> Result<url::Url, String> {
     if raw.len() > 8192 || raw.chars().any(char::is_control) {
         return Err("plugin_network_invalid: URL exceeds its bound or contains controls".into());
     }
@@ -105,5 +129,6 @@ fn parse_url(raw: &str) -> Result<url::Url, String> {
     {
         return Err("plugin_network_invalid: use a bounded HTTP(S) URL without credentials or wildcard hosts".into());
     }
+    crate::ssrf::validate_host(&url, allow_loopback)?;
     Ok(url)
 }

@@ -323,6 +323,7 @@ fn command(cwd: &Path, args: &[&str], program: &std::ffi::OsStr) -> tokio::proce
         .args(args)
         .env("GIT_OPTIONAL_LOCKS", "0")
         .env("GIT_TERMINAL_PROMPT", "0")
+        .env("GIT_EDITOR", "true")
         .env("GCM_INTERACTIVE", "Never")
         .env("GIT_PAGER", "cat")
         .env_remove("GIT_DIR")

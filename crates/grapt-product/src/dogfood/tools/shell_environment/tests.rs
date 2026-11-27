@@ -525,6 +525,9 @@ fn runtime_session_replaces_launcher_identity_after_every_policy_filter() -> Res
             )?
             .with_session(&session)?;
             let expected = parent(&[
+                ("GCM_INTERACTIVE", "never"),
+                ("GIT_EDITOR", "true"),
+                ("GIT_TERMINAL_PROMPT", "0"),
                 ("SECODE_SESSION_ID", id),
                 ("STATEENGINE_SEAT_SURFACE", "secode"), // grapt-rename: keep
             ]);
