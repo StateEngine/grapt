@@ -35,7 +35,7 @@ impl WalBudget {
     pub(crate) fn new(
         connection: &Connection,
         file: PathBuf,
-        internal: &str,
+        internal: &[&str],
     ) -> Result<Self, OpenError> {
         let page: u32 = connection.pragma_query_value(None, "page_size", |row| row.get(0))?;
         let frame = u64::from(page) + FRAME_HEADER;
@@ -48,7 +48,9 @@ impl WalBudget {
             .collect::<rusqlite::Result<Vec<_>>>()?;
         let mut rows = HashMap::new();
         for table in tables {
-            if table.starts_with("sqlite_") || table.eq_ignore_ascii_case(internal) {
+            if table.starts_with("sqlite_")
+                || internal.iter().any(|name| table.eq_ignore_ascii_case(name))
+            {
                 continue;
             }
             let (indexes, unique): (u32, u32) = connection.query_row(

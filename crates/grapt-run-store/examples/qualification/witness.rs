@@ -1,4 +1,4 @@
-use super::{deadline, operation, BenchResult, SCHEMA};
+use super::{deadline, operation, BenchResult, LEDGER};
 use grapt_run_store::{Durability, ReadPool, RequestKey, RunStore, WriteError, Writer};
 use grapt_types::SessionId;
 use std::path::Path;
@@ -58,7 +58,7 @@ fn trace(syscall: &str, injection: &str, child: &str) -> BenchResult<()> {
 async fn check_fault(expected: i32) -> BenchResult<()> {
     let temp = TempDir::new()?;
     let path = temp.path().join("run.db");
-    let store = RunStore::open(&path, SCHEMA).await?;
+    let store = RunStore::open(&path, LEDGER).await?;
     let writer = store.writer();
     let mut notices = writer.subscribe();
     let session: SessionId = "ses_001".parse()?;
@@ -152,7 +152,7 @@ fn verify_restart(path: &Path, seq: i64) -> BenchResult<()> {
 
 async fn check_stall() -> BenchResult<()> {
     let temp = TempDir::new()?;
-    let store = RunStore::open(temp.path().join("run.db"), SCHEMA).await?;
+    let store = RunStore::open(temp.path().join("run.db"), LEDGER).await?;
     let writer = store.writer();
     let session: SessionId = "ses_001".parse()?;
     assert_eq!(list_snapshot(&store.readers()).await?, (None, 0));
