@@ -44,16 +44,66 @@ pub async fn load(
 ) -> Result<RuntimeSnapshot, LoadError> {
     let id = session.as_str().to_owned();
     let row = readers
+        .snapshot(deadline, move |read| runtime_row(read, &id))
+        .await?;
+    snapshot_from(session, row)
+}
+
+/// What a submit key already committed in this session, if anything.
+pub(crate) struct Recorded {
+    pub(crate) event: String,
+    pub(crate) state: SessionRuntimeState,
+    pub(crate) state_seq: StateSeq,
+}
+
+/// The submit key's transition record and the session snapshot, read from
+/// one database snapshot so the two always agree.
+pub(crate) async fn recorded(
+    readers: &ReadPool,
+    session: &SessionId,
+    key: &SubmitKey,
+    deadline: Instant,
+) -> Result<(Option<Recorded>, RuntimeSnapshot), LoadError> {
+    let (id, submit) = (session.as_str().to_owned(), key.as_str().to_owned());
+    let (record, runtime) = readers
         .snapshot(deadline, move |read| {
-            let mut statement =
-                read.prepare("SELECT state, state_seq FROM session_runtime WHERE session = ?1")?;
-            let mut rows = statement.query([id.as_str()])?;
-            Ok(match rows.next()? {
-                Some(row) => Some((row.get::<_, String>(0)?, row.get::<_, i64>(1)?)),
-                None => None,
-            })
+            Ok((recorded_row(read, &id, &submit)?, runtime_row(read, &id)?))
         })
         .await?;
+    let snapshot = snapshot_from(session.clone(), runtime)?;
+    let Some((event, state, seq)) = record else {
+        return Ok((None, snapshot));
+    };
+    match (
+        SessionRuntimeState::parse(&state),
+        StateSeq::from_stored(seq),
+    ) {
+        (Some(state), Some(state_seq)) if state_seq <= snapshot.state_seq => Ok((
+            Some(Recorded {
+                event,
+                state,
+                state_seq,
+            }),
+            snapshot,
+        )),
+        _ => Err(LoadError::Malformed),
+    }
+}
+
+fn runtime_row(read: &ReadView<'_>, session: &str) -> Result<Option<(String, i64)>, ReadError> {
+    let mut statement =
+        read.prepare("SELECT state, state_seq FROM session_runtime WHERE session = ?1")?;
+    let mut rows = statement.query([session])?;
+    Ok(match rows.next()? {
+        Some(row) => Some((row.get(0)?, row.get(1)?)),
+        None => None,
+    })
+}
+
+fn snapshot_from(
+    session: SessionId,
+    row: Option<(String, i64)>,
+) -> Result<RuntimeSnapshot, LoadError> {
     let Some((state, seq)) = row else {
         return Ok(RuntimeSnapshot {
             session,
@@ -70,39 +120,6 @@ pub async fn load(
             state,
             state_seq,
         }),
-        _ => Err(LoadError::Malformed),
-    }
-}
-
-/// What a submit key already committed in this session, if anything.
-pub(crate) struct Recorded {
-    pub(crate) event: String,
-    pub(crate) state: SessionRuntimeState,
-    pub(crate) state_seq: StateSeq,
-}
-
-pub(crate) async fn recorded(
-    readers: &ReadPool,
-    session: &SessionId,
-    key: &SubmitKey,
-    deadline: Instant,
-) -> Result<Option<Recorded>, LoadError> {
-    let (id, submit) = (session.as_str().to_owned(), key.as_str().to_owned());
-    let row = readers
-        .snapshot(deadline, move |read| recorded_row(read, &id, &submit))
-        .await?;
-    let Some((event, state, seq)) = row else {
-        return Ok(None);
-    };
-    match (
-        SessionRuntimeState::parse(&state),
-        StateSeq::from_stored(seq),
-    ) {
-        (Some(state), Some(state_seq)) => Ok(Some(Recorded {
-            event,
-            state,
-            state_seq,
-        })),
         _ => Err(LoadError::Malformed),
     }
 }

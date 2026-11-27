@@ -188,7 +188,15 @@ impl Worker {
                 self.commit(transition);
                 Ok(())
             }
-            Settlement::NotCommitted => self.resync().await,
+            // The transition stays pending until the snapshot is current, so
+            // a failed reload is reported as an unsettled prior write.
+            Settlement::NotCommitted => match self.resync().await {
+                Ok(()) => Ok(()),
+                Err(error) => {
+                    self.pending = Some(transition);
+                    Err(error)
+                }
+            },
             Settlement::Unresolved => {
                 self.pending = Some(transition);
                 Err(outcome.map_or_else(SubmitError::from, |_| SubmitError::OutcomeUnknown))
@@ -198,9 +206,13 @@ impl Worker {
                 let session = &self.current.session;
                 match store::recorded(&self.readers, session, &transition.key, deadline).await {
                     // The key is recorded, so the earlier attempt, or another
-                    // writer's identical one, committed; the snapshot catches up.
-                    Ok(Some(_)) => self.resync().await,
-                    Ok(None) => {
+                    // writer's identical one, committed. The snapshot from the
+                    // same read is current, so nothing is left to fail.
+                    Ok((Some(_), snapshot)) => {
+                        self.adopt(snapshot);
+                        Ok(())
+                    }
+                    Ok((None, _)) => {
                         self.pending = Some(transition);
                         Err(outcome.map_or_else(SubmitError::from, |_| SubmitError::OutcomeUnknown))
                     }
@@ -257,10 +269,12 @@ impl Worker {
         refused: Option<InvalidTransition>,
     ) -> Result<Applied, SubmitError> {
         let deadline = Instant::now() + self.config.read_timeout;
-        match store::recorded(&self.readers, &self.current.session, &key, deadline).await? {
+        let (recorded, snapshot) =
+            store::recorded(&self.readers, &self.current.session, &key, deadline).await?;
+        match recorded {
             Some(recorded) if recorded.event == event.as_str() => {
                 if recorded.state_seq > self.current.state_seq {
-                    self.resync().await?;
+                    self.adopt(snapshot);
                 }
                 let applied = Applied {
                     state: recorded.state,
@@ -288,12 +302,18 @@ impl Worker {
     async fn reload(&mut self) -> Result<(), SubmitError> {
         let deadline = Instant::now() + self.config.read_timeout;
         let loaded = store::load(&self.readers, self.current.session.clone(), deadline).await?;
+        self.adopt(loaded);
+        Ok(())
+    }
+
+    /// Take a snapshot read from the store as current, publishing it if it
+    /// differs.
+    fn adopt(&mut self, loaded: RuntimeSnapshot) {
         self.stale = false;
         if loaded != self.current {
             self.current = loaded;
             self.snapshots.send_replace(self.current.clone());
         }
-        Ok(())
     }
 }
 

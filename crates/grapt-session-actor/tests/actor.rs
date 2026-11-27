@@ -288,26 +288,7 @@ async fn a_replay_whose_snapshot_cannot_be_reloaded_fails_closed() -> TestResult
         .submit(key("turn")?, Event::StartTurn)
         .await?;
     // Hold every read slot so the second actor cannot reload.
-    let (mut releases, mut holders) = (Vec::new(), Vec::new());
-    let (started, mut ready) = tokio::sync::mpsc::channel(16);
-    for _ in 0..16 {
-        let (release, wait) = std::sync::mpsc::channel::<()>();
-        let started = started.clone();
-        releases.push(release);
-        let readers = store.readers();
-        holders.push(tokio::spawn(async move {
-            readers
-                .snapshot(soon(), move |_| {
-                    let _ = started.blocking_send(());
-                    let _ = wait.recv();
-                    Ok(())
-                })
-                .await
-        }));
-    }
-    for _ in 0..16 {
-        ready.recv().await.ok_or("a read slot holder stopped")?;
-    }
+    let (releases, holders) = hold_read_slots(&store).await?;
     let two = second.handle();
     let replayed = two.submit(key("turn")?, Event::StartTurn).await;
     assert!(
@@ -319,10 +300,7 @@ async fn a_replay_whose_snapshot_cannot_be_reloaded_fails_closed() -> TestResult
         second.shutdown().await,
         Err(SpawnError::Unsettled)
     ));
-    drop(releases);
-    for holder in holders {
-        holder.await??;
-    }
+    release(releases, holders).await?;
     first.shutdown().await?;
     store.shutdown().await?;
     Ok(())
@@ -353,5 +331,72 @@ async fn an_unchecked_retry_without_a_keyed_record_stays_unsettled() -> TestResu
     assert!(matches!(actor.shutdown().await, Err(SpawnError::Unsettled)));
     blocker.execute_batch("ROLLBACK")?;
     store.shutdown().await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_pending_write_stays_pending_while_its_record_cannot_be_read() -> TestResult {
+    let dir = TempDir::new()?;
+    let config = ActorConfig {
+        read_timeout: Duration::from_millis(200),
+        ..ActorConfig::default()
+    };
+    let (store, actor) = start(&dir.path().join("run.db"), config).await?;
+    let handle = actor.handle();
+    tokio::time::pause();
+    let unknown = handle.submit(key("start")?, Event::StartTurn).await;
+    tokio::time::resume();
+    assert!(
+        matches!(unknown, Err(SubmitError::OutcomeUnknown)),
+        "{unknown:?}"
+    );
+    let (releases, holders) = hold_read_slots(&store).await?;
+    let blocked = handle.submit(key("pause")?, Event::Pause).await;
+    assert!(
+        matches!(blocked, Err(SubmitError::PriorUnsettled)),
+        "{blocked:?}"
+    );
+    release(releases, holders).await?;
+    let paused = handle.submit(key("pause")?, Event::Pause).await?;
+    assert_eq!((paused.state, paused.state_seq.get()), (S::Paused, 2));
+    actor.shutdown().await?;
+    store.shutdown().await?;
+    Ok(())
+}
+
+type Holders = Vec<tokio::task::JoinHandle<Result<(), grapt_run_store::ReadError>>>;
+
+/// Occupy every read slot of `store` until the returned senders are dropped.
+async fn hold_read_slots(
+    store: &RunStore,
+) -> Result<(Vec<std::sync::mpsc::Sender<()>>, Holders), Box<dyn Error + Send + Sync>> {
+    let (mut releases, mut holders) = (Vec::new(), Vec::new());
+    let (started, mut ready) = tokio::sync::mpsc::channel(16);
+    for _ in 0..16 {
+        let (release, wait) = std::sync::mpsc::channel::<()>();
+        let started = started.clone();
+        releases.push(release);
+        let readers = store.readers();
+        holders.push(tokio::spawn(async move {
+            readers
+                .snapshot(soon(), move |_| {
+                    let _ = started.blocking_send(());
+                    let _ = wait.recv();
+                    Ok(())
+                })
+                .await
+        }));
+    }
+    for _ in 0..16 {
+        ready.recv().await.ok_or("a read slot holder stopped")?;
+    }
+    Ok((releases, holders))
+}
+
+async fn release(releases: Vec<std::sync::mpsc::Sender<()>>, holders: Holders) -> TestResult {
+    drop(releases);
+    for holder in holders {
+        holder.await??;
+    }
     Ok(())
 }
