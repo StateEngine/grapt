@@ -815,3 +815,99 @@ fn sc_rel_01b_a_live_nested_call_never_reads_as_a_lost_run() {
     process_fixture::cleanup(&journey.workspace);
     process_fixture::cleanup(&journey.service);
 }
+
+/// G2.4: a real-process automatic resume terminates the interrupted execution,
+/// settles `pending_resume` and `session_resume_input` on completion, and passes
+/// offline `session_cleanup` preview with zero overlapping-start refusals.
+#[test]
+fn g24_real_process_auto_resume_settles_lifecycle_for_offline_session_cleanup() {
+    let _journey = process_journey_custody();
+    let mut journey = start_with("auto-resume-cleanup", true, |_| {
+        vec![
+            Script::ToolInput {
+                call: "call_cleanup_parent",
+                tool: "execute",
+                arguments: serde_json::json!({"code": "return await tools['nested_hold']({});"}),
+            },
+            Script::SuccessText("resumed and completed cleanly"),
+        ]
+    });
+    let (address, session) = (journey.address, journey.session.clone());
+    let _approver = prompt(address, &session, "msg_cleanup_origin");
+    let entered = journey.workspace.join(".nested-entered1");
+    answering(address, &session, "the nested held call", || {
+        entered.exists()
+    });
+    // Simulate process loss mid-execution, then restart and let auto-resume finish.
+    journey.child.stop_after_witness(&journey.service);
+    let mut child = spawn(&journey.service, journey.provider.address);
+    let address = await_ready(&journey.service, &mut child);
+    settle(address, &session, &journey.provider, 2);
+    write(&journey.workspace.join(".nested-release1"), "release");
+    child.stop_after_witness(&journey.service);
+
+    // Inspect durable state: interrupted execution terminated, resume claim & binding settled.
+    let conn = rusqlite::Connection::open(journey.service.join("database.sqlite3"))
+        .unwrap_or_else(|error| panic!("open database: {error}"));
+    let interrupted_count: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM event
+             WHERE aggregate_family = 'session' AND aggregate_id = ?1
+               AND type = 'session.execution.interrupted.1'",
+            [session.as_str()],
+            |row| row.get(0),
+        )
+        .unwrap_or_else(|error| panic!("query interrupted events: {error}"));
+    assert_eq!(
+        interrupted_count, 1,
+        "interrupted execution must record a terminal event on recovery"
+    );
+    let resume_state: String = conn
+        .query_row(
+            "SELECT state FROM pending_resume WHERE session_id = ?1",
+            [session.as_str()],
+            |row| row.get(0),
+        )
+        .unwrap_or_else(|error| panic!("query pending_resume: {error}"));
+    assert_eq!(resume_state, "completed");
+    let active_bindings: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM session_resume_input
+             WHERE session_id = ?1 AND active != 0",
+            [session.as_str()],
+            |row| row.get(0),
+        )
+        .unwrap_or_else(|error| panic!("query session_resume_input: {error}"));
+    assert_eq!(
+        active_bindings, 0,
+        "completed auto-resume must retire active session_resume_input bindings"
+    );
+    drop(conn);
+
+    // Run real offline session_cleanup dry-run preview against the service root.
+    let service_str = journey.service.to_string_lossy().into_owned();
+    let command = grapt_product::session_cleanup::CleanupCommand::parse([
+        "--service",
+        service_str.as_str(),
+        "--cutoff-ms",
+        "1",
+        "--current-session",
+        "ses_other_current",
+    ])
+    .unwrap_or_else(|error| panic!("parse cleanup command: {error}"));
+    let clock = grapt_store::SystemClock;
+    let ids = grapt_store::OsRandomIds::seed().unwrap_or_else(|error| panic!("ids: {error}"));
+    let report = command
+        .run("test-cleanup-preview", &clock, &ids)
+        .unwrap_or_else(|error| panic!("offline session_cleanup preview refused: {error}"));
+    assert!(
+        report
+            .sessions
+            .iter()
+            .any(|decision| decision.session.as_str() == session.as_str()),
+        "resumed session missing from cleanup report: {report:?}"
+    );
+
+    process_fixture::cleanup(&journey.workspace);
+    process_fixture::cleanup(&journey.service);
+}

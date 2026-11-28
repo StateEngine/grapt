@@ -79,6 +79,13 @@ impl LiveExecutor {
         let (_wake, _active, _principal_custody, _mcp_location) = match entered {
             Ok(Some(held)) => held,
             Ok(None) => {
+                super::super::startup_recovery::auto_resume::settle_after_execution(
+                    &self.inbox,
+                    &self.location.clock,
+                    &self.hub,
+                    &session,
+                    grapt_session::execution::Outcome::Interrupted,
+                );
                 started.settle(Ok(()));
                 return Ok(None);
             }
@@ -202,6 +209,13 @@ impl LiveExecutor {
                     ),
                 );
             }
+            super::super::startup_recovery::auto_resume::settle_after_execution(
+                &self.inbox,
+                &self.location.clock,
+                &self.hub,
+                &session,
+                observed,
+            );
             drop(settle_span);
             self.report_tail_samples();
             // This observer follows settlement even when preparation or the provider failed.

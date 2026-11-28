@@ -526,6 +526,67 @@ fn claim_row(
     }
 }
 
+/// Settle any open automatic-resume claim and active synthetic resume binding
+/// once a session execution finishes, so completed resumes never leave stale
+/// `running` claims or `active = 1` bindings behind.
+pub(in crate::dogfood) fn settle_after_execution(
+    inbox: &Mutex<Inbox>,
+    clock: &SystemClock,
+    hub: &DogfoodEventHub,
+    session: &SessionId,
+    outcome: grapt_session::execution::Outcome,
+) {
+    let (next_state, reason) = match outcome {
+        grapt_session::execution::Outcome::Succeeded => {
+            (ResumeState::Completed, "execution_succeeded")
+        }
+        grapt_session::execution::Outcome::Failed => (ResumeState::Stopped, "execution_failed"),
+        grapt_session::execution::Outcome::Interrupted => {
+            (ResumeState::Stopped, "execution_interrupted")
+        }
+    };
+    let mut inbox = match inbox.lock() {
+        Ok(held) => held,
+        Err(poisoned) => poisoned.into_inner(),
+    };
+    if !store::table_exists(inbox.store().connection(), "pending_resume").unwrap_or(false) {
+        return;
+    }
+    let current = match load_row(inbox.store().connection(), session) {
+        Ok(Some(row)) if matches!(row.state, ResumeState::Pending | ResumeState::Running) => row,
+        Ok(_) => return,
+        Err(error) => {
+            crate::server_log::warn(format_args!(
+                "session {session}: automatic resume post-execution read failed: {error}"
+            ));
+            return;
+        }
+    };
+    match upsert_row(
+        inbox.store_mut(),
+        session,
+        current.turn_origin_seq,
+        &current.interrupted_execution_id,
+        current.attempts,
+        next_state,
+        Some(reason),
+        clock.now().as_millis(),
+    ) {
+        Ok(retired) if retired > 0 => {
+            hub.invalidate_session_because(
+                session,
+                &format!("session {session}: retired settled automatic resume input"),
+            );
+        }
+        Ok(_) => {}
+        Err(error) => {
+            crate::server_log::warn(format_args!(
+                "session {session}: automatic resume post-execution settle failed: {error}"
+            ));
+        }
+    }
+}
+
 /// Record a durable `Disconnected` status notice explaining that automatic
 /// resume stopped due to the retry cap.
 pub(super) fn record_cap_status(

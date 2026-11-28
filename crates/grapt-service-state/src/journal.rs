@@ -114,6 +114,17 @@ pub(crate) fn record_within(
     {
         return Ok(prior);
     }
+    if change == Change::Recover
+        && state.kind == Kind::Disconnected
+        && state.reason == Some(Reason::ProcessLoss)
+        && matches!(
+            observations::read(tx, session, execution)?.as_slice(),
+            [observations::Observation { outcome: None, .. }]
+        )
+    {
+        observations::Change::Interrupted(observations::InterruptionReason::Shutdown)
+            .append_within(tx, writer, authorities, session, execution)?;
+    }
     let data = serde_json::to_value(Data {
         session: session.as_str().into(),
         execution: execution.as_str().into(),

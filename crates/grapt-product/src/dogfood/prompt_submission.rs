@@ -67,6 +67,18 @@ impl DogfoodApplication {
             }
             (admission, seq)
         };
+        if matches!(
+            admission,
+            AdmitOutcome::Reconciled {
+                wake: grapt_inbox::WakeDisposition::Settled
+            }
+        ) {
+            return Ok(
+                super::startup_recovery::auto_resume::AutoResumeAdmission::Superseded(
+                    "retired_resume_input",
+                ),
+            );
+        }
         if !should_execute(&admission) {
             return Ok(super::startup_recovery::auto_resume::AutoResumeAdmission::Submitted);
         }

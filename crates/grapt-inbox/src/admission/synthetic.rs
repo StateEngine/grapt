@@ -184,6 +184,11 @@ impl Inbox {
                 differs: "metadata",
             });
         }
+        let wake = if existing.retired {
+            WakeDisposition::Settled
+        } else {
+            wake
+        };
         Ok(AdmitOutcome::Reconciled { wake })
     }
 }

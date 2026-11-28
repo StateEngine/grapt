@@ -849,12 +849,16 @@ fn retired_auto_resume_input_is_skipped_by_inbox_promotion() -> Result<(), Strin
         clock.now().as_millis(),
     )?;
     assert_eq!(pending_rows(inbox.store().connection())?, 0);
-    // Exact-key retry of the retired synthetic input reconciles cleanly.
+    // Exact-key retry of the retired synthetic input reconciles as Settled
+    // (never WakeAdvised) so prompt_submission never schedules a terminal input.
     let retried = admit_resume_in_inbox(&mut inbox, &ids, &clock, &session, &resume_id)?;
-    assert!(matches!(
+    assert_eq!(
         retried,
-        grapt_inbox::AdmitOutcome::Reconciled { .. }
-    ));
+        grapt_inbox::AdmitOutcome::Reconciled {
+            wake: grapt_inbox::WakeDisposition::Settled
+        }
+    );
+    assert!(!crate::dogfood::support::should_execute(&retried));
     assert_eq!(pending_rows(inbox.store().connection())?, 0);
     let human_id: grapt_types::MessageId = "msg_newer_human".parse().map_err(|e| format!("{e}"))?;
     let ev_human: EventId = format!("evt_{}", ids.mint().as_str())
@@ -1035,5 +1039,225 @@ fn stale_writer_epoch_cannot_retire_resume_input_on_empty_promotion() -> Result<
         )
         .map_err(|e| e.to_string())?;
     assert_eq!(still_pending, 1);
+    Ok(())
+}
+
+fn assert_stale_inbox_error(err: grapt_inbox::InboxError) {
+    assert!(
+        matches!(
+            err,
+            grapt_inbox::InboxError::Store(grapt_store::WriteError::Election(
+                grapt_store::ElectionError::StaleWriter { .. }
+            ))
+        ),
+        "expected StaleWriter, got {err:?}"
+    );
+}
+
+struct StaleTwoStoreFixture {
+    _dir: tempfile::TempDir,
+    session: SessionId,
+    origin: u64,
+    resume_1: grapt_types::MessageId,
+    inbox_a: grapt_inbox::Inbox,
+    store_b: EventStore,
+    stale_writer: grapt_store::FencedWriter,
+}
+
+fn open_two_store_stale_resume_fixture(session_raw: &str) -> Result<StaleTwoStoreFixture, String> {
+    let dir = tempfile::Builder::new()
+        .prefix("grapt-auto-resume-stale-reg-")
+        .tempdir()
+        .map_err(|e| e.to_string())?;
+    let db_path = dir.path().join("events.sqlite");
+    let ids = OsRandomIds::seed().map_err(|e| e.to_string())?;
+    let clock = SystemClock;
+    let session: SessionId = session_raw.parse().map_err(|e| format!("{e}"))?;
+    let mut store_a = EventStore::open(&db_path, "test").map_err(|e| e.to_string())?;
+    grapt_inbox::Inbox::ensure_tables(store_a.connection()).map_err(|e| e.to_string())?;
+    let tx = store_a.governed_transaction().map_err(|e| e.to_string())?;
+    ensure_schema_within(&tx)?;
+    tx.commit().map_err(|e| e.to_string())?.discard();
+
+    let origin = seed_active_turn(&mut store_a, &ids, &clock, &session, None, "exec_sr1")?;
+    let resume_1 = synthetic_message_id(&session, origin, 1)?;
+    upsert_row_with_input(
+        &mut store_a,
+        &session,
+        origin,
+        "exec_sr1",
+        1,
+        ResumeState::Running,
+        None,
+        clock.now().as_millis(),
+        Some(&resume_1),
+    )?;
+    let mut inbox_a = grapt_inbox::Inbox::new(store_a).map_err(|e| e.to_string())?;
+    let _ = admit_resume_in_inbox(&mut inbox_a, &ids, &clock, &session, &resume_1)?;
+
+    let mut store_b = EventStore::open(&db_path, "test").map_err(|e| e.to_string())?;
+    let aggregate = AggregateId::Session(session.clone());
+    store_b
+        .elect_writer(&aggregate)
+        .map_err(|e| e.to_string())?;
+    let stale_writer = inbox_a
+        .store()
+        .fencing_token(&aggregate)
+        .map_err(|e| e.to_string())?;
+    Ok(StaleTwoStoreFixture {
+        _dir: dir,
+        session,
+        origin,
+        resume_1,
+        inbox_a,
+        store_b,
+        stale_writer,
+    })
+}
+
+#[test]
+fn stale_writer_epoch_cannot_register_or_retire_resume_input() -> Result<(), String> {
+    let mut fx = open_two_store_stale_resume_fixture("ses_auto_stale_reg")?;
+    let clock = SystemClock;
+    let resume_2 = synthetic_message_id(&fx.session, fx.origin, 2)?;
+
+    {
+        let tx = fx
+            .inbox_a
+            .store_mut()
+            .governed_transaction()
+            .map_err(|e| e.to_string())?;
+        assert_stale_inbox_error(
+            grapt_inbox::Inbox::register_resume_input_within(
+                &tx,
+                fx.stale_writer,
+                &fx.session,
+                &resume_2,
+                fx.origin,
+            )
+            .err()
+            .ok_or("stale register_resume_input_within must fail")?,
+        );
+    }
+    let reg_err = upsert_row_with_input(
+        fx.inbox_a.store_mut(),
+        &fx.session,
+        fx.origin,
+        "exec_sr1",
+        2,
+        ResumeState::Running,
+        None,
+        clock.now().as_millis(),
+        Some(&resume_2),
+    )
+    .err()
+    .ok_or("stale upsert_row_with_input must fail")?;
+    assert!(reg_err.contains("writer fence"), "{reg_err}");
+
+    {
+        let tx = fx
+            .inbox_a
+            .store_mut()
+            .governed_transaction()
+            .map_err(|e| e.to_string())?;
+        assert_stale_inbox_error(
+            grapt_inbox::Inbox::retire_resume_inputs_within(&tx, fx.stale_writer, &fx.session)
+                .err()
+                .ok_or("stale retire_resume_inputs_within must fail")?,
+        );
+    }
+    let ret_err = upsert_row(
+        fx.inbox_a.store_mut(),
+        &fx.session,
+        fx.origin,
+        "exec_sr1",
+        1,
+        ResumeState::Completed,
+        Some("stale"),
+        clock.now().as_millis(),
+    )
+    .err()
+    .ok_or("stale upsert_row retirement must fail")?;
+    assert!(ret_err.contains("writer fence"), "{ret_err}");
+
+    let (active, pending_count): (i64, i64) = (
+        fx.store_b
+            .connection()
+            .query_row(
+                "SELECT active FROM session_resume_input WHERE session_id = ?1 AND input_id = ?2",
+                rusqlite::params![fx.session.as_str(), fx.resume_1.as_str()],
+                |row| row.get(0),
+            )
+            .map_err(|e| e.to_string())?,
+        fx.store_b
+            .connection()
+            .query_row(
+                "SELECT COUNT(*) FROM session_pending WHERE session_id = ?1 AND id = ?2",
+                rusqlite::params![fx.session.as_str(), fx.resume_1.as_str()],
+                |row| row.get(0),
+            )
+            .map_err(|e| e.to_string())?,
+    );
+    assert_eq!((active, pending_count), (1, 1));
+    Ok(())
+}
+
+#[test]
+fn empty_promotion_retirement_reports_retired_only_for_stream_refresh() -> Result<(), String> {
+    let (mut store, ids, clock) = test_store()?;
+    let session: SessionId = "ses_auto_retired_only"
+        .parse()
+        .map_err(|e| format!("{e}"))?;
+    let origin = seed_active_turn(&mut store, &ids, &clock, &session, None, "exec_ro1")?;
+    let resume_id = synthetic_message_id(&session, origin, 1)?;
+    upsert_row_with_input(
+        &mut store,
+        &session,
+        origin,
+        "exec_ro1",
+        1,
+        ResumeState::Running,
+        None,
+        clock.now().as_millis(),
+        Some(&resume_id),
+    )?;
+    let mut inbox = grapt_inbox::Inbox::new(store).map_err(|e| e.to_string())?;
+    let _ = admit_resume_in_inbox(&mut inbox, &ids, &clock, &session, &resume_id)?;
+    // A newer human prompt arrives in the event log so `resume_id` is superseded
+    // during `promote_next_with_retirement`, leaving zero promotable rows.
+    let _ = append_event(
+        inbox.store_mut(),
+        &ids,
+        &clock,
+        &session,
+        "session.input.admitted",
+        1,
+        json!({"inputID": "msg_human_newer", "input": {"type": "user", "data": {"text": "hi"}}}),
+    )?;
+    let ev: EventId = format!("evt_{}", ids.mint().as_str())
+        .parse()
+        .map_err(|e| format!("{e}"))?;
+    let mut mint = || ev.clone();
+    let outcome = inbox
+        .promote_next_with_retirement(
+            &session,
+            grapt_inbox::PromoteScope::InputAtIdle,
+            &mut mint,
+            clock.now().as_millis(),
+        )
+        .map_err(|e| e.to_string())?;
+    assert_eq!(
+        outcome,
+        grapt_inbox::PromoteOutcome::RetiredOnly { retired: 1 }
+    );
+    let second = inbox
+        .promote_next_with_retirement(
+            &session,
+            grapt_inbox::PromoteScope::InputAtIdle,
+            &mut mint,
+            clock.now().as_millis(),
+        )
+        .map_err(|e| e.to_string())?;
+    assert_eq!(second, grapt_inbox::PromoteOutcome::Empty);
     Ok(())
 }

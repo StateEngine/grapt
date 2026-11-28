@@ -20,6 +20,7 @@ pub(super) struct ExistingAdmission {
     pub(super) text: String,
     pub(super) description: Option<String>,
     pub(super) metadata: Option<Value>,
+    pub(super) retired: bool,
 }
 
 impl Inbox {
@@ -90,6 +91,7 @@ impl Inbox {
                 text,
                 description,
                 metadata,
+                retired: false,
             }));
         }
 
@@ -134,6 +136,7 @@ impl Inbox {
                 text: String::new(),
                 description: None,
                 metadata: None,
+                retired: false,
             }));
         }
 
@@ -236,6 +239,7 @@ impl Inbox {
                             text: text.to_owned(),
                             description,
                             metadata,
+                            retired: true,
                         }));
                     }
                 }
@@ -272,6 +276,7 @@ impl Inbox {
                     text: text.to_owned(),
                     description,
                     metadata,
+                    retired: false,
                 }))
             }
             _ => Err(corrupt(format!(
