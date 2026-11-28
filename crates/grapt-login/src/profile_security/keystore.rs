@@ -92,6 +92,34 @@ fn unavailable(detail: String) -> io::Error {
     io::Error::other(Unavailable(detail))
 }
 
+/// Marks a session bus address that is set but not a valid D-Bus address.
+/// Its text is fixed: it names the variable and the step, never its value.
+#[derive(Debug)]
+struct BusAddressInvalid;
+
+impl std::fmt::Display for BusAddressInvalid {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(super::BUS_ADDRESS_INVALID)
+    }
+}
+
+impl std::error::Error for BusAddressInvalid {}
+
+#[cfg_attr(
+    all(not(target_os = "linux"), not(test)),
+    expect(dead_code, reason = "only Linux reaches its keystore over D-Bus")
+)]
+pub(crate) fn bus_address_invalid() -> io::Error {
+    io::Error::new(io::ErrorKind::InvalidInput, BusAddressInvalid)
+}
+
+/// Whether an error says the configured session bus address is malformed.
+pub(super) fn is_bus_address_invalid(error: &io::Error) -> bool {
+    error
+        .get_ref()
+        .is_some_and(|inner| inner.downcast_ref::<BusAddressInvalid>().is_some())
+}
+
 /// Whether an error says the keystore could not be reached at all.
 pub(super) fn is_unavailable(error: &io::Error) -> bool {
     error

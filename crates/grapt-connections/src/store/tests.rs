@@ -685,6 +685,8 @@ fn reconnect(
     next.connections[0].credential_format = CredentialFormat::Vault {
         binding: binding.clone(),
     };
+    next.connections[0].method = AuthMethod::Key;
+    next.connections[0].oauth_file = None;
     let secret = grapt_login::vault::VaultSecret::api_key(format!("key-{token}").into())?;
     let listing = br#"{"data":[{"id":"retained-model"}]}"#;
     store.install_key(
@@ -716,5 +718,30 @@ fn a_reconnect_during_a_keystore_outage_keeps_the_sealed_key(
     assert!(reconnect(&mut store, &sealed, &binding, "outage").is_err());
     drop(headless);
     assert_eq!(store.load()?, Some(sealed));
+    Ok(())
+}
+
+/// The legacy OAuth state counts as much as the projection: when only the
+/// state is sealed, a reconnect during an outage still refuses.
+#[cfg(not(windows))]
+#[test]
+fn a_reconnect_during_an_outage_answers_for_sealed_oauth_state(
+) -> Result<(), Box<dyn std::error::Error>> {
+    use grapt_login::vault::{ApiDestination, DestinationBinding};
+    let profile = Profile::new("reconnect-oauth-outage")?;
+    let mut store = Store::open(&profile.0)?;
+    let records = store.migrate(&legacy("chatgpt-codex", None))?;
+    let Some(state) = records.connections[0].oauth_file.clone() else {
+        return Err("a migrated sign-in keeps its OAuth state".into());
+    };
+    std::fs::write(profile.0.join(&state), profile_security::seal(b"{}")?)?;
+    let binding = DestinationBinding::key(ApiDestination::parse("https://api.example/v1")?);
+    let headless = profile_security::TestKeystoreUnavailable::now();
+    assert!(reconnect(&mut store, &records, &binding, "outage").is_err());
+    drop(headless);
+    drop(store);
+    let mut store = Store::open(&profile.0)?;
+    assert_eq!(store.load()?, Some(records.clone()));
+    reconnect(&mut store, &records, &binding, "restored")?;
     Ok(())
 }

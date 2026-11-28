@@ -617,7 +617,8 @@ async fn a_start_after_an_interrupted_projection_derives_the_credential_again() 
         expires_at: Timestamp::from_millis(NOW + 240 * HOUR),
         account: "account-a".to_owned(),
     };
-    replace(&profile.0, STATE_FILE, &encode(&second)).unwrap_or_else(|error| panic!("{error}"));
+    replace_all(&profile.0, &[(STATE_FILE, &encode(&second))], &[])
+        .unwrap_or_else(|error| panic!("{error}"));
     assert_eq!(profile.read(CREDENTIAL_FILE), first.access);
     let issuer = Issuer::start(Vec::new()).await;
     let renewal = refresh_if_due(&profile.0, &client(), &issuer.base, &Fixed(NOW)).await;
@@ -744,6 +745,20 @@ fn a_save_never_publishes_state_its_sealed_projection_would_refuse(
     assert!(save(&profile.0, &signed_in(NOW + 2 * HOUR)).is_err());
     drop(headless);
     assert_eq!(std::fs::read(profile.0.join(STATE_FILE))?, state);
+    Ok(())
+}
+
+#[cfg(not(windows))]
+#[test]
+fn a_projection_never_goes_unsealed_beside_sealed_state() -> Result<(), Box<dyn std::error::Error>>
+{
+    let profile = Profile::new("sealed-state-outage");
+    save(&profile.0, &signed_in(NOW + HOUR))?;
+    std::fs::write(profile.0.join(CREDENTIAL_FILE), "stale")?;
+    let headless = crate::profile_security::TestKeystoreUnavailable::now();
+    assert!(project(&profile.0, &signed_in(NOW + HOUR)).is_err());
+    drop(headless);
+    assert_eq!(profile.read(CREDENTIAL_FILE), "stale");
     Ok(())
 }
 

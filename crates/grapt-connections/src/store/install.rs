@@ -383,13 +383,16 @@ impl Store {
             });
             match current {
                 Some(record) => {
-                    let material = record
+                    // An OAuth connection holds its state and its projection;
+                    // both answer for the generation that succeeds them.
+                    let predecessors = record
                         .oauth_file
-                        .as_deref()
-                        .unwrap_or(&record.credential_file);
-                    let predecessor =
-                        VaultKey::new(connection.clone(), material).map_err(vault_error)?;
-                    vault.put_succeeding(&key, &predecessor, binding, secret, updated)
+                        .iter()
+                        .chain([&record.credential_file])
+                        .map(|file| VaultKey::new(connection.clone(), file))
+                        .collect::<Result<Vec<_>, _>>()
+                        .map_err(vault_error)?;
+                    vault.put_succeeding(&key, &predecessors, binding, secret, updated)
                 }
                 None => vault.put(&key, binding, secret, updated),
             }

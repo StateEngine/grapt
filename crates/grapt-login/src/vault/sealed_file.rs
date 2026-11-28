@@ -42,9 +42,11 @@ impl std::fmt::Debug for SealedFileVault {
     }
 }
 
-fn unavailable(operation: StorageOperation) -> impl FnOnce(io::Error) -> VaultError {
+pub(super) fn unavailable(operation: StorageOperation) -> impl FnOnce(io::Error) -> VaultError {
     move |error| {
-        if profile_security::failure_code(&error) == "io" {
+        if profile_security::is_bus_address_invalid(&error) {
+            VaultError::KeystoreAddressInvalid
+        } else if profile_security::failure_code(&error) == "io" {
             VaultError::Unavailable(StorageFailure::capture(operation, &error))
         } else {
             VaultError::Protection(format!(
@@ -198,31 +200,33 @@ fn replaceable(read: Result<Option<Document>, VaultError>) -> Result<bool, Vault
 
 impl SealedFileVault {
     /// Store `secret` as `key`, the next generation of the connection whose
-    /// current material is `predecessor`. While no keystore is present, this
-    /// refuses as keystore unavailable when either file is sealed, so a
+    /// current files are `predecessors`. While no keystore is present, this
+    /// refuses as keystore unavailable when any of those files is sealed, so a
     /// reconnect never succeeds a sealed credential with an unsealed one.
     pub fn put_succeeding(
         &mut self,
         key: &VaultKey,
-        predecessor: &VaultKey,
+        predecessors: &[VaultKey],
         binding: &DestinationBinding,
         secret: VaultSecret,
         updated: Timestamp,
     ) -> Result<(), VaultError> {
-        self.store(key, Some(predecessor), binding, secret, updated)
+        self.store(key, predecessors, binding, secret, updated)
     }
 
     fn store(
         &mut self,
         key: &VaultKey,
-        predecessor: Option<&VaultKey>,
+        predecessors: &[VaultKey],
         binding: &DestinationBinding,
         secret: VaultSecret,
         updated: Timestamp,
     ) -> Result<(), VaultError> {
         if !binding.valid()
             || secret.0.expose().oauth() != binding.has_refresh()
-            || predecessor.is_some_and(|predecessor| predecessor.connection != key.connection)
+            || predecessors
+                .iter()
+                .any(|predecessor| predecessor.connection != key.connection)
         {
             return Err(VaultError::InvalidInput);
         }
@@ -248,12 +252,11 @@ impl SealedFileVault {
         if plaintext.len() > BYTE_CAP {
             return Err(VaultError::InvalidInput);
         }
-        let target = self.root.join(&key.file);
-        let succeeded = predecessor.map(|predecessor| self.root.join(&predecessor.file));
-        let targets: Vec<&Path> = [Some(target.as_path()), succeeded.as_deref()]
-            .into_iter()
-            .flatten()
+        let paths: Vec<PathBuf> = std::iter::once(key)
+            .chain(predecessors)
+            .map(|entry| self.root.join(&entry.file))
             .collect();
+        let targets: Vec<&Path> = paths.iter().map(PathBuf::as_path).collect();
         let stored = Zeroizing::new(
             profile_security::seal_replacing(&plaintext, &targets).map_err(|error| {
                 if profile_security::is_keystore_unavailable(&error) {
@@ -278,7 +281,7 @@ impl CredentialVault for SealedFileVault {
         secret: VaultSecret,
         updated: Timestamp,
     ) -> Result<(), VaultError> {
-        self.store(key, None, binding, secret, updated)
+        self.store(key, &[], binding, secret, updated)
     }
 
     fn get(

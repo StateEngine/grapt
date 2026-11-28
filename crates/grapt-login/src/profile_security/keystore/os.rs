@@ -24,7 +24,24 @@ pub(super) fn set(service: &str, name: &str, secret: &[u8]) -> io::Result<()> {
 }
 
 fn entry(service: &str, name: &str) -> io::Result<keyring::Entry> {
+    #[cfg(target_os = "linux")]
+    check_bus(std::env::var_os("DBUS_SESSION_BUS_ADDRESS").as_deref())?;
     keyring::Entry::new(service, name).map_err(refused)
+}
+
+/// A set but malformed session bus address refuses before the keystore is
+/// tried, so no other bus is ever used in its place.
+#[cfg(target_os = "linux")]
+fn check_bus(configured: Option<&std::ffi::OsStr>) -> io::Result<()> {
+    let malformed = configured.is_some_and(|value| {
+        value
+            .to_str()
+            .is_none_or(|text| text.parse::<zbus::Address>().is_err())
+    });
+    if malformed {
+        return Err(super::bus_address_invalid());
+    }
+    Ok(())
 }
 
 /// A keystore that is not there at all is unavailable. Every other failure,
@@ -39,20 +56,15 @@ fn refused(error: keyring::Error) -> io::Error {
     classify(error)
 }
 
-/// Linux: `configured` is `DBUS_SESSION_BUS_ADDRESS`. An address that is set
-/// but malformed is a refusal, never absence, even though the Secret Service
-/// client reports it as no bus.
+/// Linux: `configured` is `DBUS_SESSION_BUS_ADDRESS`. A bus the user named
+/// explicitly is never absence: if it cannot be reached, that is a refusal
+/// naming the address to check.
 #[cfg(target_os = "linux")]
 fn classify(error: keyring::Error, configured: Option<&std::ffi::OsStr>) -> io::Error {
-    let malformed = configured.is_some_and(|value| {
-        value
-            .to_str()
-            .is_none_or(|text| text.parse::<zbus::Address>().is_err())
-    });
-    if malformed {
+    if configured.is_some() {
         return io::Error::other(format!(
-            "DBUS_SESSION_BUS_ADDRESS is not a valid D-Bus address, so the system keystore was \
-             not reached: {error}; correct or unset it, then try again"
+            "the system keystore on the bus DBUS_SESSION_BUS_ADDRESS names failed: {error}; \
+             check that address or unset it, then try again"
         ));
     }
     unavailable_or_refused(error)
@@ -140,16 +152,23 @@ mod tests {
         )));
     }
 
-    /// No bus is absence only when the configured address is a valid one.
+    /// A malformed address refuses before the keystore is tried, and an
+    /// explicitly named bus that fails is never taken for absence.
     #[test]
-    fn a_malformed_session_bus_address_refuses_instead_of_falling_back() {
-        let unavailable = |configured: &str| {
-            let error =
-                keyring::Error::PlatformFailure(Box::new(secret_service::Error::Unavailable));
-            super::super::is_unavailable(&classify(error, Some(configured.as_ref())))
-        };
-        assert!(!unavailable("not-a-bus-address"));
-        assert!(!unavailable("unix:path"));
-        assert!(unavailable("unix:path=/nonexistent/grapt-bus"));
+    fn an_explicit_session_bus_address_never_falls_back() {
+        for malformed in ["not-a-bus-address", "unix:path"] {
+            let refused = check_bus(Some(malformed.as_ref())).err();
+            assert!(refused.is_some_and(|error| super::super::is_bus_address_invalid(&error)));
+        }
+        assert!(check_bus(Some("unix:path=/nonexistent/grapt-bus".as_ref())).is_ok());
+        assert!(check_bus(None).is_ok());
+        let absent =
+            || keyring::Error::PlatformFailure(Box::new(secret_service::Error::Unavailable));
+        let configured = Some("tcp:host=localhost,port=1".as_ref());
+        assert!(!super::super::is_unavailable(&classify(
+            absent(),
+            configured
+        )));
+        assert!(super::super::is_unavailable(&classify(absent(), None)));
     }
 }

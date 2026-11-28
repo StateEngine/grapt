@@ -102,8 +102,14 @@ impl SignInFiles {
             self.check_generation(profile)?;
             return vault.save(profile, tokens, updated);
         }
-        replace_beside(profile, &self.state, &encode(tokens), &self.credential)?;
-        self.project(profile, tokens)
+        replace_all(
+            profile,
+            &[
+                (&self.state, &encode(tokens)),
+                (&self.credential, tokens.access.as_bytes()),
+            ],
+            &[],
+        )
     }
 
     pub(super) fn project(&self, profile: &Path, tokens: &Tokens) -> Result<(), SignInError> {
@@ -117,7 +123,11 @@ impl SignInFiles {
         }
         match read_bounded(&profile.join(&self.credential), TOKEN_MAX) {
             Ok(Some(bytes)) if bytes == tokens.access.as_bytes() => Ok(()),
-            _ => replace(profile, &self.credential, tokens.access.as_bytes()),
+            _ => replace_all(
+                profile,
+                &[(&self.credential, tokens.access.as_bytes())],
+                &[&self.state],
+            ),
         }
     }
 

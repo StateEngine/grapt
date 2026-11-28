@@ -10,7 +10,7 @@
 
 use std::fmt;
 use std::io::Read;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use base64::Engine;
@@ -440,8 +440,14 @@ pub(crate) fn form(pairs: &[(&str, &str)]) -> String {
 /// Store `tokens` as the profile's sign-in generation, then derive the
 /// product's credential from it.
 pub fn save(profile: &Path, tokens: &Tokens) -> Result<(), SignInError> {
-    replace_beside(profile, STATE_FILE, &encode(tokens), CREDENTIAL_FILE)?;
-    project(profile, tokens)
+    replace_all(
+        profile,
+        &[
+            (STATE_FILE, &encode(tokens)),
+            (CREDENTIAL_FILE, tokens.access.as_bytes()),
+        ],
+        &[],
+    )
 }
 
 /// The profile's sign-in generation, or `None` when it is not signed in to
@@ -513,7 +519,11 @@ fn project(profile: &Path, tokens: &Tokens) -> Result<(), SignInError> {
             Ok(())
         }
         // Missing, different, oversized or unreadable: the generation wins.
-        _ => replace(profile, CREDENTIAL_FILE, tokens.access.as_bytes()),
+        _ => replace_all(
+            profile,
+            &[(CREDENTIAL_FILE, tokens.access.as_bytes())],
+            &[STATE_FILE],
+        ),
     }
 }
 
@@ -798,27 +808,31 @@ fn same_file(_before: &std::fs::Metadata, _opened: &std::fs::Metadata) -> bool {
     true
 }
 
-/// Write `name` in `directory` through a private temporary file and an
-/// atomic rename, so a reader sees the old bytes or the new, never a mix.
-fn replace(directory: &Path, name: &str, bytes: &[u8]) -> Result<(), SignInError> {
-    let protected = crate::profile_security::seal_for(bytes, &directory.join(name))
-        .map_err(|error| write_failure(name, "protected", &error))?;
-    write_replacing(directory, name, protected.as_slice())
-}
-
-/// [`replace`] for sign-in state whose projection `companion` is written
-/// next: the state is stored unsealed only when neither file is sealed, so a
-/// projection that would refuse never leaves unsealed state behind.
-fn replace_beside(
+/// Write each `(name, bytes)` in `directory` through a private temporary
+/// file and an atomic rename, so a reader sees the old bytes or the new,
+/// never a mix. One protection decision covers every file written and every
+/// `companion` of theirs, so sign-in state and its projection are sealed or
+/// left owner-only together, and nothing is published when either refuses.
+fn replace_all(
     directory: &Path,
-    name: &str,
-    bytes: &[u8],
-    companion: &str,
+    files: &[(&str, &[u8])],
+    companions: &[&str],
 ) -> Result<(), SignInError> {
-    let targets = [directory.join(name), directory.join(companion)];
-    let protected = crate::profile_security::seal_replacing(bytes, &[&targets[0], &targets[1]])
-        .map_err(|error| write_failure(name, "protected", &error))?;
-    write_replacing(directory, name, protected.as_slice())
+    let paths: Vec<_> = files
+        .iter()
+        .map(|(name, _)| *name)
+        .chain(companions.iter().copied())
+        .map(|name| directory.join(name))
+        .collect();
+    let targets: Vec<&Path> = paths.iter().map(PathBuf::as_path).collect();
+    let items: Vec<&[u8]> = files.iter().map(|(_, bytes)| *bytes).collect();
+    let first = files.first().map_or("sign-in state", |(name, _)| *name);
+    let protected = crate::profile_security::seal_all(&items, &targets)
+        .map_err(|error| write_failure(first, "protected", &error))?;
+    for ((name, _), bytes) in files.iter().zip(protected) {
+        write_replacing(directory, name, bytes.as_slice())?;
+    }
+    Ok(())
 }
 
 fn write_failure(name: &str, step: &str, error: &std::io::Error) -> SignInError {

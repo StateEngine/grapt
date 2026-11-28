@@ -17,13 +17,19 @@ impl std::error::Error for ProtectionRefusal {}
 
 /// A fixed diagnostic code; never includes operating-system exception text.
 pub fn failure_code(error: &io::Error) -> &'static str {
+    if super::is_bus_address_invalid(error) {
+        return "bus-address";
+    }
     refusal(error).map_or("io", |refusal| refusal.code)
 }
 
 /// Redacted protection details suitable for user-facing storage refusals.
 /// Missing observations remain unavailable, rather than implying a loaded profile.
 pub fn failure_diagnostic(error: &io::Error) -> String {
-    if let Some(refusal) = refusal(error) {
+    if super::is_bus_address_invalid(error) {
+        // Fixed text with its own repair step, never the variable's value.
+        format!("{:?} ({})", error.kind(), super::BUS_ADDRESS_INVALID)
+    } else if let Some(refusal) = refusal(error) {
         format!("{:?} ({refusal})", error.kind())
     } else {
         format!("{:?} (operation=io)", error.kind())

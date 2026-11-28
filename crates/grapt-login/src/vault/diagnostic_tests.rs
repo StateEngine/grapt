@@ -67,3 +67,19 @@ fn managed_refusals_retain_only_the_existing_fixed_code() {
         }
     }
 }
+
+#[test]
+fn a_malformed_bus_address_keeps_its_repair_step_at_both_seams() {
+    let error = crate::profile_security::bus_address_invalid();
+    let diagnostic = crate::profile_security::failure_diagnostic(&error);
+    assert!(
+        diagnostic.contains(crate::profile_security::BUS_ADDRESS_INVALID),
+        "{diagnostic}"
+    );
+    let refusal = sealed_file::unavailable(StorageOperation::VerifyDirectory)(error);
+    assert!(
+        matches!(refusal, VaultError::KeystoreAddressInvalid),
+        "{refusal:?}"
+    );
+    assert!(refusal.to_string().contains("unset it"), "{refusal}");
+}

@@ -78,6 +78,21 @@ pub fn is_key_missing(error: &io::Error) -> bool {
         .is_some_and(|inner| inner.downcast_ref::<KeyMissing>().is_some())
 }
 
+/// Why a credential is not sealed when `DBUS_SESSION_BUS_ADDRESS` is set but
+/// malformed, and the step that fixes it. Fixed text: it names no value.
+pub const BUS_ADDRESS_INVALID: &str =
+    "DBUS_SESSION_BUS_ADDRESS is set but is not a valid D-Bus address, so the system keystore \
+     was not used; correct or unset it, then try again";
+
+#[cfg(test)]
+pub(crate) use keystore::bus_address_invalid;
+
+/// Whether a refusal means `DBUS_SESSION_BUS_ADDRESS` is set but malformed.
+#[must_use]
+pub fn is_bus_address_invalid(error: &io::Error) -> bool {
+    keystore::is_bus_address_invalid(error)
+}
+
 /// Whether an [`open`] or [`seal`] refusal means the system keystore could not
 /// be reached at all. A sealed credential then waits for the keystore; it is
 /// never read or replaced another way.
@@ -125,12 +140,23 @@ pub fn seal_for(bytes: &[u8], target: &Path) -> io::Result<Vec<u8>> {
 /// never succeeded by an unsealed one, so that case refuses as keystore
 /// unavailable.
 pub fn seal_replacing(bytes: &[u8], targets: &[&Path]) -> io::Result<Vec<u8>> {
+    let mut sealed = seal_all(&[bytes], targets)?;
+    sealed
+        .pop()
+        .ok_or_else(|| io::Error::other("sealing returned no bytes"))
+}
+
+/// Protect several files that are published together as one decision, each
+/// item becoming one file and `targets` naming every file they replace or
+/// succeed. Either every item is sealed or, under [`seal_replacing`]'s
+/// headless rule, every item stays as it is; never a mix.
+pub fn seal_all(items: &[&[u8]], targets: &[&Path]) -> io::Result<Vec<Vec<u8>>> {
     match keystore::current() {
-        Ok(key) => seal_with(&key, bytes),
+        Ok(key) => items.iter().map(|bytes| seal_with(&key, bytes)).collect(),
         #[cfg(not(windows))]
         Err(error) if keystore::is_unavailable(&error) => {
             fallback::permit(targets, error)?;
-            Ok(bytes.to_vec())
+            Ok(items.iter().map(|bytes| bytes.to_vec()).collect())
         }
         Err(error) => {
             let _ = targets;

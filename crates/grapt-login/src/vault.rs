@@ -42,6 +42,10 @@ pub enum VaultError {
          again, or remove this connection and add it again"
     )]
     KeystoreUnavailable,
+    /// `DBUS_SESSION_BUS_ADDRESS` is set but malformed, so the keystore that
+    /// seals credentials was not used.
+    #[error("{}", crate::profile_security::BUS_ADDRESS_INVALID)]
+    KeystoreAddressInvalid,
 }
 
 /// A finite storage boundary; never a caller-supplied path or request label.
