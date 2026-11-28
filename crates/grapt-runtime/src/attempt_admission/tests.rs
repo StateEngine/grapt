@@ -100,22 +100,19 @@ fn stop() -> AttemptFragment {
 /// A reader that yields a fixed script as fast as the channel allows.
 struct ScriptedReader {
     fragments: std::vec::IntoIter<AttemptFragment>,
-    yielded: usize,
-    /// Notified once this many fragments have been read.
-    signal: Option<(usize, Arc<Notify>)>,
+    saturation: Option<Arc<Saturation>>,
 }
 
 impl ScriptedReader {
     fn new(fragments: Vec<AttemptFragment>) -> Self {
         Self {
             fragments: fragments.into_iter(),
-            yielded: 0,
-            signal: None,
+            saturation: None,
         }
     }
 
-    fn signalling_after(mut self, count: usize, reached: Arc<Notify>) -> Self {
-        self.signal = Some((count, reached));
+    fn reporting_to(mut self, saturation: Arc<Saturation>) -> Self {
+        self.saturation = Some(saturation);
         self
     }
 }
@@ -123,11 +120,8 @@ impl ScriptedReader {
 impl ProviderReader for ScriptedReader {
     fn next(&mut self) -> impl std::future::Future<Output = Option<AttemptFragment>> + Send {
         let next = self.fragments.next();
-        self.yielded += 1;
-        if let Some((count, reached)) = &self.signal {
-            if self.yielded == *count {
-                reached.notify_one();
-            }
+        if let Some(saturation) = &self.saturation {
+            saturation.read();
         }
         async move { next }
     }
@@ -200,6 +194,150 @@ impl AttemptOwner for SlowOwner {
         // Synchronous by signature — a blocking sleep is the honest way to
         // model a slow transaction here, and proves the owner cannot await.
         std::thread::sleep(self.stall);
+        self.inner.commit(fact)
+    }
+    fn notify(&mut self, fact: &DurableFact) {
+        self.inner.notify(fact)
+    }
+    fn observe(&mut self, observation: Observation) {
+        self.inner.observe(observation)
+    }
+}
+
+/// Wait for `signal`, failing the test with `what` after five seconds.
+async fn signalled(signal: &Notify, what: &str) {
+    if tokio::time::timeout(Duration::from_secs(5), signal.notified())
+        .await
+        .is_err()
+    {
+        panic!("{what}");
+    }
+}
+
+/// Proves the provider channel is full behind a held attempt loop.
+///
+/// The reader sends every fragment but a text delta as soon as it reads it,
+/// so when it is asked for fragment `n`, fragments `1..n` are sent. Once the
+/// loop is held having received `m` fragments, being asked for fragment
+/// `m + capacity + 1` means the channel holds `capacity` fragments and that
+/// send must wait for room.
+struct Saturation {
+    reads_and_hold: std::sync::Mutex<(usize, Option<usize>)>,
+    capacity: usize,
+    full: Notify,
+}
+
+impl Saturation {
+    fn new(capacity: usize) -> Self {
+        Self {
+            reads_and_hold: std::sync::Mutex::new((0, None)),
+            capacity,
+            full: Notify::new(),
+        }
+    }
+
+    fn read(&self) {
+        let mut state = self.lock();
+        state.0 += 1;
+        self.check(*state);
+    }
+
+    fn held_after(&self, received: usize) {
+        let mut state = self.lock();
+        state.1 = Some(received);
+        self.check(*state);
+    }
+
+    fn lock(&self) -> std::sync::MutexGuard<'_, (usize, Option<usize>)> {
+        self.reads_and_hold
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
+    fn check(&self, (reads, held): (usize, Option<usize>)) {
+        if held.is_some_and(|received| reads > received + self.capacity) {
+            self.full.notify_one();
+        }
+    }
+}
+
+/// An owner that holds the first text commit made while both tools run, so
+/// the attempt loop stops draining and the provider channel behind it fills.
+/// Every received fragment is committed once, so its count is what the loop
+/// has received.
+struct HeldOwner {
+    inner: RecordingOwner,
+    gate: Arc<CommitGate>,
+    saturation: Arc<Saturation>,
+    inside: Arc<AtomicUsize>,
+    received: usize,
+    held_once: bool,
+}
+
+impl HeldOwner {
+    fn new(gate: Arc<CommitGate>, saturation: Arc<Saturation>, inside: Arc<AtomicUsize>) -> Self {
+        Self {
+            inner: RecordingOwner::new(),
+            gate,
+            saturation,
+            inside,
+            received: 0,
+            held_once: false,
+        }
+    }
+}
+
+/// Released once; a commit held past `bound` proceeds so a failed test cannot
+/// wedge a runtime worker.
+struct CommitGate {
+    released: std::sync::Mutex<bool>,
+    wake: std::sync::Condvar,
+    bound: Duration,
+}
+
+impl CommitGate {
+    fn new(bound: Duration) -> Self {
+        Self {
+            released: std::sync::Mutex::new(false),
+            wake: std::sync::Condvar::new(),
+            bound,
+        }
+    }
+
+    fn release(&self) {
+        *self
+            .released
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = true;
+        self.wake.notify_all();
+    }
+
+    fn wait(&self) {
+        let released = self
+            .released
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        drop(
+            self.wake
+                .wait_timeout_while(released, self.bound, |released| !*released)
+                .unwrap_or_else(std::sync::PoisonError::into_inner),
+        );
+    }
+}
+
+impl AttemptOwner for HeldOwner {
+    fn commit(&mut self, fact: DurableFact) -> Result<(), crate::OwnerError> {
+        if let DurableFact::Fragment { fragment } = &fact {
+            self.received += 1;
+            let text = matches!(**fragment, AttemptFragment::TextOpened { .. });
+            if text && !self.held_once && self.inside.load(Ordering::SeqCst) == 2 {
+                self.held_once = true;
+                self.saturation.held_after(self.received);
+                // Hand this worker's queued tasks on first: the reader this
+                // loop just woke must keep running while the commit is held.
+                tokio::task::block_in_place(|| self.gate.wait());
+            }
+        }
         self.inner.commit(fact)
     }
     fn notify(&mut self, fact: &DurableFact) {
