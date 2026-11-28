@@ -57,19 +57,6 @@ pub(super) const NONBLOCK: i32 = 0x0004;
 
 /// `O_NOFOLLOW`, which std does not name: 0o100000 on Linux ARM/AArch64,
 /// 0o400000 on Linux x86/x86_64/other, and 0x0100 on Apple/BSD.
-#[cfg(all(
-    any(target_os = "linux", target_os = "android"),
-    any(target_arch = "aarch64", target_arch = "arm")
-))]
-const NOFOLLOW: i32 = 0o100_000;
-#[cfg(all(
-    any(target_os = "linux", target_os = "android"),
-    not(any(target_arch = "aarch64", target_arch = "arm"))
-))]
-const NOFOLLOW: i32 = 0o400_000;
-#[cfg(all(unix, not(any(target_os = "linux", target_os = "android"))))]
-const NOFOLLOW: i32 = 0x0100;
-
 /// `base` is the canonical authority anchor; `relative` has only normal components.
 #[cfg(not(windows))]
 pub(super) fn open_contained(base: &Path, relative: &Path) -> std::io::Result<OpenedResource> {
@@ -87,38 +74,65 @@ pub(super) fn open_contained(base: &Path, relative: &Path) -> std::io::Result<Op
     })
 }
 
-/// Like [`open_contained`], but refuses symlinks atomically with `O_NOFOLLOW`
-/// on every relative component and the final open (for scoped instruction files).
+/// Like [`open_contained`], but walks each relative component from `base` via
+/// dirfd-relative `openat` with `O_NOFOLLOW` (`O_DIRECTORY` on intermediate
+/// segments), so the final open is anchored to the exact verified parent fd
+/// without reopening by pathname.
 #[cfg(not(windows))]
 pub(super) fn open_contained_nofollow(
     base: &Path,
     relative: &Path,
 ) -> std::io::Result<OpenedResource> {
-    use std::os::unix::fs::OpenOptionsExt as _;
-    let mut prefix = base.to_path_buf();
+    use nix::fcntl::{open, openat, OFlag};
+    use nix::sys::stat::Mode;
+    use std::path::Component;
+
+    let mut dir_fd = open(
+        base,
+        OFlag::O_RDONLY | OFlag::O_DIRECTORY | OFlag::O_CLOEXEC | OFlag::O_NONBLOCK,
+        Mode::empty(),
+    )
+    .map_err(std::io::Error::from)?;
+
     let mut components = relative.components().peekable();
     while let Some(component) = components.next() {
-        prefix.push(component);
+        let Component::Normal(segment) = component else {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "source file relative path contains a non-normal component",
+            ));
+        };
         if components.peek().is_some() {
-            let dir = std::fs::OpenOptions::new()
-                .read(true)
-                .custom_flags(NONBLOCK | NOFOLLOW)
-                .open(&prefix)?;
-            if !dir.metadata()?.is_dir() {
-                return Err(std::io::Error::other(
-                    "a non-directory component is on the source file's path",
-                ));
-            }
+            dir_fd = openat(
+                &dir_fd,
+                segment,
+                OFlag::O_RDONLY
+                    | OFlag::O_DIRECTORY
+                    | OFlag::O_NOFOLLOW
+                    | OFlag::O_CLOEXEC
+                    | OFlag::O_NONBLOCK,
+                Mode::empty(),
+            )
+            .map_err(std::io::Error::from)?;
+        } else {
+            let file_fd = openat(
+                &dir_fd,
+                segment,
+                OFlag::O_RDONLY | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC | OFlag::O_NONBLOCK,
+                Mode::empty(),
+            )
+            .map_err(std::io::Error::from)?;
+            return Ok(OpenedResource {
+                file: std::fs::File::from(file_fd),
+                #[cfg(not(any(target_os = "linux", target_os = "android")))]
+                requested: base.join(relative),
+            });
         }
     }
-    Ok(OpenedResource {
-        file: std::fs::OpenOptions::new()
-            .read(true)
-            .custom_flags(NONBLOCK | NOFOLLOW)
-            .open(&prefix)?,
-        #[cfg(not(any(target_os = "linux", target_os = "android")))]
-        requested: prefix,
-    })
+    Err(std::io::Error::new(
+        std::io::ErrorKind::InvalidInput,
+        "source file relative path is empty",
+    ))
 }
 
 #[cfg(windows)]
