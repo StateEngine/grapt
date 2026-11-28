@@ -120,14 +120,12 @@ pub(super) async fn default_profile(limits: CliLimits) -> Result<ApiClient, Fail
     }
 }
 
-/// The time a discovery probe needs to finish: its authenticated health
-/// check's connect, write and read, end to end. No probe starts with less
-/// than this left in the window.
-const BORROW_PROBE_ALLOWANCE: Duration = grapt_service::HEALTH_PROBE_ALLOWANCE;
 /// How long a command that lost the profile's election waits, in total, for
-/// the winner's service to finish starting: probes start for five seconds,
-/// and the last one has its whole allowance to finish.
-const BORROW_WINDOW: Duration = Duration::from_secs(5).saturating_add(BORROW_PROBE_ALLOWANCE);
+/// the winner's service to finish starting: five seconds of starts, then time
+/// for a probe begun then to finish its authenticated health check's connect,
+/// write and read.
+const BORROW_WINDOW: Duration =
+    Duration::from_secs(5).saturating_add(grapt_service::HEALTH_PROBE_ALLOWANCE);
 /// The first pause between discovery attempts; each later one doubles, up to
 /// one second.
 const BORROW_FIRST_WAIT: Duration = Duration::from_millis(100);
@@ -141,7 +139,7 @@ async fn borrow_winner(
     discovery: &ServiceDiscovery,
     limits: CliLimits,
 ) -> Option<Result<ApiClient, Failure>> {
-    let service = poll_ready(BORROW_WINDOW, BORROW_PROBE_ALLOWANCE, || async {
+    let service = poll_ready(BORROW_WINDOW, || async {
         match discovery.discover().await {
             Ok(service) => Attempt::Ready(service),
             Err(error) if error.is_launch_pending() => Attempt::Pending,
@@ -163,31 +161,26 @@ enum Attempt<T> {
 }
 
 /// Probe until ready, stopped or `window` has passed, with rising pauses
-/// between probes. A probe starts only while `allowance` is left for it to
-/// finish, the last one as that point arrives; a probe still running at the
-/// window's end is abandoned, and an answer that comes after it is not used.
-async fn poll_ready<T, F, P>(window: Duration, allowance: Duration, mut probe: F) -> Option<T>
+/// between probes. Every probe, the last included, is bounded by what is left
+/// of the window: one still running at its end is abandoned, and an answer
+/// that comes after it is not used.
+async fn poll_ready<T, F, P>(window: Duration, mut probe: F) -> Option<T>
 where
     F: FnMut() -> P,
     P: std::future::Future<Output = Attempt<T>>,
 {
     let deadline = tokio::time::Instant::now() + window;
-    let last_start = deadline - allowance.min(window);
     let mut wait = BORROW_FIRST_WAIT;
     loop {
-        let started = tokio::time::Instant::now();
         let attempt = tokio::time::timeout_at(deadline, probe()).await.ok()?;
         let now = tokio::time::Instant::now();
         match attempt {
             Attempt::Ready(value) if now <= deadline => return Some(value),
             Attempt::Ready(_) | Attempt::Stop => return None,
-            // Pending while the allowance is still left: probe again, at the
-            // latest as the last start arrives. A probe started then was the
-            // last.
-            Attempt::Pending if started >= last_start || now > last_start => return None,
+            Attempt::Pending if now >= deadline => return None,
             Attempt::Pending => {}
         }
-        tokio::time::sleep_until((now + wait).min(last_start)).await;
+        tokio::time::sleep_until((now + wait).min(deadline)).await;
         wait = (wait * 2).min(Duration::from_secs(1));
     }
 }
