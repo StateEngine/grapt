@@ -8,8 +8,8 @@
 //! a string holding exactly an unsigned integer or `true`/`false` becomes that
 //! integer or boolean where the schema asks for one. String values (paths,
 //! commands, edit anchors) are never changed, published MCP or plugin tools
-//! are never touched, and a call that repeats a JSON key is left whole for its
-//! decoder to refuse. Hints name only schema-owned parameters and builtin
+//! are never touched, and a builtin call that repeats a JSON key is refused
+//! before anything reads it as a value, which would keep one repeat. Hints name only schema-owned parameters and builtin
 //! tools, never a key or value the model chose.
 use grapt_runtime::BoundedToolInput;
 use serde::de::{self, DeserializeSeed, Deserializer, MapAccess, SeqAccess, Visitor};
@@ -34,6 +34,8 @@ const MAX_LISTED: usize = 4;
 const MAX_NAME_CHARS: usize = 64;
 /// The furthest edit distance a suggestion may be from what was asked.
 const MAX_DISTANCE: usize = 2;
+/// The most unknown keys compared against the schema for a suggestion.
+const MAX_EXAMINED: usize = 16;
 
 /// What a repair changed, in closed terms.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -59,6 +61,7 @@ pub(super) enum Hint {
     UnknownTool,
     UnknownParameter,
     MissingParameter,
+    RepeatedParameter,
 }
 
 impl Hint {
@@ -67,6 +70,7 @@ impl Hint {
             Self::UnknownTool => "unknown_tool",
             Self::UnknownParameter => "unknown_parameter",
             Self::MissingParameter => "missing_parameter",
+            Self::RepeatedParameter => "repeated_parameter",
         }
     }
 }
@@ -141,7 +145,7 @@ pub(super) fn repair(tool: &str, input: BoundedToolInput) -> (BoundedToolInput, 
     let Some(fields) = builtin(tool) else {
         return (input, None);
     };
-    let Some(Value::Object(mut object)) = unique_object(input.as_bytes()) else {
+    let Parsed::Unique(Value::Object(mut object)) = parse(input.as_bytes()) else {
         return (input, None);
     };
     let repair = match (rename(&mut object, fields), coerce(&mut object, fields)) {
@@ -208,6 +212,19 @@ pub(super) struct Refusal {
     pub(super) detail: String,
 }
 
+/// Refuse a builtin call that repeats a JSON key anywhere, naming only the
+/// tool's own parameters.
+pub(super) fn repeated(tool: &str, input: &BoundedToolInput) -> Option<Refusal> {
+    let fields = builtin(tool)?;
+    matches!(parse(input.as_bytes()), Parsed::Repeated).then(|| Refusal {
+        hint: Hint::RepeatedParameter,
+        detail: format!(
+            "tool input is invalid: a parameter is repeated; {tool} takes: {}",
+            declared(fields).join(", ")
+        ),
+    })
+}
+
 /// Refuse, before preparation, a call that does not fit: a tool nothing
 /// serves, when a builtin name is close enough to suggest, or a builtin call
 /// whose parameters are unknown or missing. `None` leaves the call to the
@@ -232,10 +249,10 @@ pub(super) fn screen(
 
 /// Why a builtin call does not fit its parameters, naming the fix with
 /// schema-owned names and counts only; `None` when it fits, is not a builtin
-/// JSON object, or repeats a key (its decoder refuses that).
+/// JSON object, or repeats a key ([`repeated`] refuses that).
 fn parameter_refusal(tool: &str, input: &BoundedToolInput) -> Option<Refusal> {
     let fields = builtin(tool)?;
-    let Value::Object(object) = unique_object(input.as_bytes())? else {
+    let Parsed::Unique(Value::Object(object)) = parse(input.as_bytes()) else {
         return None;
     };
     let unknown: Vec<&String> = object
@@ -250,12 +267,12 @@ fn parameter_refusal(tool: &str, input: &BoundedToolInput) -> Option<Refusal> {
     if unknown.is_empty() && missing.is_empty() {
         return None;
     }
-    let mut expected: Vec<&str> = fields.kinds.keys().map(String::as_str).collect();
-    expected.sort_unstable();
+    let expected = declared(fields);
     let mut parts = Vec::new();
     if !unknown.is_empty() {
         let mut suggested: Vec<&str> = unknown
             .iter()
+            .take(MAX_EXAMINED)
             .filter_map(|key| suggest_parameter(key, &expected))
             .filter(|name| !object.contains_key(*name))
             .collect();
@@ -287,6 +304,13 @@ fn parameter_refusal(tool: &str, input: &BoundedToolInput) -> Option<Refusal> {
             expected.join(", ")
         ),
     })
+}
+
+/// A builtin's declared parameter names, sorted.
+fn declared(fields: &Fields) -> Vec<&str> {
+    let mut names: Vec<&str> = fields.kinds.keys().map(String::as_str).collect();
+    names.sort_unstable();
+    names
 }
 
 /// The builtin names closest to an unknown tool name.
@@ -335,13 +359,26 @@ fn distance(left: &str, right: &str) -> Option<usize> {
     previous.last().copied()
 }
 
-/// The JSON value of `bytes`, or `None` when it is not JSON or any object in
-/// it repeats a key: a repaired copy would keep only one of the repeats.
-fn unique_object(bytes: &[u8]) -> Option<Value> {
+/// What a call's bytes hold as JSON.
+enum Parsed {
+    Unique(Value),
+    /// Some object repeats a key: any value read from it keeps one repeat.
+    Repeated,
+    Invalid,
+}
+
+fn parse(bytes: &[u8]) -> Parsed {
     let mut deserializer = serde_json::Deserializer::from_slice(bytes);
-    UniqueKeys.deserialize(&mut deserializer).ok()?;
-    deserializer.end().ok()?;
-    serde_json::from_slice(bytes).ok()
+    match UniqueKeys.deserialize(&mut deserializer) {
+        // Valid JSON fails the walk only on its repeated-key refusal.
+        Err(error) if error.is_data() => return Parsed::Repeated,
+        Err(_) => return Parsed::Invalid,
+        Ok(()) => {}
+    }
+    if deserializer.end().is_err() {
+        return Parsed::Invalid;
+    }
+    serde_json::from_slice(bytes).map_or(Parsed::Invalid, Parsed::Unique)
 }
 
 /// Walks a JSON document and refuses the first object that repeats a key.

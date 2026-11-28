@@ -158,6 +158,9 @@ impl PermissionToolRunner {
                 runner
                     .shadow
                     .dispatch(&runner.session, None, shadow::Origin::PluginHost, &tool);
+            if let Some(refused) = runner.repeated_key(&tool, &input, observation.as_deref()) {
+                return finished(observation, refused.await);
+            }
             let outcome = runner
                 .run_prepared(
                     None,
@@ -173,10 +176,7 @@ impl PermissionToolRunner {
                     None,
                 )
                 .await;
-            if let Some(observation) = observation {
-                observation.finish(&outcome);
-            }
-            outcome
+            finished(observation, outcome)
         })
     }
 
@@ -201,6 +201,9 @@ impl PermissionToolRunner {
                 runner
                     .shadow
                     .dispatch(&runner.session, attempt.as_ref(), origin, &tool);
+            if let Some(refused) = runner.repeated_key(&tool, &input, observation.as_deref()) {
+                return finished(observation, refused.await);
+            }
             // Before hooks, preparation and permissions: every later check
             // sees the repaired call.
             let (input, repair) = call_repair::repair(&tool, input);
@@ -222,10 +225,7 @@ impl PermissionToolRunner {
                     nested,
                 )
                 .await;
-            if let Some(observation) = observation {
-                observation.finish(&outcome);
-            }
-            outcome
+            finished(observation, outcome)
         })
     }
 
@@ -721,10 +721,31 @@ impl PermissionToolRunner {
             return None;
         }
         let refusal = call_repair::screen(tool, input, || self.serves(tool))?;
-        if let Some(observation) = &options.observation {
+        Some(self.refuse(tool, refusal, options.observation.as_deref()))
+    }
+
+    /// Refuse a builtin call that repeats a JSON key before any plugin
+    /// callback, hook or rewrite reads it as a value and keeps one repeat.
+    pub(super) fn repeated_key(
+        &self,
+        tool: &str,
+        input: &BoundedToolInput,
+        observation: Option<&shadow::Dispatch>,
+    ) -> Option<BoxFuture<'static, ToolTerminalOutcome>> {
+        let refusal = call_repair::repeated(tool, input)?;
+        Some(self.refuse(tool, refusal, observation))
+    }
+
+    fn refuse(
+        &self,
+        tool: &str,
+        refusal: call_repair::Refusal,
+        observation: Option<&shadow::Dispatch>,
+    ) -> BoxFuture<'static, ToolTerminalOutcome> {
+        if let Some(observation) = observation {
             observation.hinted(refusal.hint);
         }
-        Some(self.early_failure(tool, ToolFailureReason::EffectFailed, refusal.detail))
+        self.early_failure(tool, ToolFailureReason::EffectFailed, refusal.detail)
     }
 
     /// Whether any builtin, internal effect, published MCP route or plugin
@@ -739,4 +760,15 @@ impl PermissionToolRunner {
                     .is_some()
             })
     }
+}
+
+/// A dispatch's outcome, after its shadow observation records it.
+fn finished(
+    observation: Option<Arc<shadow::Dispatch>>,
+    outcome: ToolTerminalOutcome,
+) -> ToolTerminalOutcome {
+    if let Some(observation) = observation {
+        observation.finish(&outcome);
+    }
+    outcome
 }

@@ -157,7 +157,7 @@ fn hints_name_only_schema_parameters_and_close_tools() -> TestResult {
 }
 
 /// A repaired copy would keep only one of two repeated keys, so a call with
-/// a repeat is neither repaired nor screened: its decoder refuses it whole.
+/// a repeat is neither repaired nor screened: dispatch refuses it whole.
 #[test]
 fn a_repeated_key_leaves_the_call_unrepaired() -> TestResult {
     for raw in [
