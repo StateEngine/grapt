@@ -2,6 +2,54 @@ use super::*;
 use crate::dogfood::catalog_config::CatalogEnvironment;
 
 #[test]
+fn isolation_defaults_on_and_user_disable_turns_it_off() -> Result<(), String> {
+    let root = std::env::temp_dir().join(format!(
+        "grapt-sandbox-default-{}-{:?}",
+        std::process::id(),
+        std::thread::current().id()
+    ));
+    std::fs::create_dir(&root).map_err(|e| e.to_string())?;
+    let result = (|| {
+        let workspace = root.join("work");
+        for path in [&workspace, &root.join("config")] {
+            std::fs::create_dir(path).map_err(|e| e.to_string())?;
+        }
+        let sources = || CatalogSources::read(&workspace, CatalogEnvironment::isolated(&root));
+        let default_plan =
+            Plan::read(&workspace, &sources()?)?.ok_or("sandbox did not default on")?;
+        assert!(default_plan.network);
+        // When `workspace` lives under `std::env::temp_dir()`, the shared
+        // ancestor temp directory must NOT be added to `writable`, so Linux
+        // mount preparation never creates `.grapt`/`grapt.jsonc` targets in it.
+        let canonical_temp =
+            std::fs::canonicalize(std::env::temp_dir()).map_err(|e| e.to_string())?;
+        assert!(
+            !default_plan.writable.contains(&canonical_temp),
+            "ancestor temp_dir was exposed writable: {:?}",
+            default_plan.writable
+        );
+        std::fs::write(
+            workspace.join("grapt.json"),
+            br#"{"sandbox":{"enabled":false}}"#,
+        )
+        .map_err(|e| e.to_string())?;
+        assert!(
+            Plan::read(&workspace, &sources()?)?.is_some(),
+            "repository config disabled default sandbox"
+        );
+        std::fs::write(
+            root.join("config/grapt.json"),
+            br#"{"sandbox":{"enabled":false}}"#,
+        )
+        .map_err(|e| e.to_string())?;
+        assert!(Plan::read(&workspace, &sources()?)?.is_none());
+        Ok(())
+    })();
+    let _ = std::fs::remove_dir_all(&root);
+    result
+}
+
+#[test]
 #[cfg_attr(windows, expect(clippy::cognitive_complexity, reason = "legacy"))]
 #[expect(clippy::too_many_lines, reason = "legacy")]
 fn isolation_defaults_off_and_repository_settings_cannot_widen_a_user_policy() -> Result<(), String>
@@ -23,7 +71,7 @@ fn isolation_defaults_off_and_repository_settings_cannot_widen_a_user_policy() -
             std::fs::create_dir(path).map_err(|e| e.to_string())?;
         }
         let sources = || CatalogSources::read(&workspace, CatalogEnvironment::isolated(&root));
-        assert!(Plan::read(&workspace, &sources()?)?.is_none());
+        assert!(Plan::read(&workspace, &sources()?)?.is_some());
         std::fs::write(root.join("config/grapt.json"), serde_json::json!({"sandbox":{"enabled":true,"writable_roots":[granted],"network":true}}).to_string()).map_err(|e| e.to_string())?;
         std::fs::write(workspace.join("grapt.json"), serde_json::json!({"sandbox":{"enabled":false,"writable_roots":[outside],"network":false}}).to_string()).map_err(|e| e.to_string())?;
         let plan = Plan::read(&workspace, &sources()?)?.ok_or("user sandbox policy disappeared")?;
@@ -233,6 +281,223 @@ fn callback_output_cannot_replace_native_receipts_or_change_interpolation_bytes(
     assert!(bounded.len() as u64 <= grapt_runtime::TOOL_ARTIFACT_MAX_BYTES);
     assert!(Receipt::parse(std::str::from_utf8(&bounded).map_err(|e| e.to_string())?).is_some());
     assert!(actual.output(oversized, true, true).is_err());
+    let seatbelt_started = Receipt::started(RealizedEnforcement::PlatformSandbox {
+        backend: "seatbelt".into(),
+    });
+    let seatbelt_out = seatbelt_started.output(b"ok".to_vec(), true, false)?;
+    let parsed_started =
+        Receipt::parse(std::str::from_utf8(&seatbelt_out).map_err(|e| e.to_string())?)
+            .ok_or("seatbelt platform_sandbox receipt was rejected")?;
+    assert_eq!(parsed_started.enforcement, seatbelt_started.enforcement);
+    assert_eq!(parsed_started.ran, Some(true));
+    let seatbelt_refusal = refusal(
+        &RealizedEnforcement::Degraded {
+            backend: "seatbelt".into(),
+            reason: "macOS Seatbelt shell containment is not wired into this build".into(),
+        },
+        "macOS Seatbelt sandbox unavailable; no command ran; set \"sandbox\": {\"enabled\": false} in user grapt.json to opt out",
+    );
+    let parsed_degraded =
+        Receipt::parse(&seatbelt_refusal).ok_or("seatbelt degraded receipt was rejected")?;
+    assert_eq!(parsed_degraded.ran, Some(false));
+    let preserved = parsed_degraded.error(&seatbelt_refusal);
+    assert!(
+        preserved.contains("opt out") && preserved.contains("seatbelt"),
+        "seatbelt degraded refusal lost opt-out detail: {preserved}"
+    );
+    Ok(())
+}
+
+#[test]
+fn workspace_under_temp_dir_never_exposes_ancestor_or_obstructs_sibling() -> Result<(), String> {
+    let dir = tempfile::Builder::new()
+        .prefix("grapt-sandbox-tmpdir-sibling-")
+        .tempdir()
+        .map_err(|e| e.to_string())?;
+    let workspace = dir.path().join("workspace-a");
+    let sibling = dir.path().join("workspace-b");
+    let config = dir.path().join("config");
+    for path in [&workspace, &sibling, &config] {
+        std::fs::create_dir(path).map_err(|e| e.to_string())?;
+    }
+    let sources_a = CatalogSources::read(&workspace, CatalogEnvironment::isolated(dir.path()))?;
+    let plan = Plan::read(&workspace, &sources_a)?.ok_or("sandbox plan absent")?;
+    let canonical_temp = std::fs::canonicalize(std::env::temp_dir()).map_err(|e| e.to_string())?;
+    let canonical_sibling = std::fs::canonicalize(&sibling).map_err(|e| e.to_string())?;
+    assert!(
+        !plan.writable.contains(&canonical_temp),
+        "shared ancestor temp_dir must not be writable: {:?}",
+        plan.writable
+    );
+    assert!(
+        !plan
+            .writable
+            .iter()
+            .any(|writable| canonical_sibling.starts_with(writable)),
+        "sibling workspace must not fall under any writable root: {:?}",
+        plan.writable
+    );
+    // Sibling catalog discovery remains completely unobstructed.
+    let _sources_b = CatalogSources::read(&sibling, CatalogEnvironment::isolated(dir.path()))?;
+    assert!(
+        plan.private_temp_parent().is_some(),
+        "planner must record private_temp_parent when ancestor temp_dir is omitted"
+    );
+    // The reserved private scratch root must be counted inside the 128-path
+    // policy bound so a valid plan never overflows Policy's 128-path limit.
+    assert!(config::check_path_budget(127, true).is_ok());
+    assert!(config::check_path_budget(128, true).is_err());
+    assert!(config::check_path_budget(128, false).is_ok());
+    #[cfg(unix)]
+    {
+        // When a user explicitly grants temp as a writable root, the Unix
+        // 0700 scratch anchor must be protected so no sandboxed command under
+        // the same UID can tamper with sibling scratch directories.
+        std::fs::write(
+            config.join("grapt.json"),
+            format!(
+                r#"{{"sandbox":{{"writable_roots":[{:?}]}}}}"#,
+                canonical_temp.to_string_lossy()
+            ),
+        )
+        .map_err(|e| e.to_string())?;
+        let sources_temp =
+            CatalogSources::read(&workspace, CatalogEnvironment::isolated(dir.path()))?;
+        let temp_plan = Plan::read(&workspace, &sources_temp)?.ok_or("sandbox plan absent")?;
+        let anchor =
+            canonical_temp.join(format!("grapt-scratch-{}", nix::unistd::geteuid().as_raw()));
+        assert!(
+            temp_plan.protected.contains(&anchor),
+            "Unix scratch anchor must be protected when user writable_roots overlaps temp: {:?}",
+            temp_plan.protected
+        );
+        // Plan::filesystem() must also deny the Unix scratch anchor upfront so
+        // WriteTarget preview rejects grants inside grapt-scratch-<euid>.
+        let anchor_id =
+            grapt_types::PathIdentity::canonical(crate::dogfood::tools::path_text(&anchor));
+        assert!(
+            plan.filesystem().deny().contains(&anchor_id),
+            "Unix scratch anchor must be in Plan::filesystem() deny list"
+        );
+
+        // Verify Plan::read stays strictly read-only on an isolated temp parent
+        // (no pre-existing ambient anchor) while launch-time ensure creates 0700.
+        let isolated_temp = dir.path().join("isolated-temp");
+        std::fs::create_dir(&isolated_temp).map_err(|e| e.to_string())?;
+        use std::os::unix::fs::PermissionsExt as _;
+        std::fs::set_permissions(&isolated_temp, std::fs::Permissions::from_mode(0o700))
+            .map_err(|e| e.to_string())?;
+        let mut isolated_protected = Vec::new();
+        config::protect_unix_scratch_anchor(&mut isolated_protected, &isolated_temp)?;
+        let isolated_anchor = scratch::unix_scratch_anchor_path(&isolated_temp);
+        assert!(isolated_protected.contains(&isolated_anchor));
+        assert!(
+            !isolated_anchor.exists(),
+            "read-only planning must not create the Unix scratch anchor on disk"
+        );
+        scratch::ensure_unix_scratch_anchor(&isolated_temp)?;
+        let anchor_mode = std::fs::symlink_metadata(&isolated_anchor)
+            .map_err(|e| e.to_string())?
+            .permissions()
+            .mode()
+            & 0o7777;
+        assert_eq!(anchor_mode, 0o700, "launch-time anchor must be mode 0700");
+
+        // Late write targets via Plan::add_write_target overlapping at or below
+        // the Unix scratch anchor must also disable private_temp_parent and
+        // protect the anchor.
+        let mut late_plan = plan.clone();
+        late_plan.add_write_target(&anchor.join("nested-grant"))?;
+        assert!(
+            late_plan.private_temp_parent().is_none(),
+            "late write target below anchor must disable private_temp_parent"
+        );
+        assert!(
+            late_plan.protected.contains(&anchor),
+            "late write target below anchor must protect the Unix scratch anchor"
+        );
+    }
+    Ok(())
+}
+
+#[cfg(unix)]
+#[test]
+fn scoped_grant_preview_rejects_target_inside_unix_scratch_anchor() -> Result<(), String> {
+    use std::os::unix::fs::PermissionsExt as _;
+
+    let dir = tempfile::Builder::new()
+        .prefix("grapt-sandbox-preview-anchor-")
+        .tempdir()
+        .map_err(|e| e.to_string())?;
+    let workspace = dir.path().join("workspace");
+    let isolated_temp = dir.path().join("isolated-temp");
+    std::fs::create_dir(&workspace).map_err(|e| e.to_string())?;
+    std::fs::create_dir(&isolated_temp).map_err(|e| e.to_string())?;
+    std::fs::set_permissions(&isolated_temp, std::fs::Permissions::from_mode(0o700))
+        .map_err(|e| e.to_string())?;
+    let isolated_anchor = scratch::ensure_unix_scratch_anchor(&isolated_temp)?;
+    let nested_in_anchor = isolated_anchor.join("nested-grant-target");
+    std::fs::create_dir(&nested_in_anchor).map_err(|e| e.to_string())?;
+
+    let sources = CatalogSources::read(&workspace, CatalogEnvironment::isolated(dir.path()))?;
+    let mut plan = Plan::read(&workspace, &sources)?.ok_or("sandbox plan absent")?;
+    plan.private_temp_parent = Some(isolated_temp);
+    let preview_error =
+        grapt_sandbox::WriteTarget::resolve(&plan.preview_policy(), &nested_in_anchor)
+            .err()
+            .ok_or("preview must reject scoped write target inside grapt-scratch-<euid>")?;
+    assert!(
+        preview_error.to_lowercase().contains("protected"),
+        "preview rejection should explain protected scratch anchor: {preview_error}"
+    );
+    Ok(())
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn unrelated_protected_path_sharing_anchor_basename_is_not_touched() -> Result<(), String> {
+    use std::os::unix::fs::PermissionsExt as _;
+
+    let dir = tempfile::Builder::new()
+        .prefix("grapt-sandbox-unrelated-anchor-")
+        .tempdir()
+        .map_err(|e| e.to_string())?;
+    let unrelated_parent = dir.path().join("unrelated-parent");
+    let planned_parent = dir.path().join("planned-parent");
+    std::fs::create_dir(&unrelated_parent).map_err(|e| e.to_string())?;
+    std::fs::create_dir(&planned_parent).map_err(|e| e.to_string())?;
+    std::fs::set_permissions(&planned_parent, std::fs::Permissions::from_mode(0o700))
+        .map_err(|e| e.to_string())?;
+
+    // Unrelated directory with the same basename `grapt-scratch-<euid>` and
+    // loose mode 0o755 (would fail 0700 verification if scanned by basename).
+    let unrelated_entry = scratch::unix_scratch_anchor_path(&unrelated_parent);
+    std::fs::create_dir(&unrelated_entry).map_err(|e| e.to_string())?;
+    std::fs::set_permissions(&unrelated_entry, std::fs::Permissions::from_mode(0o755))
+        .map_err(|e| e.to_string())?;
+
+    // When no scratch anchor is planned, helper precreation does nothing.
+    posix::ensure_protected_scratch_anchor(None)?;
+    let mode_after_none = std::fs::symlink_metadata(&unrelated_entry)
+        .map_err(|e| e.to_string())?
+        .permissions()
+        .mode()
+        & 0o7777;
+    assert_eq!(mode_after_none, 0o755);
+
+    // When a specific scratch anchor is planned, ONLY that exact path is created/verified.
+    let planned_anchor = scratch::unix_scratch_anchor_path(&planned_parent);
+    posix::ensure_protected_scratch_anchor(Some(&planned_anchor))?;
+    assert!(planned_anchor.is_dir());
+    let mode_after_planned = std::fs::symlink_metadata(&unrelated_entry)
+        .map_err(|e| e.to_string())?
+        .permissions()
+        .mode()
+        & 0o7777;
+    assert_eq!(
+        mode_after_planned, 0o755,
+        "unrelated protected path sharing anchor basename must not be touched"
+    );
     Ok(())
 }
 

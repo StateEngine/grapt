@@ -545,7 +545,7 @@ mod withholding_tests {
         assert!(!withheld_under(APPLY_PATCH_TOOL, &layers));
         assert_eq!(
             grapt_permission::preset::decide("fs.overwrite", &["/repo/existing"], &layers).effect,
-            Effect::Allow
+            Effect::Ask
         );
     }
 
@@ -611,11 +611,11 @@ mod withholding_tests {
         assert_eq!(decide("fs.delete", "/repo/old.rs"), Effect::Deny);
         assert_eq!(decide("fs.modify", "/repo/main.rs"), Effect::Allow);
         assert_eq!(decide("shell", "rm -rf build"), Effect::Deny);
-        assert_eq!(decide("shell", "cargo test"), Effect::Allow);
+        assert_eq!(decide("shell", "cargo test"), Effect::Ask);
     }
 
-    /// Destructive shell commands are judged against the Session's own
-    /// directory: a write inside it runs, one past it asks.
+    /// Under Maintainer, shell commands ask rather than running unasked,
+    /// including both workspace-local and out-of-workspace writes.
     #[test]
     fn the_session_directory_bounds_destructive_shell_writes() {
         let policy = ResolvedPolicy {
@@ -630,10 +630,10 @@ mod withholding_tests {
         let layers = policy.layers(None, &[]);
         let decide =
             |command: &str| grapt_permission::preset::decide("shell", &[command], &layers).effect;
-        assert_eq!(decide("echo x > /repo/out.txt"), Effect::Allow);
+        assert_eq!(decide("echo x > /repo/out.txt"), Effect::Ask);
         assert_eq!(decide("echo x > /etc/hosts"), Effect::Ask);
         assert_eq!(decide("rm -rf build"), Effect::Ask);
-        assert_eq!(decide("cargo test"), Effect::Allow);
+        assert_eq!(decide("cargo test"), Effect::Ask);
     }
 
     /// Definition directories protect their own files: a write into an

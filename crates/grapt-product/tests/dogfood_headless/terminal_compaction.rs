@@ -135,12 +135,16 @@ fn pty_handle_survives_compaction_and_client_reopen_without_relaunch_or_input_re
 ) -> Result<(), Box<dyn std::error::Error>> {
     let _journey = process_journey_custody();
     let root = root("terminal-compact-reopen");
+    let workspace = root.with_extension("workspace");
     let _cleanup = terminal_coordination::RootCleanup(root.clone());
+    let _ws_cleanup = terminal_coordination::RootCleanup(workspace.clone());
+    fs::create_dir_all(&workspace)?;
     prepare(&root, 240_000);
+    unattended(&root);
     let provider = ProviderFixture::start(Vec::new());
     let mut service = spawn(&root, provider.address);
     let address = await_ready(&root, &mut service);
-    let session = create(address);
+    let session = create_in(address, &workspace);
     let started = tool(
         &root,
         &provider,
@@ -157,8 +161,11 @@ fn pty_handle_survives_compaction_and_client_reopen_without_relaunch_or_input_re
         .to_owned();
     assert_eq!(started["status"], "running");
     assert_eq!(started["done"], false);
-    await_file(&root.join("ready.flag"), "ready")?;
-    assert_eq!(fs::read_to_string(root.join("launches.txt"))?, "launch\n");
+    await_file(&workspace.join("ready.flag"), "ready")?;
+    assert_eq!(
+        fs::read_to_string(workspace.join("launches.txt"))?,
+        "launch\n"
+    );
 
     provider.append(vec![
         Script::SuccessText(
@@ -214,7 +221,7 @@ fn pty_handle_survives_compaction_and_client_reopen_without_relaunch_or_input_re
         "reopen called the provider"
     );
     assert_eq!(
-        fs::read_to_string(root.join("launches.txt"))?,
+        fs::read_to_string(workspace.join("launches.txt"))?,
         "launch\n",
         "reopen relaunched the process"
     );
@@ -239,7 +246,7 @@ fn pty_handle_survives_compaction_and_client_reopen_without_relaunch_or_input_re
         );
     }
     assert!(
-        !root.join("markers.txt").exists(),
+        !workspace.join("markers.txt").exists(),
         "foreign input reached the child"
     );
     let polled = tool(
@@ -311,7 +318,7 @@ fn pty_handle_survives_compaction_and_client_reopen_without_relaunch_or_input_re
         "missing or duplicate output: {observed}"
     );
     assert_eq!(
-        fs::read_to_string(root.join("markers.txt"))?,
+        fs::read_to_string(workspace.join("markers.txt"))?,
         "MATCHED-MARKER\n"
     );
 
@@ -352,10 +359,16 @@ fn pty_handle_survives_compaction_and_client_reopen_without_relaunch_or_input_re
     assert_eq!(final_page["cleanup"], "complete");
     assert_eq!(final_page["pipe"], "drained");
     #[cfg(unix)]
-    assert_eq!(fs::read_to_string(root.join("stopped.txt"))?, "interrupted");
-    assert_eq!(fs::read_to_string(root.join("launches.txt"))?, "launch\n");
     assert_eq!(
-        fs::read_to_string(root.join("markers.txt"))?,
+        fs::read_to_string(workspace.join("stopped.txt"))?,
+        "interrupted"
+    );
+    assert_eq!(
+        fs::read_to_string(workspace.join("launches.txt"))?,
+        "launch\n"
+    );
+    assert_eq!(
+        fs::read_to_string(workspace.join("markers.txt"))?,
         "MATCHED-MARKER\n"
     );
     assert_eq!(observed.matches("ACK:MATCHED-MARKER").count(), 1);

@@ -218,11 +218,12 @@ async fn shell_kills_its_whole_tree_and_keeps_output_on_timeout() -> Result<(), 
             let EffectTarget::Shell {
                 command,
                 program,
-                environment,
+                mut environment,
             } = prepared.target
             else {
                 return Err("shell preparation changed effect class".to_owned());
             };
+            environment.without_sandbox();
             Ok::<_, String>(
                 run_shell(
                     &root,

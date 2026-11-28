@@ -391,6 +391,7 @@ fn external_plugin_tool_uses_provider_permission_execution_and_durable_settlemen
     let _journey = process_journey_custody();
     let root = root("plugin-tool");
     prepare(&root, 45_000);
+    unattended(&root);
     prepare_model_inventory(&root, 128_000);
     {
         let store = EventStore::open(

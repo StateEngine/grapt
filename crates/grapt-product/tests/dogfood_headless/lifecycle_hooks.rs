@@ -593,6 +593,7 @@ fn session_wait_and_subagent_events_use_their_real_lifetimes(
     let _journey = process_journey_custody();
     let root = root("advanced-hook-events");
     prepare(&root, 240_000);
+    unattended(&root);
     let log = configure_events(
         &root,
         &[

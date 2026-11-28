@@ -3,7 +3,7 @@
 use std::path::{Path, PathBuf};
 
 use super::source::InstructionFile;
-use super::{read_file, MAX_FILES, MAX_FILE_BYTES, MAX_INSTRUCTION_BYTES};
+use super::{read_scoped_relative, MAX_FILES, MAX_FILE_BYTES, MAX_INSTRUCTION_BYTES};
 
 const MAX_DEPTH: usize = 16;
 
@@ -56,9 +56,16 @@ impl Graph {
                         path.display()
                     ));
                 }
-                let import = path
-                    .parent()
-                    .ok_or("instruction import has no parent")?
+                let parent = path.parent().ok_or("instruction import has no parent")?;
+                let import = parent.join(name);
+                // Keep the scope-relative path uncollapsed (avoiding Windows
+                // verbatim-prefix `Path::join` collapse of `..` components) so
+                // every original component is checked by the no-follow walk.
+                let scope_relative = parent
+                    .strip_prefix(&self.scope)
+                    .map_err(|_| {
+                        "instruction source resolves outside the directory it governs".to_owned()
+                    })?
                     .join(name);
                 if self.active.len() >= MAX_DEPTH || self.files >= MAX_FILES {
                     return Err(
@@ -68,7 +75,7 @@ impl Graph {
                 }
                 // Scope, regular-file and byte checks apply to the SAME acquired
                 // handle. Never re-resolve the authority anchor between imports.
-                let source = read_file(&import, Some(&self.scope))?
+                let source = read_scoped_relative(&self.scope, &scope_relative)?
                     .ok_or_else(|| format!("instruction import {name} is missing"))?;
                 if self.active.contains(&source.path) {
                     return Err(format!("instruction import cycle at {}", import.display()));

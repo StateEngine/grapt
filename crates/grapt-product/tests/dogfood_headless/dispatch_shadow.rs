@@ -48,6 +48,7 @@ fn recording_and_an_unavailable_sink_preserve_allow_and_inspect_refusal() {
     ] {
         let root = root(label);
         prepare(&root, 200_000);
+        unattended(&root);
         if broken_sink {
             fs::create_dir_all(root.join(LOG)).unwrap_or_else(|error| panic!("{error}"));
         }
@@ -175,6 +176,7 @@ fn prepared_shape_observes_the_hook_replacement_without_retaining_either_payload
     let _journey = process_journey_custody();
     let root = root("shadow-after-hook");
     prepare(&root, 200_000);
+    unattended(&root);
     let script = root.join("shadow-modifier.py");
     fs::write(&script, r#"import json,sys
 event=json.load(sys.stdin)

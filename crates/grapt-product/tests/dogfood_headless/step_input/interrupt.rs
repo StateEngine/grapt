@@ -30,6 +30,7 @@ fn stop_only_callers_leave_queued_input_pending_instead_of_starting_another_exec
         assert_eq!(page["data"][0]["id"], "msg_quit_pending");
         child.stop_after_witness(&root);
         drop(child);
+        process_fixture::cleanup(&workspace_dir(&root));
         process_fixture::cleanup(&root);
     }
     Ok(())
@@ -124,6 +125,7 @@ fn held_restart(concurrent_stop: bool) -> TestResult {
     assert_eq!(page["data"][0]["id"], "msg_esc_still_pending");
     child.stop_after_witness(&root);
     drop(child);
+    process_fixture::cleanup(&workspace_dir(&root));
     process_fixture::cleanup(&root);
     Ok(())
 }
@@ -214,6 +216,7 @@ fn ordinary_and_destructive_callers_both_confirm_one_released_stop() -> TestResu
     assert_eq!(users(address, &session), ["run the three step task", FIRST]);
     child.stop_after_witness(&root);
     drop(child);
+    process_fixture::cleanup(&workspace_dir(&root));
     process_fixture::cleanup(&root);
     Ok(())
 }

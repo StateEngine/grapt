@@ -1,6 +1,7 @@
 //! A Session's permission preset decides which calls need a person: the
-//! default `maintainer` runs commands unasked, `author` refuses them in its
-//! own words, and a profile may choose its own default.
+//! default `maintainer` asks before running commands (failing closed when
+//! headless and running when approved), `author` refuses them in its own
+//! words, and a profile may choose its own default.
 use super::*;
 
 const CALL: &str = "call_preset_shell";
@@ -20,24 +21,27 @@ fn tool_output(body: &str) -> String {
         .to_owned()
 }
 
-/// Run one command turn on a new Session, optionally at `preset`; the
-/// output the model was shown, and the permission rows left pending.
-fn command_turn(
-    label: &str,
-    preset: Option<&str>,
+fn prepare_preset_fixture(
+    root: &Path,
     profile_default: Option<&str>,
     global_default: Option<&str>,
     project_default: Option<&str>,
-) -> (String, usize) {
-    let _journey = process_journey_custody();
-    let root = root(label);
-    prepare(&root, 200_000);
+) -> PathBuf {
+    prepare(root, 200_000);
     if let Some(name) = profile_default {
         let config = root.join("service.conf");
         let mut text = fs::read_to_string(&config).unwrap_or_else(|error| panic!("{error}"));
         text.push_str(&format!("permission_preset={name}\n"));
         fs::write(&config, text).unwrap_or_else(|error| panic!("{error}"));
     }
+    let install = root.join("install");
+    fs::create_dir_all(&install).unwrap_or_else(|error| panic!("{error}"));
+    let binary = install.join(if cfg!(windows) {
+        "grapt-server.exe"
+    } else {
+        "grapt-server"
+    });
+    fs::copy(shipped_cli::product_binary(), &binary).unwrap_or_else(|error| panic!("{error}"));
     for (directory, preset) in [
         (root.join("global-config"), global_default),
         (root.join("project"), project_default),
@@ -51,6 +55,22 @@ fn command_turn(
             .unwrap_or_else(|error| panic!("{error}"));
         }
     }
+    binary
+}
+
+/// Run one command turn on a new Session, optionally at `preset`; the
+/// output the model was shown, and the permission rows left pending.
+fn command_turn(
+    label: &str,
+    preset: Option<&str>,
+    profile_default: Option<&str>,
+    global_default: Option<&str>,
+    project_default: Option<&str>,
+    approve: bool,
+) -> (String, usize) {
+    let _journey = process_journey_custody();
+    let root = root(label);
+    let binary = prepare_preset_fixture(&root, profile_default, global_default, project_default);
     let provider = ProviderFixture::start(vec![
         Script::ToolInput {
             call: CALL,
@@ -59,7 +79,20 @@ fn command_turn(
         },
         Script::SuccessText("the turn ended"),
     ]);
-    let mut child = spawn(&root, provider.address);
+    let mut command = grapt_service::launcher_environment::command(&binary);
+    command
+        .args(["serve", "--service"])
+        .arg(&root)
+        .args(["--port", "0"])
+        .env("GRAPT_TEST_CATALOG_ROOT", &root)
+        .env("GRAPT_TEST_HOME", root.join("home"))
+        .env("GRAPT_CONFIG_DIR", root.join("global-config"))
+        .env(
+            "GRAPT_LIVE_HEADLESS_LOOPBACK",
+            format!("http://{}", provider.address),
+        );
+    grapt_service::launcher_environment::scrub(&mut command);
+    let mut child = process_fixture::spawn_captured(&root, &mut command);
     let address = await_ready(&root, &mut child);
     let session = json(
         address,
@@ -96,12 +129,16 @@ fn command_turn(
             name
         );
     }
+    let _approver = approve.then(|| approval::Attachment::open(address, "*"));
     json(
         address,
         "POST",
         &format!("/api/session/{session}/prompt"),
         r#"{"text":"run it"}"#,
     );
+    if approve {
+        compaction_continuity::approve(address, &session, CALL);
+    }
     permission_residuals::wait_session_idle(address, &session);
     let pending = json(
         address,
@@ -120,19 +157,103 @@ fn command_turn(
     (tool_output(&bodies[1]), pending)
 }
 
+fn extract_receipt_json(output: &str, context: &str) -> serde_json::Value {
+    let raw = output
+        .lines()
+        .find(|line| line.trim_start().starts_with('{'))
+        .unwrap_or(output);
+    serde_json::from_str(raw)
+        .unwrap_or_else(|error| panic!("{context}: expected JSON receipt, got {output}: {error}"))
+}
+
+fn assert_approved_default_sandbox_outcome(output: &str, context: &str) {
+    let receipt = extract_receipt_json(output, context);
+    if cfg!(target_os = "linux") {
+        assert_eq!(
+            receipt["enforcement"]["kind"], "platform_sandbox",
+            "{context}: default-on Linux sandbox was not realized: {output}"
+        );
+        assert_eq!(
+            receipt["enforcement"]["backend"], "bwrap",
+            "{context}: unexpected Linux sandbox backend: {output}"
+        );
+        assert_eq!(
+            receipt["ran"], true,
+            "{context}: command did not run: {output}"
+        );
+        assert!(
+            receipt["output"]
+                .as_str()
+                .is_some_and(|text| text.contains("preset-ok")),
+            "{context}: command output missing preset-ok: {output}"
+        );
+    } else if cfg!(target_os = "macos") {
+        assert_eq!(
+            receipt["enforcement"]["kind"], "degraded",
+            "{context}: expected degraded macOS receipt: {output}"
+        );
+        assert_eq!(
+            receipt["enforcement"]["backend"], "seatbelt",
+            "{context}: expected seatbelt backend on macOS: {output}"
+        );
+        assert_eq!(
+            receipt["ran"], false,
+            "{context}: degraded macOS refusal must report ran == false: {output}"
+        );
+        assert!(
+            output.contains("opt out") && !output.contains("MXC"),
+            "{context}: expected macOS Seatbelt opt-out without MXC wording: {output}"
+        );
+    } else {
+        assert_eq!(
+            receipt["enforcement"]["backend"], "mxc",
+            "{context}: Windows default-on sandbox neither realized nor degraded via mxc: {output}"
+        );
+        if receipt["enforcement"]["kind"] == "platform_sandbox" {
+            assert_eq!(
+                receipt["ran"], true,
+                "{context}: contained Windows command did not report ran == true: {output}"
+            );
+            assert!(
+                receipt["output"]
+                    .as_str()
+                    .is_some_and(|text| text.contains("preset-ok")),
+                "{context}: contained Windows command omitted preset-ok: {output}"
+            );
+        } else {
+            assert_eq!(
+                receipt["enforcement"]["kind"], "degraded",
+                "{context}: expected platform_sandbox or degraded receipt on Windows: {output}"
+            );
+            assert_eq!(
+                receipt["ran"], false,
+                "{context}: degraded Windows refusal must report ran == false: {output}"
+            );
+        }
+    }
+}
+
 #[test]
-fn the_default_runs_a_command_without_asking() {
-    let (output, pending) = command_turn("preset-default", None, None, None, None);
+fn the_default_asks_before_running_a_command() {
+    let (output, pending) = command_turn("preset-default-headless", None, None, None, None, false);
     assert!(
-        output.contains("preset-ok"),
-        "the command did not run: {output}"
+        output.contains("ApprovalUnavailable"),
+        "headless default did not refuse unapproved command: {output}"
     );
-    assert_eq!(pending, 0, "the default asked for a command");
+    assert!(
+        !output.contains("preset-ok"),
+        "an unapproved command ran under default maintainer: {output}"
+    );
+    assert_eq!(pending, 0, "headless refusal left a pending prompt");
+
+    let (output, pending) = command_turn("preset-default-approved", None, None, None, None, true);
+    assert_approved_default_sandbox_outcome(&output, "default maintainer");
+    assert_eq!(pending, 0, "approved command left a pending prompt");
 }
 
 #[test]
 fn an_author_session_is_refused_a_command_in_its_own_words() {
-    let (output, pending) = command_turn("preset-author", Some("author"), None, None, None);
+    let (output, pending) = command_turn("preset-author", Some("author"), None, None, None, false);
     assert!(
         output.contains("shell is denied by this Session's author permission preset"),
         "{output}"
@@ -146,7 +267,7 @@ fn an_author_session_is_refused_a_command_in_its_own_words() {
 
 #[test]
 fn the_profile_default_applies_to_a_session_without_its_own() {
-    let (output, _) = command_turn("preset-profile", None, Some("author"), None, None);
+    let (output, _) = command_turn("preset-profile", None, Some("author"), None, None, false);
     assert!(
         output.contains("denied by this Session's author permission preset"),
         "{output}"
@@ -158,8 +279,9 @@ fn the_profile_default_applies_to_a_session_without_its_own() {
         Some("author"),
         None,
         None,
+        true,
     );
-    assert!(output.contains("preset-ok"), "{output}");
+    assert_approved_default_sandbox_outcome(&output, "maintainer override");
 }
 
 #[test]
@@ -170,6 +292,7 @@ fn a_project_cannot_raise_the_global_default() {
         None,
         Some("author"),
         Some("maintainer"),
+        false,
     );
     assert!(
         output.contains("denied by this Session's author permission preset"),
@@ -190,6 +313,7 @@ fn a_project_can_narrow_the_global_default() {
         None,
         Some("maintainer"),
         Some("author"),
+        false,
     );
     assert!(
         output.contains("denied by this Session's author permission preset"),
@@ -210,6 +334,7 @@ fn the_profile_default_wins_over_global_and_looser_project_config() {
         Some("author"),
         Some("maintainer"),
         Some("maintainer"),
+        false,
     );
     assert!(
         output.contains("denied by this Session's author permission preset"),

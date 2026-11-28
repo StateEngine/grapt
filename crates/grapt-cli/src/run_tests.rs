@@ -62,6 +62,20 @@ fn auto_uses_the_authoritative_patch_and_owner_classification() {
             );
         }
     }
+    for action in ["sandbox.msys_unconfined", "sandbox.write"] {
+        for mode in [AutoReply::Auto, AutoReply::Everything] {
+            assert_eq!(
+                super::auto_reply_for(action, mode, Some(&ordinary)),
+                "reject",
+                "auto-approval mode {mode:?} must not auto-approve containment action {action}"
+            );
+        }
+        assert!(
+            super::auto_reject_reason(action, Some(&ordinary))
+                .contains("sandbox containment requires explicit interactive consent"),
+            "unexpected refusal reason for {action}"
+        );
+    }
 }
 
 use super::{ProgressBound, RunError, MAX_SSE_RECONNECTS, MAX_TERMINAL_POLLS};

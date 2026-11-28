@@ -8,7 +8,7 @@ for unattended work.
 | - | - | - | - | - | - |
 | `inspect` | allowed | denied | denied | denied | denied |
 | `author` | allowed | allowed | denied | asks | asks |
-| `maintainer` (default) | allowed | allowed | destructive commands ask | allowed inside the project | allowed |
+| `maintainer` (default) | allowed | allowed | asks | asks | asks |
 | `bypass` (explicit only) | allowed | allowed | allowed | allowed | allowed |
 
 Creating, editing, moving or deleting a permission authority source asks under
@@ -116,11 +116,11 @@ be replaced or removed.
 
 ## The default is `maintainer`
 
-Maintainer allows ordinary file work, MCP tools and external tools. Its short
-exception list asks before destructive shell commands (including recursive
-directory deletion and writes outside the project), `external_directory` access,
-and edits to permission authority files. Native file tools keep their project
-path confinement. With no approver attached, an Ask refuses immediately.
+Maintainer allows read-only inspection and ordinary file creation/modification
+inside the project, and asks by default for shell commands, file overwrites/moves/deletes,
+`external_directory` access, MCP/plugin tools, and edits to permission authority files.
+Native file tools keep their project path confinement. With no approver attached,
+an Ask refuses immediately.
 
 ## Choosing a preset
 

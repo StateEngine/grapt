@@ -207,6 +207,8 @@ fn skd_an_unknown_skill_is_refused_and_nothing_is_loaded() {
         prepare(&root, 8_000);
         if interactive {
             attended(&root);
+        } else {
+            unattended(&root);
         }
         let home = install_skills(&root);
         let provider = ProviderFixture::start(vec![
@@ -260,6 +262,7 @@ fn skill_discovery_metadata_then_full_content_reach_the_conversation_tail() {
     let root = root("cache05-skill-discovery");
     let _cleanup = terminal_coordination::RootCleanup(root.clone());
     prepare(&root, 30_000);
+    unattended(&root);
     let home = install_skills(&root);
     let provider = ProviderFixture::start(vec![
         Script::Raw(tool_call(

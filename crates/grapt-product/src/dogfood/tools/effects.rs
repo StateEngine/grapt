@@ -328,10 +328,7 @@ pub(super) async fn run_shell_cancellable(
     }
     #[cfg(not(any(windows, target_os = "linux")))]
     if environment.sandbox().is_some() {
-        return Err(sandbox::refusal(
-            &sandbox::degraded("MXC native process containment requires Windows"),
-            "sandbox unavailable; no command ran",
-        ));
+        return Err(sandbox::unsupported_platform_refusal());
     }
     let args: ShellArguments = decode_input(input)?;
     let _ = args.description;

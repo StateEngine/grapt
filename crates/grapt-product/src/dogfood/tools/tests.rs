@@ -366,11 +366,12 @@ async fn shell_is_cwd_bound_timed_and_output_bounded() -> Result<(), String> {
     let EffectTarget::Shell {
         command: expected,
         program,
-        environment,
+        mut environment,
     } = prepared.target
     else {
         return Err("shell preparation changed effect class".to_owned());
     };
+    environment.without_sandbox();
     let output = run_shell(
         &scratch.0,
         &expected,
@@ -396,11 +397,12 @@ async fn shell_is_cwd_bound_timed_and_output_bounded() -> Result<(), String> {
     let EffectTarget::Shell {
         command: failed_command,
         program: failed_program,
-        environment: failed_environment,
+        environment: mut failed_environment,
     } = failed.target
     else {
         return Err("failed shell preparation changed effect class".to_owned());
     };
+    failed_environment.without_sandbox();
     let failed_output = run_shell(
         &scratch.0,
         &failed_command,
@@ -436,11 +438,12 @@ async fn shell_preserves_quoted_program_and_spaced_arguments_after_authorization
         let EffectTarget::Shell {
             command: expected,
             program,
-            environment,
+            mut environment,
         } = prepared.target
         else {
             return Err("shell preparation changed effect class".to_owned());
         };
+        environment.without_sandbox();
         let output = run_shell(
             &scratch.0,
             &expected,

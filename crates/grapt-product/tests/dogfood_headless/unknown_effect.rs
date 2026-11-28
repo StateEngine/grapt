@@ -641,6 +641,15 @@ fn g24_auto_resume_stops_at_crash_loop_cap_with_durable_notice() {
     });
     // Crash 1 (original attempt).
     journey.child.stop_after_witness(&journey.service);
+    // Auto-resume starts during server startup before any client approver
+    // attaches; allow the fixture's held MCP tool explicitly under default-Ask
+    // Maintainer so restarted attempts re-enter the poison tool call.
+    fs::create_dir_all(journey.service.join("global-config"))
+        .unwrap_or_else(|error| panic!("global-config: {error}"));
+    write(
+        &journey.service.join("global-config/grapt.json"),
+        r#"{"permission":{"execute":"allow","nested_hold":"allow"}}"#,
+    );
 
     // Restart 1 -> auto-resume attempt 1 -> crashes again.
     let _ = fs::remove_file(&entered1);

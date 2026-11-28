@@ -107,6 +107,36 @@ pub(super) fn spawn_with(
     spawn_service(root, provider, environment, "serve", Stdio::inherit())
 }
 
+/// Owned private single-link copy (`nlink == 1`) of Cargo's hard-linked test
+/// binary, dropped with its owning fixture so default-on Linux `bwrap`
+/// containment accepts the executable without leaking temp copies on exit.
+pub(super) struct InstalledProductBinary {
+    _dir: tempfile::TempDir,
+    path: PathBuf,
+}
+
+impl InstalledProductBinary {
+    pub(super) fn path(&self) -> &Path {
+        &self.path
+    }
+}
+
+pub(super) fn installed_product_binary() -> InstalledProductBinary {
+    let source = shipped_cli::product_binary();
+    let dir = tempfile::Builder::new()
+        .prefix("grapt-installed-bin-")
+        .tempdir()
+        .unwrap_or_else(|error| panic!("installed binary tempdir failed: {error}"));
+    let path = dir.path().join(if cfg!(windows) {
+        "grapt-server.exe"
+    } else {
+        "grapt-server"
+    });
+    fs::copy(&source, &path)
+        .unwrap_or_else(|error| panic!("installed binary copy failed: {error}"));
+    InstalledProductBinary { _dir: dir, path }
+}
+
 fn spawn_service(
     root: &Path,
     provider: SocketAddr,
@@ -142,7 +172,8 @@ fn spawn_service(
                 .unwrap_or_else(|| panic!("fixture config path is not UTF-8")),
         ));
     }
-    let mut command = grapt_service::launcher_environment::command(shipped_cli::product_binary());
+    let installed_binary = installed_product_binary();
+    let mut command = grapt_service::launcher_environment::command(installed_binary.path());
     command.env("GRAPT_TEST_CATALOG_ROOT", root);
     for (name, value) in &environment {
         command.env(name, value);
@@ -157,7 +188,9 @@ fn spawn_service(
         .env("GRAPT_LIVE_HEADLESS_LOOPBACK", format!("http://{provider}"));
     // Valid service launches scrub after fixture overrides, just as the launcher does.
     grapt_service::launcher_environment::scrub(&mut command);
-    spawn_captured(root, &mut command)
+    let mut managed = spawn_captured(root, &mut command);
+    managed._installed_binary = Some(installed_binary);
+    managed
 }
 
 pub(super) fn spawn_captured(root: &Path, command: &mut Command) -> ManagedChild {
@@ -170,6 +203,7 @@ pub(super) fn spawn_captured(root: &Path, command: &mut Command) -> ManagedChild
                 .spawn()
                 .unwrap_or_else(|error| panic!("product spawn failed: {error}")),
         ),
+        _installed_binary: None,
     }
 }
 
@@ -263,6 +297,7 @@ pub(super) struct ManagedChild {
     child: Option<Child>,
     output: CapturedOutput,
     diagnosing: bool,
+    _installed_binary: Option<InstalledProductBinary>,
 }
 
 impl std::ops::Deref for ManagedChild {

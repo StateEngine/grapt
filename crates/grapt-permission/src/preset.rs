@@ -248,14 +248,19 @@ const AUTHOR: &[Builtin] = &concat::<20>(&[
     ],
 ]);
 
-// Decided 2026-10-20: allow ordinary work, with a short explicit exception list.
-const MAINTAINER: &[Builtin] = &[
-    rule("*", "*", Effect::Allow),
-    rule(crate::SANDBOX_WRITE_ACTION, "*", Effect::Ask),
-    rule(crate::SANDBOX_MSYS_ACTION, "*", Effect::Ask),
-    destructive("shell", Effect::Ask),
-    rule("external_directory", "*", Effect::Ask),
-];
+// Default Ask with explicit read-only inspection and authoring allowances;
+// shell commands, external directories, and unknown tools ask unless approved.
+const MAINTAINER: &[Builtin] = &concat::<21>(&[
+    &[rule("*", "*", Effect::Ask)],
+    &inspection!(),
+    &authoring!(),
+    &[
+        rule(crate::SANDBOX_WRITE_ACTION, "*", Effect::Ask),
+        rule(crate::SANDBOX_MSYS_ACTION, "*", Effect::Ask),
+        destructive("shell", Effect::Ask),
+        rule("external_directory", "*", Effect::Ask),
+    ],
+]);
 
 const BYPASS: &[Builtin] = &[rule("*", "*", Effect::Allow)];
 
@@ -496,7 +501,10 @@ pub fn decide(action: &str, resources: &[&str], layers: &[Layer]) -> Decision {
             .filter(|layer| layer.compose == Compose::Narrow)
         {
             if let Some(found) = find_rule(action, resource, &layer.rules) {
-                if opinion.is_none_or(|(effect, _)| found.effect > effect) {
+                if opinion.is_none_or(|(effect, by)| {
+                    found.effect > effect
+                        || (found.effect == effect && layer.floor && by != LayerName::Owner)
+                }) {
                     opinion = Some((found.effect, layer.name));
                 }
             }
@@ -528,7 +536,7 @@ pub fn decide(action: &str, resources: &[&str], layers: &[Layer]) -> Decision {
     }
     let (effect, layer) = decided
         .into_iter()
-        .max_by_key(|(effect, _)| *effect)
+        .max_by_key(|(effect, layer)| (*effect, *layer == Some(LayerName::Owner)))
         .unwrap_or((Effect::Ask, None));
     Decision { effect, layer }
 }

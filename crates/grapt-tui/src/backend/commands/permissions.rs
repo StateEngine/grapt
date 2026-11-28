@@ -56,7 +56,8 @@ pub(super) fn execute<C: Connection>(client: &mut Client<C>, args: &str, done: &
         "The server's effective policy governs subsequent work.".into(),
         "/permissions inspect — read and search; deny mutations".into(),
         "/permissions author — file changes; no command execution".into(),
-        "/permissions maintainer — ordinary work; ask for destructive changes".into(),
+        "/permissions maintainer — read and workspace edits; ask for shell, overwrites and deletes"
+            .into(),
         "/permissions bypass confirm — disable permission checks explicitly".into(),
     ]));
 }

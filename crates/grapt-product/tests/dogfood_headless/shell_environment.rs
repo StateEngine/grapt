@@ -37,12 +37,13 @@ fn a_launcher_identity_never_reaches_embedded_shell_pipe_or_pty(
         },
         Script::Success,
     ]);
+    let product_binary = process_fixture::installed_product_binary();
     let output = Command::new(shipped_cli::cli_binary())
         .current_dir(&root)
         .args(["run", "--embedded", "--service"])
         .arg(&root)
         .arg("--product")
-        .arg(shipped_cli::product_binary())
+        .arg(product_binary.path())
         .args([
             "--new",
             "--auto",

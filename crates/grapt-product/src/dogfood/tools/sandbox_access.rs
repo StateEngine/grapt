@@ -56,7 +56,8 @@ pub(super) fn prepare(
     let plan = environment
         .sandbox()
         .ok_or("Sandbox is not enabled for this command")?;
-    let target = grapt_sandbox::WriteTarget::resolve(&plan.policy(), Path::new(&requested))?;
+    let target =
+        grapt_sandbox::WriteTarget::resolve(&plan.preview_policy(), Path::new(&requested))?;
     let resource = path_text(target.path());
     if resource.len() > 8192 {
         return Err("Sandbox requested target exceeds the permission resource bound".into());

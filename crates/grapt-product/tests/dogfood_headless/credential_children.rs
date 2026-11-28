@@ -11,6 +11,7 @@ fn a_file_stored_key_never_reaches_a_shell_tools_environment(
     let _journey = process_journey_custody();
     let root = root("credential-children");
     prepare(&root, 120_000);
+    unattended(&root);
     fs::write(root.join("provider.credential"), FILE_KEY)?;
     let provider = ProviderFixture::start(vec![
         Script::ToolShell {

@@ -9,6 +9,7 @@ fn rel14_long_write_stdin_poll_completes_without_killing_the_execution(
     let root = root("rel14-terminal-provider-watchdog");
     let _cleanup = terminal_coordination::RootCleanup(root.clone());
     prepare(&root, 180_000);
+    unattended(&root);
     let provider = ProviderFixture::start(Vec::new());
     let mut service = spawn(&root, provider.address);
     let address = await_ready(&root, &mut service);

@@ -178,6 +178,7 @@ fn capture(family: Family, bodies: &[String]) {
 fn journey(family: Family) {
     let root = root(&format!("cache05-history-{}", family.name()));
     prepare(&root, 60_000);
+    unattended(&root);
     first_request_budget::install_large_catalog(&root);
     fs::write(
         root.join("AGENTS.md"),

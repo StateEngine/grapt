@@ -30,13 +30,14 @@ pub(super) fn filesystem_capability(
 
 /// Workspace entries an agent may not write. Both project directory names
 /// are listed whichever one the repository uses.
-const PROTECTED: [&str; 7] = [
+const PROTECTED: [&str; 8] = [
     ".git",
     PROJECT_DIRECTORIES[0],
     PROJECT_DIRECTORIES[1],
     ".stateengine",
     ".codex",
     "AGENTS.md",
+    "AGENTS.override.md",
     "CLAUDE.md",
 ];
 
@@ -51,6 +52,20 @@ pub(super) fn profile_path(relative: &Path) -> bool {
     relative.components().any(|component| {
         matches!(component, Component::Normal(name) if name.to_str().is_some_and(is_project_directory))
     })
+}
+
+/// Instruction files are loaded from nested subdirectories as well as the
+/// workspace root, so native write and patch tools must protect them at any
+/// depth and across case-insensitive filesystems (APFS/NTFS).
+pub(super) fn instruction_path(relative: &Path) -> bool {
+    relative
+        .file_name()
+        .and_then(|name| name.to_str())
+        .is_some_and(|name| {
+            ["AGENTS.md", "AGENTS.override.md"]
+                .iter()
+                .any(|protected| name.eq_ignore_ascii_case(protected))
+        })
 }
 
 pub(super) fn resolve_existing(
@@ -89,7 +104,7 @@ pub(super) fn resolve_existing(
                 )
             ))
         });
-        if protected {
+        if protected || instruction_path(relative) {
             return Err("tool path names protected control metadata".to_owned());
         }
     }

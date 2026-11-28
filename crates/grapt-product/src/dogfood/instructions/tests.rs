@@ -299,6 +299,150 @@ fn skd_project_instructions_linking_outside_the_project_are_refused(
 
 #[cfg(unix)]
 #[test]
+fn skd_project_instructions_refuse_in_scope_sibling_and_dangling_symlinks(
+) -> Result<(), Box<dyn std::error::Error>> {
+    let fixture = Fixture::new()?;
+    std::fs::write(fixture.root.join("project/AGENTS.md"), "project rule")?;
+    let good = text(&fixture.effective.refresh()?);
+    assert!(good.contains("project rule"));
+
+    // Cross-sibling symlink inside the project root must be refused.
+    std::fs::create_dir_all(fixture.root.join("project/sibling"))?;
+    std::fs::write(
+        fixture.root.join("project/sibling/real-rules.txt"),
+        "sibling linked rule",
+    )?;
+    std::os::unix::fs::symlink(
+        fixture.root.join("project/sibling/real-rules.txt"),
+        fixture.root.join("project/sub/AGENTS.override.md"),
+    )?;
+    let after_sibling = text(&fixture.effective.refresh()?);
+    assert!(
+        !after_sibling.contains("sibling linked rule"),
+        "in-scope sibling symlink contributed"
+    );
+    assert!(
+        after_sibling.contains("must not be a symlink"),
+        "expected symlink refusal, got: {after_sibling}"
+    );
+
+    // Dangling symlink must also be refused before its target is ever created.
+    std::fs::remove_file(fixture.root.join("project/sub/AGENTS.override.md"))?;
+    std::os::unix::fs::symlink(
+        fixture.root.join("project/sibling/future-target.txt"),
+        fixture.root.join("project/sub/AGENTS.md"),
+    )?;
+    let after_dangling = text(&fixture.effective.refresh()?);
+    assert!(
+        after_dangling.contains("must not be a symlink"),
+        "expected dangling symlink refusal, got: {after_dangling}"
+    );
+    Ok(())
+}
+
+#[cfg(unix)]
+#[test]
+fn skd_scoped_instructions_refuse_in_scope_sibling_and_dangling_symlinks(
+) -> Result<(), Box<dyn std::error::Error>> {
+    let fixture = Fixture::new()?;
+    let session = fixture.root.join("project/sub");
+    std::fs::create_dir_all(session.join("a"))?;
+    std::fs::create_dir_all(session.join("sibling"))?;
+    std::fs::write(session.join("sibling/rules.txt"), "scoped sibling rule")?;
+    std::os::unix::fs::symlink(
+        session.join("sibling/rules.txt"),
+        session.join("a/AGENTS.md"),
+    )?;
+    let canonical = std::fs::canonicalize(&session)?;
+    let scoped = scoped_for_read(&canonical, &canonical.join("a/file.rs")).instructions;
+    assert_eq!(scoped.len(), 1);
+    match &scoped[0].content {
+        Err(reason) => assert!(reason.contains("must not be a symlink"), "{reason}"),
+        Ok(content) => panic!("in-scope sibling symlink was delivered: {content}"),
+    }
+
+    std::fs::remove_file(session.join("a/AGENTS.md"))?;
+    std::os::unix::fs::symlink(
+        session.join("sibling/dangling.txt"),
+        session.join("a/AGENTS.override.md"),
+    )?;
+    let scoped = scoped_for_read(&canonical, &canonical.join("a/file.rs")).instructions;
+    assert_eq!(scoped.len(), 1);
+    match &scoped[0].content {
+        Err(reason) => assert!(reason.contains("must not be a symlink"), "{reason}"),
+        Ok(content) => panic!("dangling symlink was delivered: {content}"),
+    }
+
+    // A scoped `..` import crossing an in-scope directory symlink must still be
+    // refused by the link-refusing component walk, while a real directory `..`
+    // import inside scope continues to work.
+    std::fs::remove_file(session.join("a/AGENTS.override.md"))?;
+    std::fs::create_dir_all(session.join("real_dir"))?;
+    std::fs::write(session.join("target.md"), "real parent import target")?;
+    std::fs::write(session.join("a/target.md"), "lexical target in a")?;
+    std::os::unix::fs::symlink(session.join("real_dir"), session.join("a/dir_symlink"))?;
+    std::fs::write(session.join("a/AGENTS.md"), "@dir_symlink/../target.md\n")?;
+    let via_symlink = scoped_for_read(&canonical, &canonical.join("a/file.rs")).instructions;
+    let symlink_contents: Vec<_> = via_symlink.iter().map(|item| &item.content).collect();
+    assert!(
+        via_symlink.iter().any(|item| item
+            .content
+            .as_ref()
+            .is_err_and(|r| r.contains("must not be a symlink"))),
+        "dir_symlink/../target.md was not refused as a symlink: {symlink_contents:?}"
+    );
+    assert!(
+        !via_symlink.iter().any(|item| item
+            .content
+            .as_ref()
+            .is_ok_and(|c| c.contains("real parent import target"))),
+        "dir_symlink/../target.md delivered content through a symlink: {symlink_contents:?}"
+    );
+
+    std::fs::write(session.join("a/AGENTS.md"), "@../target.md\n")?;
+    let via_real = scoped_for_read(&canonical, &canonical.join("a/file.rs")).instructions;
+    let real_contents: Vec<_> = via_real.iter().map(|item| &item.content).collect();
+    assert!(
+        via_real.iter().any(|item| item
+            .content
+            .as_ref()
+            .is_ok_and(|c| c.contains("real parent import target"))),
+        "real parent import inside scope failed: {real_contents:?}"
+    );
+    Ok(())
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn skd_scoped_instructions_succeed_beneath_execute_only_ancestor(
+) -> Result<(), Box<dyn std::error::Error>> {
+    use std::os::unix::fs::PermissionsExt as _;
+
+    let fixture = Fixture::new()?;
+    let ancestor = fixture.root.join("exec-only");
+    let scope = ancestor.join("workspace");
+    std::fs::create_dir_all(scope.join("sub"))?;
+    std::fs::write(scope.join("sub/AGENTS.md"), "beneath execute-only ancestor")?;
+    let canonical_scope = std::fs::canonicalize(&scope)?;
+
+    // Restrict the ancestor directory to search/execute-only (0111): not
+    // readable with O_RDONLY, but traversable with O_PATH | O_DIRECTORY.
+    std::fs::set_permissions(&ancestor, std::fs::Permissions::from_mode(0o111))?;
+    let outcome = scoped_for_read(&canonical_scope, &canonical_scope.join("sub/file.rs"));
+    let _restore = std::fs::set_permissions(&ancestor, std::fs::Permissions::from_mode(0o700));
+    assert_eq!(outcome.instructions.len(), 1);
+    match &outcome.instructions[0].content {
+        Ok(content) => assert!(
+            content.contains("beneath execute-only ancestor"),
+            "{content}"
+        ),
+        Err(reason) => panic!("execute-only ancestor refused readable instructions: {reason}"),
+    }
+    Ok(())
+}
+
+#[cfg(unix)]
+#[test]
 fn skd_global_instructions_may_link_into_a_dotfiles_tree() -> Result<(), Box<dyn std::error::Error>>
 {
     let fixture = Fixture::new()?;

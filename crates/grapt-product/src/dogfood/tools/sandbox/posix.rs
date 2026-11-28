@@ -211,6 +211,15 @@ pub(crate) fn helper_main(arguments: &[String]) -> Option<i32> {
     }))
 }
 
+pub(super) fn ensure_protected_scratch_anchor(anchor: Option<&Path>) -> Result<(), String> {
+    // Only create/verify the exact scratch anchor planned by the host;
+    // never scan policy.protected_paths by basename.
+    if let Some(parent) = anchor.and_then(Path::parent) {
+        super::scratch::ensure_unix_scratch_anchor(parent)?;
+    }
+    Ok(())
+}
+
 fn run(path: &str) -> Result<i32, String> {
     let mut interrupts = grapt_sandbox::LinuxInterrupts::new().map_err(|e| e.to_string())?;
     let mut channel = std::os::unix::net::UnixStream::connect(path)
@@ -233,36 +242,103 @@ fn run(path: &str) -> Result<i32, String> {
         .map_err(|_| "sandbox policy is incomplete")?;
     let request: Request =
         serde_json::from_slice(&bytes).map_err(|_| "sandbox policy is malformed")?;
-    let policy = request.plan.policy();
-    let targets = grants::receive(&channel, &policy, &request.write_targets)?;
+    let mut policy = request.plan.policy();
+    let mut environment = request.environment;
+    let helper_exe = std::env::current_exe().map_err(|_| "sandbox helper image unavailable")?;
+    let scratch =
+        super::scratch::PrivateScratch::attach(&request.plan, &mut policy, &mut environment)?;
+    // When private_temp_parent is disabled because a write target overlaps the
+    // host temp directory, ensure protected Unix 0700 scratch anchors exist at
+    // launch time before Linux synthetic mount targets can create them with
+    // default umask 0755.
+    if scratch.is_none() {
+        ensure_protected_scratch_anchor(request.plan.protected_scratch_anchor())?;
+    }
+    let targets = match grants::receive(&channel, &policy, &request.write_targets) {
+        Ok(targets) => targets,
+        Err(reason) => {
+            let cleanup_err = super::scratch::cleanup_after_stop(scratch, true);
+            return Err(super::scratch::combine_errors(reason, [cleanup_err]));
+        }
+    };
     let request = ShellRequest {
         command_line: request.command_line,
         working_directory: request.directory,
-        environment: request.environment,
+        environment,
         timeout_ms: request.timeout_ms,
         policy,
     };
-    let backend =
-        Bwrap::new(std::env::current_exe().map_err(|_| "sandbox helper image unavailable")?);
+    let backend = Bwrap::new(helper_exe);
     let mut child = match backend.spawn_with_write_targets(&request, &targets) {
         Ok(child) => child,
         Err(error) => {
-            send(
+            let cleanup_err = super::scratch::cleanup_after_stop(scratch, !error.effects_possible);
+            let receipt_err = send(
                 &mut channel,
                 &error.enforcement,
                 (!error.effects_possible).then_some(false),
-            )?;
-            return Err(error.reason);
+            )
+            .err();
+            return Err(super::scratch::combine_errors(
+                error.reason,
+                [receipt_err, cleanup_err],
+            ));
         }
     };
     if let Err(reason) = send(&mut channel, &child.enforcement(), Some(true)) {
-        let _kill = child.kill();
-        return Err(reason);
+        let (kill_err, reap_err, stopped) = stop_and_reap_child(child);
+        let cleanup_err = super::scratch::cleanup_after_stop(scratch, stopped);
+        return Err(super::scratch::combine_errors(
+            reason,
+            [kill_err, reap_err, cleanup_err],
+        ));
     }
     drop(channel);
-    interrupts
+    let status = interrupts
         .wait(&mut child)
-        .map_err(|error| format!("sandbox process observation failed: {error}"))
+        .map_err(|error| format!("sandbox process observation failed: {error}"));
+    match status {
+        Ok(code) => {
+            drop(child);
+            let cleanup = scratch.map_or(Ok(()), super::scratch::PrivateScratch::cleanup);
+            let (exit_code, diagnostic) = super::scratch::finish_with_exit_code(code, cleanup);
+            if let Some(reason) = diagnostic {
+                if code == 0 {
+                    return Err(reason);
+                }
+                eprintln!("{reason}");
+            }
+            Ok(exit_code)
+        }
+        Err(wait_reason) => {
+            let (kill_err, reap_err, stopped) = stop_and_reap_child(child);
+            let cleanup_err = super::scratch::cleanup_after_stop(scratch, stopped);
+            Err(super::scratch::combine_errors(
+                wait_reason,
+                [kill_err, reap_err, cleanup_err],
+            ))
+        }
+    }
+}
+
+fn stop_and_reap_child(
+    mut child: grapt_sandbox::ContainedShell,
+) -> (Option<String>, Option<String>, bool) {
+    if matches!(child.try_wait(), Ok(Some(_))) {
+        drop(child);
+        return (None, None, true);
+    }
+    let kill_err = child
+        .kill()
+        .err()
+        .map(|error| format!("sandbox kill failed: {error}"));
+    let reap_err = child
+        .wait()
+        .err()
+        .map(|error| format!("sandbox reap failed: {error}"));
+    let stopped = reap_err.is_none();
+    drop(child);
+    (kill_err, reap_err, stopped)
 }
 
 fn send(
@@ -342,6 +418,8 @@ mod tests {
             protected: vec![],
             denied: Vec::new(),
             network: false,
+            private_temp_parent: None,
+            protected_scratch_anchor: None,
         };
         let environment = super::super::super::shell_environment::Environment::parent()?;
         let pending = Pending::prepare(

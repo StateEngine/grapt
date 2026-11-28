@@ -1,13 +1,13 @@
 # Command sandbox
 
-Native command isolation is opt-in while its release checks are in progress.
+Native command isolation is **enabled by default**.
 An unavailable backend refuses the command and records the reason. It never
 silently falls back to a plain process or changes filesystem ACLs.
 
 Windows uses MXC on Windows 11 build 26100.9278 or newer, at Medium integrity
 without an administrator prompt. Linux uses bubblewrap as described below.
 
-Enable it in your user configuration or profile's `grapt.jsonc`:
+Customize or explicitly disable it in your user configuration or profile's `grapt.jsonc`:
 
 ```jsonc
 {
@@ -20,9 +20,9 @@ Enable it in your user configuration or profile's `grapt.jsonc`:
 ```
 
 The workspace, the server's temporary directory and these existing absolute roots
-are writable. `.git/config`, `.git/hooks`, Grapt configuration and the directory
+are writable. `.git/config`, `.git/hooks`, `AGENTS.md`, Grapt configuration and the directory
 containing its binaries and terminal shim stay protected even inside a writable
-root. A worktree's Git control paths are protected too. If a protected configuration
+root, and `~/.ssh` is denied for both reads and writes by default. A worktree's Git control paths are protected too. If a protected configuration
 file has missing parent directories, the first missing directory is protected
 against creation. The Windows system drive and drives
 containing granted roots remain readable; this setting primarily restricts writes. Put tool caches in the workspace

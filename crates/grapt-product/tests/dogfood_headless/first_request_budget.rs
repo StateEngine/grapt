@@ -126,6 +126,7 @@ fn a_previously_supported_large_catalog_can_be_discovered_and_called_by_default(
     let root = root("cache05-large-catalog");
     let _cleanup = terminal_coordination::RootCleanup(root.clone());
     prepare(&root, 30_000);
+    unattended(&root);
     install_large_catalog(&root);
     let provider = ProviderFixture::start(vec![
         Script::ToolInput {

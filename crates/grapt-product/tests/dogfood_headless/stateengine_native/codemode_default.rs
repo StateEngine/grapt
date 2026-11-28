@@ -24,6 +24,7 @@ fn default_stateengine_resumes_then_discovers_reads_and_acks_mail() {
     let _journey = process_journey_custody();
     let root = root("native-codemode-mail");
     prepare(&root, 90_000);
+    unattended(&root);
     configure_exposure(&root, "codemode-mail", None);
     let provider = ProviderFixture::start(vec![
         Script::ToolInput {
@@ -106,6 +107,7 @@ fn codemode_guest_throw_reaches_model_and_transcript_with_safe_type() {
     let _journey = process_journey_custody();
     let root = root("native-codemode-guest-throw");
     prepare(&root, 90_000);
+    unattended(&root);
     configure_exposure(&root, "codemode-mail", None);
     let provider = ProviderFixture::start(vec![
         Script::ToolInput {
@@ -171,6 +173,7 @@ fn uncaught_mcp_census_failures_name_the_server_tool_and_actual_cause() {
     let _journey = process_journey_custody();
     let root = root("native-codemode-census-failures");
     prepare(&root, 90_000);
+    unattended(&root);
     configure_exposure(&root, "census-failures", None);
     let config_path = root.join("grapt.jsonc");
     let mut config: serde_json::Value =
