@@ -150,6 +150,7 @@ fn restarted_bound_mail_exposes_rebind_and_wakes_after_authenticated_provision()
     drop(bodies);
     stop_cleanly(second, &root)?;
     mail.finish()?;
+    process_fixture::cleanup(&workspace_dir(&root));
     process_fixture::cleanup(&root);
     Ok(())
 }
@@ -370,6 +371,7 @@ fn native_notices_during_successive_tools_reach_the_next_requests_in_user_fifo()
     child.stop_after_witness(&root);
     drop(child);
     mail.finish()?;
+    process_fixture::cleanup(&workspace_dir(&root));
     process_fixture::cleanup(&root);
     Ok(())
 }
@@ -423,6 +425,7 @@ fn stop_after_native_admission_preserves_the_notice_without_an_automatic_success
     child.stop_after_witness(&root);
     drop(child);
     mail.finish()?;
+    process_fixture::cleanup(&workspace_dir(&root));
     process_fixture::cleanup(&root);
     Ok(())
 }
@@ -462,6 +465,7 @@ fn last_window_close_holds_native_mail_without_an_automatic_successor() -> TestR
     child.stop_after_witness(&root);
     drop(child);
     mail.finish()?;
+    process_fixture::cleanup(&workspace_dir(&root));
     process_fixture::cleanup(&root);
     assert_eq!(calls, 1, "a closed window's native mail restarted its turn");
     let rows = pending["data"].as_array().ok_or("pending fold missing")?;
@@ -519,6 +523,7 @@ fn ordinary_human_resume_includes_the_held_native_notice_before_provider_work() 
     child.stop_after_witness(&root);
     drop(child);
     mail.finish()?;
+    process_fixture::cleanup(&workspace_dir(&root));
     process_fixture::cleanup(&root);
     Ok(())
 }
@@ -572,6 +577,7 @@ fn request_preparation_failure_releases_active_and_later_native_mail_succeeds() 
     child.stop_after_witness(&root);
     drop(child);
     mail.finish()?;
+    process_fixture::cleanup(&workspace_dir(&root));
     process_fixture::cleanup(&root);
     Ok(())
 }

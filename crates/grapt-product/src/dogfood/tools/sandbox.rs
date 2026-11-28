@@ -17,6 +17,8 @@ pub(in crate::dogfood) use receipt::project as project_receipt;
 pub(super) use receipt::Receipt;
 #[cfg(target_os = "linux")]
 pub(in crate::dogfood) mod posix;
+#[cfg(any(target_os = "linux", windows, test))]
+mod scratch;
 #[cfg(windows)]
 pub(super) mod windows;
 
@@ -65,11 +67,22 @@ pub(in crate::dogfood::tools) struct Plan {
     #[serde(default)]
     denied: Vec<PathBuf>,
     network: bool,
+    /// When the host temp directory was omitted from `writable` because it is
+    /// an ancestor of the workspace, the planner records it here so the helper
+    /// (whose environment is cleared) creates a private per-command scratch
+    /// directory inside it and sets `TMPDIR`/`TEMP`/`TMP`.
+    #[serde(default)]
+    private_temp_parent: Option<PathBuf>,
 }
 
 impl Plan {
     pub(super) fn git_metadata_read_only(&self) -> bool {
         self.git_metadata_read_only
+    }
+
+    #[cfg(any(target_os = "linux", windows, test))]
+    pub(super) fn private_temp_parent(&self) -> Option<&Path> {
+        self.private_temp_parent.as_deref()
     }
 
     pub(super) fn policy(&self) -> grapt_sandbox::Policy {
@@ -87,7 +100,11 @@ impl Plan {
     }
 
     pub(super) fn path_count(&self) -> usize {
-        self.readable.len() + self.writable.len() + self.protected.len() + self.denied.len()
+        self.readable.len()
+            + self.writable.len()
+            + self.protected.len()
+            + self.denied.len()
+            + usize::from(self.private_temp_parent.is_some())
     }
 
     pub(super) fn add_write_target(&mut self, path: &Path) {

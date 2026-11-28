@@ -414,6 +414,7 @@ fn witness_observed_checked(
         }
     }
     check(&root, &observed);
+    process_fixture::cleanup(&acp_workspace(&root));
     process_fixture::cleanup(&root);
     observed
 }

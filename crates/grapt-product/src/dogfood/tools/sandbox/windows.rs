@@ -268,7 +268,10 @@ fn run(mut channel: std::fs::File) -> Result<i32, String> {
     // The authenticated parent retains no-delete-sharing pins until this
     // handoff completes. Resolve while those names cannot be replaced, then
     // retain the helper's own native pins through the contained child lifetime.
-    let policy = request.plan.policy();
+    let mut policy = request.plan.policy();
+    let mut environment = request.environment;
+    let scratch =
+        super::scratch::PrivateScratch::attach(&request.plan, &mut policy, &mut environment)?;
     let targets = request
         .write_targets
         .iter()
@@ -277,13 +280,16 @@ fn run(mut channel: std::fs::File) -> Result<i32, String> {
     let request = ShellRequest {
         command_line: request.command_line,
         working_directory: request.directory,
-        environment: request.environment,
+        environment,
         timeout_ms: request.timeout_ms,
         policy,
     };
     let mut child = match Mxc.spawn_with_write_targets(&request, &targets) {
         Ok(child) => child,
         Err(failure) => {
+            if let Some(scratch) = scratch {
+                let _ = scratch.cleanup();
+            }
             send(
                 &mut channel,
                 &failure.enforcement,
@@ -294,12 +300,19 @@ fn run(mut channel: std::fs::File) -> Result<i32, String> {
     };
     if let Err(reason) = send(&mut channel, &child.enforcement(), Some(true)) {
         let _killed = child.kill();
+        if let Some(scratch) = scratch {
+            let _ = scratch.cleanup();
+        }
         return Err(reason);
     }
     drop(channel);
-    child
+    let status = child
         .wait()
-        .map_err(|error| format!("sandbox process observation failed: {error}"))
+        .map_err(|error| format!("sandbox process observation failed: {error}"));
+    if let Some(scratch) = scratch {
+        scratch.cleanup()?;
+    }
+    status
 }
 
 fn send(
@@ -358,6 +371,7 @@ mod tests {
             protected: vec![],
             denied: Vec::new(),
             network: false,
+            private_temp_parent: None,
         };
         let environment = super::super::super::shell_environment::Environment::parent()?;
         let pending = Pending::prepare(

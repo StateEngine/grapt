@@ -433,5 +433,14 @@ fn workspace_under_temp_dir_never_exposes_ancestor_or_obstructs_sibling() -> Res
     );
     // Sibling catalog discovery remains completely unobstructed.
     let _sources_b = CatalogSources::read(&sibling, CatalogEnvironment::isolated(dir.path()))?;
+    assert!(
+        plan.private_temp_parent().is_some(),
+        "planner must record private_temp_parent when ancestor temp_dir is omitted"
+    );
+    // The reserved private scratch root must be counted inside the 128-path
+    // policy bound so a valid plan never overflows Policy's 128-path limit.
+    assert!(config::check_path_budget(127, true).is_ok());
+    assert!(config::check_path_budget(128, true).is_err());
+    assert!(config::check_path_budget(128, false).is_ok());
     Ok(())
 }

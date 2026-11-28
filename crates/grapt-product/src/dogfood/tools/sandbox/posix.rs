@@ -235,7 +235,8 @@ fn run(path: &str) -> Result<i32, String> {
         serde_json::from_slice(&bytes).map_err(|_| "sandbox policy is malformed")?;
     let mut policy = request.plan.policy();
     let mut environment = request.environment;
-    let _private_tmp = attach_private_temp_dir(&mut policy, &mut environment)?;
+    let scratch =
+        super::scratch::PrivateScratch::attach(&request.plan, &mut policy, &mut environment)?;
     let targets = grants::receive(&channel, &policy, &request.write_targets)?;
     let request = ShellRequest {
         command_line: request.command_line,
@@ -249,6 +250,9 @@ fn run(path: &str) -> Result<i32, String> {
     let mut child = match backend.spawn_with_write_targets(&request, &targets) {
         Ok(child) => child,
         Err(error) => {
+            if let Some(scratch) = scratch {
+                let _ = scratch.cleanup();
+            }
             send(
                 &mut channel,
                 &error.enforcement,
@@ -259,48 +263,19 @@ fn run(path: &str) -> Result<i32, String> {
     };
     if let Err(reason) = send(&mut channel, &child.enforcement(), Some(true)) {
         let _kill = child.kill();
+        if let Some(scratch) = scratch {
+            let _ = scratch.cleanup();
+        }
         return Err(reason);
     }
     drop(channel);
-    interrupts
+    let status = interrupts
         .wait(&mut child)
-        .map_err(|error| format!("sandbox process observation failed: {error}"))
-}
-
-/// When the host temp directory was omitted from `policy.writable_roots`
-/// (because it is an ancestor of the workspace), create a private scratch
-/// directory for this sandboxed command and point `TMPDIR`/`TEMP`/`TMP` at it.
-/// The returned `TempDir` is dropped automatically when the helper exits.
-fn attach_private_temp_dir(
-    policy: &mut grapt_sandbox::Policy,
-    environment: &mut Vec<String>,
-) -> Result<Option<tempfile::TempDir>, String> {
-    let canonical_temp = std::fs::canonicalize(std::env::temp_dir())
-        .map_err(|error| format!("sandbox temp directory unavailable: {error}"))?;
-    if policy
-        .writable_roots
-        .iter()
-        .any(|root| canonical_temp.starts_with(root))
-    {
-        return Ok(None);
+        .map_err(|error| format!("sandbox process observation failed: {error}"));
+    if let Some(scratch) = scratch {
+        scratch.cleanup()?;
     }
-    let dir = tempfile::Builder::new()
-        .prefix("grapt-sandbox-tmp-")
-        .tempdir()
-        .map_err(|error| format!("sandbox private temp directory unavailable: {error}"))?;
-    let canonical_private = std::fs::canonicalize(dir.path())
-        .map_err(|error| format!("sandbox private temp directory unavailable: {error}"))?;
-    let text = canonical_private
-        .to_str()
-        .ok_or("sandbox private temp directory is not Unicode")?;
-    policy.writable_roots.push(canonical_private.clone());
-    environment.retain(|entry| {
-        !entry.starts_with("TMPDIR=") && !entry.starts_with("TEMP=") && !entry.starts_with("TMP=")
-    });
-    environment.push(format!("TMPDIR={text}"));
-    environment.push(format!("TEMP={text}"));
-    environment.push(format!("TMP={text}"));
-    Ok(Some(dir))
+    status
 }
 
 fn send(
@@ -380,6 +355,7 @@ mod tests {
             protected: vec![],
             denied: Vec::new(),
             network: false,
+            private_temp_parent: None,
         };
         let environment = super::super::super::shell_environment::Environment::parent()?;
         let pending = Pending::prepare(
@@ -411,41 +387,6 @@ mod tests {
         assert!(
             peer.await.map_err(|e| e.to_string())??.is_empty(),
             "policy reached an unrelated process"
-        );
-        Ok(())
-    }
-
-    #[test]
-    fn private_temp_dir_is_attached_and_cleaned_when_ancestor_temp_is_omitted() -> Result<(), String>
-    {
-        let workspace = tempfile::Builder::new()
-            .prefix("grapt-posix-private-tmp-")
-            .tempdir()
-            .map_err(|e| e.to_string())?;
-        let canonical_ws = std::fs::canonicalize(workspace.path()).map_err(|e| e.to_string())?;
-        let canonical_temp =
-            std::fs::canonicalize(std::env::temp_dir()).map_err(|e| e.to_string())?;
-        let mut policy = grapt_sandbox::Policy {
-            readable_roots: vec![PathBuf::from("/")],
-            writable_roots: vec![canonical_ws.clone()],
-            protected_paths: Vec::new(),
-            denied_paths: Vec::new(),
-            network: grapt_sandbox::NetworkAccess::Off,
-        };
-        let mut env = vec![format!("TMPDIR={}", canonical_temp.display())];
-        let private_dir = attach_private_temp_dir(&mut policy, &mut env)?
-            .ok_or("expected private temp dir when ancestor temp_dir is omitted")?;
-        let private_path = std::fs::canonicalize(private_dir.path()).map_err(|e| e.to_string())?;
-        assert!(policy.writable_roots.contains(&private_path));
-        assert!(!policy.writable_roots.contains(&canonical_temp));
-        assert!(env.contains(&format!("TMPDIR={}", private_path.display())));
-        assert!(env.contains(&format!("TEMP={}", private_path.display())));
-        assert!(env.contains(&format!("TMP={}", private_path.display())));
-        drop(private_dir);
-        assert!(
-            !private_path.exists(),
-            "private temp dir was not cleaned on drop: {}",
-            private_path.display()
         );
         Ok(())
     }

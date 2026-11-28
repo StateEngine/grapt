@@ -5,7 +5,7 @@ use grapt_config::ConfigValue;
 
 const INSTRUCTION_FILES: [&str; 2] = ["AGENTS.md", "AGENTS.override.md"];
 
-fn initial_writable_roots(root: &Path) -> Result<Vec<PathBuf>, String> {
+fn initial_writable_roots(root: &Path) -> Result<(Vec<PathBuf>, Option<PathBuf>), String> {
     let canonical_root = canonical(root)?;
     let canonical_temp = canonical(&std::env::temp_dir())?;
     let mut writable = vec![canonical_root.clone()];
@@ -13,10 +13,20 @@ fn initial_writable_roots(root: &Path) -> Result<Vec<PathBuf>, String> {
     // `root` itself lives under `/tmp` or `$TMPDIR`): exposing an ancestor lets
     // sandboxed commands write into sibling workspaces and causes synthetic
     // read-only mount targets to be created in the shared parent directory.
-    if !canonical_root.starts_with(&canonical_temp) {
+    let private_temp_parent = if canonical_root.starts_with(&canonical_temp) {
+        Some(canonical_temp)
+    } else {
         writable.push(canonical_temp);
+        None
+    };
+    Ok((writable, private_temp_parent))
+}
+
+pub(super) fn check_path_budget(count: usize, reserves_private_temp: bool) -> Result<(), String> {
+    if count + usize::from(reserves_private_temp) > 128 {
+        return Err("sandbox policy exceeds 128 paths".into());
     }
-    Ok(writable)
+    Ok(())
 }
 
 #[expect(clippy::too_many_lines, reason = "legacy")]
@@ -75,10 +85,12 @@ pub(super) fn read(root: &Path, sources: &CatalogSources) -> Result<Option<Plan>
     if !enabled && !git_metadata_read_only {
         return Ok(None);
     }
-    let mut writable = initial_writable_roots(root)?;
+    let (mut writable, private_temp_parent) = initial_writable_roots(root)?;
     writable.extend(declared);
     writable.sort();
     writable.dedup();
+    let private_temp_parent =
+        private_temp_parent.filter(|temp| !writable.iter().any(|root| temp.starts_with(root)));
     if writable.iter().any(|path| path.parent().is_none()) {
         return Err("sandbox cannot make a filesystem root writable".into());
     }
@@ -140,9 +152,10 @@ pub(super) fn read(root: &Path, sources: &CatalogSources) -> Result<Option<Plan>
     }
     readable.sort();
     readable.dedup();
-    if readable.len() + writable.len() + protected.len() + denied.len() > 128 {
-        return Err("sandbox policy exceeds 128 paths".into());
-    }
+    check_path_budget(
+        readable.len() + writable.len() + protected.len() + denied.len(),
+        private_temp_parent.is_some(),
+    )?;
     Ok(Some(Plan {
         git_metadata_read_only,
         readable,
@@ -150,6 +163,7 @@ pub(super) fn read(root: &Path, sources: &CatalogSources) -> Result<Option<Plan>
         protected,
         denied,
         network,
+        private_temp_parent,
     }))
 }
 

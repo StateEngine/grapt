@@ -101,6 +101,7 @@ fn a_rejected_permission_after_steering_cannot_poison_the_chain_or_next_input() 
     }
     child.stop_after_witness(&root);
     drop(child);
+    process_fixture::cleanup(&workspace_dir(&root));
     process_fixture::cleanup(&root);
     Ok(())
 }

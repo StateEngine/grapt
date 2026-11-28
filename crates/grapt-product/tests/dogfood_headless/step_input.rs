@@ -286,6 +286,7 @@ fn ordinary_inputs_during_a_tool_reach_the_second_request_in_order_once() -> Tes
     );
     child.stop_after_witness(&root);
     drop(child);
+    process_fixture::cleanup(&workspace_dir(&root));
     process_fixture::cleanup(&root);
     Ok(())
 }
@@ -368,6 +369,7 @@ fn esc_restarts_queued_inputs_once_after_terminal_and_a_stale_stop_cannot_hit_th
     assert_eq!(provider.calls.load(Ordering::SeqCst), 3);
     child.stop_after_witness(&root);
     drop(child);
+    process_fixture::cleanup(&workspace_dir(&root));
     process_fixture::cleanup(&root);
     Ok(())
 }
@@ -408,6 +410,7 @@ fn an_input_promoted_before_esc_is_not_resubmitted() -> TestResult {
     );
     child.stop_after_witness(&root);
     drop(child);
+    process_fixture::cleanup(&workspace_dir(&root));
     process_fixture::cleanup(&root);
     Ok(())
 }
@@ -442,6 +445,7 @@ fn omitted_mode_retry_retains_an_existing_queue_until_idle() -> TestResult {
     assert_eq!(provider.calls.load(Ordering::SeqCst), 4);
     child.stop_after_witness(&root);
     drop(child);
+    process_fixture::cleanup(&workspace_dir(&root));
     process_fixture::cleanup(&root);
     Ok(())
 }

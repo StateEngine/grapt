@@ -76,6 +76,7 @@ mod tests {
             protected: vec![path.clone()],
             denied: Vec::new(),
             network: true,
+            private_temp_parent: None,
         };
         let warning = format!(
             "warning: unable to access '{}': Permission denied",
