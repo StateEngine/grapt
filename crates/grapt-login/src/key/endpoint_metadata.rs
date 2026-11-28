@@ -15,6 +15,8 @@ const BYTE_CAP: usize = 4 * 1024 * 1024;
 const MAX_ROWS: usize = 1024;
 /// Catalogue modality lists are small; a longer list is not a model fact.
 const MAX_MODALITIES: usize = 8;
+/// The most reasoning levels one row may offer, as the model inventory bounds them.
+const MAX_REASONING_LEVELS: usize = 32;
 /// The output ceiling must fit both consumers: the model DTO carries it as an
 /// i64, and the request-budget reader as a u32. A larger report is unusable, so
 /// the field stays unknown rather than making the whole list unreadable.
@@ -101,8 +103,11 @@ pub(super) fn fields(row: &Value) -> Value {
     }
     let architecture = row.get("architecture");
     for side in ["input", "output"] {
+        // Under `architecture`, or on the row itself as a local server states it.
+        let name = format!("{side}_modalities");
         if let Some(modalities) = architecture
-            .and_then(|architecture| architecture.get(format!("{side}_modalities")))
+            .and_then(|architecture| architecture.get(&name))
+            .or_else(|| row.get(&name))
             .and_then(Value::as_array)
         {
             if !modalities.is_empty()
@@ -113,11 +118,33 @@ pub(super) fn fields(row: &Value) -> Value {
                         .is_some_and(|name| !name.is_empty() && name.len() <= 32)
                 })
             {
-                fields[format!("{side}_modalities")] = json!(modalities);
+                fields[name] = json!(modalities);
             }
         }
     }
+    if let Some(levels) = reasoning_levels(row) {
+        fields["supported_reasoning_levels"] = levels;
+    }
     fields
+}
+
+/// The reasoning efforts a row offers, kept whole only when every level
+/// names one bounded effort.
+fn reasoning_levels(row: &Value) -> Option<Value> {
+    let levels = row.get("supported_reasoning_levels")?.as_array()?;
+    if levels.len() > MAX_REASONING_LEVELS {
+        return None;
+    }
+    let efforts = levels
+        .iter()
+        .map(|level| {
+            level["effort"]
+                .as_str()
+                .filter(|effort| !effort.is_empty() && effort.len() <= 32)
+                .map(|effort| json!({ "effort": effort }))
+        })
+        .collect::<Option<Vec<_>>>()?;
+    Some(json!(efforts))
 }
 
 /// Copy the reported fields onto the verified listing's own row for `model`.

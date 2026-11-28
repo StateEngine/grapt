@@ -326,7 +326,7 @@ impl ModelInventory {
                 .and_then(Value::as_str)
                 .ok_or("account model has no identity")?;
             if !seen.insert(raw) {
-                return Err(format!("account discovery repeats model {raw}"));
+                return Err("account discovery repeats a model".into());
             }
             let offered = match row.get("visibility") {
                 None => true,
@@ -342,11 +342,11 @@ impl ModelInventory {
                 (Some(metadata), _) => metadata.clone(),
                 (None, Metadata::CatalogOrListing) => listing_metadata(raw, row)?,
                 (None, Metadata::Catalog) => {
-                    return Err(format!("account model {raw} has no catalog metadata"));
+                    return Err("an account model has no catalog metadata".into());
                 }
             };
             if metadata.get("id").and_then(Value::as_str) != Some(raw) {
-                return Err(format!("model catalog identity disagrees with key {raw}"));
+                return Err("model catalog identity disagrees with its listing key".into());
             }
             let context = row
                 .get("context_window")
@@ -819,7 +819,7 @@ mod tests {
                 )]
             )
             .err(),
-            Some("account model gpt-new has no catalog metadata".to_owned())
+            Some("an account model has no catalog metadata".to_owned())
         );
         for (key, bad) in [
             ("display_name", json!("")),

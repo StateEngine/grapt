@@ -207,6 +207,29 @@ async fn a_listed_model_that_cannot_complete_gives_way_to_the_next() -> TestResu
 }
 
 #[tokio::test]
+async fn a_listed_model_that_takes_no_tools_is_never_tried() -> TestResult {
+    let (_temporary, root) = profile()?;
+    let (base, server) = ollama(json!({"data":[
+        {"id":"plain:latest","supported_parameters":["temperature"]},
+        {"id":"qwen:latest","supported_parameters":["tools"]},
+    ]}))
+    .await?;
+    connect(&root, json!({"endpoint": base})).await?;
+    assert_eq!(installed(&root)?.1, "qwen:latest");
+    let loaded = server
+        .lock()
+        .map_err(|_| "fixture state poisoned")?
+        .loaded
+        .clone();
+    assert_eq!(
+        loaded,
+        ["qwen:latest"],
+        "no completion went to the plain model"
+    );
+    Ok(())
+}
+
+#[tokio::test]
 async fn a_reconnect_moves_a_default_whose_tools_the_live_listing_dropped() -> TestResult {
     let (_temporary, root) = profile()?;
     let tools = json!(["tools", "temperature"]);

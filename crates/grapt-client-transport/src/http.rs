@@ -120,7 +120,7 @@ fn request_timeout(operation: Operation) -> Duration {
         // Covers interrupt drain, cleanup, and pending-input resume.
         Operation::SessionInterrupt => Duration::from_secs(60),
         // Key setup performs bounded provider checks before confirmation.
-        Operation::IntegrationKeyConnect => Duration::from_secs(90),
+        Operation::IntegrationKeyConnect => grapt_api::u3a::INTEGRATION_KEY_CONNECT_WAIT,
         _ => READ_TIMEOUT,
     }
 }

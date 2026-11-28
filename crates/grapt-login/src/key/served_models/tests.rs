@@ -77,7 +77,14 @@ async fn every_listed_model_is_offered_with_the_window_the_listing_serves() -> T
         r#"{"data":[{"id":"small","max_model_len":65536},{"id":"large","max_model_len":131072}]}"#,
         &base,
     )?;
-    assert_eq!(candidate_models(verified.listing()), ["small", "large"]);
+    assert_eq!(
+        candidate_models(verified.listing(), |_| true),
+        ["small", "large"]
+    );
+    assert_eq!(
+        candidate_models(verified.listing(), |row| row["id"] != "small"),
+        ["large"]
+    );
     let listing = served_listing(&verified, "large").await?;
     let rows = served_rows(&listing)?;
     assert_eq!(rows.len(), 2);
@@ -225,5 +232,20 @@ async fn server_reads_that_never_answer_hold_a_connect_only_briefly() -> TestRes
     )
     .await?;
     assert_eq!(outcome, Err(ServedError::NoWindow));
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_served_row_keeps_its_live_output_and_reasoning_levels() -> TestResult {
+    let verified = verified(
+        r#"{"data":[{"id":"qwen","max_model_len":65536,"output_modalities":["text"],"supported_reasoning_levels":[{"effort":"low"},{"effort":"high"}]}]}"#,
+        "https://models.example.invalid/v1",
+    )?;
+    let rows = served_rows(&served_listing(&verified, "qwen").await?)?;
+    assert_eq!(rows[0]["output_modalities"], serde_json::json!(["text"]));
+    assert_eq!(
+        rows[0]["supported_reasoning_levels"],
+        serde_json::json!([{"effort":"low"},{"effort":"high"}])
+    );
     Ok(())
 }

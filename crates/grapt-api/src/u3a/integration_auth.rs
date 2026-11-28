@@ -9,6 +9,12 @@ pub const INTEGRATION_KEY_REJECTED_KIND: &str = "integration_key_rejected";
 /// An endpoint connect refused for a reason the product states in its own
 /// words, such as a server that cannot be reached or serves no usable model.
 pub const INTEGRATION_ENDPOINT_KIND: &str = "integration_endpoint";
+/// The longest an endpoint connect spends checking models before it answers,
+/// across every model it tries.
+pub const INTEGRATION_KEY_CONNECT_BUDGET: std::time::Duration = std::time::Duration::from_secs(120);
+/// How long a client waits for a key connect's answer: the service's whole
+/// check budget, then time to install what it checked.
+pub const INTEGRATION_KEY_CONNECT_WAIT: std::time::Duration = std::time::Duration::from_secs(150);
 pub const INTEGRATION_AZURE_CREDENTIALS_KIND: &str = "azure_credentials_unavailable";
 pub const INTEGRATION_AZURE_CREDENTIALS_MESSAGE: &str = "Azure CLI could not authorize this deployment; install Azure CLI 2.54 or newer, run az login as the service user, check the Azure resource endpoint, deployment and permissions, then retry Connect";
 pub const INTEGRATION_GOOGLE_ADC_KIND: &str = "google_adc_verification_failed";

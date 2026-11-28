@@ -117,14 +117,49 @@ pub(super) async fn default_profile(limits: CliLimits) -> Result<ApiClient, Fail
     match super::embedded_client(product_binary()?, root, limits).await {
         Ok(client) => Ok(client),
         // Another command may have won the profile's election between the
-        // discovery above and this launch: borrow its service. Attribution is
-        // repeated once; there is no launch retry.
-        Err(original) => match discovery.discover().await {
-            Ok(service) => ApiClient::from_discovered(&service, limits)
-                .map_err(|error| (ExitClass::Protocol, error.to_string())),
-            Err(_) => Err(original),
-        },
+        // discovery above and this launch: borrow its service. There is no
+        // launch retry.
+        Err(original) => borrow_winner(&discovery, limits)
+            .await
+            .unwrap_or(Err(original)),
     }
+}
+
+/// How long, in rising steps, a command that lost the profile's election
+/// waits for the winner's service to finish starting: about five seconds.
+const BORROW_WAITS: [Duration; 8] = [
+    Duration::from_millis(100),
+    Duration::from_millis(200),
+    Duration::from_millis(400),
+    Duration::from_millis(800),
+    Duration::from_secs(1),
+    Duration::from_secs(1),
+    Duration::from_secs(1),
+    Duration::from_secs(1),
+];
+
+/// The winning service, once it answers. A registered service whose ready
+/// receipt or health is not there yet is still starting, so it is asked again;
+/// no registration at all means no winner, and the launch's own failure stands.
+async fn borrow_winner(
+    discovery: &ServiceDiscovery,
+    limits: CliLimits,
+) -> Option<Result<ApiClient, Failure>> {
+    for wait in BORROW_WAITS {
+        match discovery.discover().await {
+            Ok(service) => {
+                return Some(
+                    ApiClient::from_discovered(&service, limits)
+                        .map_err(|error| (ExitClass::Protocol, error.to_string())),
+                )
+            }
+            Err(crate::DiscoveryError::ReadyAbsent | crate::DiscoveryError::Stale(_)) => {
+                tokio::time::sleep(wait).await;
+            }
+            Err(_) => return None,
+        }
+    }
+    None
 }
 
 fn product_binary() -> Result<PathBuf, Failure> {

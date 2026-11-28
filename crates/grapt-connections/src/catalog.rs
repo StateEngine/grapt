@@ -3,6 +3,8 @@
 // Copyright 2025 OpenAI. See licenses/openai-codex/.
 // Public metadata: models.dev, MIT; see licenses/models-dev/.
 mod compatible;
+#[cfg(test)]
+mod listing_tests;
 pub use compatible::requires_reasoning_content_replay;
 pub use grapt_connections_catalog::{endpoint_provider, EndpointProvider};
 
@@ -310,13 +312,17 @@ impl KeyProvider {
     }
 
     pub fn for_model(mut self, model: &str) -> Self {
-        if endpoint_provider(self.id)
-            .and_then(|row| row.messages_model_prefix)
-            .is_some_and(|prefix| model.starts_with(prefix))
-        {
+        if self.messages_model(model) {
             self.family = Family::AnthropicMessages;
         }
         self
+    }
+
+    /// Whether a mixed endpoint serves `model` on its Messages wire.
+    fn messages_model(self, model: &str) -> bool {
+        endpoint_provider(self.id)
+            .and_then(|row| row.messages_model_prefix)
+            .is_some_and(|prefix| model.starts_with(prefix))
     }
 
     pub fn placement(self) -> grapt_login::key::KeyPlacement {
@@ -408,10 +414,27 @@ impl KeyProvider {
         if self.id == "cloudflare-ai-gateway" {
             return self.cloudflare_listing();
         }
-        // Explicit endpoints check their one selected model on this route;
-        // catalog SDK defaults cannot override the verified coordinates.
-        if endpoint_provider(self.id).is_some() {
-            return Ok(bytes.to_vec());
+        // Explicit endpoints check their selected model on this route;
+        // catalog SDK defaults cannot override the verified coordinates. A
+        // mixed endpoint serves each model on one wire, so a connection
+        // publishes only the models on the wire it checked.
+        if let Some(endpoint) = endpoint_provider(self.id) {
+            if endpoint.messages_model_prefix.is_none() {
+                return Ok(bytes.to_vec());
+            }
+            let messages = self.family == Family::AnthropicMessages;
+            let mut listing: Value =
+                serde_json::from_slice(bytes).map_err(|_| "provider model list is invalid")?;
+            listing["data"]
+                .as_array_mut()
+                .ok_or("provider model list is invalid")?
+                .retain(|row| {
+                    row["id"]
+                        .as_str()
+                        .is_some_and(|id| self.messages_model(id) == messages)
+                });
+            return serde_json::to_vec(&listing)
+                .map_err(|_| "provider model list cannot be encoded".into());
         }
         let mut listing: Value =
             serde_json::from_slice(bytes).map_err(|_| "provider model list is invalid")?;
@@ -602,16 +625,29 @@ impl KeyProvider {
                 .any(|row| row["id"].as_str() == Some(model) && runnable(models, row))
         }))
     }
+
+    /// Whether a listed row can run a session before its window is known:
+    /// text output and tool calls, as `runs` reads them.
+    pub fn capable(self, row: &Value) -> Result<bool, String> {
+        Ok(capable(&snapshot()?[self.id]["models"], row))
+    }
 }
 
 fn runnable(models: &Value, row: &Value) -> bool {
     let Some(id) = row["id"].as_str() else {
         return false;
     };
-    let model = &models[id];
-    let context = model["limit"]["context"]
+    let context = models[id]["limit"]["context"]
         .as_u64()
         .or_else(|| row["max_model_len"].as_u64());
+    context.is_some_and(|context| context > 0) && capable(models, row)
+}
+
+fn capable(models: &Value, row: &Value) -> bool {
+    let Some(id) = row["id"].as_str() else {
+        return false;
+    };
+    let model = &models[id];
     // What the live row states about its request surface and output wins
     // over the bundled catalogue, as the model inventory reads it.
     let output = row["output_modalities"]
@@ -623,7 +659,7 @@ fn runnable(models: &Value, row: &Value) -> bool {
         Some(names) => names.iter().any(|name| name.as_str() == Some("tools")),
         None => model["tool_call"].as_bool() != Some(false),
     };
-    context.is_some_and(|context| context > 0) && text && tools
+    text && tools
 }
 
 fn validate_listing(bytes: &[u8]) -> Result<(), String> {

@@ -82,8 +82,28 @@ impl ModelSetup {
     /// other connect offers every listed model, the checked one first. The
     /// key travels only to this base, and to nothing before its model list or
     /// completion answers. Returns the provider as the checked model's wire
-    /// selects it.
+    /// selects it. The whole check, every model tried included, ends within
+    /// the connect budget, so the client waiting on it hears the answer.
     pub(super) async fn verify(
+        self,
+        provider: KeyProvider,
+        base: &str,
+        secret: VaultSecret,
+        id: &str,
+    ) -> Result<(grapt_login::key::VerifiedKey, KeyProvider), InvalidRequestErrorDto> {
+        let budget = grapt_api::u3a::INTEGRATION_KEY_CONNECT_BUDGET;
+        tokio::time::timeout(budget, self.check(provider, base, secret, id))
+            .await
+            .unwrap_or_else(|_| {
+                Err(endpoint_refusal(format!(
+                    "the server at {base} did not finish its model checks within {} seconds; \
+                     load the model first, or connect one model by name",
+                    budget.as_secs()
+                )))
+            })
+    }
+
+    async fn check(
         self,
         provider: KeyProvider,
         base: &str,
@@ -123,16 +143,21 @@ impl ModelSetup {
                 .await
                 .map_err(failed)?;
         // A named model is the one candidate. Otherwise the listing names the
-        // candidates; a model that cannot complete or states no window gives
-        // way to the next, so an embedding model listed first does not stop
-        // the connect.
+        // candidates it says can call tools and return text; one that cannot
+        // complete or states no window gives way to the next, so an embedding
+        // model listed first does not stop the connect.
         let named = self.model.is_some();
         let candidates = match self.model {
             Some(model) => vec![model.into_string()],
-            None => grapt_login::key::candidate_models(verified.listing()),
+            None => grapt_login::key::candidate_models(verified.listing(), |row| {
+                row["id"]
+                    .as_str()
+                    .is_some_and(|model| provider.for_model(model).capable(row).unwrap_or(false))
+            }),
         };
         let mut refusal = endpoint_refusal(format!(
-            "the server at {base} lists no models; load or pull one, then retry"
+            "the server at {base} lists no model that can call tools and return text; \
+             load one that can, then retry"
         ));
         for model in candidates {
             let provider = provider.for_model(&model);
@@ -143,7 +168,11 @@ impl ModelSetup {
             }
             refusal = match verified.check_model(base, protocol, &model).await {
                 Ok(()) => match grapt_login::key::served_listing(&verified, &model).await {
-                    Ok(listing) => return Ok((verified.with_listing(listing), provider)),
+                    // Only a model the served listing says can run is kept.
+                    Ok(listing) if provider.runs(&listing, &model).map_err(invalid)? => {
+                        return Ok((verified.with_listing(listing), provider))
+                    }
+                    Ok(_) => incapable(named.then_some(model.as_str())),
                     Err(error) => served_refusal(error, named.then_some(model.as_str())),
                 },
                 Err(grapt_login::key::KeyError::Completion) if !named => endpoint_refusal(
@@ -173,6 +202,27 @@ fn protocol(provider: KeyProvider) -> grapt_login::key::KeyProtocol {
     }
 }
 
+/// A model the server says cannot call tools or return text.
+fn incapable(named: Option<&str>) -> InvalidRequestErrorDto {
+    endpoint_refusal(format!(
+        "the server says {} cannot call tools or return text; choose a model that can",
+        spelled(named)
+    ))
+}
+
+/// A model the user named, when it is short and plain enough to repeat, or
+/// "the model" otherwise.
+fn spelled(named: Option<&str>) -> String {
+    named
+        .filter(|model| {
+            model.len() <= 128
+                && model
+                    .chars()
+                    .all(|c| c.is_ascii_alphanumeric() || "._:/@+-".contains(c))
+        })
+        .map_or_else(|| "the model".to_owned(), |model| format!("model {model}"))
+}
+
 /// Why a served listing cannot back a model. Only a model the user named is
 /// spelled out: an identity the endpoint returned is its data, not ours, and
 /// never reaches a refusal.
@@ -181,14 +231,7 @@ fn served_refusal(
     named: Option<&str>,
 ) -> InvalidRequestErrorDto {
     use grapt_login::key::ServedError;
-    let model = named
-        .filter(|model| {
-            model.len() <= 128
-                && model
-                    .chars()
-                    .all(|c| c.is_ascii_alphanumeric() || "._:/@+-".contains(c))
-        })
-        .map_or_else(|| "the model".to_owned(), |model| format!("model {model}"));
+    let model = spelled(named);
     endpoint_refusal(match error {
         ServedError::Unreadable => "the server's model list is unreadable".to_owned(),
         ServedError::NotServed => format!("the server does not list {model}; choose a model it serves"),

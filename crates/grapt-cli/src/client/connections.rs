@@ -8,8 +8,7 @@ use grapt_api::u3a::{
 
 /// The service's own provider checks bound a connect: its model list and the
 /// completion check on a loading local model, with room for the reads after.
-const CONNECT_ALLOWANCE: std::time::Duration =
-    grapt_login::key::LOCAL_LOAD_ALLOWANCE.saturating_add(std::time::Duration::from_secs(60));
+const CONNECT_ALLOWANCE: std::time::Duration = grapt_api::u3a::INTEGRATION_KEY_CONNECT_WAIT;
 
 impl ApiClient {
     pub(crate) async fn authentication_status(

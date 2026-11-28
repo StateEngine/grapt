@@ -32,14 +32,17 @@ pub enum ServedError {
 /// Each try is a completion, which loads the model on a local server.
 const MAX_CANDIDATES: usize = 4;
 
-/// The models a connect that names none tries, in order: listed models with
-/// a stated window first, then the rest, as the listing orders them.
-pub fn candidate_models(listing: &[u8]) -> Vec<String> {
+/// The models a connect that names none tries, in order: `usable` listed
+/// models with a stated window first, then the rest, as the listing orders
+/// them.
+pub fn candidate_models(listing: &[u8], usable: impl Fn(&Value) -> bool) -> Vec<String> {
     let Ok(rows) = rows(listing) else {
         return Vec::new();
     };
-    let (windowed, rest): (Vec<_>, Vec<_>) =
-        rows.iter().partition(|row| listed_window(row).is_some());
+    let (windowed, rest): (Vec<_>, Vec<_>) = rows
+        .iter()
+        .filter(|row| usable(row))
+        .partition(|row| listed_window(row).is_some());
     windowed
         .into_iter()
         .chain(rest)
