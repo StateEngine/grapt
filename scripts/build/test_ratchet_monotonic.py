@@ -158,50 +158,29 @@ class RatchetMonotonicTests(unittest.TestCase):
     def test_cycles_ratchet_new_feature_configs_inherit_base_target_only_when_new(self):
         c3, e3 = [['c::a', 'c::b', 'c::d']], [['c::a', 'c::b'], ['c::b', 'c::d'], ['c::d', 'c::a']]
         c2, e2 = [['c::a', 'c::b']], [['c::a', 'c::b'], ['c::b', 'c::a']]
-        base = {
-            'deep': ['grapt_product::dogfood'],
-            'configs': ['grapt-product', 'grapt-product[feature:existing]', 'grapt-cli:bin:grapt'],
-            'cycles': {'grapt-product': c3, 'grapt-product[feature:existing]': c2, 'grapt-cli:bin:grapt': c2},
-            'edges': {'grapt-product': e3, 'grapt-product[feature:existing]': e2, 'grapt-cli:bin:grapt': e2},
-        }
+        base = {'deep': ['grapt_product::dogfood'],
+                'configs': ['grapt-product', 'grapt-product[feature:existing]', 'grapt-cli:grapt', 'grapt-api[all-features]'],
+                'cycles': {'grapt-product': c3, 'grapt-product[feature:existing]': c2, 'grapt-cli:grapt': c2, 'grapt-api[all-features]': c3},
+                'edges': {'grapt-product': e3, 'grapt-product[feature:existing]': e2, 'grapt-cli:grapt': e2, 'grapt-api[all-features]': e3}}
         cases = [
-            ('new_feature_and_bin_subset', {
-                'grapt-product[all-features]': (c3, e3),
-                'grapt-product[feature:frozen-fixture]': (c2, [['c::a', 'c::b']]),
-                'grapt-cli:bin:grapt[feature:extra]': (c2, e2),
-            }, None, None, None),
-            ('extra_edge', {'grapt-product[feature:frozen-fixture]': (c3, e3 + [['c::a', 'c::d']])},
-             None, None, 'new cyclic edge c::a -> c::d'),
-            ('larger_cycle', {'grapt-product[all-features]': ([['c::a', 'c::b', 'c::d', 'c::e']], e3)},
-             None, None, 'new or larger cycle'),
-            ('existing_regrowth', {'grapt-product[feature:existing]': (c3, e3)},
-             None, None, 'grapt-product[feature:existing] new cyclic edge c::b -> c::d'),
-            ('brand_new_crate', {'grapt-new': (c2, e2), 'grapt-new[all-features]': (c2, e2)},
-             None, None, 'grapt-new[all-features] new or larger cycle'),
-            ('nested_suffix', {'grapt-product[all-features][feature:unused]': (c3, e3)},
-             {'grapt-product[all-features][feature:unused]'}, None, 'new or larger cycle'),
-            ('trailing_newline', {'grapt-product[all-features]\n': (c3, e3)},
-             {'grapt-product[all-features]\n'}, None, 'new or larger cycle'),
-            ('non_live_feature', {'grapt-product[feature:ghost]': (c3, e3)},
-             set(), None, 'grapt-product[feature:ghost] new or larger cycle'),
-            ('missing_base_configs', {'grapt-product[all-features]': (c3, e3)},
-             {'grapt-product[all-features]'}, False, 'grapt-product[all-features] new or larger cycle'),
+            ('new_feature_and_bin', {'grapt-product[all-features]': (c3, e3), 'grapt-product[feature:frozen]': (c2, [['c::a', 'c::b']]), 'grapt-cli:grapt[feature:extra]': (c2, e2)}, None, True, None),
+            ('extra_edge', {'grapt-product[feature:frozen]': (c3, e3 + [['c::a', 'c::d']])}, None, True, 'new cyclic edge c::a -> c::d'),
+            ('larger_cycle', {'grapt-product[all-features]': ([['c::a', 'c::b', 'c::d', 'c::e']], e3)}, None, True, 'new or larger cycle'),
+            ('existing_regrowth', {'grapt-product[feature:existing]': (c3, e3)}, None, True, 'grapt-product[feature:existing] new cyclic edge c::b -> c::d'),
+            ('brand_new_crate', {'grapt-new': (c2, e2), 'grapt-new[all-features]': (c2, e2)}, None, True, 'grapt-new[all-features] new or larger cycle'),
+            ('nested_suffix', {'grapt-api[all-features][feature:unused]': (c3, e3)}, None, True, 'grapt-api[all-features][feature:unused] new or larger cycle'),
+            ('trailing_newline', {'grapt-product[all-features]\n': (c3, e3)}, None, True, 'new or larger cycle'),
+            ('non_live_feature', {'grapt-product[feature:ghost]': (c3, e3)}, set(), True, 'grapt-product[feature:ghost] new or larger cycle'),
+            ('missing_base_configs', {'grapt-product[all-features]': (c3, e3)}, None, False, 'grapt-product[all-features] new or larger cycle'),
         ]
-        for name, additions, live_override, keep_configs, expected in cases:
+        for name, adds, live_override, keep_configs, expected in cases:
             with self.subTest(case=name):
-                b = base if keep_configs is not False else {k: v for k, v in base.items() if k != 'configs'}
-                head = {
-                    'deep': base['deep'],
-                    'configs': sorted(set(base['configs']) | set(additions)),
-                    'cycles': {**base['cycles'], **{k: v[0] for k, v in additions.items()}},
-                    'edges': {**base['edges'], **{k: v[1] for k, v in additions.items()}},
-                }
-                live = set(base['configs']) | (set(additions) if live_override is None else live_override)
-                problems = mono.check_cycles_ratchet(b, head, live)
-                if expected is None:
-                    self.assertEqual(problems, [])
-                else:
-                    self.assertTrue(any(expected in p for p in problems), problems)
+                b = base if keep_configs else {k: v for k, v in base.items() if k != 'configs'}
+                head = {'deep': base['deep'], 'configs': sorted(set(base['configs']) | set(adds)),
+                        'cycles': {**base['cycles'], **{k: v[0] for k, v in adds.items()}},
+                        'edges': {**base['edges'], **{k: v[1] for k, v in adds.items()}}}
+                problems = mono.check_cycles_ratchet(b, head, set(base['configs']) | (set(adds) if live_override is None else live_override))
+                self.assertEqual(problems, []) if expected is None else self.assertTrue(any(expected in p for p in problems), problems)
 
     def test_git_show_json_fails_closed_on_git_errors(self):
         from unittest.mock import patch

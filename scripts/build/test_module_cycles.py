@@ -132,40 +132,29 @@ class ModuleCycleTests(unittest.TestCase):
     def test_record_allows_new_feature_config_matching_base_and_refuses_growth(self):
         c3, e3 = [['c::a', 'c::b', 'c::d']], [['c::a', 'c::b'], ['c::b', 'c::d'], ['c::d', 'c::a']]
         c2, e2 = [['c::a', 'c::b']], [['c::a', 'c::b'], ['c::b', 'c::a']]
-        initial = {
-            'configs': ['sample', 'sample[feature:existing]', 'sample:bin:cli'],
-            'cycles': {'sample': c3, 'sample[feature:existing]': c2, 'sample:bin:cli': c2},
-            'edges': {'sample': e3, 'sample[feature:existing]': e2, 'sample:bin:cli': e2},
-        }
+        initial = {'configs': ['sample', 'sample[feature:existing]', 'sample:cli', 'other[all-features]'],
+                   'cycles': {'sample': c3, 'sample[feature:existing]': c2, 'sample:cli': c2, 'other[all-features]': c3},
+                   'edges': {'sample': e3, 'sample[feature:existing]': e2, 'sample:cli': e2, 'other[all-features]': e3}}
         cases = [
-            ('clean_new_features', {
-                'sample[all-features]': (c3, e3),
-                'sample[feature:frozen-fixture]': (c3, e3),
-                'sample:bin:cli[feature:extra]': (c2, e2),
-            }, True),
-            ('extra_edge', {'sample[feature:frozen-fixture]': (c3, e3 + [['c::a', 'c::d']])}, False),
+            ('clean_new_features', {'sample[all-features]': (c3, e3), 'sample[feature:frozen]': (c3, e3), 'sample:cli[feature:extra]': (c2, e2)}, True),
+            ('extra_edge', {'sample[feature:frozen]': (c3, e3 + [['c::a', 'c::d']])}, False),
             ('existing_regrowth', {'sample[feature:existing]': (c3, e3)}, False),
-            ('nested_suffix', {'sample[all-features][feature:unused]': (c3, e3)}, False),
+            ('nested_suffix', {'other[all-features][feature:unused]': (c3, e3)}, False),
         ]
         for name, updates, should_pass in cases:
             with self.subTest(case=name), tempfile.TemporaryDirectory() as temporary:
                 baseline = Path(temporary) / 'baseline.json'
                 baseline.write_text(json.dumps(initial), encoding='utf-8')
                 before = baseline.read_bytes()
-                cycles = {**initial['cycles'], **{k: v[0] for k, v in updates.items()}}
-                edges = {**initial['edges'], **{k: v[1] for k, v in updates.items()}}
-                configs = sorted(set(initial['configs']) | set(updates))
+                measured = ({**initial['cycles'], **{k: v[0] for k, v in updates.items()}},
+                            {**initial['edges'], **{k: v[1] for k, v in updates.items()}},
+                            sorted(set(initial['configs']) | set(updates)))
                 with patch.object(module_cycles, 'BASELINE', baseline), \
                         patch.object(module_cycles.sys, 'argv', ['module_cycles.py', 'record']), \
                         patch.object(module_cycles, 'tool', return_value='cargo-modules'), \
-                        patch.object(module_cycles, 'measure', return_value=(cycles, edges, configs)):
-                    rc = module_cycles.main()
-                if should_pass:
-                    self.assertEqual(rc, 0)
-                    self.assertEqual(json.loads(baseline.read_text(encoding='utf-8'))['configs'], configs)
-                else:
-                    self.assertNotEqual(rc, 0)
-                    self.assertEqual(baseline.read_bytes(), before)
+                        patch.object(module_cycles, 'measure', return_value=measured):
+                    self.assertEqual(module_cycles.main() == 0, should_pass)
+                self.assertEqual(json.loads(baseline.read_text(encoding='utf-8'))['configs'], measured[2]) if should_pass else self.assertEqual(baseline.read_bytes(), before)
 
 
 if __name__ == '__main__':
