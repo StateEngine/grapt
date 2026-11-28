@@ -7,7 +7,7 @@ use grapt_types::{ExecutionId, MessageId, SessionId};
 use rusqlite::OptionalExtension;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum ResumeState {
+pub(in crate::dogfood) enum ResumeState {
     Pending,
     Running,
     Completed,
@@ -36,20 +36,20 @@ impl ResumeState {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(super) struct PendingRow {
-    pub(super) session: SessionId,
-    pub(super) turn_origin_seq: u64,
-    pub(super) interrupted_execution_id: String,
-    pub(super) attempts: u32,
+pub(in crate::dogfood) struct PendingRow {
+    pub(in crate::dogfood) session: SessionId,
+    pub(in crate::dogfood) turn_origin_seq: u64,
+    pub(in crate::dogfood) interrupted_execution_id: String,
+    pub(in crate::dogfood) attempts: u32,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(super) struct StoredRow {
-    pub(super) turn_origin_seq: u64,
-    pub(super) interrupted_execution_id: String,
-    pub(super) attempts: u32,
-    pub(super) state: ResumeState,
-    pub(super) reason: Option<String>,
+pub(in crate::dogfood) struct StoredRow {
+    pub(in crate::dogfood) turn_origin_seq: u64,
+    pub(in crate::dogfood) interrupted_execution_id: String,
+    pub(in crate::dogfood) attempts: u32,
+    pub(in crate::dogfood) state: ResumeState,
+    pub(in crate::dogfood) reason: Option<String>,
 }
 
 pub(super) fn ensure_schema_within(tx: &GovernedTransaction<'_>) -> Result<(), String> {
@@ -126,7 +126,7 @@ pub(super) fn collect_pre_recovery_form_sessions(
     Ok(sessions)
 }
 
-pub(super) fn load_row(
+pub(in crate::dogfood) fn load_row(
     conn: &rusqlite::Connection,
     session: &SessionId,
 ) -> Result<Option<StoredRow>, String> {
@@ -167,7 +167,7 @@ pub(super) fn load_row(
 }
 
 #[allow(clippy::too_many_arguments, reason = "pending_resume row columns")]
-pub(super) fn upsert_row(
+pub(in crate::dogfood) fn upsert_row(
     store: &mut EventStore,
     session: &SessionId,
     turn_origin_seq: u64,
@@ -282,7 +282,7 @@ pub(super) fn is_newer_human_input_within(
 }
 
 #[allow(clippy::too_many_arguments, reason = "pending_resume row columns")]
-pub(super) fn upsert_row_with_input(
+pub(in crate::dogfood) fn upsert_row_with_input(
     store: &mut EventStore,
     session: &SessionId,
     turn_origin_seq: u64,
@@ -334,7 +334,7 @@ pub(super) fn upsert_row_with_input(
     result
 }
 
-pub(super) fn list_runnable_after(
+pub(in crate::dogfood) fn list_runnable_after(
     conn: &rusqlite::Connection,
     after: &str,
     limit: usize,
@@ -697,7 +697,7 @@ pub(super) fn has_active_or_lost_subagent_child(
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum SyntheticProgress {
+pub(in crate::dogfood) enum SyntheticProgress {
     NotPromoted,
     PromotedNotStarted,
     Started,
@@ -710,7 +710,7 @@ pub(super) enum SyntheticProgress {
 /// an execution actually started for this exact synthetic input. A crash
 /// between promotion and execution start returns `PromotedNotStarted` so
 /// restart can recover without stranding or falsely marking it `Completed`.
-pub(super) fn synthetic_input_progress(
+pub(in crate::dogfood) fn synthetic_input_progress(
     conn: &rusqlite::Connection,
     session: &SessionId,
     input: &MessageId,
@@ -763,7 +763,7 @@ pub(super) fn synthetic_input_progress(
 
 /// Collision-free database-wide deterministic `MessageId` derived via SHA-256
 /// over `(session_id, turn_origin_seq, attempt)`.
-pub(super) fn synthetic_message_id(
+pub(in crate::dogfood) fn synthetic_message_id(
     session: &SessionId,
     turn_origin_seq: u64,
     attempt: u32,

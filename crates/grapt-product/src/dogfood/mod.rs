@@ -131,9 +131,9 @@ use grapt_artifact::{ArtifactStore, ReadBudget};
 use grapt_inbox::{AdmitOutcome, Inbox};
 use grapt_permission::{PermissionHttpState, ToolPermissionAuthority};
 use grapt_platform::{CredentialAuthority, ProviderTargetAuthority};
-use grapt_runtime::{recover_process_loss_attempts, SessionPorts};
+use grapt_runtime::SessionPorts;
 use grapt_session::{AssistantMessage, SessionSeed};
-use grapt_store::{AggregateId, AttemptRecordCeiling, OsRandomIds, SystemClock, WriteError};
+use grapt_store::{AggregateId, OsRandomIds, SystemClock, WriteError};
 #[cfg(test)]
 use grapt_types::ResolvedModelTarget;
 use grapt_types::{
@@ -499,7 +499,8 @@ impl DogfoodApplication {
         let clock = Arc::new(SystemClock);
         let receipt_bytes = NonZeroU32::new(ATTEMPT_RECEIPT_BYTES)
             .ok_or_else(|| DogfoodRefusal::Compose("attempt receipt bound is zero".to_owned()))?;
-        startup_recovery::recover(service_root, &mut store, &ids, &clock, receipt_bytes)?;
+        startup_recovery::recover(service_root, &mut store, &ids, &clock, receipt_bytes)
+            .map_err(DogfoodRefusal::Compose)?;
         let inbox =
             Inbox::new(store).map_err(|error| DogfoodRefusal::Compose(error.to_string()))?;
         let readers = inbox

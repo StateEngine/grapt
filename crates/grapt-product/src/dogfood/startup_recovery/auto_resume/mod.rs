@@ -2,8 +2,8 @@
 //!
 //! Startup recovery records eligible interrupted sessions into `pending_resume`
 //! in O(1) per recovered session (never scanning idle sessions). After server
-//! readiness, `PromptDriver` runs [`drive`] in bounded pages: each eligible
-//! session has its attempt counter durably committed before launching a
+//! readiness, `PromptDriver` runs `prompt_submission::auto_resume::drive` in
+//! bounded pages: each eligible session has its attempt counter durably committed before launching a
 //! synthetic resume turn with a collision-free deterministic `MessageId`.
 //!
 //! Non-resumable turns are never auto-resumed:
@@ -24,18 +24,18 @@ mod tests;
 
 use std::collections::HashSet;
 
-use super::*;
-use grapt_api::SealedPrincipal;
 use grapt_service_state::{Action, Change, Kind, Reason, State};
-use grapt_store::{EventStore, GovernedTransaction};
+use grapt_store::{EventStore, GovernedTransaction, OsRandomIds, SystemClock};
 use grapt_types::{ClockAuthority, DeterministicAuthorities, SessionId};
 
 use self::store::{
     has_active_or_lost_subagent_child, has_ambiguous_process_loss_step,
     has_pending_approval_or_form, has_unresolved_or_quarantined_attempt, interrupted_turn,
-    is_child_session, latest_human_input_seq, list_runnable_after, load_row,
-    synthetic_input_progress, synthetic_message_id, upsert_row, upsert_row_with_input, PendingRow,
-    ResumeState, SyntheticProgress,
+    is_child_session, latest_human_input_seq,
+};
+pub(in crate::dogfood) use self::store::{
+    list_runnable_after, load_row, synthetic_input_progress, synthetic_message_id, upsert_row,
+    upsert_row_with_input, PendingRow, ResumeState, StoredRow, SyntheticProgress,
 };
 
 /// Maximum automatic resume attempts for a single user turn (`turn_origin_seq`).
@@ -215,160 +215,6 @@ fn ineligible_reason(
     Ok(None)
 }
 
-/// Background post-readiness driver: visits runnable `pending_resume` rows in
-/// bounded pages, claims or reclaims each row durably before launching, and
-/// atomically verifies no newer human input arrived while admitting the
-/// deterministic synthetic resume prompt.
-pub(in crate::dogfood) async fn drive(
-    application: Arc<DogfoodApplication>,
-    principal: SealedPrincipal,
-) {
-    let mut cursor = String::new();
-    loop {
-        let page = {
-            let inbox = application.lock_inbox();
-            list_runnable_after(inbox.store().connection(), &cursor, AUTO_RESUME_PAGE_SIZE)
-        };
-        let rows = match page {
-            Ok(rows) if rows.is_empty() => break,
-            Ok(rows) => rows,
-            Err(error) => {
-                crate::server_log::warn(format_args!(
-                    "startup automatic resume scan stopped: {error}"
-                ));
-                break;
-            }
-        };
-        if let Some(last) = rows.last() {
-            cursor = last.session.as_str().to_owned();
-        }
-        for row in rows {
-            drive_one(&application, &principal, row).await;
-            tokio::task::yield_now().await;
-        }
-    }
-}
-
-fn settle_drive_outcome(
-    application: &DogfoodApplication,
-    row: &PendingRow,
-    attempt: u32,
-    state: ResumeState,
-    reason: &str,
-) {
-    let retired = {
-        let mut inbox = application.lock_inbox();
-        let now_ms = application.clock.now().as_millis();
-        upsert_row(
-            inbox.store_mut(),
-            &row.session,
-            row.turn_origin_seq,
-            &row.interrupted_execution_id,
-            attempt,
-            state,
-            Some(reason),
-            now_ms,
-        )
-        .unwrap_or(0)
-    };
-    if retired > 0 {
-        application.hub.invalidate_session_because(
-            &row.session,
-            &format!(
-                "session {}: retired automatic resume input ({reason})",
-                row.session
-            ),
-        );
-    }
-}
-
-async fn drive_one(
-    application: &Arc<DogfoodApplication>,
-    principal: &SealedPrincipal,
-    row: PendingRow,
-) {
-    let claim = {
-        let mut inbox = application.lock_inbox();
-        claim_row(application, inbox.store_mut(), &row)
-    };
-    let attempt = match claim {
-        Ok(ClaimOutcome::Launch { attempt }) => attempt,
-        Ok(ClaimOutcome::Skip) => return,
-        Err(error) => {
-            crate::server_log::warn(format_args!(
-                "session {}: automatic resume claim failed: {error}",
-                row.session
-            ));
-            return;
-        }
-    };
-    let message_id = match synthetic_message_id(&row.session, row.turn_origin_seq, attempt) {
-        Ok(id) => id,
-        Err(error) => {
-            crate::server_log::warn(format_args!(
-                "session {}: automatic resume message id failed: {error}",
-                row.session
-            ));
-            return;
-        }
-    };
-    let text = format!(
-        "The server restarted while your previous turn was in progress (interrupted execution {}; resume attempt {attempt} of {MAX_AUTO_RESUME_ATTEMPTS}). Any tool runs lost during the restart have been settled in history. Inspect the session state and continue the user's task without repeating completed side effects.",
-        row.interrupted_execution_id
-    );
-    let metadata = json!({
-        "kind": "auto_resume",
-        "turnOriginSeq": row.turn_origin_seq,
-        "interruptedExecutionID": row.interrupted_execution_id,
-        "attempt": attempt,
-        "maxAttempts": MAX_AUTO_RESUME_ATTEMPTS,
-    });
-    let outcome = application
-        .submit_auto_resume(
-            principal.clone(),
-            row.session.clone(),
-            message_id,
-            row.turn_origin_seq,
-            text,
-            Some("Automatic resume after server restart".to_owned()),
-            Some(metadata),
-        )
-        .await;
-    match outcome {
-        Ok(AutoResumeAdmission::Submitted) => {
-            crate::server_log::info(format_args!(
-                "session {}: automatic resume started origin_seq={} attempt={attempt}/{MAX_AUTO_RESUME_ATTEMPTS}",
-                row.session, row.turn_origin_seq
-            ));
-        }
-        Ok(AutoResumeAdmission::Superseded(reason)) => {
-            settle_drive_outcome(application, &row, attempt, ResumeState::Completed, reason);
-            crate::server_log::info(format_args!(
-                "session {}: automatic resume superseded before admission reason={reason}",
-                row.session
-            ));
-        }
-        Err(error) => {
-            settle_drive_outcome(
-                application,
-                &row,
-                attempt,
-                ResumeState::Stopped,
-                "resume_submission_failed",
-            );
-            crate::server_log::warn(format_args!(
-                "session {}: automatic resume submission failed: {error}",
-                row.session
-            ));
-        }
-    }
-}
-
-pub(in crate::dogfood) enum AutoResumeAdmission {
-    Submitted,
-    Superseded(&'static str),
-}
-
 /// Atomic pre-admission guard called under `DogfoodApplication::lock_inbox()`
 /// right before `admit_synthetic`, preventing a race with a concurrent user
 /// prompt or newly-active execution.
@@ -393,137 +239,6 @@ pub(in crate::dogfood) fn verify_before_admission(
         return Ok(Some("pending_subagent_child"));
     }
     Ok(None)
-}
-
-enum ClaimOutcome {
-    Launch { attempt: u32 },
-    Skip,
-}
-
-fn claim_next_attempt(
-    application: &DogfoodApplication,
-    store: &mut EventStore,
-    session: &SessionId,
-    current: &store::StoredRow,
-    now_ms: i64,
-) -> Result<ClaimOutcome, String> {
-    if current.attempts >= MAX_AUTO_RESUME_ATTEMPTS {
-        upsert_row(
-            store,
-            session,
-            current.turn_origin_seq,
-            &current.interrupted_execution_id,
-            current.attempts,
-            ResumeState::Stopped,
-            Some("max_auto_resume_attempts_exceeded"),
-            now_ms,
-        )?;
-        record_cap_status(store, &application.clock, &application.ids, session)?;
-        return Ok(ClaimOutcome::Skip);
-    }
-    let next_attempt = current.attempts.saturating_add(1);
-    let msg_id = synthetic_message_id(session, current.turn_origin_seq, next_attempt)?;
-    upsert_row_with_input(
-        store,
-        session,
-        current.turn_origin_seq,
-        &current.interrupted_execution_id,
-        next_attempt,
-        ResumeState::Running,
-        None,
-        now_ms,
-        Some(&msg_id),
-    )?;
-    Ok(ClaimOutcome::Launch {
-        attempt: next_attempt,
-    })
-}
-
-fn claim_row(
-    application: &DogfoodApplication,
-    store: &mut EventStore,
-    row: &PendingRow,
-) -> Result<ClaimOutcome, String> {
-    let now_ms = application.clock.now().as_millis();
-    let Some(current) = load_row(store.connection(), &row.session)? else {
-        return Ok(ClaimOutcome::Skip);
-    };
-    if current.turn_origin_seq != row.turn_origin_seq {
-        return Ok(ClaimOutcome::Skip);
-    }
-    if let Some(reason) =
-        verify_before_admission(store.connection(), &row.session, current.turn_origin_seq)?
-    {
-        let next_state = if reason.starts_with("superseded") {
-            ResumeState::Completed
-        } else {
-            ResumeState::Stopped
-        };
-        let retired = upsert_row(
-            store,
-            &row.session,
-            current.turn_origin_seq,
-            &current.interrupted_execution_id,
-            current.attempts,
-            next_state,
-            Some(reason),
-            now_ms,
-        )?;
-        if retired > 0 {
-            application.hub.invalidate_session_because(
-                &row.session,
-                &format!(
-                    "session {}: retired stale automatic resume input",
-                    row.session
-                ),
-            );
-        }
-        return Ok(ClaimOutcome::Skip);
-    }
-    match current.state {
-        ResumeState::Pending => {
-            claim_next_attempt(application, store, &row.session, &current, now_ms)
-        }
-        ResumeState::Running => {
-            let msg_id =
-                synthetic_message_id(&row.session, current.turn_origin_seq, current.attempts)?;
-            match synthetic_input_progress(store.connection(), &row.session, &msg_id)? {
-                SyntheticProgress::Started => {
-                    upsert_row(
-                        store,
-                        &row.session,
-                        current.turn_origin_seq,
-                        &current.interrupted_execution_id,
-                        current.attempts,
-                        ResumeState::Completed,
-                        Some("already_started"),
-                        now_ms,
-                    )?;
-                    Ok(ClaimOutcome::Skip)
-                }
-                SyntheticProgress::NotPromoted => {
-                    upsert_row_with_input(
-                        store,
-                        &row.session,
-                        current.turn_origin_seq,
-                        &current.interrupted_execution_id,
-                        current.attempts,
-                        ResumeState::Running,
-                        None,
-                        now_ms,
-                        Some(&msg_id),
-                    )?;
-                    Ok(ClaimOutcome::Launch {
-                        attempt: current.attempts,
-                    })
-                }
-                SyntheticProgress::PromotedNotStarted => {
-                    claim_next_attempt(application, store, &row.session, &current, now_ms)
-                }
-            }
-        }
-        ResumeState::Completed | ResumeState::Stopped => Ok(ClaimOutcome::Skip),
-    }
 }
 
 /// Atomically settle an open automatic-resume claim and its active synthetic
@@ -589,7 +304,7 @@ pub(in crate::dogfood) fn settle_for_execution_within(
 
 /// Record a durable `Disconnected` status notice explaining that automatic
 /// resume stopped due to the retry cap.
-pub(super) fn record_cap_status(
+pub(in crate::dogfood) fn record_cap_status(
     store: &mut EventStore,
     clock: &SystemClock,
     ids: &OsRandomIds,
