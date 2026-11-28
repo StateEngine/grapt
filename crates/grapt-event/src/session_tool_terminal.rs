@@ -308,6 +308,7 @@ fn failure_tag(reason: ToolFailureReason) -> &'static str {
         ToolFailureReason::EffectFailed => "effect-failed",
         ToolFailureReason::CaptureFailed => "capture-failed",
         ToolFailureReason::EffectUnknown => "effect-unknown",
+        ToolFailureReason::InfrastructureFailed => "infrastructure-failed",
     }
 }
 
@@ -318,6 +319,7 @@ fn failure_of(raw: &str) -> Result<ToolFailureReason, PayloadError> {
         "effect-failed" => Ok(ToolFailureReason::EffectFailed),
         "capture-failed" => Ok(ToolFailureReason::CaptureFailed),
         "effect-unknown" => Ok(ToolFailureReason::EffectUnknown),
+        "infrastructure-failed" => Ok(ToolFailureReason::InfrastructureFailed),
         other => Err(PayloadError::UnknownVariant {
             at: AT_OUTCOME,
             field: "reason".to_owned(),

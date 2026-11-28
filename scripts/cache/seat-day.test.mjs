@@ -431,4 +431,120 @@ test('evaluateReleaseGates reports honest Criterion #3 and #5 verdicts', async (
   assert.equal(failingInfraRate.criterion_3.status, 'unavailable');
   assert.equal(failingInfraRate.criterion_5.status, 'fail');
   assert.equal(failingInfraRate.criterion_5.infra_failure_rate_percent, 4);
+
+  // Matching exports using the `models` array shape both exporters actually emit must pass.
+  const modelsArrayPass = evaluateReleaseGates(
+    {
+      window: { from: '2026-11-28T00:00:00Z', until: '2026-11-29T00:00:00Z' },
+      models: [{ provider: 'openai', model: 'gpt-6.1-sol', requests: 10 }],
+      totals: { read_share_percent: 99.1 },
+      operations: {
+        tool_calls: { count: 100, failed: 1, infrastructure_failed: 1 },
+        failure_detail_unavailable: {},
+        coverage: { unsupported_event_versions: {} },
+      },
+    },
+    {
+      codexReport: {
+        window: { from: '2026-11-28T00:00:00Z', until: '2026-11-29T00:00:00Z' },
+        models: [{ provider: 'openai', model: 'gpt-6.1-sol', requests: 10 }],
+        totals: { read_share_percent: 98.5 },
+      },
+      matchedTasks: {
+        count: 3,
+        grapt_accepted_tasks: 3,
+        grapt_first_review_accept_rate: 0.9,
+        codex_first_review_accept_rate: 0.9,
+        grapt_tokens_per_accepted_task: 10000,
+        codex_tokens_per_accepted_task: 10000,
+      },
+    },
+  );
+  assert.equal(modelsArrayPass.criterion_3.status, 'pass');
+  assert.equal(modelsArrayPass.criterion_3.grapt_model, 'gpt-6.1-sol');
+  assert.equal(modelsArrayPass.criterion_3.codex_model, 'gpt-6.1-sol');
+
+  // Conflicting recorded dates must fail even when comparison labels claim the same day.
+  const conflictingDayLabelsFail = evaluateReleaseGates(
+    {
+      window: { from: '2026-11-28T00:00:00Z', until: '2026-11-29T00:00:00Z' },
+      models: [{ provider: 'openai', model: 'gpt-6.1-sol', requests: 10 }],
+      totals: { read_share_percent: 99.1 },
+      operations: { tool_calls: { count: 100, failed: 0, infrastructure_failed: 0 } },
+    },
+    {
+      codexReport: {
+        window: { from: '2026-11-27T00:00:00Z', until: '2026-11-28T00:00:00Z' },
+        models: [{ provider: 'openai', model: 'gpt-6.1-sol', requests: 10 }],
+        totals: { read_share_percent: 98.5 },
+      },
+      matchedTasks: {
+        grapt_day: '2026-11-28',
+        codex_day: '2026-11-28',
+        count: 3,
+        grapt_accepted_tasks: 3,
+        grapt_first_review_accept_rate: 0.9,
+        codex_first_review_accept_rate: 0.9,
+        grapt_tokens_per_accepted_task: 10000,
+        codex_tokens_per_accepted_task: 10000,
+      },
+    },
+  );
+  assert.equal(conflictingDayLabelsFail.criterion_3.status, 'fail');
+  assert.equal(conflictingDayLabelsFail.criterion_3.reason, 'mismatched-comparison-day');
+
+  // Conflicting recorded models must fail even when comparison labels claim the same model.
+  const conflictingModelLabelsFail = evaluateReleaseGates(
+    {
+      window: { from: '2026-11-28T00:00:00Z', until: '2026-11-29T00:00:00Z' },
+      models: [{ provider: 'openai', model: 'gpt-6.1-sol', requests: 10 }],
+      totals: { read_share_percent: 99.1 },
+      operations: { tool_calls: { count: 100, failed: 0, infrastructure_failed: 0 } },
+    },
+    {
+      codexReport: {
+        window: { from: '2026-11-28T00:00:00Z', until: '2026-11-29T00:00:00Z' },
+        models: [{ provider: 'openai', model: 'gpt-5.4', requests: 10 }],
+        totals: { read_share_percent: 98.5 },
+      },
+      matchedTasks: {
+        grapt_model: 'gpt-6.1-sol',
+        codex_model: 'gpt-6.1-sol',
+        count: 3,
+        grapt_accepted_tasks: 3,
+        grapt_first_review_accept_rate: 0.9,
+        codex_first_review_accept_rate: 0.9,
+        grapt_tokens_per_accepted_task: 10000,
+        codex_tokens_per_accepted_task: 10000,
+      },
+    },
+  );
+  assert.equal(conflictingModelLabelsFail.criterion_3.status, 'fail');
+  assert.equal(conflictingModelLabelsFail.criterion_3.reason, 'mismatched-comparison-model');
+
+  // Typed `infrastructure-failed` tool terminals count as infrastructure failures.
+  const infraOps = await operationalReport(
+    [
+      {
+        id: 'evt_inf_s', session: 'ses_inf', seq: 1, created: 1000,
+        type: 'session.tool.input.started.2', data: { callID: 'call_inf', name: 'codemode' },
+      },
+      {
+        id: 'evt_inf_e', session: 'ses_inf', seq: 2, created: 1001,
+        type: 'session.tool.terminal.1',
+        data: {
+          attempt: 'att_inf',
+          call: 'call_inf',
+          outcome: {
+            kind: 'failed',
+            reason: 'infrastructure-failed',
+            detail: { id: 'e'.repeat(64), length: 12, digest: 'f'.repeat(64) },
+          },
+        },
+      },
+    ],
+    [],
+    async () => ({ status: 'observed', text: 'CodeMode worker could not start', disposition: 'complete' }),
+  );
+  assert.equal(infraOps.tool_calls.infrastructure_failed, 1);
 });

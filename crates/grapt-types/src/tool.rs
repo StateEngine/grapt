@@ -80,6 +80,9 @@ pub enum ToolFailureReason {
     /// Session continues with a notice to verify that state; never an
     /// automatic retry signal.
     EffectUnknown,
+    /// Runtime, supervisor, or local worker infrastructure failed before the
+    /// governed effect could run or report a terminal outcome.
+    InfrastructureFailed,
 }
 
 /// Exactly one durable terminal outcome for a committed tool call.

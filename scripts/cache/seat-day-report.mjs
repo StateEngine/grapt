@@ -135,19 +135,65 @@ export function summarize(reports, window = null) {
   };
 }
 
-function extractDay(report, explicitDay) {
-  if (typeof explicitDay === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(explicitDay)) return explicitDay;
-  const from = report?.window?.from;
-  if (typeof from === 'string' && /^\d{4}-\d{2}-\d{2}/.test(from)) return from.slice(0, 10);
-  if (typeof from === 'number' && Number.isFinite(from)) return new Date(from).toISOString().slice(0, 10);
+function isoDayOf(value) {
+  if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}/.test(value)) return value.slice(0, 10);
+  if (typeof value === 'number' && Number.isFinite(value)) return new Date(value).toISOString().slice(0, 10);
   return null;
 }
 
-function extractModel(report, explicitModel) {
-  if (typeof explicitModel === 'string' && explicitModel.trim().length > 0) return explicitModel.trim();
+function extractRecordedDay(report) {
+  const fromDay = isoDayOf(report?.window?.from);
+  if (fromDay !== null) return fromDay;
+  if (Array.isArray(report?.requests) && report.requests.length > 0) {
+    const days = new Set();
+    for (const row of report.requests) {
+      const day = isoDayOf(row?.started_ms ?? row?.reported_ms ?? row?.at);
+      if (day === null) return null;
+      days.add(day);
+    }
+    return days.size === 1 ? [...days][0] : null;
+  }
+  return null;
+}
+
+function extractDay(report, explicitDay) {
+  const explicit = typeof explicitDay === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(explicitDay) ? explicitDay : null;
+  const recorded = extractRecordedDay(report);
+  if (recorded !== null) {
+    // Never let a comparison label override the export's recorded date.
+    if (explicit !== null && explicit !== recorded) return null;
+    return recorded;
+  }
+  return explicit;
+}
+
+function extractRecordedModel(report) {
+  if (Array.isArray(report?.models)) {
+    const names = new Set();
+    for (const entry of report.models) {
+      if (typeof entry?.model === 'string' && entry.model.trim().length > 0) {
+        names.add(entry.model.trim());
+      }
+    }
+    if (names.size === 1) return [...names][0];
+    return null;
+  }
   if (typeof report?.model === 'string' && report.model.trim().length > 0) return report.model.trim();
   const models = report?.by_model && typeof report.by_model === 'object' ? Object.keys(report.by_model) : [];
   return models.length === 1 ? models[0] : null;
+}
+
+function extractModel(report, explicitModel) {
+  const explicit = typeof explicitModel === 'string' && explicitModel.trim().length > 0 ? explicitModel.trim() : null;
+  const recorded = extractRecordedModel(report);
+  if (recorded !== null) {
+    // Never let a comparison label override the export's recorded model.
+    if (explicit !== null && explicit !== recorded) return null;
+    return recorded;
+  }
+  // Multi-model exports cannot be relabelled into a single-model comparison.
+  if (Array.isArray(report?.models) && report.models.length > 1) return null;
+  return explicit;
 }
 
 export const CRITERION_3_MIN_MATCHED_TASKS = 3;

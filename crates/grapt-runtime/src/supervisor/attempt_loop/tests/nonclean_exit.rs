@@ -145,7 +145,7 @@ async fn assert_failure_aborts_approval(
         tool_terminals[0].1,
         ToolTerminal {
             outcome: ToolTerminalOutcome::Failed {
-                reason: ToolFailureReason::EffectUnknown,
+                reason: ToolFailureReason::EffectFailed,
                 ..
             },
             ..

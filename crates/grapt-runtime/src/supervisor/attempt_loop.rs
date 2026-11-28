@@ -538,7 +538,13 @@ where
         if settled_tools.contains_key(key.as_str()) {
             continue;
         }
-        let outcome = unsettled_tool_outcome(&mut owner, effects_settled, cancelled);
+        let aborted_by_attempt_failure = provider_ending.is_err() || refused;
+        let outcome = unsettled_tool_outcome(
+            &mut owner,
+            effects_settled,
+            cancelled,
+            aborted_by_attempt_failure,
+        );
         settled_tools.insert(key.clone(), outcome.clone());
         if !refused {
             if let Err(error) = commit(
@@ -652,6 +658,7 @@ fn unsettled_tool_outcome<O: AttemptOwner>(
     owner: &mut O,
     effects_settled: bool,
     cancelled: Option<AttemptCancelCause>,
+    aborted_by_attempt_failure: bool,
 ) -> ToolOutcome {
     let capture_cause = |owner: &mut O, text: &str| match owner.capture_diagnostic_detail(text) {
         Ok(detail) => Some(detail),
@@ -677,8 +684,15 @@ fn unsettled_tool_outcome<O: AttemptOwner>(
             Some(AttemptCancelCause::NoProgress) => {
                 cancelled_tool_outcome(InterruptionSource::ManagedShutdown)
             }
+            None if aborted_by_attempt_failure => ToolOutcome::Failed {
+                reason: ToolFailureReason::EffectFailed,
+                detail: capture_cause(
+                    owner,
+                    "tool execution was aborted when the attempt ended before producing a terminal result",
+                ),
+            },
             None => ToolOutcome::Failed {
-                reason: ToolFailureReason::EffectUnknown,
+                reason: ToolFailureReason::InfrastructureFailed,
                 detail: capture_cause(
                     owner,
                     "tool execution ended without producing a terminal result",

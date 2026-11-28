@@ -259,10 +259,10 @@ impl Workers {
         let key = (self.session.clone(), call.clone());
         let mut children = lock(&self.registry.children);
         if children.len() >= 3 || children.contains_key(&key) {
-            return Err(ToolFailureReason::AuthorityUnavailable);
+            return Err(ToolFailureReason::InfrastructureFailed);
         }
         let executable =
-            std::env::current_exe().map_err(|_| ToolFailureReason::AuthorityUnavailable)?;
+            std::env::current_exe().map_err(|_| ToolFailureReason::InfrastructureFailed)?;
         let mut command = Command::new(executable);
         command
             .arg(grapt_codemode::WORKER_ARGUMENT)
@@ -279,7 +279,7 @@ impl Workers {
             command.creation_flags(0x0800_0000);
         }
         let group =
-            processkit::ProcessGroup::new().map_err(|_| ToolFailureReason::AuthorityUnavailable)?;
+            processkit::ProcessGroup::new().map_err(|_| ToolFailureReason::InfrastructureFailed)?;
         // On Windows the group's own spawn resets the creation flags to
         // CREATE_SUSPENDED alone, dropping CREATE_NO_WINDOW. The worker starts
         // nothing until it reads its first request, written only after this
@@ -288,16 +288,16 @@ impl Workers {
         let mut child = {
             let child = command
                 .spawn()
-                .map_err(|_| ToolFailureReason::AuthorityUnavailable)?;
+                .map_err(|_| ToolFailureReason::InfrastructureFailed)?;
             group
                 .adopt(&child)
-                .map_err(|_| ToolFailureReason::AuthorityUnavailable)?;
+                .map_err(|_| ToolFailureReason::InfrastructureFailed)?;
             child
         };
         #[cfg(not(windows))]
         let mut child = group
             .spawn(command)
-            .map_err(|_| ToolFailureReason::AuthorityUnavailable)?;
+            .map_err(|_| ToolFailureReason::InfrastructureFailed)?;
         let pipes = child.stdin.take().zip(child.stdout.take());
         let jobs = Arc::new(tokio::sync::Mutex::new(JoinSet::new()));
         children.insert(

@@ -119,6 +119,7 @@ export const INFRASTRUCTURE_FAILURE_REASONS = new Set([
   'approval-unavailable',
   'capture-failed',
   'effect-unknown',
+  'infrastructure-failed',
 ]);
 
 export async function operationalReport(events, reports, readArtifact, window = null) {

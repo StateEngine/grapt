@@ -683,20 +683,57 @@ def t5_budget_witnesses() -> None:
             {
                 "client": "native",
                 "steps": [
-                    {"kind": "type", "t5_echo": True, "elapsed_ms": 8.0},
-                    {"kind": "key", "t5_echo": True, "elapsed_ms": 12.5},
-                    {"kind": "echo", "elapsed_ms": 15.9},
+                    {"kind": "type", "t5_echo": True, "elapsed_ms": 8.0, "streaming_observed": True, "observed_tok_per_s": 240.0},
+                    {"kind": "key", "t5_echo": True, "elapsed_ms": 12.5, "streaming_observed": True, "observed_tok_per_s": 220.0},
+                    {"kind": "echo", "elapsed_ms": 15.9, "streaming_observed": True, "observed_tok_per_s": 210.0},
                 ],
                 "idle_cpu_seconds": 0.12,
             }
         ]
     )
     check(
-        "t5 smoothness budgets pass within 16ms echo p95 and explicit idle CPU ceiling",
+        "t5 smoothness budgets pass within 16ms echo p95, witnessed >=200 tok/s streaming, and idle CPU ceiling",
         passing["status"] == "pass"
         and passing["echo_p95_ms"]["status"] == "pass"
+        and passing["concurrent_streaming_tok_per_s"]["status"] == "pass"
         and passing["idle_cpu_seconds"]["status"] == "pass",
         f"got={passing!r}",
+    )
+    static_rate_only = CMP.evaluate_t5_budgets(
+        [
+            {
+                "client": "native",
+                "steps": [
+                    {"kind": "echo", "elapsed_ms": 8.0, "streaming_tok_per_s": 250.0},
+                ],
+                "idle_cpu_seconds": 0.12,
+            }
+        ]
+    )
+    check(
+        "t5 smoothness budgets refuse pass when streaming rate is only statically declared (unwitnessed)",
+        static_rate_only["status"] == "not-measured"
+        and static_rate_only["concurrent_streaming_tok_per_s"]["status"] == "not-measured",
+        f"got={static_rate_only!r}",
+    )
+    skipped_echo = CMP.evaluate_t5_budgets(
+        [
+            {
+                "client": "native",
+                "steps": [
+                    {"kind": "echo", "t5_echo": True, "elapsed_ms": 8.0, "streaming_observed": True, "observed_tok_per_s": 240.0},
+                    {"kind": "echo", "t5_echo": True, "skipped": True, "elapsed_ms": None, "detail": {"skipped": "native skipped"}},
+                ],
+                "idle_cpu_seconds": 0.10,
+            }
+        ]
+    )
+    check(
+        "t5 smoothness budgets fail closed when any tagged echo step is skipped by native",
+        skipped_echo["status"] == "fail"
+        and skipped_echo["echo_p95_ms"]["status"] == "fail"
+        and skipped_echo["echo_p95_ms"].get("reason") == "t5-echo-step-skipped",
+        f"got={skipped_echo!r}",
     )
     failing = CMP.evaluate_t5_budgets(
         [
@@ -784,10 +821,71 @@ def t5_budget_witnesses() -> None:
         decreased is None,
         f"got={decreased!r}",
     )
+    partial_counters_readings = iter(
+        [
+            {"observed": True, "processor_seconds": 1.25, "processes_without_counters": 0},
+            {"observed": True, "processor_seconds": 1.29, "processes_without_counters": 1},
+        ]
+    )
+    partial_counters = CMP.measure_idle_cpu_delta(
+        1234, 0.001, sampler=lambda _pid: next(partial_counters_readings)
+    )
     check(
-        "is_quit_step identifies quit keys so idle CPU is sampled before quit",
-        CMP.is_quit_step({"key": "Ctrl+c"}, "native")
+        "measure_idle_cpu_delta fails closed on partial process-tree counter coverage",
+        partial_counters is None,
+        f"got={partial_counters!r}",
+    )
+    check(
+        "is_quit_step identifies Control+q and Ctrl+c quit keys so idle CPU is sampled before quit",
+        CMP.is_quit_step({"key": "Control+q"}, "native")
+        and CMP.is_quit_step({"key": "Ctrl+c"}, "native")
         and not CMP.is_quit_step({"key": "Enter"}, "native"),
+    )
+
+    class _FakeObserver:
+        def __init__(self, screens: list[str]) -> None:
+            self._screens = list(screens)
+            self._index = 0
+
+        def state(self) -> dict:
+            text = self._screens[min(self._index, len(self._screens) - 1)]
+            return {"lines": [text]}
+
+        def action(self, _payload: dict) -> None:
+            self._index += 1
+
+    already_present_rejected = False
+    try:
+        CMP.apply_step(
+            _FakeObserver(["prompt ECHO_MARKER already here"]),
+            {"echo": "ECHO_MARKER"},
+            "native",
+            Path("."),
+            Path("."),
+            set(),
+        )
+    except CMP.HarnessError:
+        already_present_rejected = True
+    check(
+        "echo step refuses when marker was already present on screen before input",
+        already_present_rejected,
+    )
+    kind, echo_detail, _ = CMP.apply_step(
+        _FakeObserver(["prompt > ", "prompt > FRESH_MARKER"]),
+        {"echo": "FRESH_MARKER"},
+        "native",
+        Path("."),
+        Path("."),
+        set(),
+    )
+    check(
+        "echo step succeeds when marker was absent before input and newly painted after",
+        kind == "echo"
+        and isinstance(echo_detail, dict)
+        and echo_detail.get("observed") is True
+        and echo_detail.get("absent_before") is True
+        and echo_detail.get("echo_ms") is not None,
+        f"got={echo_detail!r}",
     )
     non_t5_rejected = False
     try:
