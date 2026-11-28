@@ -390,6 +390,8 @@ fn a_snapshot_404_refuses_the_server_as_too_old_on_both_reads() -> TestResult {
         body: Vec::new(),
     };
     let snapshots = client.peer_mut().snapshots;
+    // A pump-owned read is pending when the refusal lands.
+    client.open_commands();
     assert!(too_old(client.reconcile(&session).map(|()| true)));
     assert_eq!(client.peer_mut().page_reads, 0, "no message page instead");
     stays_refused(&mut client, &session, snapshots + 1)?;
@@ -402,6 +404,7 @@ fn a_snapshot_404_refuses_the_server_as_too_old_on_both_reads() -> TestResult {
     let snapshots = client.peer_mut().snapshots;
     cut(&mut client, FramePoll::Closed, 1_000)?;
     client.peer_mut().frames.push_back(connected());
+    client.open_commands();
     assert!(too_old(client.pump_at(at(1_100))));
     assert_eq!(client.peer_mut().page_reads, 0, "no message page instead");
     stays_refused(&mut client, &session, snapshots + 1)?;

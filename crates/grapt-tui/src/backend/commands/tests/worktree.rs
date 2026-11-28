@@ -839,6 +839,12 @@ fn worktree_open_creates_a_new_session_and_keeps_its_completion() -> TestResult 
         done.notice
     );
     assert_eq!(client.selected(), source.as_ref());
+    // The refusal is terminal: nothing wakes the client and the pump keeps
+    // the refusal.
+    assert_eq!(client.recovery_wait(), None, "no wakeup after the refusal");
+    assert!(client
+        .pump()
+        .is_err_and(|error| error.to_string().contains("Upgrade")));
 
     let mut client = prepared()?;
     let source = client.selected().cloned().ok_or("source")?;

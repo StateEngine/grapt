@@ -266,6 +266,13 @@ impl<C: Connection> Client<C> {
             .attachment
             .take()
             .ok_or(ClientError::NoSelection)?;
+        // A service already refused as too old is asked nothing more.
+        if let Some(missing) = self.recovery.too_old {
+            if attachment.waiting {
+                self.connection.cancel_operator();
+            }
+            return Err(super::snapshot::too_old(missing));
+        }
         let operation = attachment.phase.operation();
         if !attachment.waiting {
             match attachment.phase {
@@ -290,7 +297,9 @@ impl<C: Connection> Client<C> {
             self.worktree.attachment = Some(attachment);
             return Ok(None);
         };
-        let bytes = self.accept_response(operation, response)?;
+        // A missing snapshot route refuses the service here as on any read.
+        let accepted = self.accept_response(operation, response);
+        let bytes = accepted.map_err(|error| self.latch_too_old(error))?;
         if attachment.accept(bytes, self.bounds)? {
             match self.install_worktree_attachment(attachment) {
                 Ok(lines) => Ok(Some(lines)),

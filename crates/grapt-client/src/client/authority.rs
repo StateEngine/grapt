@@ -170,17 +170,19 @@ impl<C: Connection> Client<C> {
         }
         let covered =
             |session: &SessionWireId| self.permission_refresh.covered_since(session, staged);
-        let rows = crate::wire::decode_permissions(bytes)?
+        let rows: Vec<_> = crate::wire::decode_permissions(bytes)?
             .into_iter()
             .filter(|row| !covered(&row.session_id))
             .collect();
-        let kept = self
+        let kept: Vec<_> = self
             .permissions
             .iter()
             .filter(|ask| covered(&ask.session_id))
             .cloned()
             .collect();
-        let candidate = self.permission_candidate(rows, kept, None)?;
+        // The newer asks claim the retention bound before the staged rows.
+        let asks = kept.into_iter().chain(rows.into_iter().map(ask)).collect();
+        let candidate = self.bounded_candidate(asks, None)?;
         self.commit_permissions(candidate);
         Ok(())
     }
@@ -195,20 +197,21 @@ impl<C: Connection> Client<C> {
         kept: Vec<PermissionAsk>,
         scope: Option<SessionWireId>,
     ) -> Result<PermissionCandidate, ClientError> {
+        let asks = rows.into_iter().map(ask).chain(kept).collect();
+        self.bounded_candidate(asks, scope)
+    }
+
+    /// `asks` within the retention bound, earlier ones first, with the next
+    /// revision.
+    fn bounded_candidate(
+        &self,
+        offered: Vec<PermissionAsk>,
+        scope: Option<SessionWireId>,
+    ) -> Result<PermissionCandidate, ClientError> {
         let revision = self.permission_refresh.next()?;
         let mut dropped = self.diagnostics.permissions_dropped;
         let mut asks = Vec::new();
-        let offered = rows.into_iter().map(|row| PermissionAsk {
-            session_id: row.session_id,
-            request_id: row.id,
-            title: row.title,
-            subtitle: row.subtitle,
-            live: row.live,
-            allow_always: row.allow_always,
-            call: row.call,
-            preview: row.preview,
-        });
-        for ask in offered.chain(kept) {
+        for ask in offered {
             if asks.len() >= self.bounds.max_retained_permissions {
                 dropped = dropped.saturating_add(1);
                 continue;
@@ -262,7 +265,10 @@ impl<C: Connection> Client<C> {
             None,
         )?;
         // The send-only API does not re-list, but its acknowledged settlement
-        // makes this session's asks staged before it stale.
+        // answers this ask and makes this session's asks staged before it
+        // stale.
+        self.permissions
+            .retain(|ask| !(&ask.session_id == session && &ask.request_id == request_id));
         self.permission_refresh.record(revision, Some(session));
         Ok(())
     }
@@ -338,5 +344,19 @@ impl<C: Connection> Client<C> {
             None,
         )?;
         self.refresh_forms()
+    }
+}
+
+/// One listed permission row as an open ask.
+fn ask(row: crate::wire::PermissionRow) -> PermissionAsk {
+    PermissionAsk {
+        session_id: row.session_id,
+        request_id: row.id,
+        title: row.title,
+        subtitle: row.subtitle,
+        live: row.live,
+        allow_always: row.allow_always,
+        call: row.call,
+        preview: row.preview,
     }
 }

@@ -7,10 +7,15 @@ impl<C: Connection> Client<C> {
     }
 
     pub fn operator_request_pending(&self) -> bool {
+        self.host_polled_request_pending() || self.mcp_catalog_pending()
+    }
+
+    /// An operator request its host polls, rather than the pump: it settles
+    /// even after the service is refused.
+    pub(super) fn host_polled_request_pending(&self) -> bool {
         self.mcp_auth_pending()
             || self.side_question_pending()
             || self.mcp_content_pending()
-            || self.mcp_catalog_pending()
             || self.worktree_pending()
             || self.claude_plugin_pending()
     }
