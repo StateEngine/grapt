@@ -20,6 +20,7 @@ pub struct Version {
 #[serde(tag = "encoding", rename_all = "snake_case", deny_unknown_fields)]
 pub enum NativePath {
     UnixBytes { units: Vec<u8> },
+    WindowsUtf16 { units: Vec<u16> },
 }
 
 /// When a process started, in its operating system's own terms.
@@ -239,10 +240,41 @@ pub struct ErrorEnvelope {
     pub far: Option<Value>,
 }
 
-/// The step an error names.
+/// The step an error names. A command, when there is one, is the host's
+/// tagged object, kept whole after the frame's depth and key checks.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Remedy {
     pub text: String,
-    pub command: Option<String>,
+    pub command: Option<serde_json::Map<String, Value>>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_windows_path_and_a_remedy_command_decode() -> Result<(), serde_json::Error> {
+        let path: NativePath =
+            serde_json::from_str(r#"{"encoding":"windows_utf16","units":[67,58,92]}"#)?;
+        assert_eq!(
+            path,
+            NativePath::WindowsUtf16 {
+                units: vec![67, 58, 92]
+            }
+        );
+        let error: ErrorEnvelope = serde_json::from_str(
+            r#"{"schema":"se.error/v1","code":"usage","detail":{},"retry":{"kind":"never"},
+                "class":"usage","exit":64,"message":"fixture","remedy":{"text":"fixture",
+                "command":{"kind":"argv","argv":["se","status"]}}}"#,
+        )?;
+        assert_eq!(
+            error
+                .remedy
+                .command
+                .and_then(|command| command.get("kind").cloned()),
+            Some(Value::from("argv"))
+        );
+        Ok(())
+    }
 }

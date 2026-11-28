@@ -5,6 +5,7 @@ use crate::frame::{decode, encode, read_frame, write_frame};
 use crate::handshake::{handshake, HandshakeOptions, Session};
 use crate::peer::PeerBinding;
 use crate::proof::OwnerCredential;
+use crate::server_peer::VerifiedPeer;
 use crate::wire::{IpcEnvelope, IpcResponse, IpcResult, Operation, Output, Request};
 use crate::{Endpoint, IpcError, API_VERSION, MAX_FRAME_BYTES};
 use grapt_stateengine_api::IdempotencyKey;
@@ -31,15 +32,18 @@ impl<S> std::fmt::Debug for Connection<S> {
 }
 
 impl<S: AsyncRead + AsyncWrite + Unpin> Connection<S> {
-    /// Authenticate on a connected stream; see [`handshake`].
+    /// Authenticate to the host behind a verified stream within
+    /// [`HELLO_TIMEOUT`](crate::HELLO_TIMEOUT). `client_nonce` must be fresh
+    /// random bytes from the caller's entropy source.
     pub async fn open(
-        mut stream: S,
+        peer: VerifiedPeer<S>,
         endpoint: &Endpoint,
         credential: &OwnerCredential,
         binding: &PeerBinding,
         client_nonce: [u8; 32],
         options: &HandshakeOptions,
     ) -> Result<Self, IpcError> {
+        let mut stream = peer.stream;
         let session = handshake(
             &mut stream,
             endpoint,

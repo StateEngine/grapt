@@ -6,11 +6,13 @@ use serde::{de::DeserializeOwned, Serialize};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use zeroize::Zeroizing;
 
-/// Read one frame of at most `limit` bytes.
+/// Read one frame of at most `limit` bytes, and never more than
+/// [`MAX_FRAME_BYTES`](crate::MAX_FRAME_BYTES).
 pub async fn read_frame<R: AsyncRead + Unpin>(
     reader: &mut R,
     limit: u32,
 ) -> Result<Zeroizing<Vec<u8>>, IpcError> {
+    let limit = limit.min(crate::MAX_FRAME_BYTES);
     let mut prefix = [0; 4];
     reader.read_exact(&mut prefix).await?;
     let announced = u32::from_be_bytes(prefix);
@@ -27,12 +29,14 @@ pub async fn read_frame<R: AsyncRead + Unpin>(
     Ok(payload)
 }
 
-/// Write one frame of at most `limit` bytes.
+/// Write one frame of at most `limit` bytes, and never more than
+/// [`MAX_FRAME_BYTES`](crate::MAX_FRAME_BYTES).
 pub async fn write_frame<W: AsyncWrite + Unpin>(
     writer: &mut W,
     payload: &[u8],
     limit: u32,
 ) -> Result<(), IpcError> {
+    let limit = limit.min(crate::MAX_FRAME_BYTES);
     let length = u32::try_from(payload.len())
         .ok()
         .filter(|length| *length != 0 && *length <= limit)
@@ -84,6 +88,20 @@ mod tests {
         assert!(write_frame(&mut written, &[b' '; 17], 16).await.is_err());
         let mut framed: &[u8] = &written;
         assert_eq!(*read_frame(&mut framed, 16).await?, *b"{}");
+        // A caller's larger limit never lifts the protocol's own bound.
+        let over = crate::MAX_FRAME_BYTES + 1;
+        let mut oversized: &[u8] = &over.to_be_bytes();
+        assert!(matches!(
+            read_frame(&mut oversized, u32::MAX).await,
+            Err(IpcError::FrameTooLarge {
+                limit: crate::MAX_FRAME_BYTES,
+                ..
+            })
+        ));
+        let payload = vec![b' '; usize::try_from(over).unwrap_or(usize::MAX)];
+        assert!(write_frame(&mut Vec::new(), &payload, u32::MAX)
+            .await
+            .is_err());
         Ok(())
     }
 }

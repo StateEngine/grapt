@@ -11,12 +11,16 @@ const CHUNK_BYTES: usize = 64 * 1024;
 /// Check that the file at `path`, at most `max_bytes` long, has the pinned
 /// SHA-256. The digests are compared in constant time.
 pub fn verify_binary(path: &Path, pinned: &Sha256Hex, max_bytes: u64) -> Result<(), IpcError> {
-    let actual = sha256_file(path, max_bytes)?;
-    if bool::from(actual.0.ct_eq(&pinned.0)) {
+    if same_digest(&sha256_file(path, max_bytes)?, pinned) {
         Ok(())
     } else {
         Err(IpcError::BinaryMismatch)
     }
+}
+
+/// Whether two digests are equal, compared in constant time.
+pub(crate) fn same_digest(left: &Sha256Hex, right: &Sha256Hex) -> bool {
+    bool::from(left.0.ct_eq(&right.0))
 }
 
 /// The SHA-256 of a file of at most `max_bytes`, read in bounded chunks.

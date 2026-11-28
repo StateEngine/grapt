@@ -1,10 +1,9 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
-//! Discovery: `<state_home>/endpoint.json`, read only from a private state
-//! directory and checked against its closed schema before anything trusts it.
+//! Discovery: `<state_home>/endpoint.json`, read only through the verified
+//! private state directory and checked against its closed schema before
+//! anything trusts it.
 use crate::peer::Principal;
-#[cfg(unix)]
-use crate::private_file::owned_with_mode;
-use crate::private_file::read_private;
+use crate::state_dir::StateDir;
 use crate::wire::{Address, EndpointFile, NativePath};
 use crate::{IpcError, MAX_ENDPOINT_BYTES};
 use std::path::Path;
@@ -28,26 +27,32 @@ impl Endpoint {
             Address::UnixSocket {
                 path: NativePath::UnixBytes { units },
             } => Some(Path::new(std::ffi::OsStr::from_bytes(units))),
-            Address::WindowsPipe { .. } => None,
+            _ => None,
         }
     }
 }
 
-/// Read and check `<state_home>/endpoint.json`. On Unix the state directory
-/// must be `principal`'s alone (0700) and the file owner-only (0600), neither
-/// a link, and a Unix socket must sit directly inside that directory. Windows
-/// access lists are not checked here.
+/// Read and check `<state_home>/endpoint.json`. The state directory must be
+/// `principal`'s alone (0700) and the file owner-only (0600), both checked
+/// on the opened handles, and a Unix socket must be a socket of the
+/// principal's directly inside that directory. Windows refuses until its
+/// access lists can be verified.
 pub fn read_endpoint(state_home: &Path, principal: &Principal) -> Result<Endpoint, IpcError> {
-    check_directory(state_home, principal).map_err(IpcError::Endpoint)?;
-    let path = state_home.join("endpoint.json");
-    let bytes = read_private(&path, principal, u64::from(MAX_ENDPOINT_BYTES))
+    let directory = StateDir::open(state_home, principal).map_err(IpcError::Endpoint)?;
+    let bytes = directory
+        .read("endpoint.json", u64::from(MAX_ENDPOINT_BYTES))
         .map_err(IpcError::Endpoint)?;
     let file: EndpointFile = crate::frame::decode(&bytes)?;
-    validate(&file, state_home).map_err(IpcError::Endpoint)?;
+    validate(&file).map_err(IpcError::Endpoint)?;
+    match &file.address {
+        Address::UnixSocket { path } => unix_socket(path, state_home, &directory),
+        Address::WindowsPipe { name } => pipe_name(name),
+    }
+    .map_err(IpcError::Endpoint)?;
     Ok(Endpoint { file })
 }
 
-fn validate(file: &EndpointFile, state_home: &Path) -> Result<(), String> {
+fn validate(file: &EndpointFile) -> Result<(), String> {
     if file.schema != 1 {
         return Err(format!("schema {} is not 1", file.schema));
     }
@@ -60,28 +65,32 @@ fn validate(file: &EndpointFile, state_home: &Path) -> Result<(), String> {
     if file.package_version.is_empty() || file.package_version.len() > MAX_VERSION_BYTES {
         return Err("package_version is empty or too long".into());
     }
-    match &file.address {
-        Address::UnixSocket { path } => unix_socket(path, state_home),
-        Address::WindowsPipe { name } => pipe_name(name),
-    }
+    Ok(())
 }
 
 #[cfg(unix)]
-fn unix_socket(path: &NativePath, state_home: &Path) -> Result<(), String> {
+fn unix_socket(path: &NativePath, state_home: &Path, directory: &StateDir) -> Result<(), String> {
     use std::os::unix::ffi::OsStrExt;
-    let NativePath::UnixBytes { units } = path;
+    let NativePath::UnixBytes { units } = path else {
+        return Err("a Unix socket path is not in unix_bytes".into());
+    };
     if units.is_empty() || units.contains(&0) {
         return Err("the socket path is empty or holds NUL".into());
     }
     let socket = Path::new(std::ffi::OsStr::from_bytes(units));
-    if socket.parent() != Some(state_home) || socket.file_name().is_none() {
-        return Err("the socket is not directly inside the state directory".into());
-    }
-    Ok(())
+    let name = socket
+        .file_name()
+        .filter(|_| socket.parent() == Some(state_home))
+        .ok_or("the socket is not directly inside the state directory")?;
+    directory.socket(name)
 }
 
 #[cfg(not(unix))]
-fn unix_socket(_path: &NativePath, _state_home: &Path) -> Result<(), String> {
+fn unix_socket(
+    _path: &NativePath,
+    _state_home: &Path,
+    _directory: &StateDir,
+) -> Result<(), String> {
     Err("a Unix socket endpoint cannot be reached from this platform".into())
 }
 
@@ -96,26 +105,6 @@ fn pipe_name(name: &str) -> Result<(), String> {
         || name.encode_utf16().count() > MAX_PIPE_UNITS
     {
         return Err("the pipe name is not one valid segment within 1024 UTF-16 units".into());
-    }
-    Ok(())
-}
-
-#[cfg(unix)]
-fn check_directory(path: &Path, principal: &Principal) -> Result<(), String> {
-    let metadata =
-        std::fs::symlink_metadata(path).map_err(|error| format!("{}: {error}", path.display()))?;
-    if !metadata.is_dir() {
-        return Err(format!("{} is a link or not a directory", path.display()));
-    }
-    owned_with_mode(path, &metadata, principal, 0o700)
-}
-
-#[cfg(not(unix))]
-fn check_directory(path: &Path, _principal: &Principal) -> Result<(), String> {
-    let metadata =
-        std::fs::symlink_metadata(path).map_err(|error| format!("{}: {error}", path.display()))?;
-    if !metadata.is_dir() || metadata.file_type().is_symlink() {
-        return Err(format!("{} is a link or not a directory", path.display()));
     }
     Ok(())
 }

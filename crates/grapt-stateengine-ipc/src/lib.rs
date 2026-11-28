@@ -4,6 +4,9 @@
 //! three-step owner handshake and the request/response exchange.
 //!
 //! The crate links no StateEngine code; it speaks the published wire format.
+//! No owner proof leaves the process before the connected server is checked
+//! against the endpoint: on Linux by its kernel-reported user, process, start
+//! time and executable. Other platforms refuse until they can check as much.
 //! It draws no randomness and reads no clock beyond Tokio's timeout: callers
 //! supply the client nonce from their own named entropy adapter.
 #![forbid(unsafe_code)]
@@ -17,10 +20,11 @@ mod error;
 mod frame;
 mod handshake;
 #[cfg(target_os = "linux")]
-mod linux_self;
+mod linux_proc;
 mod peer;
-mod private_file;
 mod proof;
+mod server_peer;
+mod state_dir;
 mod strict;
 pub mod wire;
 
@@ -31,11 +35,14 @@ pub use endpoint::{read_endpoint, Endpoint};
 pub use error::IpcError;
 pub use frame::{read_frame, write_frame};
 pub use grapt_stateengine_api::IdempotencyKey;
-pub use handshake::{handshake, Capabilities, HandshakeOptions, Session};
+pub use handshake::{Capabilities, HandshakeOptions, Session};
 #[cfg(target_os = "linux")]
-pub use linux_self::observe_self;
+pub use linux_proc::observe_self;
 pub use peer::{PeerBinding, Principal};
 pub use proof::OwnerCredential;
+#[cfg(target_os = "linux")]
+pub use server_peer::connect;
+pub use server_peer::VerifiedPeer;
 
 use std::time::Duration;
 

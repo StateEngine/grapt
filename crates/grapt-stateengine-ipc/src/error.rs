@@ -29,6 +29,8 @@ pub enum IpcError {
     Binary(String),
     #[error("the StateEngine binary does not match its pinned SHA-256")]
     BinaryMismatch,
+    #[error("the connected server is not the endpoint's host: {0}")]
+    PeerMismatch(String),
     #[error("the host's challenge does not match endpoint.json: {0}")]
     ChallengeMismatch(&'static str),
     #[error("the host's hello does not match the handshake: {0}")]

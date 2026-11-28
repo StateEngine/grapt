@@ -48,9 +48,9 @@ pub struct Session {
     pub capabilities: Option<Vec<String>>,
 }
 
-/// Run the handshake on a connected stream within [`HELLO_TIMEOUT`].
+/// Run the handshake on a verified stream within [`HELLO_TIMEOUT`].
 /// `client_nonce` must be fresh random bytes from the caller's entropy source.
-pub async fn handshake<S: AsyncRead + AsyncWrite + Unpin>(
+pub(crate) async fn handshake<S: AsyncRead + AsyncWrite + Unpin>(
     stream: &mut S,
     endpoint: &Endpoint,
     credential: &OwnerCredential,

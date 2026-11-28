@@ -20,11 +20,12 @@ impl std::fmt::Debug for OwnerCredential {
 }
 
 impl OwnerCredential {
-    /// Read `<state_home>/credential`: a regular file, not a link, that on
-    /// Unix `principal` owns and no one else may read.
+    /// Read `<state_home>/credential` through the verified state directory:
+    /// a regular file, not a link, that `principal` owns and no one else reads.
     pub fn read(state_home: &Path, principal: &Principal) -> Result<Self, IpcError> {
         let path = state_home.join("credential");
-        let bytes = crate::private_file::read_private(&path, principal, CREDENTIAL_BYTES as u64)
+        let bytes = crate::state_dir::StateDir::open(state_home, principal)
+            .and_then(|directory| directory.read("credential", CREDENTIAL_BYTES as u64))
             .map_err(IpcError::Credential)?;
         let secret: [u8; CREDENTIAL_BYTES] = bytes.as_slice().try_into().map_err(|_| {
             IpcError::Credential(format!(
