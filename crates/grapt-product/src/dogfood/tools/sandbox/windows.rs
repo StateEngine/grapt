@@ -422,6 +422,7 @@ mod tests {
             denied: Vec::new(),
             network: false,
             private_temp_parent: None,
+            protected_scratch_anchor: None,
         };
         let environment = super::super::super::shell_environment::Environment::parent()?;
         let pending = Pending::prepare(

@@ -453,6 +453,54 @@ fn scoped_grant_preview_rejects_target_inside_unix_scratch_anchor() -> Result<()
     Ok(())
 }
 
+#[cfg(target_os = "linux")]
+#[test]
+fn unrelated_protected_path_sharing_anchor_basename_is_not_touched() -> Result<(), String> {
+    use std::os::unix::fs::PermissionsExt as _;
+
+    let dir = tempfile::Builder::new()
+        .prefix("grapt-sandbox-unrelated-anchor-")
+        .tempdir()
+        .map_err(|e| e.to_string())?;
+    let unrelated_parent = dir.path().join("unrelated-parent");
+    let planned_parent = dir.path().join("planned-parent");
+    std::fs::create_dir(&unrelated_parent).map_err(|e| e.to_string())?;
+    std::fs::create_dir(&planned_parent).map_err(|e| e.to_string())?;
+    std::fs::set_permissions(&planned_parent, std::fs::Permissions::from_mode(0o700))
+        .map_err(|e| e.to_string())?;
+
+    // Unrelated directory with the same basename `grapt-scratch-<euid>` and
+    // loose mode 0o755 (would fail 0700 verification if scanned by basename).
+    let unrelated_entry = scratch::unix_scratch_anchor_path(&unrelated_parent);
+    std::fs::create_dir(&unrelated_entry).map_err(|e| e.to_string())?;
+    std::fs::set_permissions(&unrelated_entry, std::fs::Permissions::from_mode(0o755))
+        .map_err(|e| e.to_string())?;
+
+    // When no scratch anchor is planned, helper precreation does nothing.
+    posix::ensure_protected_scratch_anchor(None)?;
+    let mode_after_none = std::fs::symlink_metadata(&unrelated_entry)
+        .map_err(|e| e.to_string())?
+        .permissions()
+        .mode()
+        & 0o7777;
+    assert_eq!(mode_after_none, 0o755);
+
+    // When a specific scratch anchor is planned, ONLY that exact path is created/verified.
+    let planned_anchor = scratch::unix_scratch_anchor_path(&planned_parent);
+    posix::ensure_protected_scratch_anchor(Some(&planned_anchor))?;
+    assert!(planned_anchor.is_dir());
+    let mode_after_planned = std::fs::symlink_metadata(&unrelated_entry)
+        .map_err(|e| e.to_string())?
+        .permissions()
+        .mode()
+        & 0o7777;
+    assert_eq!(
+        mode_after_planned, 0o755,
+        "unrelated protected path sharing anchor basename must not be touched"
+    );
+    Ok(())
+}
+
 #[test]
 fn instruction_slots_targets_and_denied_ssh_enter_policy_and_fingerprint() -> Result<(), String> {
     let root = std::env::temp_dir().join(format!(

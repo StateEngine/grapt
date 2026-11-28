@@ -37,34 +37,35 @@ pub(super) fn path_overlaps_scratch(grant: &Path, temp_parent: &Path) -> bool {
 pub(super) fn protect_unix_scratch_anchor(
     protected: &mut Vec<PathBuf>,
     canonical_temp: &Path,
-) -> Result<(), String> {
+) -> Result<Option<PathBuf>, String> {
     // Purely record the anchor path during read-only planning; the 0700
     // directory is created only at actual command launch time (never during
     // Plan::read or preflight) before Linux synthetic mount targets run.
     let anchor = scratch::unix_scratch_anchor_path(canonical_temp);
     if !protected.iter().any(|existing| existing == &anchor) {
-        protected.push(anchor);
+        protected.push(anchor.clone());
     }
-    Ok(())
+    Ok(Some(anchor))
 }
 
 #[cfg(not(unix))]
 pub(super) fn protect_unix_scratch_anchor(
     _protected: &mut Vec<PathBuf>,
     _canonical_temp: &Path,
-) -> Result<(), String> {
-    Ok(())
+) -> Result<Option<PathBuf>, String> {
+    Ok(None)
 }
 
 fn maybe_protect_unix_scratch_anchor(
     protected: &mut Vec<PathBuf>,
     canonical_temp: &Path,
     writable_overlaps_scratch: bool,
-) -> Result<(), String> {
+) -> Result<Option<PathBuf>, String> {
     if writable_overlaps_scratch {
-        protect_unix_scratch_anchor(protected, canonical_temp)?;
+        protect_unix_scratch_anchor(protected, canonical_temp)
+    } else {
+        Ok(None)
     }
-    Ok(())
 }
 
 pub(super) fn check_path_budget(count: usize, reserves_private_temp: bool) -> Result<(), String> {
@@ -153,7 +154,8 @@ pub(super) fn read(root: &Path, sources: &CatalogSources) -> Result<Option<Plan>
         binaries,
         root.join(".stateengine"),
     ]);
-    maybe_protect_unix_scratch_anchor(&mut protected, &canonical_temp, writable_overlaps_temp)?;
+    let protected_scratch_anchor =
+        maybe_protect_unix_scratch_anchor(&mut protected, &canonical_temp, writable_overlaps_temp)?;
     protected.extend(
         crate::dogfood::legacy_names::PROJECT_DIRECTORIES
             .iter()
@@ -212,6 +214,7 @@ pub(super) fn read(root: &Path, sources: &CatalogSources) -> Result<Option<Plan>
         denied,
         network,
         private_temp_parent,
+        protected_scratch_anchor,
     }))
 }
 

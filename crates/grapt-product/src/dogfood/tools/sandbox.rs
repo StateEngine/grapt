@@ -73,6 +73,12 @@ pub(in crate::dogfood::tools) struct Plan {
     /// directory inside it and sets `TMPDIR`/`TEMP`/`TMP`.
     #[serde(default)]
     private_temp_parent: Option<PathBuf>,
+    /// Exact Unix per-UID scratch anchor path (`<temp_parent>/grapt-scratch-<euid>`)
+    /// recorded by the planner when `private_temp_parent` is disabled due to a
+    /// temp-overlapping write grant, so the helper precreates/verifies ONLY this
+    /// exact path and never touches unrelated protected entries by basename.
+    #[serde(default)]
+    protected_scratch_anchor: Option<PathBuf>,
 }
 
 impl Plan {
@@ -83,6 +89,11 @@ impl Plan {
     #[cfg(any(target_os = "linux", windows, test))]
     pub(super) fn private_temp_parent(&self) -> Option<&Path> {
         self.private_temp_parent.as_deref()
+    }
+
+    #[cfg(target_os = "linux")]
+    pub(super) fn protected_scratch_anchor(&self) -> Option<&Path> {
+        self.protected_scratch_anchor.as_deref()
     }
 
     pub(super) fn policy(&self) -> grapt_sandbox::Policy {
@@ -152,7 +163,8 @@ impl Plan {
             || config::path_overlaps_scratch(&canonical_target, &temp_parent)
         {
             self.private_temp_parent = None;
-            config::protect_unix_scratch_anchor(&mut self.protected, &temp_parent)?;
+            self.protected_scratch_anchor =
+                config::protect_unix_scratch_anchor(&mut self.protected, &temp_parent)?;
         }
         config::check_path_budget(self.path_count(), false)
     }

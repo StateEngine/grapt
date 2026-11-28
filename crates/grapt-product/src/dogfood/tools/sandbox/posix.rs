@@ -211,17 +211,11 @@ pub(crate) fn helper_main(arguments: &[String]) -> Option<i32> {
     }))
 }
 
-fn ensure_protected_scratch_anchors(policy: &grapt_sandbox::Policy) -> Result<(), String> {
-    // Derive anchor parents directly from policy.protected_paths rather than
-    // re-reading std::env::temp_dir() inside the env-cleared helper so custom
-    // TMPDIR configurations are preserved.
-    let expected_name = super::scratch::unix_scratch_anchor_name();
-    for entry in &policy.protected_paths {
-        if entry.file_name().and_then(|name| name.to_str()) == Some(expected_name.as_str()) {
-            if let Some(parent) = entry.parent() {
-                super::scratch::ensure_unix_scratch_anchor(parent)?;
-            }
-        }
+pub(super) fn ensure_protected_scratch_anchor(anchor: Option<&Path>) -> Result<(), String> {
+    // Only create/verify the exact scratch anchor planned by the host;
+    // never scan policy.protected_paths by basename.
+    if let Some(parent) = anchor.and_then(Path::parent) {
+        super::scratch::ensure_unix_scratch_anchor(parent)?;
     }
     Ok(())
 }
@@ -258,7 +252,7 @@ fn run(path: &str) -> Result<i32, String> {
     // launch time before Linux synthetic mount targets can create them with
     // default umask 0755.
     if scratch.is_none() {
-        ensure_protected_scratch_anchors(&policy)?;
+        ensure_protected_scratch_anchor(request.plan.protected_scratch_anchor())?;
     }
     let targets = match grants::receive(&channel, &policy, &request.write_targets) {
         Ok(targets) => targets,
@@ -425,6 +419,7 @@ mod tests {
             denied: Vec::new(),
             network: false,
             private_temp_parent: None,
+            protected_scratch_anchor: None,
         };
         let environment = super::super::super::shell_environment::Environment::parent()?;
         let pending = Pending::prepare(

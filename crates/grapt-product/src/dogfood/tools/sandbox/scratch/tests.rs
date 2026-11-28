@@ -15,6 +15,7 @@ fn test_plan_and_scratch(
         denied: Vec::new(),
         network: false,
         private_temp_parent: Some(canonical_parent),
+        protected_scratch_anchor: None,
     };
     let mut policy = plan.policy();
     let mut env = vec![format!("TMPDIR={}", parent.display())];
@@ -109,6 +110,7 @@ fn write_search_only_0300_temp_parent_attaches_and_cleans_up() -> Result<(), Str
             denied: Vec::new(),
             network: false,
             private_temp_parent: Some(parent.clone()),
+            protected_scratch_anchor: None,
         };
         let mut policy = plan.policy();
         let mut env = Vec::new();
