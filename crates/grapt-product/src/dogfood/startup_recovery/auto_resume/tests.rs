@@ -366,19 +366,17 @@ fn synthetic_message_ids_never_collide_on_shared_session_prefix() -> Result<(), 
 
 #[test]
 fn blocker_queries_fail_closed_on_corrupt_schema() -> Result<(), String> {
-    let (store, _ids, _clock) = test_store()?;
+    let conn = rusqlite::Connection::open_in_memory().map_err(|error| error.to_string())?;
     let session: SessionId = "ses_auto_corrupt".parse().map_err(|e| format!("{e}"))?;
     // Corrupt permission_request table missing required columns must return Err, not Ok(false).
-    store
-        .connection()
-        .execute_batch("DROP TABLE IF EXISTS permission_request; CREATE TABLE permission_request (broken INTEGER);")
+    conn.execute_batch("CREATE TABLE permission_request (broken INTEGER);")
         .map_err(|error| error.to_string())?;
-    assert!(has_pending_approval_or_form(store.connection(), &session).is_err());
+    assert!(has_pending_approval_or_form(&conn, &session).is_err());
     Ok(())
 }
 
 #[test]
-fn running_claim_without_admission_is_reclaimed_on_restart() -> Result<(), String> {
+fn running_claim_without_execution_start_is_reclaimed_on_restart() -> Result<(), String> {
     let (mut store, ids, clock) = test_store()?;
     let session: SessionId = "ses_auto_reclaim".parse().map_err(|e| format!("{e}"))?;
     let origin_seq = seed_active_turn(&mut store, &ids, &clock, &session, None, "exec_r1")?;
@@ -415,13 +413,14 @@ fn running_claim_without_admission_is_reclaimed_on_restart() -> Result<(), Strin
     assert_eq!(runnable[0].attempts, 1);
 
     let msg_id = synthetic_message_id(&session, origin_seq, 1)?;
-    assert!(!synthetic_input_admitted(
+    assert!(!synthetic_input_started(
         store.connection(),
         &session,
         &msg_id
     )?);
 
-    // Once the deterministic synthetic input is admitted, restart recognizes it as admitted.
+    // Admitting the synthetic input WITHOUT promoting/starting (crash between
+    // admit_synthetic and schedule_admitted) must STILL reclaim on restart.
     let _ = append_event(
         &mut store,
         &ids,
@@ -431,10 +430,220 @@ fn running_claim_without_admission_is_reclaimed_on_restart() -> Result<(), Strin
         1,
         json!({"inputID": msg_id.as_str(), "input": {"type": "synthetic", "data": {"text": "resume"}}}),
     )?;
-    assert!(synthetic_input_admitted(
+    assert!(!synthetic_input_started(
         store.connection(),
         &session,
         &msg_id
     )?);
+
+    // Once execution starts after admission, restart recognizes it as started.
+    let _ = append_event(
+        &mut store,
+        &ids,
+        &clock,
+        &session,
+        "session.execution.started",
+        1,
+        json!({"sessionID": session.as_str(), "executionID": "exec_r2"}),
+    )?;
+    assert!(synthetic_input_started(
+        store.connection(),
+        &session,
+        &msg_id
+    )?);
+    Ok(())
+}
+
+#[test]
+fn real_serialized_process_loss_step_failed_blocks_auto_resume() -> Result<(), String> {
+    let (mut store, ids, clock) = test_store()?;
+    let empty_forms = HashSet::new();
+    let session: SessionId = "ses_auto_real_pl".parse().map_err(|e| format!("{e}"))?;
+    let origin = seed_active_turn(&mut store, &ids, &clock, &session, None, "exec_pl1")?;
+
+    let step1 = grapt_types::StepNumber::new(1).ok_or("step")?;
+    let fact1 = grapt_event::session_step_failed::StepFailedFact::new(
+        step1,
+        grapt_types::StepTerminalReason::ProcessLoss {
+            effect: grapt_types::ExternalEffectState::NoneInitiated,
+        },
+    )
+    .map_err(|e| format!("{e:?}"))?;
+    let encoded1 =
+        grapt_event::session_step_failed::encode(&fact1).map_err(|e| format!("{e:?}"))?;
+    let _ = append_event(
+        &mut store,
+        &ids,
+        &clock,
+        &session,
+        "session.step.failed",
+        2,
+        encoded1,
+    )?;
+
+    enqueue_if_eligible(&mut store, &session, &empty_forms, &clock, &ids)?;
+    let row = load_row(store.connection(), &session)?.ok_or("missing process-loss row")?;
+    assert_eq!(row.state, ResumeState::Stopped);
+    assert_eq!(row.reason.as_deref(), Some("ambiguous_provider_attempt"));
+
+    // A step that already started a tool call before ProcessLoss is not an
+    // ambiguous in-flight provider attempt, even though tool events carry no
+    // `$.step` field.
+    let _ = append_event(
+        &mut store,
+        &ids,
+        &clock,
+        &session,
+        "session.tool.input.started",
+        2,
+        json!({"call": "call_1", "tool": "bash"}),
+    )?;
+    let step2 = grapt_types::StepNumber::new(2).ok_or("step2")?;
+    let fact2 = grapt_event::session_step_failed::StepFailedFact::new(
+        step2,
+        grapt_types::StepTerminalReason::ProcessLoss {
+            effect: grapt_types::ExternalEffectState::NoneInitiated,
+        },
+    )
+    .map_err(|e| format!("{e:?}"))?;
+    let encoded2 =
+        grapt_event::session_step_failed::encode(&fact2).map_err(|e| format!("{e:?}"))?;
+    let _ = append_event(
+        &mut store,
+        &ids,
+        &clock,
+        &session,
+        "session.step.failed",
+        2,
+        encoded2,
+    )?;
+    assert!(!has_ambiguous_process_loss_step(
+        store.connection(),
+        &session,
+        origin
+    )?);
+
+    // A subsequent step with no tool event of its own still blocks.
+    let step3 = grapt_types::StepNumber::new(3).ok_or("step3")?;
+    let fact3 = grapt_event::session_step_failed::StepFailedFact::new(
+        step3,
+        grapt_types::StepTerminalReason::ProcessLoss {
+            effect: grapt_types::ExternalEffectState::NoneInitiated,
+        },
+    )
+    .map_err(|e| format!("{e:?}"))?;
+    let encoded3 =
+        grapt_event::session_step_failed::encode(&fact3).map_err(|e| format!("{e:?}"))?;
+    let _ = append_event(
+        &mut store,
+        &ids,
+        &clock,
+        &session,
+        "session.step.failed",
+        2,
+        encoded3,
+    )?;
+    assert!(has_ambiguous_process_loss_step(
+        store.connection(),
+        &session,
+        origin
+    )?);
+    Ok(())
+}
+
+#[test]
+fn global_null_form_does_not_abort_and_durable_fence_survives_second_crash() -> Result<(), String> {
+    let (mut store, ids, clock) = test_store()?;
+    let session: SessionId = "ses_auto_fence".parse().map_err(|e| format!("{e}"))?;
+    let _origin = seed_active_turn(&mut store, &ids, &clock, &session, None, "exec_f1")?;
+
+    let tx = store
+        .governed_transaction()
+        .map_err(|error| error.to_string())?;
+    tx.execute_batch(
+        "CREATE TABLE IF NOT EXISTS form_request (
+            id TEXT PRIMARY KEY,
+            session_id TEXT,
+            status TEXT NOT NULL
+         );
+         INSERT INTO form_request (id, session_id, status) VALUES ('frm_global', NULL, 'pending');
+         INSERT INTO form_request (id, session_id, status) VALUES ('frm_sess', 'ses_auto_fence', 'pending');",
+    )
+    .map_err(|error| error.to_string())?;
+    tx.commit().map_err(|error| error.to_string())?.discard();
+
+    // Global NULL form_request must not error, and session form gets durably fenced.
+    let fenced = fence_pre_recovery_form_sessions(&mut store, &clock)?;
+    assert!(fenced.contains(&session));
+    assert_eq!(fenced.len(), 1);
+
+    // Simulate elicitation::recover cancelling the form followed by a second crash
+    // (empty in-memory pre_recovery_forms on the next restart).
+    let tx = store
+        .governed_transaction()
+        .map_err(|error| error.to_string())?;
+    tx.execute(
+        "UPDATE form_request SET status = 'cancelled' WHERE id = 'frm_sess'",
+        [],
+    )
+    .map_err(|error| error.to_string())?;
+    tx.commit().map_err(|error| error.to_string())?.discard();
+
+    let empty_forms = HashSet::new();
+    enqueue_if_eligible(&mut store, &session, &empty_forms, &clock, &ids)?;
+    let row = load_row(store.connection(), &session)?.ok_or("missing fenced row")?;
+    assert_eq!(row.state, ResumeState::Stopped);
+    assert_eq!(row.reason.as_deref(), Some("pending_approval_or_form"));
+    Ok(())
+}
+
+#[test]
+fn non_resume_synthetic_or_missing_start_never_inherits_finished_human_turn() -> Result<(), String>
+{
+    let (mut store, ids, clock) = test_store()?;
+    let session: SessionId = "ses_auto_synth".parse().map_err(|e| format!("{e}"))?;
+    let _origin = seed_active_turn(&mut store, &ids, &clock, &session, None, "exec_h1")?;
+
+    // Finish the human execution, then start an unrelated non-resume synthetic execution.
+    let _ = append_event(
+        &mut store,
+        &ids,
+        &clock,
+        &session,
+        "session.execution.succeeded",
+        1,
+        json!({"sessionID": session.as_str(), "executionID": "exec_h1"}),
+    )?;
+    let _ = append_event(
+        &mut store,
+        &ids,
+        &clock,
+        &session,
+        "session.input.admitted",
+        1,
+        json!({"inputID": "msg_bg", "input": {"type": "synthetic", "data": {"text": "background"}}}),
+    )?;
+    let _ = append_event(
+        &mut store,
+        &ids,
+        &clock,
+        &session,
+        "session.execution.started",
+        1,
+        json!({"sessionID": session.as_str(), "executionID": "exec_bg"}),
+    )?;
+
+    let exec_bg = ExecutionId::new("exec_bg").ok_or("exec_bg")?;
+    assert_eq!(
+        interrupted_turn_origin_seq(store.connection(), &session, &exec_bg)?,
+        None
+    );
+
+    // An execution with no matching session.execution.started.1 must also fail closed.
+    let exec_unknown = ExecutionId::new("exec_missing").ok_or("exec_missing")?;
+    assert_eq!(
+        interrupted_turn_origin_seq(store.connection(), &session, &exec_unknown)?,
+        None
+    );
     Ok(())
 }

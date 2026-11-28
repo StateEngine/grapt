@@ -34,7 +34,7 @@ use self::store::{
     has_active_or_lost_subagent_child, has_ambiguous_process_loss_step,
     has_pending_approval_or_form, has_unresolved_or_quarantined_attempt,
     interrupted_turn_origin_seq, is_child_session, latest_human_input_seq, list_runnable_after,
-    load_row, synthetic_input_admitted, synthetic_message_id, upsert_row, PendingRow, ResumeState,
+    load_row, synthetic_input_started, synthetic_message_id, upsert_row, PendingRow, ResumeState,
 };
 
 /// Maximum automatic resume attempts for a single user turn (`turn_origin_seq`).
@@ -50,13 +50,44 @@ pub(super) fn ensure_schema_if_missing(store: &mut EventStore) -> Result<(), Str
     store::ensure_schema_if_missing(store)
 }
 
-/// Capture sessions with pending forms or interactive questions BEFORE
-/// `elicitation::recover` cancels them so auto-resume never resurrects a turn
-/// that was blocked waiting for human input.
-pub(super) fn collect_pre_recovery_form_sessions(
-    conn: &rusqlite::Connection,
+/// Durably fence sessions that have pending forms or interactive questions
+/// BEFORE `elicitation::recover` cancels them so even a second crash between
+/// form cancellation and status recovery cannot erase the blocker. Performs
+/// zero writes when no pending session forms exist.
+pub(super) fn fence_pre_recovery_form_sessions(
+    store: &mut EventStore,
+    clock: &SystemClock,
 ) -> Result<HashSet<SessionId>, String> {
-    store::collect_pre_recovery_form_sessions(conn)
+    let sessions = store::collect_pre_recovery_form_sessions(store.connection())?;
+    if sessions.is_empty() {
+        return Ok(sessions);
+    }
+    let now_ms = clock.now().as_millis();
+    for session in &sessions {
+        let snapshot = grapt_service_state::read(store.connection(), session)?;
+        let Some(execution) = snapshot.execution else {
+            continue;
+        };
+        let existing = load_row(store.connection(), session)?;
+        let turn_origin_seq = interrupted_turn_origin_seq(store.connection(), session, &execution)?
+            .or_else(|| existing.as_ref().map(|row| row.turn_origin_seq))
+            .unwrap_or(0);
+        let attempts = existing
+            .as_ref()
+            .filter(|row| row.turn_origin_seq == turn_origin_seq)
+            .map_or(0, |row| row.attempts);
+        upsert_row(
+            store,
+            session,
+            turn_origin_seq,
+            execution.as_str(),
+            attempts,
+            ResumeState::Stopped,
+            Some("pending_approval_or_form"),
+            now_ms,
+        )?;
+    }
+    Ok(sessions)
 }
 
 /// Evaluate whether an interrupted session (holding its writer, right before
@@ -86,6 +117,16 @@ pub(super) fn enqueue_if_eligible(
     };
     let now_ms = clock.now().as_millis();
     let existing = load_row(store.connection(), session)?;
+    if existing.as_ref().is_some_and(|row| {
+        row.state == ResumeState::Stopped
+            && row.reason.as_deref() == Some("pending_approval_or_form")
+            && row.interrupted_execution_id == execution.as_str()
+    }) {
+        crate::server_log::info(format_args!(
+            "session {session}: automatic resume skipped reason=pending-approval-or-form-fenced"
+        ));
+        return Ok(());
+    }
     let attempts = existing
         .as_ref()
         .filter(|row| row.turn_origin_seq == turn_origin_seq)
@@ -405,13 +446,14 @@ fn claim_row(
             })
         }
         ResumeState::Running => {
-            // Crash-recovery for the window between claiming `Running` and
-            // committing `admit_synthetic`: if the deterministic synthetic
-            // MessageId was never admitted, reclaim and launch with the same
-            // attempt count rather than stranding the turn.
+            // Crash-recovery for the window between claiming `Running` (or
+            // admitting the synthetic input) and starting its execution: if
+            // the deterministic synthetic MessageId has not yet been promoted
+            // or started, re-drive it with the same attempt count rather than
+            // stranding the turn.
             let msg_id =
                 synthetic_message_id(&row.session, current.turn_origin_seq, current.attempts)?;
-            if synthetic_input_admitted(store.connection(), &row.session, &msg_id)? {
+            if synthetic_input_started(store.connection(), &row.session, &msg_id)? {
                 upsert_row(
                     store,
                     &row.session,
@@ -419,7 +461,7 @@ fn claim_row(
                     &current.interrupted_execution_id,
                     current.attempts,
                     ResumeState::Completed,
-                    Some("already_admitted"),
+                    Some("already_started"),
                     now_ms,
                 )?;
                 return Ok(ClaimOutcome::Skip);

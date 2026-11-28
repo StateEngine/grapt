@@ -52,7 +52,7 @@ pub(super) fn recover(
             attempts.warnings_omitted
         ));
     }
-    let pre_recovery_forms = auto_resume::collect_pre_recovery_form_sessions(store.connection())
+    let pre_recovery_forms = auto_resume::fence_pre_recovery_form_sessions(store, clock.as_ref())
         .map_err(DogfoodRefusal::Compose)?;
     let forms = elicitation::recover(store, ids.as_ref(), clock.as_ref())
         .map_err(DogfoodRefusal::Compose)?;

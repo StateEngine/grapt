@@ -694,11 +694,16 @@ fn g24_auto_resume_skips_session_with_pending_permission() {
     let workspace = root("auto-resume-pending-perm-workspace");
     process_fixture::cleanup(&workspace);
     fs::create_dir_all(&workspace).unwrap_or_else(|error| panic!("workspace: {error}"));
+    let probe_dir = tempfile::Builder::new()
+        .prefix("g24-perm-probe-")
+        .tempdir()
+        .unwrap_or_else(|error| panic!("probe tempdir: {error}"));
+    let probe_target = probe_dir.path().join("nonexistent-g24-probe");
     let provider = ProviderFixture::start(vec![
         Script::ToolInput {
             call: "call_perm_wait",
             tool: "shell",
-            arguments: serde_json::json!({"command": "rm -rf /tmp/nonexistent-g24-probe", "timeout_ms": 5000}),
+            arguments: serde_json::json!({"command": format!("rm -rf {}", probe_target.display()), "timeout_ms": 5000}),
         },
         Script::SuccessText("must not auto-resume while permission pending"),
     ]);

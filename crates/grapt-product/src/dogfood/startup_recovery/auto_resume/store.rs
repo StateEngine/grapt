@@ -105,7 +105,10 @@ pub(super) fn collect_pre_recovery_form_sessions(
         return Ok(HashSet::new());
     }
     let mut stmt = conn
-        .prepare("SELECT DISTINCT session_id FROM form_request WHERE status = 'pending'")
+        .prepare(
+            "SELECT DISTINCT session_id FROM form_request
+             WHERE status = 'pending' AND session_id IS NOT NULL",
+        )
         .map_err(|error| format!("pre-recovery form scan prepare failed: {error}"))?;
     let rows = stmt
         .query_map([], |row| row.get::<_, String>(0))
@@ -256,15 +259,80 @@ pub(super) fn list_runnable_after(
     Ok(out)
 }
 
-/// Identify the durable human prompt `seq` that originated `execution`,
-/// excluding `seat-startup` inputs and unpromoted queued prompts admitted after
-/// `execution` started.
+struct AdmittedInputOrigin {
+    seq: i64,
+    input_type: Option<String>,
+    user_origin: Option<String>,
+    synth_kind: Option<String>,
+    synth_turn_origin: Option<i64>,
+}
+
+fn latest_admitted_input_in_window(
+    conn: &rusqlite::Connection,
+    session: &SessionId,
+    after_seq: i64,
+    up_to_seq: i64,
+) -> Result<Option<AdmittedInputOrigin>, String> {
+    let sql = if table_exists(conn, "session_pending")? {
+        "SELECT seq,
+                CASE WHEN json_valid(data) THEN COALESCE(json_extract(data, '$.input.type'), json_extract(data, '$.kind'), 'user') END,
+                CASE WHEN json_valid(data) THEN COALESCE(json_extract(data, '$.input.data.metadata.origin'), '') END,
+                CASE WHEN json_valid(data) THEN json_extract(data, '$.input.data.metadata.kind') END,
+                CASE WHEN json_valid(data) THEN json_extract(data, '$.input.data.metadata.turnOriginSeq') END
+         FROM event
+         WHERE aggregate_family = 'session' AND aggregate_id = ?1
+           AND type = 'session.input.admitted.1'
+           AND seq > ?2 AND seq <= ?3
+           AND CASE WHEN json_valid(data)
+               THEN COALESCE(json_extract(data, '$.inputID'), '') NOT IN (
+                   SELECT id FROM session_pending WHERE session_id = ?1
+               )
+               ELSE 0
+           END
+         ORDER BY seq DESC
+         LIMIT 1"
+    } else {
+        "SELECT seq,
+                CASE WHEN json_valid(data) THEN COALESCE(json_extract(data, '$.input.type'), json_extract(data, '$.kind'), 'user') END,
+                CASE WHEN json_valid(data) THEN COALESCE(json_extract(data, '$.input.data.metadata.origin'), '') END,
+                CASE WHEN json_valid(data) THEN json_extract(data, '$.input.data.metadata.kind') END,
+                CASE WHEN json_valid(data) THEN json_extract(data, '$.input.data.metadata.turnOriginSeq') END
+         FROM event
+         WHERE aggregate_family = 'session' AND aggregate_id = ?1
+           AND type = 'session.input.admitted.1'
+           AND seq > ?2 AND seq <= ?3
+         ORDER BY seq DESC
+         LIMIT 1"
+    };
+    conn.query_row(
+        sql,
+        rusqlite::params![session.as_str(), after_seq, up_to_seq],
+        |row| {
+            Ok(AdmittedInputOrigin {
+                seq: row.get(0)?,
+                input_type: row.get(1)?,
+                user_origin: row.get(2)?,
+                synth_kind: row.get(3)?,
+                synth_turn_origin: row.get(4)?,
+            })
+        },
+    )
+    .optional()
+    .map_err(|error| format!("interrupted turn origin lookup failed: {error}"))
+}
+
+/// Identify the durable human prompt `seq` that originated `execution`.
+///
+/// Fails closed (`Ok(None)`) if `execution` has no matching
+/// `session.execution.started.1` event, or if the input that started
+/// `execution` (since the previous execution terminal) was a `seat-startup`
+/// input or an unrelated non-resume synthetic execution.
 pub(super) fn interrupted_turn_origin_seq(
     conn: &rusqlite::Connection,
     session: &SessionId,
     execution: &ExecutionId,
 ) -> Result<Option<u64>, String> {
-    let exec_start: Option<i64> = conn
+    let Some(exec_start): Option<i64> = conn
         .query_row(
             "SELECT MIN(seq) FROM event
              WHERE aggregate_family = 'session' AND aggregate_id = ?1
@@ -276,69 +344,47 @@ pub(super) fn interrupted_turn_origin_seq(
             rusqlite::params![session.as_str(), execution.as_str()],
             |row| row.get(0),
         )
-        .map_err(|error| format!("execution start lookup failed: {error}"))?;
-
-    let has_pending_table = table_exists(conn, "session_pending")?;
-    let sql = match (exec_start.is_some(), has_pending_table) {
-        (true, true) => {
-            "SELECT MAX(seq) FROM event
-             WHERE aggregate_family = 'session' AND aggregate_id = ?1
-               AND type = 'session.input.admitted.1'
-               AND seq <= ?2
-               AND CASE WHEN json_valid(data)
-                   THEN COALESCE(json_extract(data, '$.input.type'), json_extract(data, '$.kind'), 'user') = 'user'
-                        AND COALESCE(json_extract(data, '$.input.data.metadata.origin'), '') != 'seat-startup'
-                        AND COALESCE(json_extract(data, '$.inputID'), '') NOT IN (
-                            SELECT id FROM session_pending WHERE session_id = ?1
-                        )
-                   ELSE 0
-               END"
-        }
-        (true, false) => {
-            "SELECT MAX(seq) FROM event
-             WHERE aggregate_family = 'session' AND aggregate_id = ?1
-               AND type = 'session.input.admitted.1'
-               AND seq <= ?2
-               AND CASE WHEN json_valid(data)
-                   THEN COALESCE(json_extract(data, '$.input.type'), json_extract(data, '$.kind'), 'user') = 'user'
-                        AND COALESCE(json_extract(data, '$.input.data.metadata.origin'), '') != 'seat-startup'
-                   ELSE 0
-               END"
-        }
-        (false, true) => {
-            "SELECT MAX(seq) FROM event
-             WHERE aggregate_family = 'session' AND aggregate_id = ?1
-               AND type = 'session.input.admitted.1'
-               AND CASE WHEN json_valid(data)
-                   THEN COALESCE(json_extract(data, '$.input.type'), json_extract(data, '$.kind'), 'user') = 'user'
-                        AND COALESCE(json_extract(data, '$.input.data.metadata.origin'), '') != 'seat-startup'
-                        AND COALESCE(json_extract(data, '$.inputID'), '') NOT IN (
-                            SELECT id FROM session_pending WHERE session_id = ?1
-                        )
-                   ELSE 0
-               END"
-        }
-        (false, false) => {
-            "SELECT MAX(seq) FROM event
-             WHERE aggregate_family = 'session' AND aggregate_id = ?1
-               AND type = 'session.input.admitted.1'
-               AND CASE WHEN json_valid(data)
-                   THEN COALESCE(json_extract(data, '$.input.type'), json_extract(data, '$.kind'), 'user') = 'user'
-                        AND COALESCE(json_extract(data, '$.input.data.metadata.origin'), '') != 'seat-startup'
-                   ELSE 0
-               END"
-        }
+        .map_err(|error| format!("execution start lookup failed: {error}"))?
+    else {
+        return Ok(None);
     };
-    let seq: Option<i64> = if let Some(bound) = exec_start {
-        conn.query_row(sql, rusqlite::params![session.as_str(), bound], |row| {
-            row.get(0)
-        })
-    } else {
-        conn.query_row(sql, [session.as_str()], |row| row.get(0))
+
+    let prev_terminal: i64 = conn
+        .query_row(
+            "SELECT COALESCE(MAX(seq), 0) FROM event
+             WHERE aggregate_family = 'session' AND aggregate_id = ?1
+               AND seq < ?2
+               AND type IN (
+                   'session.execution.succeeded.1',
+                   'session.execution.failed.1',
+                   'session.execution.cancelled.1',
+                   'session.execution.interrupted.1'
+               )",
+            rusqlite::params![session.as_str(), exec_start],
+            |row| row.get(0),
+        )
+        .map_err(|error| format!("previous execution terminal lookup failed: {error}"))?;
+
+    let Some(origin) = latest_admitted_input_in_window(conn, session, prev_terminal, exec_start)?
+    else {
+        return Ok(None);
+    };
+    match origin.input_type.as_deref() {
+        Some("user") if origin.user_origin.as_deref() != Some("seat-startup") => {
+            u64::try_from(origin.seq)
+                .map(Some)
+                .map_err(|_| "turn origin seq negative".to_owned())
+        }
+        Some("synthetic") if origin.synth_kind.as_deref() == Some("auto_resume") => {
+            let Some(turn_seq) = origin.synth_turn_origin.filter(|value| *value > 0) else {
+                return Ok(None);
+            };
+            u64::try_from(turn_seq)
+                .map(Some)
+                .map_err(|_| "synthetic turnOriginSeq negative".to_owned())
+        }
+        _ => Ok(None),
     }
-    .map_err(|error| format!("interrupted turn origin lookup failed: {error}"))?;
-    seq.map(|value| u64::try_from(value).map_err(|_| "turn origin seq negative".to_owned()))
-        .transpose()
 }
 
 /// Latest durable human prompt `seq` (excluding `seat-startup`) for detecting
@@ -408,48 +454,59 @@ pub(super) fn has_unresolved_or_quarantined_attempt(
 
 /// True if the latest `ProcessLoss` step failure since `since_seq` occurred
 /// while a provider HTTP request was still in flight (no `session.tool.%`
-/// event committed in that step). When a tool call already started/settled
-/// inside that step, the provider response had already arrived and the turn is
-/// safe to auto-resume once lost tool runs are settled.
+/// event committed in that step after the prior step/execution boundary).
+/// When a tool call already started or settled inside that step, the provider
+/// response had already arrived and the turn is safe to auto-resume once lost
+/// tool runs are settled.
 pub(super) fn has_ambiguous_process_loss_step(
     conn: &rusqlite::Connection,
     session: &SessionId,
     since_seq: u64,
 ) -> Result<bool, String> {
     let since = i64::try_from(since_seq).map_err(|_| "since_seq overflow".to_owned())?;
-    let latest_failure: Option<(i64, Option<i64>)> = conn
+    let latest_fail_seq: Option<i64> = conn
         .query_row(
-            "SELECT seq, CASE WHEN json_valid(data) THEN json_extract(data, '$.step') END
+            "SELECT seq
              FROM event
              WHERE aggregate_family = 'session' AND aggregate_id = ?1
                AND seq > ?2
-               AND type = 'session.step.failed.2'
+               AND type LIKE 'session.step.failed.%'
                AND CASE WHEN json_valid(data)
-                   THEN json_extract(data, '$.reason') = 'process_loss'
-                        OR json_extract(data, '$.reason.type') = 'process_loss'
+                   THEN json_extract(data, '$.reason.kind') = 'process-loss'
                    ELSE 0
                END
              ORDER BY seq DESC
              LIMIT 1",
             rusqlite::params![session.as_str(), since],
-            |row| Ok((row.get(0)?, row.get(1)?)),
+            |row| row.get(0),
         )
         .optional()
         .map_err(|error| format!("process-loss step lookup failed: {error}"))?;
-    let Some((fail_seq, Some(step))) = latest_failure else {
-        return Ok(latest_failure.is_some());
+    let Some(fail_seq) = latest_fail_seq else {
+        return Ok(false);
     };
+    let step_floor: i64 = conn
+        .query_row(
+            "SELECT COALESCE(MAX(seq), ?2)
+             FROM event
+             WHERE aggregate_family = 'session' AND aggregate_id = ?1
+               AND seq > ?2 AND seq < ?3
+               AND (
+                   type LIKE 'session.step.ended.%'
+                   OR type LIKE 'session.step.failed.%'
+                   OR type LIKE 'session.execution.started.%'
+               )",
+            rusqlite::params![session.as_str(), since, fail_seq],
+            |row| row.get(0),
+        )
+        .map_err(|error| format!("step boundary lookup failed: {error}"))?;
     let tool_events: i64 = conn
         .query_row(
             "SELECT COUNT(*) FROM event
              WHERE aggregate_family = 'session' AND aggregate_id = ?1
                AND seq > ?2 AND seq < ?3
-               AND type LIKE 'session.tool.%'
-               AND CASE WHEN json_valid(data)
-                   THEN json_extract(data, '$.step') = ?4
-                   ELSE 0
-               END",
-            rusqlite::params![session.as_str(), since, fail_seq, step],
+               AND type LIKE 'session.tool.%'",
+            rusqlite::params![session.as_str(), step_floor, fail_seq],
             |row| row.get(0),
         )
         .map_err(|error| format!("step tool event lookup failed: {error}"))?;
@@ -509,27 +566,64 @@ pub(super) fn has_active_or_lost_subagent_child(
     Ok(active_children > 0)
 }
 
-pub(super) fn synthetic_input_admitted(
+/// True only if the synthetic resume `input` was not merely admitted, but
+/// actually handed off and started (promoted via `session.input.promoted.1` or
+/// followed by a `session.execution.started.1`). A crash between admission and
+/// execution handoff therefore returns `false` so restart re-drives the same
+/// idempotent `MessageId` without stranding.
+pub(super) fn synthetic_input_started(
     conn: &rusqlite::Connection,
     session: &SessionId,
     input: &MessageId,
 ) -> Result<bool, String> {
-    let found: Option<i64> = conn
+    let admitted_seq: Option<i64> = conn
         .query_row(
-            "SELECT 1 FROM event
+            "SELECT MIN(seq) FROM event
              WHERE aggregate_family = 'session' AND aggregate_id = ?1
                AND type = 'session.input.admitted.1'
                AND CASE WHEN json_valid(data)
                    THEN json_extract(data, '$.inputID') = ?2
                    ELSE 0
-               END
-             LIMIT 1",
+               END",
             rusqlite::params![session.as_str(), input.as_str()],
             |row| row.get(0),
         )
-        .optional()
         .map_err(|error| format!("synthetic admission lookup failed: {error}"))?;
-    Ok(found.is_some())
+    let Some(admitted_seq) = admitted_seq else {
+        return Ok(false);
+    };
+    let promoted: Option<i64> = conn
+        .query_row(
+            "SELECT 1 FROM event
+             WHERE aggregate_family = 'session' AND aggregate_id = ?1
+               AND type = 'session.input.promoted.1'
+               AND seq > ?2
+               AND CASE WHEN json_valid(data)
+                   THEN json_extract(data, '$.inputID') = ?3
+                   ELSE 0
+               END
+             LIMIT 1",
+            rusqlite::params![session.as_str(), admitted_seq, input.as_str()],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(|error| format!("synthetic promotion lookup failed: {error}"))?;
+    if promoted.is_some() {
+        return Ok(true);
+    }
+    let started: Option<i64> = conn
+        .query_row(
+            "SELECT 1 FROM event
+             WHERE aggregate_family = 'session' AND aggregate_id = ?1
+               AND type = 'session.execution.started.1'
+               AND seq > ?2
+             LIMIT 1",
+            rusqlite::params![session.as_str(), admitted_seq],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(|error| format!("synthetic execution start lookup failed: {error}"))?;
+    Ok(started.is_some())
 }
 
 /// Collision-free database-wide deterministic `MessageId` derived via SHA-256
