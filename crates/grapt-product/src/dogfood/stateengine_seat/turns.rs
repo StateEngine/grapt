@@ -84,10 +84,13 @@ impl Tracker {
         }
     }
 
-    /// Forget every session, saying whether any was busy.
-    pub(super) fn release(&mut self) -> bool {
-        self.turns.clear();
-        !std::mem::take(&mut self.busy).is_empty()
+    /// The seat's state: busy while any session is.
+    pub(super) fn activity(&self) -> Activity {
+        if self.busy.is_empty() {
+            Activity::Idle
+        } else {
+            Activity::Busy
+        }
     }
 
     fn status(&mut self, session: String, status: Option<&str>) -> Option<Report> {

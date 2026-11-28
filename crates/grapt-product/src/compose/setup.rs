@@ -71,7 +71,6 @@ fn run_owned(
         ))),
         hub,
         driver: Some(ServiceDriver::Pending(receiver)),
-        seat: None,
     };
     protection
         .finish()

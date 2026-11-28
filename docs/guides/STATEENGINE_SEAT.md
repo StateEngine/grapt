@@ -26,14 +26,15 @@ successful turn is published with its text, model and commit time.
 `home` is the StateEngine state home that holds `endpoint.json`; `binary` is the
 `se` executable it pins. `agent` takes the seat's name or its `ag_` ID. Reports
 use your owner credential on this machine, so only your own configuration is
-read for a seat, and a service profile that lives inside a repository is
-refused.
+read for a seat: a configuration file that is a link, or a service profile
+that lives inside a repository, is refused.
 
 Without this setting Grapt never contacts StateEngine. With it, turns never
 wait for StateEngine. When the host is down, restarts or refuses, Grapt prints a
 `stateengine seat warning` line once, skips the turns it could not publish and
 keeps retrying until the seat shows Grapt's current busy or idle state. A turn
 whose start Grapt did not see, such as one already running when Grapt
-reconnected to its own event feed, is not published. When Grapt stops, the
-seat is reported idle. Reporting needs Linux today; other platforms print the same
+reconnected to its own event feed, is not published. Reporting starts once
+the service is ready. When Grapt stops, the seat is reported idle; Grapt waits
+at most a second for that report. Reporting needs Linux today; other platforms print the same
 warning and report nothing.

@@ -242,9 +242,6 @@ async fn run_ready_on_listener_inner(
     let shutdown_hub = dogfood
         .as_ref()
         .map(|composition| Arc::clone(&composition.hub));
-    let seat = dogfood
-        .as_mut()
-        .and_then(|composition| composition.seat.take());
     let service = product_service(&limits, &credential, pid, &config, dogfood)?;
     if let Some(driver) = prompt_driver.as_mut() {
         use base64::Engine as _;
@@ -346,6 +343,11 @@ async fn run_ready_on_listener_inner(
         &config.build,
     )
     .err();
+    // The seat reports for a service that has been admitted and is ready.
+    let seat = match (&shutdown_hub, &ready_refusal) {
+        (Some(hub), None) => crate::dogfood::stateengine_seat::install(hub, service_root),
+        _ => None,
+    };
     let execution_refusal = if ready_refusal.is_none() {
         let refusal =
             terminal::until(lifetime, config.serve_window_ms, prompt_driver.as_mut()).await;
@@ -357,7 +359,7 @@ async fn run_ready_on_listener_inner(
     if let Some(hub) = &shutdown_hub {
         hub.shutdown();
     }
-    // The seat's last idle report may wait on StateEngine; not on this runtime.
+    // The seat's last idle report waits briefly, and never on this runtime.
     if let Some(seat) = seat {
         let _stopped = tokio::task::spawn_blocking(move || drop(seat)).await;
     }

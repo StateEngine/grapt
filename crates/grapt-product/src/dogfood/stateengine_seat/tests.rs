@@ -103,8 +103,7 @@ fn the_seat_is_busy_while_any_session_is_and_a_seen_execution_is_one_turn() {
     .filter_map(|frame| tracker.observe(frame))
     .collect();
     // A feed that ends while a session is busy says so once.
-    assert!(tracker.release());
-    assert!(!tracker.release());
+    assert_eq!(tracker.activity(), Activity::Busy);
     let body = "first\n\nsecond";
     let turn = SeatTurn {
         conversation: "ses_a".into(),
@@ -235,25 +234,92 @@ async fn a_failed_turn_is_published_on_a_freshly_reported_session() {
     );
 }
 
+/// A hub with one subscriber slot that restates `ses_hydrated` as busy.
+fn busy_hub() -> Result<Arc<grapt_api::DogfoodEventHub>, Box<dyn std::error::Error>> {
+    use grapt_api::u3a::{
+        DogfoodEvent, FiniteF64, LiveEvent, ServerConnectedEvent, SessionStatusData,
+        SessionStatusInfo, SseLimitValues, SseLimits, WireId,
+    };
+    let limits = SseLimits::try_new(SseLimitValues {
+        subscribers: 1,
+        pending_events: 16,
+        event_bytes: 65_536,
+        frame_bytes: 65_536,
+    })?;
+    let connected = ServerConnectedEvent::new(WireId::parse("evt_connected".into()).ok_or("id")?);
+    let hub = grapt_api::DogfoodEventHub::try_new(limits, connected)?;
+    let busy = DogfoodEvent::SessionStatus(LiveEvent::new(
+        WireId::parse("evt_hydrated".into()).ok_or("id")?,
+        FiniteF64::try_new(1.0)?,
+        SessionStatusData::new(
+            WireId::parse("ses_hydrated".into()).ok_or("id")?,
+            SessionStatusInfo::busy(),
+        ),
+    ));
+    hub.install_status_hydrator(Box::new(move || vec![busy.clone()]));
+    Ok(Arc::new(hub))
+}
+
 #[test]
-fn the_observer_outlives_a_reconciliation_and_stops_idle() -> TestResult {
-    let hub = crate::dogfood::event_hub()?;
+fn the_observer_restates_before_deciding_waits_for_room_and_stops_idle() -> TestResult {
+    let hub = busy_hub()?;
+    // The only slot is taken, so the observer waits for room.
+    let held = hub.subscribe_host()?;
     let stop = Arc::new(super::Stop::default());
     let desired = Arc::new(Desired::default());
-    desired.set(Activity::Busy);
-    let (commands, _received) = std::sync::mpsc::sync_channel(1);
+    let (commands, received) = std::sync::mpsc::sync_channel(8);
     let observer = {
         let (hub, stop, desired) = (Arc::clone(&hub), Arc::clone(&stop), Arc::clone(&desired));
         std::thread::spawn(move || super::observe(&hub, &stop, &desired, &commands))
     };
+    drop(held);
     let first = subscribed(&stop, None)?;
     hub.reconcile();
-    // A reconciliation ends the stream; the observer subscribes again.
+    // A reconciliation ends the stream; the next subscription restates the
+    // busy session before the seat's state is decided, so idle is never sent.
     subscribed(&stop, Some(&first))?;
-    assert!(!observer.is_finished());
+    let wait = Duration::from_secs(10);
+    for _ in 0..2 {
+        assert_eq!(received.recv_timeout(wait)?, Command::Reconcile);
+        assert_eq!(desired.get(), Some(Activity::Busy));
+    }
     stop.stop();
     observer.join().map_err(|_| "the observer panicked")?;
+    assert!(received.try_recv().is_err());
     assert_eq!(desired.get(), Some(Activity::Idle));
+    Ok(())
+}
+
+#[test]
+fn a_seat_whose_thread_will_not_end_stops_within_its_bound() -> TestResult {
+    let (ending, ended) = std::sync::mpsc::channel::<()>();
+    let (release, stuck) = std::sync::mpsc::channel::<()>();
+    let thread = std::thread::spawn(move || {
+        let _ending = ending;
+        let _ = stuck.recv();
+    });
+    let seat = super::Seat {
+        stop: Arc::new(super::Stop::default()),
+        threads: vec![thread],
+        ended,
+    };
+    // Returns after the bound although the thread is still running.
+    drop(seat);
+    release.send(())?;
+    Ok(())
+}
+
+#[cfg(unix)]
+#[test]
+fn a_linked_user_document_is_refused() -> TestResult {
+    let root = tempfile::tempdir()?;
+    let environment = CatalogEnvironment::isolated(root.path());
+    std::fs::create_dir_all(root.path().join("service"))?;
+    std::fs::create_dir_all(root.path().join("elsewhere"))?;
+    let target = root.path().join("elsewhere/grapt.json");
+    std::fs::write(&target, r#"{"stateengine_seat": {}}"#)?;
+    std::os::unix::fs::symlink(&target, root.path().join("service/grapt.json"))?;
+    assert!(documents_in(&environment).is_err());
     Ok(())
 }
 
@@ -263,7 +329,7 @@ fn subscribed(
     after: Option<&Arc<DogfoodEventSubscription>>,
 ) -> Result<Arc<DogfoodEventSubscription>, String> {
     for _ in 0..10_000_000 {
-        let state = stop.0.lock().map_err(|_| "stop state poisoned")?;
+        let state = stop.lock();
         if let Some(current) = &state.current {
             if after.is_none_or(|old| !Arc::ptr_eq(old, current)) {
                 return Ok(Arc::clone(current));

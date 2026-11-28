@@ -295,9 +295,16 @@ impl HostEventQueue {
 #[derive(Debug)]
 pub struct DogfoodEventSubscription {
     queue: Arc<HostEventQueue>,
+    hydration_frames: usize,
 }
 
 impl DogfoodEventSubscription {
+    /// How many frames after `server.connected` restate current state; every
+    /// later frame is live.
+    pub fn hydration_frames(&self) -> usize {
+        self.hydration_frames
+    }
+
     pub fn next_frame(&self) -> Result<Option<Bytes>, SseError> {
         self.queue.next()
     }
@@ -749,8 +756,11 @@ impl DogfoodEventHub {
             self.limits.pending_events(),
             self.connected.clone(),
         ));
+        let mut hydration_frames = 0;
         self.queue_hydration(&query::EventLocationQuery::Absent, &mut |frame| {
-            queue.offer_soft(frame) == OfferOutcome::Delivered
+            let delivered = queue.offer_soft(frame) == OfferOutcome::Delivered;
+            hydration_frames += usize::from(delivered);
+            delivered
         });
         subscribers.push(SubscriberSender {
             approver: None,
@@ -758,7 +768,10 @@ impl DogfoodEventHub {
             interest: SubscriberInterest::V2(query::EventLocationQuery::Absent),
             positions: false,
         });
-        Ok(DogfoodEventSubscription { queue })
+        Ok(DogfoodEventSubscription {
+            queue,
+            hydration_frames,
+        })
     }
 
     /// Register the capture sink for one stream. This must run BEFORE the
