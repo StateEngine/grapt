@@ -60,10 +60,12 @@ pub(super) struct Attachment {
     models: Vec<ModelRow>,
     default: Option<ModelRow>,
     permissions: Vec<u8>,
+    /// The permission refresh when the list was read: a later refresh of a
+    /// session is newer than that session's staged asks.
     permission_revision: Option<u64>,
     history: Vec<u8>,
-    /// The permission revision when the snapshot was read: a later accepted
-    /// refresh is newer than the snapshot's asks.
+    /// The permission refresh when the snapshot was read: a later refresh of
+    /// the target session is newer than the snapshot's asks.
     history_revision: Option<u64>,
     subagents: Option<ModelRow>,
     forms: Vec<crate::wire::FormRow>,
@@ -268,9 +270,11 @@ impl<C: Connection> Client<C> {
         if !attachment.waiting {
             match attachment.phase {
                 Phase::Permissions => {
-                    attachment.permission_revision = Some(self.permission_revision)
+                    attachment.permission_revision = Some(self.permission_refresh.revision())
                 }
-                Phase::History => attachment.history_revision = Some(self.permission_revision),
+                Phase::History => {
+                    attachment.history_revision = Some(self.permission_refresh.revision())
+                }
                 _ => {}
             }
         }
@@ -314,11 +318,14 @@ impl<C: Connection> Client<C> {
             "Attachment preset was not acquired.",
         ))?;
         // Global asks remain interactive while later attachment reads wait.
-        // A newer accepted refresh wins over this earlier staged list, and over
-        // the snapshot's asks when it was accepted after the snapshot's read.
-        let snapshot_permissions = attachment.history_revision == Some(self.permission_revision);
-        if attachment.permission_revision == Some(self.permission_revision) {
-            self.accept_permissions(attachment.permissions)?;
+        // A refresh that covered a session after a staged read wins for that
+        // session alone; a refresh of another session never discards the
+        // target's staged asks.
+        let snapshot_permissions = attachment
+            .history_revision
+            .is_some_and(|staged| !self.permission_refresh.covered_since(&id, staged));
+        if let Some(staged) = attachment.permission_revision {
+            self.accept_staged_permissions(&attachment.permissions, staged)?;
         }
         self.prepare_session_selection(&id)?;
         self.begin_tail();

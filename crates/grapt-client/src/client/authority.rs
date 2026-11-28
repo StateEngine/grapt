@@ -10,6 +10,66 @@ pub(super) struct PermissionCandidate {
     asks: Vec<PermissionAsk>,
     dropped: usize,
     revision: u64,
+    /// The one session whose asks it refreshes, or none for the whole list.
+    scope: Option<SessionWireId>,
+}
+
+/// How many sessions a refresh record names before it counts as one that
+/// covered them all: conservative, since a covered session only keeps its
+/// newer asks.
+const REFRESHED_SESSIONS: usize = 256;
+
+/// Which sessions' open asks each accepted refresh covered, so asks staged
+/// earlier never overwrite newer ones and a refresh of one session never
+/// discards another session's staged asks.
+#[derive(Debug, Default)]
+pub(super) struct Refreshes {
+    revision: u64,
+    /// The last refresh that covered every session.
+    all: u64,
+    /// Later refreshes that covered one session each.
+    sessions: BTreeMap<SessionWireId, u64>,
+}
+
+impl Refreshes {
+    /// The latest refresh; asks staged now are older than any refresh after.
+    pub(super) fn revision(&self) -> u64 {
+        self.revision
+    }
+
+    fn next(&self) -> Result<u64, ClientError> {
+        self.revision
+            .checked_add(1)
+            .ok_or(ClientError::InvalidInput(
+                "Permission refresh count exhausted.",
+            ))
+    }
+
+    fn record(&mut self, revision: u64, scope: Option<&SessionWireId>) {
+        self.revision = revision;
+        match scope {
+            Some(session)
+                if self.sessions.len() < REFRESHED_SESSIONS
+                    || self.sessions.contains_key(session) =>
+            {
+                self.sessions.insert(session.clone(), revision);
+            }
+            _ => {
+                self.all = revision;
+                self.sessions.clear();
+            }
+        }
+    }
+
+    /// Whether every session's asks were refreshed after `staged`.
+    pub(super) fn all_since(&self, staged: u64) -> bool {
+        self.all > staged
+    }
+
+    /// Whether `session`'s asks were refreshed after `staged`.
+    pub(super) fn covered_since(&self, session: &SessionWireId, staged: u64) -> bool {
+        self.all_since(staged) || self.sessions.get(session).is_some_and(|at| *at > staged)
+    }
 }
 
 impl<C: Connection> Client<C> {
@@ -93,25 +153,49 @@ impl<C: Connection> Client<C> {
         &mut self,
         rows: Vec<crate::wire::PermissionRow>,
     ) -> Result<(), ClientError> {
-        let candidate = self.permission_candidate(rows, Vec::new())?;
+        let candidate = self.permission_candidate(rows, Vec::new(), None)?;
+        self.commit_permissions(candidate);
+        Ok(())
+    }
+
+    /// Install a whole list read at refresh `staged`, except for sessions a
+    /// refresh since then covered: those keep their newer asks.
+    pub(super) fn accept_staged_permissions(
+        &mut self,
+        bytes: &[u8],
+        staged: u64,
+    ) -> Result<(), ClientError> {
+        if self.permission_refresh.all_since(staged) {
+            return Ok(());
+        }
+        let covered =
+            |session: &SessionWireId| self.permission_refresh.covered_since(session, staged);
+        let rows = crate::wire::decode_permissions(bytes)?
+            .into_iter()
+            .filter(|row| !covered(&row.session_id))
+            .collect();
+        let kept = self
+            .permissions
+            .iter()
+            .filter(|ask| covered(&ask.session_id))
+            .cloned()
+            .collect();
+        let candidate = self.permission_candidate(rows, kept, None)?;
         self.commit_permissions(candidate);
         Ok(())
     }
 
     /// The open asks `rows` would publish, then `kept` (asks retained from
     /// other sessions), within the bound and with the next revision, built
-    /// without touching the client.
+    /// without touching the client. `scope` names the one session the rows
+    /// refresh, or none when they are the whole list.
     pub(super) fn permission_candidate(
         &self,
         rows: Vec<crate::wire::PermissionRow>,
         kept: Vec<PermissionAsk>,
+        scope: Option<SessionWireId>,
     ) -> Result<PermissionCandidate, ClientError> {
-        let revision = self
-            .permission_revision
-            .checked_add(1)
-            .ok_or(ClientError::InvalidInput(
-                "Permission refresh count exhausted.",
-            ))?;
+        let revision = self.permission_refresh.next()?;
         let mut dropped = self.diagnostics.permissions_dropped;
         let mut asks = Vec::new();
         let offered = rows.into_iter().map(|row| PermissionAsk {
@@ -135,6 +219,7 @@ impl<C: Connection> Client<C> {
             asks,
             dropped,
             revision,
+            scope,
         })
     }
 
@@ -142,7 +227,8 @@ impl<C: Connection> Client<C> {
     pub(super) fn commit_permissions(&mut self, candidate: PermissionCandidate) {
         self.permissions = candidate.asks;
         self.diagnostics.permissions_dropped = candidate.dropped;
-        self.permission_revision = candidate.revision;
+        self.permission_refresh
+            .record(candidate.revision, candidate.scope.as_ref());
     }
 
     /// Answer one permission ask through the complete typed reply vocabulary,
@@ -165,12 +251,7 @@ impl<C: Connection> Client<C> {
         request_id: &PermissionWireId,
         choice: crate::wire::PermissionReplyChoice,
     ) -> Result<(), ClientError> {
-        let revision = self
-            .permission_revision
-            .checked_add(1)
-            .ok_or(ClientError::InvalidInput(
-                "Permission refresh count exhausted.",
-            ))?;
+        let revision = self.permission_refresh.next()?;
         let body = crate::wire::encode_permission_reply(request_id, choice)?;
         self.ingest(
             Operation::SessionPermissionReply,
@@ -181,8 +262,8 @@ impl<C: Connection> Client<C> {
             None,
         )?;
         // The send-only API does not re-list, but its acknowledged settlement
-        // must invalidate earlier staged global snapshots too.
-        self.permission_revision = revision;
+        // makes this session's asks staged before it stale.
+        self.permission_refresh.record(revision, Some(session));
         Ok(())
     }
 

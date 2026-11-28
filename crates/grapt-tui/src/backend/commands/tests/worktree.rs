@@ -18,6 +18,9 @@ struct WorktreePeer {
     raise_after_snapshot: bool,
     /// The target Session, once its snapshot was served.
     snapshot_served: Option<grapt_client::wire::SessionWireId>,
+    /// An ask raised on the target Session as it is created, so the staged
+    /// list and snapshot both carry it.
+    ask_on_create: Option<&'static str>,
     held: Option<WireRequest>,
     release_reads: bool,
     nonblocking_only: bool,
@@ -95,6 +98,9 @@ impl Connection for WorktreePeer {
             let id = grapt_client::wire::decode_session(&response.body)
                 .map_err(|_| TransportError::NotConnected)?
                 .id;
+            if let Some(title) = self.ask_on_create {
+                self.inner.ask_permission(&id, title);
+            }
             // Actual product application_port::session_create reads the committed
             // record and calls the same session_response as session_get;
             // session_info includes placement.directory and saved agent/model.
@@ -182,6 +188,7 @@ fn prepared() -> TestResult<Client<WorktreePeer>> {
             history_refusal: None,
             raise_after_snapshot: false,
             snapshot_served: None,
+            ask_on_create: None,
             held: None,
             release_reads: false,
             nonblocking_only: false,
@@ -982,4 +989,86 @@ fn a_staged_snapshot_never_overwrites_newer_forms_or_target_asks() -> TestResult
         "the earlier snapshot overwrote a newer permission refresh"
     );
     Ok(())
+}
+
+/// Open a worktree whose new Session has an ask, run `interfere` once both
+/// the list and the snapshot are staged, and check the target's ask survives.
+fn staged_target_asks_survive(
+    interfere: impl FnOnce(&mut Client<WorktreePeer>, &grapt_client::wire::SessionWireId) -> TestResult,
+) -> TestResult {
+    let mut client = prepared()?;
+    let source = client.selected().cloned().ok_or("source session")?;
+    client
+        .peer_mut()
+        .inner
+        .ask_permission(&source, "source ask");
+    client.refresh_permissions()?;
+    let source_directory = client.project().ok_or("project")?.worktree.clone();
+    client.offer_directory(&source_directory)?;
+    let directory = client
+        .projects()
+        .iter()
+        .find(|project| project.worktree != source_directory)
+        .ok_or("other offered directory")?
+        .worktree
+        .clone();
+    let mut submissions = Submissions::default();
+    let text = format!("/worktree open {}", serde_json::to_string(&directory)?);
+    submissions.submit(&mut client, text, false, CommandId::TEST);
+    client.peer_mut().ask_on_create = Some("target ask");
+    client.peer_mut().nonblocking_only = true;
+    client.peer_mut().release_create = true;
+    client.peer_mut().release_reads = true;
+    for _ in 0..32 {
+        if client.peer_mut().snapshot_served.is_some() {
+            break;
+        }
+        client.pump()?;
+        assert!(submissions.advance(&mut client).is_none());
+    }
+    let target = client
+        .peer_mut()
+        .snapshot_served
+        .clone()
+        .ok_or("snapshot never served")?;
+    client.peer_mut().nonblocking_only = false;
+    interfere(&mut client, &source)?;
+    client.peer_mut().nonblocking_only = true;
+    finish_attachment(&mut submissions, &mut client)?;
+    assert_eq!(client.selected(), Some(&target));
+    assert!(
+        client
+            .permissions()
+            .iter()
+            .any(|ask| ask.session_id == target && ask.title == "target ask"),
+        "a refresh of another session discarded the target's staged ask"
+    );
+    Ok(())
+}
+
+#[test]
+fn a_source_reply_during_attachment_keeps_the_targets_staged_asks() -> TestResult {
+    staged_target_asks_survive(|client, source| {
+        let ask = client
+            .permissions()
+            .iter()
+            .find(|ask| &ask.session_id == source)
+            .ok_or("source ask")?
+            .request_id
+            .clone();
+        client.send_permission_reply(
+            source,
+            &ask,
+            grapt_client::wire::PermissionReplyChoice::Once,
+        )?;
+        Ok(())
+    })
+}
+
+#[test]
+fn an_old_selection_snapshot_during_attachment_keeps_the_targets_staged_asks() -> TestResult {
+    staged_target_asks_survive(|client, source| {
+        client.reconcile(source)?;
+        Ok(())
+    })
 }

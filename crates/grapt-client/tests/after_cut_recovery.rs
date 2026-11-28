@@ -389,18 +389,48 @@ fn a_snapshot_404_refuses_the_server_as_too_old_on_both_reads() -> TestResult {
         status: 404,
         body: Vec::new(),
     };
+    let snapshots = client.peer_mut().snapshots;
     assert!(too_old(client.reconcile(&session).map(|()| true)));
     assert_eq!(client.peer_mut().page_reads, 0, "no message page instead");
+    stays_refused(&mut client, &session, snapshots + 1)?;
     // The queued read after a cut.
-    let (mut client, _) = streaming()?;
+    let (mut client, session) = streaming()?;
     client.peer_mut().snapshot = WireResponse {
         status: 404,
         body: Vec::new(),
     };
+    let snapshots = client.peer_mut().snapshots;
     cut(&mut client, FramePoll::Closed, 1_000)?;
     client.peer_mut().frames.push_back(connected());
     assert!(too_old(client.pump_at(at(1_100))));
     assert_eq!(client.peer_mut().page_reads, 0, "no message page instead");
+    stays_refused(&mut client, &session, snapshots + 1)?;
+    Ok(())
+}
+
+/// After a terminal refusal the stream is retired, later cuts, pumps and
+/// reads ask the service nothing, and recovery advertises no deadline.
+fn stays_refused(
+    client: &mut Client<Peer>,
+    session: &SessionWireId,
+    snapshots: usize,
+) -> TestResult {
+    let retired = client.peer_mut().retired;
+    assert!(retired >= 1, "the stream is retired");
+    for later in [1_200, 1_300, 60_000] {
+        client.peer_mut().frames.push_back(FramePoll::Closed);
+        client.peer_mut().frames.push_back(connected());
+        assert!(too_old(client.pump_at(at(later))));
+        assert_eq!(
+            client.recovery_wait_at(at(later)),
+            None,
+            "no recovery deadline"
+        );
+    }
+    assert!(too_old(client.reconcile(session).map(|()| true)));
+    let peer = client.peer_mut();
+    assert_eq!(peer.snapshots, snapshots, "no second snapshot request");
+    assert_eq!(peer.page_reads, 0);
     Ok(())
 }
 

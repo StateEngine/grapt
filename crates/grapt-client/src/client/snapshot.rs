@@ -141,15 +141,8 @@ impl<C: Connection> Client<C> {
             return Ok(positioned);
         }
         if !positioned {
-            // Retired before the refusal, so nothing this stream sends later
-            // can prove it.
-            // Refused terminally: no later stream from this service can prove
-            // positions, so recovery never opens one.
-            self.connection.refuse_stream("stream positions");
-            self.recovery.too_old = Some("stream positions");
-            self.positions.reset();
-            self.cursor.stream_closed();
-            return Err(too_old("stream positions"));
+            // No later stream from this service can prove positions.
+            return Err(self.refuse_too_old("stream positions"));
         }
         let connected = EventEnvelope::decode(payload)
             .ok()
@@ -214,7 +207,7 @@ impl<C: Connection> Client<C> {
             .cloned()
             .collect();
         let permissions = if sections.permissions {
-            Some(self.permission_candidate(snapshot.permissions, kept)?)
+            Some(self.permission_candidate(snapshot.permissions, kept, Some(session.clone()))?)
         } else {
             None
         };
@@ -261,6 +254,9 @@ impl<C: Connection> Client<C> {
     /// owner when it is incomplete for now. A service without the snapshot
     /// is refused as too old where its answer is accepted.
     pub(super) fn read_snapshot(&mut self, session: &SessionWireId) -> Result<(), ClientError> {
+        if let Some(missing) = self.recovery.too_old {
+            return Err(too_old(missing));
+        }
         match self.ingest(
             Operation::SessionSnapshot,
             Some(session),
@@ -275,7 +271,30 @@ impl<C: Connection> Client<C> {
                 self.request_history();
                 Ok(())
             }
-            Err(error) => Err(error),
+            Err(error) => Err(self.latch_too_old(error)),
+        }
+    }
+
+    /// Refuse this service terminally as too old for this client. Its stream
+    /// is retired before the refusal, so nothing it sends later can count,
+    /// and no later cut, pump or reconnect asks it anything again.
+    pub(super) fn refuse_too_old(&mut self, missing: &'static str) -> ClientError {
+        self.connection.cancel_read();
+        self.connection.refuse_stream(missing);
+        self.recovery.too_old = Some(missing);
+        self.recovery.history = None;
+        self.positions.reset();
+        self.cursor.stream_closed();
+        too_old(missing)
+    }
+
+    /// A too-old refusal from any read becomes terminal; others pass through.
+    pub(super) fn latch_too_old(&mut self, error: ClientError) -> ClientError {
+        match error {
+            ClientError::Transport(TransportError::ServerTooOld { missing }) => {
+                self.refuse_too_old(missing)
+            }
+            error => error,
         }
     }
 }

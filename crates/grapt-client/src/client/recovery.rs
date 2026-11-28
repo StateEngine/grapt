@@ -88,7 +88,10 @@ impl<C: Connection> Client<C> {
     /// Uses the same monotonic epoch as `pump_at`.
     pub fn recovery_wait_at(&self, now: Duration) -> Option<Duration> {
         let poll = Duration::from_millis(10);
-        let subscription = (!self.connection.subscribed()).then(|| {
+        // A service refused as too old is never read or subscribed again, so
+        // its recovery has nothing left to wait for.
+        let terminal = self.recovery.too_old.is_some();
+        let subscription = (!terminal && !self.connection.subscribed()).then(|| {
             if self.recovery.subscription_pending {
                 poll
             } else {
@@ -96,7 +99,9 @@ impl<C: Connection> Client<C> {
             }
         });
         let history =
-            if self.preset_pending() {
+            if terminal {
+                None
+            } else if self.preset_pending() {
                 Some(poll)
             } else if self.resume_pending() {
                 // The handshake deadline is observed without spinning, and a
@@ -375,7 +380,8 @@ impl<C: Connection> Client<C> {
                 }
                 return Ok(true);
             }
-            let bytes = self.accept_response(operation, response)?;
+            let accepted = self.accept_response(operation, response);
+            let bytes = accepted.map_err(|error| self.latch_too_old(error))?;
             if history.permissions {
                 self.accept_permissions(bytes)?;
                 history.permissions = false;
