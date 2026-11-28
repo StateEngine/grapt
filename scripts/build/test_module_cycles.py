@@ -129,32 +129,23 @@ class ModuleCycleTests(unittest.TestCase):
         self.assertEqual(found_cycles, {'c[feature:both]': [['c::a', 'c::b']]})
         self.assertEqual(found_edges, {'c[feature:both]': [['c::a', 'c::b'], ['c::b', 'c::a']]})
 
-    def test_record_allows_new_feature_config_matching_base_and_refuses_growth(self):
-        c3, e3 = [['c::a', 'c::b', 'c::d']], [['c::a', 'c::b'], ['c::b', 'c::d'], ['c::d', 'c::a']]
-        c2, e2 = [['c::a', 'c::b']], [['c::a', 'c::b'], ['c::b', 'c::a']]
-        initial = {'configs': ['sample', 'sample[feature:existing]', 'sample:cli', 'other[all-features]'],
-                   'cycles': {'sample': c3, 'sample[feature:existing]': c2, 'sample:cli': c2, 'other[all-features]': c3},
-                   'edges': {'sample': e3, 'sample[feature:existing]': e2, 'sample:cli': e2, 'other[all-features]': e3}}
+    def test_baseline_key_for_inherits_only_for_live_unqualified_feature_variants(self):
+        base = {'pkg', 'pkg[feature:existing]', 'pkg:cli', 'other[all-features]'}
         cases = [
-            ('clean_new_features', {'sample[all-features]': (c3, e3), 'sample[feature:frozen]': (c3, e3), 'sample:cli[feature:extra]': (c2, e2)}, True),
-            ('extra_edge', {'sample[feature:frozen]': (c3, e3 + [['c::a', 'c::d']])}, False),
-            ('existing_regrowth', {'sample[feature:existing]': (c3, e3)}, False),
-            ('nested_suffix', {'other[all-features][feature:unused]': (c3, e3)}, False),
+            ('pkg[all-features]', base, {'pkg[all-features]'}, 'pkg'),
+            ('pkg[feature:frozen]', base, {'pkg[feature:frozen]'}, 'pkg'),
+            ('pkg:cli[feature:extra]', base, {'pkg:cli[feature:extra]'}, 'pkg:cli'),
+            ('pkg[feature:existing]', base, {'pkg[feature:existing]'}, 'pkg[feature:existing]'),
+            ('new[all-features]', base, {'new[all-features]'}, 'new[all-features]'),
+            ('other[all-features][feature:x]', base, {'other[all-features][feature:x]'},
+             'other[all-features][feature:x]'),
+            ('pkg[all-features]\n', base, {'pkg[all-features]\n'}, 'pkg[all-features]\n'),
+            ('pkg[feature:ghost]', base, set(), 'pkg[feature:ghost]'),
+            ('pkg[all-features]', None, {'pkg[all-features]'}, 'pkg[all-features]'),
         ]
-        for name, updates, should_pass in cases:
-            with self.subTest(case=name), tempfile.TemporaryDirectory() as temporary:
-                baseline = Path(temporary) / 'baseline.json'
-                baseline.write_text(json.dumps(initial), encoding='utf-8')
-                before = baseline.read_bytes()
-                measured = ({**initial['cycles'], **{k: v[0] for k, v in updates.items()}},
-                            {**initial['edges'], **{k: v[1] for k, v in updates.items()}},
-                            sorted(set(initial['configs']) | set(updates)))
-                with patch.object(module_cycles, 'BASELINE', baseline), \
-                        patch.object(module_cycles.sys, 'argv', ['module_cycles.py', 'record']), \
-                        patch.object(module_cycles, 'tool', return_value='cargo-modules'), \
-                        patch.object(module_cycles, 'measure', return_value=measured):
-                    self.assertEqual(module_cycles.main() == 0, should_pass)
-                self.assertEqual(json.loads(baseline.read_text(encoding='utf-8'))['configs'], measured[2]) if should_pass else self.assertEqual(baseline.read_bytes(), before)
+        for target, base_cfgs, live_cfgs, want in cases:
+            with self.subTest(target=target, has_base=base_cfgs is not None):
+                self.assertEqual(module_cycles.baseline_key_for(target, base_cfgs, live_cfgs), want)
 
 
 if __name__ == '__main__':
