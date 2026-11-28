@@ -250,20 +250,29 @@ async fn operate(
             // standard variable is used when it is set, before any prompt,
             // but only by a service this command started: a service already
             // running did not inherit this shell's environment, so it asks.
+            // An environment connect carries no endpoint or model setup, so
+            // a login that supplies one enters its key instead.
+            let supplied = setup.is_some()
+                || vertex.is_some()
+                || bedrock.is_some()
+                || azure.is_some()
+                || cloudflare.is_some();
             let key = match key {
-                KeyInput::Terminal if client.owns_service() => match ambient_variable(provider)? {
-                    Some(name) => {
-                        super::emit(
+                KeyInput::Terminal if client.owns_service() && !supplied => {
+                    match ambient_variable(provider)? {
+                        Some(name) => {
+                            super::emit(
                             format!("Using {name} from the environment; pass --key-stdin to enter a different key."),
                             true,
                             limits,
                         )
                         .await
                         .map_err(|error| (ExitClass::Output, error))?;
-                        KeyInput::Environment(name.to_owned())
+                            KeyInput::Environment(name.to_owned())
+                        }
+                        None => KeyInput::Terminal,
                     }
-                    None => KeyInput::Terminal,
-                },
+                }
                 other => other,
             };
             let azure_cli = key == KeyInput::AzureCli;

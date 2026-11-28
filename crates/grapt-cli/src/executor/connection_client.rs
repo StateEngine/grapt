@@ -56,16 +56,11 @@ pub(super) async fn open(
     .await;
     match result {
         Ok(client) => Ok(Some(client)),
-        Err(original) => {
-            // An incumbent may have won election between discovery and launch.
-            // Attribution is repeated once; there is no write or launch retry.
-            match discovery.discover().await {
-                Ok(service) => ApiClient::from_discovered(&service, limits)
-                    .map(Some)
-                    .map_err(|error| (ExitClass::Protocol, error.to_string())),
-                Err(_) => Err(original),
-            }
-        }
+        // An incumbent may have won election between discovery and launch:
+        // borrow it once it is ready. There is no write or launch retry.
+        Err(original) => borrow_winner(&discovery, limits)
+            .await
+            .map_or(Err(original), |client| client.map(Some)),
     }
 }
 
@@ -125,41 +120,66 @@ pub(super) async fn default_profile(limits: CliLimits) -> Result<ApiClient, Fail
     }
 }
 
-/// How long, in rising steps, a command that lost the profile's election
-/// waits for the winner's service to finish starting: about five seconds.
-const BORROW_WAITS: [Duration; 8] = [
-    Duration::from_millis(100),
-    Duration::from_millis(200),
-    Duration::from_millis(400),
-    Duration::from_millis(800),
-    Duration::from_secs(1),
-    Duration::from_secs(1),
-    Duration::from_secs(1),
-    Duration::from_secs(1),
-];
+/// How long a command that lost the profile's election waits, in total, for
+/// the winner's service to finish starting.
+const BORROW_WINDOW: Duration = Duration::from_secs(5);
+/// The first pause between discovery attempts; each later one doubles, up to
+/// one second.
+const BORROW_FIRST_WAIT: Duration = Duration::from_millis(100);
 
-/// The winning service, once it answers. A registered service whose ready
-/// receipt or health is not there yet is still starting, so it is asked again;
-/// no registration at all means no winner, and the launch's own failure stands.
+/// The winning service, once it answers within the window. The winner holds
+/// the profile's lock before it writes its registration, then its ready
+/// receipt, then answers health, so each of those gaps is a start in
+/// progress and is asked again. Any other discovery error ends the wait, as
+/// does the window, and the launch's own failure stands.
 async fn borrow_winner(
     discovery: &ServiceDiscovery,
     limits: CliLimits,
 ) -> Option<Result<ApiClient, Failure>> {
-    for wait in BORROW_WAITS {
+    let service = poll_ready(BORROW_WINDOW, || async {
         match discovery.discover().await {
-            Ok(service) => {
-                return Some(
-                    ApiClient::from_discovered(&service, limits)
-                        .map_err(|error| (ExitClass::Protocol, error.to_string())),
-                )
-            }
-            Err(crate::DiscoveryError::ReadyAbsent | crate::DiscoveryError::Stale(_)) => {
-                tokio::time::sleep(wait).await;
-            }
-            Err(_) => return None,
+            Ok(service) => Attempt::Ready(service),
+            Err(error) if error.is_launch_pending() => Attempt::Pending,
+            Err(_) => Attempt::Stop,
         }
+    })
+    .await?;
+    Some(
+        ApiClient::from_discovered(&service, limits)
+            .map_err(|error| (ExitClass::Protocol, error.to_string())),
+    )
+}
+
+/// One readiness probe's outcome.
+enum Attempt<T> {
+    Ready(T),
+    Pending,
+    Stop,
+}
+
+/// Probe until ready, stopped or `window` has passed, with rising pauses
+/// between probes. A probe still running at the window's end is abandoned,
+/// and the last pause ends at the window, where one more probe runs.
+async fn poll_ready<T, F, P>(window: Duration, mut probe: F) -> Option<T>
+where
+    F: FnMut() -> P,
+    P: std::future::Future<Output = Attempt<T>>,
+{
+    let deadline = tokio::time::Instant::now() + window;
+    let mut wait = BORROW_FIRST_WAIT;
+    loop {
+        match tokio::time::timeout_at(deadline, probe()).await.ok()? {
+            Attempt::Ready(value) => return Some(value),
+            Attempt::Stop => return None,
+            Attempt::Pending => {}
+        }
+        let now = tokio::time::Instant::now();
+        if now >= deadline {
+            return None;
+        }
+        tokio::time::sleep_until((now + wait).min(deadline)).await;
+        wait = (wait * 2).min(Duration::from_secs(1));
     }
-    None
 }
 
 fn product_binary() -> Result<PathBuf, Failure> {
@@ -221,3 +241,6 @@ pub(super) async fn close(client: &ApiClient) -> Result<(), Failure> {
         "connection service did not finish draining".into(),
     ))
 }
+
+#[cfg(test)]
+mod readiness_tests;

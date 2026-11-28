@@ -280,7 +280,7 @@ impl KeyProvider {
             .as_array()
             .filter(|names| names.len() <= 16)
             .ok_or("provider environment names exceed their bound")?;
-        names
+        let names = names
             .iter()
             .map(|value| {
                 value
@@ -292,9 +292,15 @@ impl KeyProvider {
                                 .bytes()
                                 .all(|byte| byte == b'_' || byte.is_ascii_alphanumeric())
                     })
-                    .ok_or_else(|| "provider environment name is invalid".into())
+                    .ok_or_else(|| "provider environment name is invalid".to_owned())
             })
-            .collect()
+            .collect::<Result<Vec<_>, _>>()?;
+        // Only a credential is read from the environment; an account, host or
+        // address variable beside it is not a key.
+        Ok(names
+            .into_iter()
+            .filter(|name| credential_name(name))
+            .collect())
     }
     pub fn allows_environment(self, name: &str) -> Result<bool, String> {
         Ok(self.environment_names()?.contains(&name))
@@ -416,13 +422,12 @@ impl KeyProvider {
         }
         // Explicit endpoints check their selected model on this route;
         // catalog SDK defaults cannot override the verified coordinates. A
-        // mixed endpoint serves each model on one wire, so a connection
-        // publishes only the models on the wire it checked.
-        if let Some(endpoint) = endpoint_provider(self.id) {
-            if endpoint.messages_model_prefix.is_none() {
-                return Ok(bytes.to_vec());
-            }
+        // connection publishes only the models it can run on the wire it
+        // checked: a mixed endpoint serves each model on one wire, and a row
+        // that says it takes no tools or returns no text runs nowhere.
+        if self.id == "custom" || endpoint_provider(self.id).is_some() {
             let messages = self.family == Family::AnthropicMessages;
+            let models = &snapshot()?[self.id]["models"];
             let mut listing: Value =
                 serde_json::from_slice(bytes).map_err(|_| "provider model list is invalid")?;
             listing["data"]
@@ -432,6 +437,7 @@ impl KeyProvider {
                     row["id"]
                         .as_str()
                         .is_some_and(|id| self.messages_model(id) == messages)
+                        && capable(models, row)
                 });
             return serde_json::to_vec(&listing)
                 .map_err(|_| "provider model list cannot be encoded".into());
@@ -650,16 +656,26 @@ fn capable(models: &Value, row: &Value) -> bool {
     let model = &models[id];
     // What the live row states about its request surface and output wins
     // over the bundled catalogue, as the model inventory reads it.
-    let output = row["output_modalities"]
-        .as_array()
-        .filter(|items| !items.is_empty())
-        .or_else(|| model["modalities"]["output"].as_array());
+    let output = [
+        &row["output_modalities"],
+        &row["architecture"]["output_modalities"],
+    ]
+    .into_iter()
+    .find_map(|items| items.as_array().filter(|items| !items.is_empty()))
+    .or_else(|| model["modalities"]["output"].as_array());
     let text = output.is_none_or(|items| items.iter().any(|item| item.as_str() == Some("text")));
     let tools = match row["supported_parameters"].as_array() {
         Some(names) => names.iter().any(|name| name.as_str() == Some("tools")),
         None => model["tool_call"].as_bool() != Some(false),
     };
     text && tools
+}
+
+/// Whether an environment variable's name says it holds a credential.
+fn credential_name(name: &str) -> bool {
+    ["KEY", "TOKEN", "PAT", "SECRET"]
+        .iter()
+        .any(|end| name.ends_with(end))
 }
 
 fn validate_listing(bytes: &[u8]) -> Result<(), String> {

@@ -501,7 +501,7 @@ fn listing_metadata(raw: &str, row: &Value) -> Result<Value, String> {
         Some(value) => value
             .as_str()
             .filter(|name| !name.is_empty() && name.len() <= 256)
-            .ok_or_else(|| format!("account model {raw} has an invalid display name"))?,
+            .ok_or("an account model has an invalid display name")?,
     };
     let input = match row.get("input_modalities") {
         None => vec!["text"],
@@ -509,7 +509,7 @@ fn listing_metadata(raw: &str, row: &Value) -> Result<Value, String> {
             .as_array()
             .filter(|modalities| !modalities.is_empty() && modalities.len() <= MAX_MODALITIES)
             .and_then(|modalities| modalities.iter().map(Value::as_str).collect())
-            .ok_or_else(|| format!("account model {raw} has invalid input modalities"))?,
+            .ok_or("an account model has invalid input modalities")?,
     };
     Ok(serde_json::json!({
         "id": raw,
@@ -828,18 +828,23 @@ mod tests {
         ] {
             let mut account = account.clone();
             account["models"][3][key] = bad;
+            let slug = account["models"][3]["slug"]
+                .as_str()
+                .ok_or("slug")?
+                .to_owned();
+            let refusal = ModelInventory::compose(
+                public.clone(),
+                vec![(
+                    openai.clone(),
+                    account,
+                    Metadata::CatalogOrListing,
+                    DiscoveryShape::Codex,
+                )],
+            );
+            // Refused, without repeating the identity the account returned.
             assert!(
-                ModelInventory::compose(
-                    public.clone(),
-                    vec![(
-                        openai.clone(),
-                        account,
-                        Metadata::CatalogOrListing,
-                        DiscoveryShape::Codex
-                    )]
-                )
-                .is_err(),
-                "an invalid {key} survived"
+                refusal.is_err_and(|refusal| !refusal.contains(&slug)),
+                "an invalid {key} survived or its refusal named the model"
             );
         }
         Ok(())

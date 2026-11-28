@@ -128,23 +128,26 @@ pub(super) fn fields(row: &Value) -> Value {
     fields
 }
 
-/// The reasoning efforts a row offers, kept whole only when every level
-/// names one bounded effort.
+/// The reasoning efforts a row offers, each once in the row's order, kept
+/// only when every level names one bounded effort.
 fn reasoning_levels(row: &Value) -> Option<Value> {
     let levels = row.get("supported_reasoning_levels")?.as_array()?;
     if levels.len() > MAX_REASONING_LEVELS {
         return None;
     }
-    let efforts = levels
-        .iter()
-        .map(|level| {
-            level["effort"]
-                .as_str()
-                .filter(|effort| !effort.is_empty() && effort.len() <= 32)
-                .map(|effort| json!({ "effort": effort }))
-        })
-        .collect::<Option<Vec<_>>>()?;
-    Some(json!(efforts))
+    let mut efforts = Vec::new();
+    for level in levels {
+        let effort = level["effort"]
+            .as_str()
+            .filter(|effort| !effort.is_empty() && effort.len() <= 32)?;
+        if !efforts.contains(&effort) {
+            efforts.push(effort);
+        }
+    }
+    Some(json!(efforts
+        .into_iter()
+        .map(|effort| json!({ "effort": effort }))
+        .collect::<Vec<_>>()))
 }
 
 /// Copy the reported fields onto the verified listing's own row for `model`.

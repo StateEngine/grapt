@@ -196,12 +196,21 @@ impl ConnectionSetup {
             .await
             .map_err(|_| invalid("connection configuration owner stopped"))?
             .map_err(invalid)?;
-            let connection = install::connection_id(
-                before.as_ref(),
-                provider,
-                target.as_ref().map(DtoString::as_str),
-            )
-            .map_err(invalid)?;
+            // An endpoint's wire is known only once its model is checked, so
+            // its connection identity is settled after the check, against the
+            // wire the check chose.
+            let known = if setup.is_none() {
+                Some(
+                    install::connection_id(
+                        before.as_ref(),
+                        provider,
+                        target.as_ref().map(DtoString::as_str),
+                    )
+                    .map_err(invalid)?,
+                )
+            } else {
+                None
+            };
             let base = cloudflare
                 .as_ref()
                 .map(|scope| scope.api_base())
@@ -219,7 +228,7 @@ impl ConnectionSetup {
                             records
                                 .connections
                                 .iter()
-                                .find(|record| record.id == connection)
+                                .find(|record| Some(&record.id) == known.as_ref())
                         })
                         .and_then(|record| record.endpoint.clone())
                 })
@@ -367,6 +376,15 @@ impl ConnectionSetup {
                 }
             } else {
                 verified
+            };
+            let connection = match known {
+                Some(connection) => connection,
+                None => install::connection_id(
+                    before.as_ref(),
+                    provider,
+                    target.as_ref().map(DtoString::as_str),
+                )
+                .map_err(invalid)?,
             };
             tokio::task::spawn_blocking(move || {
                 let _permit = permit;

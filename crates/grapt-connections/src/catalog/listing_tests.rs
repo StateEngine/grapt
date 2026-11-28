@@ -45,5 +45,35 @@ fn a_row_without_tools_or_text_output_is_not_capable() -> TestResult {
         serde_json::json!({"supported_parameters":["temperature"]})
     ))?);
     assert!(!provider.capable(&row(serde_json::json!({"output_modalities":["embedding"]})))?);
+    assert!(!provider.capable(&row(
+        serde_json::json!({"architecture":{"output_modalities":["embedding"]}})
+    ))?);
     Ok(())
+}
+
+#[test]
+fn an_endpoint_listing_drops_the_rows_that_say_they_cannot_run() -> TestResult {
+    let provider = KeyProvider::from_id("ollama")?.ok_or("local preset")?;
+    let listing = serde_json::to_vec(&serde_json::json!({"data":[
+        {"id":"chat-test","max_model_len":65_536},
+        {"id":"plain-test","max_model_len":65_536,"supported_parameters":["temperature"]},
+        {"id":"embed-test","max_model_len":8_192,"architecture":{"output_modalities":["embedding"]}},
+    ]}))?;
+    assert_eq!(ids(&provider.supported_listing(&listing)?)?, ["chat-test"]);
+    Ok(())
+}
+
+#[test]
+fn only_a_credential_variable_is_read_from_the_environment() {
+    for name in ["TEST_API_KEY", "TEST_APIKEY", "TEST_TOKEN", "TEST_PAT"] {
+        assert!(credential_name(name), "{name}");
+    }
+    for name in [
+        "TEST_ACCOUNT_ID",
+        "TEST_BASE_URL",
+        "TEST_RESOURCE_NAME",
+        "TEST_HOST",
+    ] {
+        assert!(!credential_name(name), "{name}");
+    }
 }
