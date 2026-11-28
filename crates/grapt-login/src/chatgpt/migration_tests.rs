@@ -22,8 +22,9 @@ async fn direct_startup_finishes_interrupted_protection_before_another_generatio
     };
     std::fs::write(profile.0.join(NAMES[0]), original.access.as_bytes())?;
     std::fs::write(profile.0.join(NAMES[1]), super::super::encode(&original))?;
-    let state = crate::profile_security::seal(&super::super::encode(&original))?;
-    let credential = crate::profile_security::seal(original.access.as_bytes())?;
+    // Files as an earlier release left them: sealed by Windows DPAPI.
+    let state = crate::profile_security::fixtures::dpapi_sealed(&super::super::encode(&original))?;
+    let credential = crate::profile_security::fixtures::dpapi_sealed(original.access.as_bytes())?;
     let interrupted = std::panic::catch_unwind(|| {
         publish(&profile.0, [&credential, &state], |count| {
             assert_ne!(count, 1, "injected process interruption");

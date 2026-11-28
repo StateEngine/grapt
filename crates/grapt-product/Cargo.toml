@@ -149,6 +149,8 @@ portable-pty = "=0.9.0"
 nix = { version = "=0.30.1", default-features = false, features = ["signal", "process", "socket", "uio", "fs"] }
 
 [dev-dependencies]
+# Tests never touch the production credential keystore entry or pointer.
+grapt-login = { path = "../grapt-login", features = ["loopback-testkit"] }
 grapt-tui-driver = { path = "../grapt-tui-driver" }
 grapt-client = { path = "../grapt-client" }
 grapt-provider = { path = "../grapt-provider", features = ["deterministic-testkit"] }

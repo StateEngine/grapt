@@ -4,9 +4,11 @@ use super::*;
 fn plaintext_input_remains_bounded_and_an_envelope_never_falls_back() -> io::Result<()> {
     assert_eq!(open(b"legacy-token", 12)?, b"legacy-token");
     assert!(open(b"legacy-token", 11).is_err());
-    let mut damaged = ENVELOPE.to_vec();
-    damaged.extend_from_slice(b"not a DPAPI blob");
-    assert!(open(&damaged, 4096).is_err());
+    for format in [DPAPI_ENVELOPE, KEYSTORE_ENVELOPE] {
+        let mut damaged = format.to_vec();
+        damaged.extend_from_slice(b"not a sealed blob");
+        assert!(open(&damaged, 4096).is_err());
+    }
     Ok(())
 }
 
@@ -27,6 +29,32 @@ fn protected_storage_round_trips_binary_input_with_independent_plaintext_bound()
         }
         assert!(open(&corrupt, 4096).is_err());
     }
+    Ok(())
+}
+
+#[cfg(windows)]
+#[test]
+fn a_dpapi_credential_opens_and_is_resealed_under_the_keystore() -> io::Result<()> {
+    let secret = b"fixture-dpapi-secret";
+    let legacy = fixtures::dpapi_sealed(secret)?;
+    assert!(is_protected(&legacy));
+    let opened = open(&legacy, secret.len())?;
+    assert_eq!(opened, secret);
+    let resealed = seal(&opened)?;
+    assert!(resealed.starts_with(KEYSTORE_ENVELOPE));
+    assert_eq!(open(&resealed, secret.len())?, secret);
+    Ok(())
+}
+
+#[cfg(windows)]
+#[test]
+fn a_credential_whose_key_is_gone_names_that_reason() -> io::Result<()> {
+    let orphan = fixtures::sealed_with_missing_key(b"fixture-orphan")?;
+    let error = open(&orphan, 4096)
+        .err()
+        .ok_or_else(|| io::Error::other("opened"))?;
+    assert!(is_key_missing(&error));
+    assert_eq!(error.to_string(), KEY_MISSING);
     Ok(())
 }
 
@@ -143,4 +171,40 @@ fn child_failures_report_only_known_non_secret_codes() {
         assert_eq!(failure_code(&error), "child-failed");
         assert!(!error.to_string().contains("secret-sentinel"));
     }
+}
+
+#[test]
+fn a_private_lock_is_made_exclusively_and_reopened_only_empty_and_unlinked() -> io::Result<()> {
+    let root = ScratchDir::new("private-lock")?;
+    protect_directory(&root.0)?;
+    let path = root.0.join("fixture.lock");
+    let created = open_private_lock(&path).map_err(io::Error::from)?;
+    created
+        .try_lock()
+        .map_err(|_| io::Error::other("fresh lock was not lockable"))?;
+    drop(created);
+    let reopened = open_private_lock(&path).map_err(io::Error::from)?;
+    drop(reopened);
+    std::fs::write(&path, b"not a lock")?;
+    assert!(matches!(
+        open_private_lock(&path),
+        Err(LockFailure::NotEmpty)
+    ));
+    assert_eq!(
+        std::fs::read(&path)?,
+        b"not a lock",
+        "a refused lock was changed"
+    );
+    #[cfg(unix)]
+    {
+        let target = root.0.join("elsewhere.lock");
+        std::fs::write(&target, b"")?;
+        let linked = root.0.join("linked.lock");
+        std::os::unix::fs::symlink(&target, &linked)?;
+        assert!(matches!(
+            open_private_lock(&linked),
+            Err(LockFailure::Open(_))
+        ));
+    }
+    Ok(())
 }

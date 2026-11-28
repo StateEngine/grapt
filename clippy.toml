@@ -17,16 +17,18 @@
 #     scheduling primitive used for timeouts and deadlines, never a durable
 #     fact, and banning it would force churn across accepted runtime lanes for
 #     no invariant.
-#   * `getrandom::fill` is the workspace's ONLY source of OS randomness. It
+#   * `getrandom::fill` is the workspace's only source of OS randomness. It
 #     arrived with the writer-owner identity fix (F3B4a): a writer identity must
 #     be unique over TIME, not merely among concurrently live processes, and the
 #     previous `{process id}-{per-process counter}` shape repeated after the OS
 #     reused a process id — which made an ownership transfer look like a
 #     re-election by the incumbent and skipped the epoch advance. The single
 #     permitted call site is the named production adapter
-#     `grapt-store/src/ids.rs`, which carries a one-line-wide allow. Every other
-#     reach for ambient randomness must fail the build, exactly as an ambient
-#     clock read does. `fixtures/negative/ambient-randomness` proves this entry
+#     `grapt-store/src/ids.rs`, which carries a one-line-wide allow. A second
+#     named adapter, `grapt-login/src/profile_security/entropy.rs`, draws only
+#     credential sealing keys and nonces: `grapt-login` sits below the store and
+#     cannot reach its adapter. Every other reach for ambient randomness must
+#     fail the build, exactly as an ambient clock read does. `fixtures/negative/ambient-randomness` proves this entry
 #     actually fires.
 #
 #     This paragraph REPLACES the earlier note stating that no UUID or random-ID
@@ -50,7 +52,7 @@ disallowed-methods = [
     { path = "rusqlite::Connection::collation_needed", allow-invalid = true, reason = "consumers must not install arbitrary collation registration callbacks" },
     { path = "std::time::SystemTime::now", reason = "durable and lifecycle owners consume an injected ClockAuthority; ambient wall-clock reads belong only in a named production adapter" },
     { path = "std::time::Instant::now", reason = "durable and lifecycle owners consume an injected ClockAuthority; use tokio::time::Instant for monotonic scheduling" },
-    { path = "getrandom::fill", allow-invalid = true, reason = "durable and lifecycle owners consume an injected IdAuthority; OS randomness belongs only in the named production adapter grapt-store/src/ids.rs" },
+    { path = "getrandom::fill", allow-invalid = true, reason = "durable and lifecycle owners consume an injected IdAuthority; OS randomness belongs only in the named production adapters grapt-store/src/ids.rs and grapt-login/src/profile_security/entropy.rs" },
 ]
 
 # Structure limits for the workspace lints of the same names.

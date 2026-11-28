@@ -20,8 +20,10 @@ aws-sigv4 = "=1.6.5"
 aws-smithy-http-client = { version = "=1.5.2", features = ["rustls-ring", "rt-tokio"] }
 aws-types = "=1.7.0"
 base64 = "0.22.1"
+getrandom = "0.4.3"
 processkit = { version = "=3.3.4", default-features = false, features = ["process-control"] }
 reqwest = { version = "0.13.4", default-features = false, features = ["rustls-no-provider"] }
+ring = "0.17.14"
 rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
 rustls-platform-verifier = "0.7"
 grapt-types = { path = "../grapt-types" }
@@ -36,6 +38,9 @@ zeroize = "1.9"
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
+
+[target.'cfg(windows)'.dependencies]
+keyring = { version = "=3.6.3", default-features = false, features = ["windows-native"] }
 
 [dev-dependencies]
 tokio = { version = "1", default-features = false, features = ["io-util", "macros", "net", "rt-multi-thread", "sync", "test-util", "time"] }

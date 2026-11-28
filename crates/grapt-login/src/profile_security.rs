@@ -1,5 +1,10 @@
 //! Protection for the existing profile files; never a second credential store.
 //!
+//! On Windows a credential is sealed with AES-256-GCM under one key per user
+//! that Windows Credential Manager holds; the file stays the only store of the
+//! credential itself. Credentials sealed earlier with DPAPI stay readable and
+//! are sealed the new way when next written.
+//!
 //! The DPAPI operation.
 //! Copyright 2025 OpenAI. Modified by Grapt; see licenses/openai-codex/.
 //! Unlike that sandbox's machine scope, credentials use CurrentUser. The
@@ -11,6 +16,8 @@ mod private_read;
 pub use private_read::{read_owner_only_file, verify_owner_only_file};
 mod batch;
 pub use batch::ProtectionBatch;
+mod private_lock;
+pub(crate) use private_lock::{open_private_lock, LockFailure};
 mod replace;
 #[cfg(any(windows, test))]
 mod request_budget;
@@ -24,12 +31,51 @@ mod refusal;
 pub(crate) use refusal::child_refusal;
 pub use refusal::{failure_code, failure_diagnostic};
 
-const ENVELOPE: &[u8] = b"secode.dpapi.current-user.v1\n";
+#[cfg(windows)]
+mod entropy;
+#[cfg(any(windows, test))]
+mod envelope;
+#[cfg(all(windows, test))]
+pub(crate) mod fixtures;
+#[cfg(windows)]
+mod keystore;
 
-/// Whether bytes carry the protected format, without attempting decryption.
+/// The earlier Windows format, still opened so existing credentials migrate.
+const DPAPI_ENVELOPE: &[u8] = b"secode.dpapi.current-user.v1\n";
+const KEYSTORE_ENVELOPE: &[u8] = b"grapt.credential.aes-256-gcm.v1\n";
+
+/// Why a sealed credential cannot be opened when its key is gone, and the step
+/// that replaces it. Fixed text: it names no path, key or account.
+pub const KEY_MISSING: &str =
+    "this credential's sealing key is missing from the system keystore; sign in again or add \
+     the credential again";
+
+/// Marks an [`open`] refusal whose envelope names a key the keystore no longer
+/// holds. Only replacing the credential gets past it.
+#[derive(Debug)]
+struct KeyMissing;
+
+impl std::fmt::Display for KeyMissing {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(KEY_MISSING)
+    }
+}
+
+impl std::error::Error for KeyMissing {}
+
+/// Whether an [`open`] refusal means the credential's sealing key is gone, so
+/// the credential can only be replaced, never read.
+#[must_use]
+pub fn is_key_missing(error: &io::Error) -> bool {
+    error
+        .get_ref()
+        .is_some_and(|inner| inner.downcast_ref::<KeyMissing>().is_some())
+}
+
+/// Whether bytes carry a protected format, without attempting decryption.
 #[must_use]
 pub fn is_protected(bytes: &[u8]) -> bool {
-    bytes.starts_with(ENVELOPE)
+    bytes.starts_with(KEYSTORE_ENVELOPE) || bytes.starts_with(DPAPI_ENVELOPE)
 }
 
 /// Finite room for DPAPI's header, padding and authentication data.
@@ -46,10 +92,10 @@ pub const fn stored_bound(plaintext_bound: usize) -> usize {
 pub fn seal(bytes: &[u8]) -> io::Result<Vec<u8>> {
     #[cfg(windows)]
     {
-        let protected = windows::run("seal", bytes)?;
-        let mut result = ENVELOPE.to_vec();
-        result.extend(protected);
-        Ok(result)
+        let key = keystore::current()?;
+        let mut nonce = [0; envelope::NONCE_BYTES];
+        entropy::fill(&mut nonce)?;
+        envelope::seal(&key.id, &key.secret, nonce, bytes)
     }
     #[cfg(not(windows))]
     Ok(bytes.to_vec())
@@ -58,7 +104,22 @@ pub fn seal(bytes: &[u8]) -> io::Result<Vec<u8>> {
 /// Decode an envelope in memory, bounding the plaintext independently of storage.
 /// Legacy plaintext remains readable; an invalid envelope never falls back to it.
 pub fn open(bytes: &[u8], plaintext_bound: usize) -> io::Result<Vec<u8>> {
-    let plaintext = if let Some(protected) = bytes.strip_prefix(ENVELOPE) {
+    let plaintext = if let Some(sealed) = bytes.strip_prefix(KEYSTORE_ENVELOPE) {
+        #[cfg(windows)]
+        {
+            let key = keystore::by_id(&envelope::key_id(sealed)?)?
+                .ok_or_else(|| io::Error::other(KeyMissing))?;
+            envelope::open(&key.secret, sealed)?
+        }
+        #[cfg(not(windows))]
+        {
+            let _ = sealed;
+            return Err(io::Error::new(
+                io::ErrorKind::Unsupported,
+                "a credential sealed with Windows Credential Manager opens only for its Windows account",
+            ));
+        }
+    } else if let Some(protected) = bytes.strip_prefix(DPAPI_ENVELOPE) {
         #[cfg(windows)]
         {
             windows::run("open", protected)?

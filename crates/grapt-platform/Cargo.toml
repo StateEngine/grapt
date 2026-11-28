@@ -23,6 +23,8 @@ thiserror = "2"
 libc = "0.2"
 
 [dev-dependencies]
+# Tests never touch the production credential keystore entry or pointer.
+grapt-login = { path = "../grapt-login", features = ["loopback-testkit"] }
 rusqlite = { version = "0.41", features = ["bundled"] }
 
 [lints]

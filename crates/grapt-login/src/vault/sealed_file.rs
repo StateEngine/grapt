@@ -1,7 +1,7 @@
 //! Copyright 2025 OpenAI. Modified by Grapt: private bounded snapshots,
 //! destination binding and the existing protected atomic-file writer.
 use super::*;
-use crate::profile_security;
+use crate::profile_security::{self, LockFailure};
 use serde::{Deserialize, Serialize};
 use std::{
     fs::File,
@@ -92,10 +92,14 @@ impl SealedFileVault {
         if !profile_security::is_protected(&stored) {
             return Err(VaultError::LegacyImportRequired);
         }
-        let plaintext = Zeroizing::new(
-            profile_security::open(&stored, BYTE_CAP)
-                .map_err(unavailable(StorageOperation::OpenEnvelope))?,
-        );
+        let plaintext =
+            Zeroizing::new(profile_security::open(&stored, BYTE_CAP).map_err(|error| {
+                if profile_security::is_key_missing(&error) {
+                    VaultError::KeyMissing
+                } else {
+                    unavailable(StorageOperation::OpenEnvelope)(error)
+                }
+            })?);
         self.check_root()?;
         let bytes = plaintext
             .strip_prefix(PREFIX)
@@ -117,48 +121,14 @@ impl SealedFileVault {
     fn lock(&self) -> Result<MutationLock, VaultError> {
         self.check_root()?;
         let path = self.root.join("credential-vault.lock");
-        let mut options = std::fs::OpenOptions::new();
-        options.read(true).write(true).create_new(true);
-        #[cfg(unix)]
-        std::os::unix::fs::OpenOptionsExt::mode(&mut options, 0o600);
-        #[cfg(windows)]
-        std::os::windows::fs::OpenOptionsExt::share_mode(&mut options, 3);
-        let file = match options.open(&path) {
-            Ok(file) => {
-                profile_security::protect_new_private_file(&path, &file)
-                    .map_err(unavailable(StorageOperation::ProtectLock))?;
-                file
-            }
-            Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {
-                let mut options = std::fs::OpenOptions::new();
-                options.read(true).write(true);
-                #[cfg(unix)]
-                std::os::unix::fs::OpenOptionsExt::custom_flags(
-                    &mut options,
-                    libc::O_NOFOLLOW | libc::O_NONBLOCK,
-                );
-                #[cfg(windows)]
-                {
-                    use std::os::windows::fs::OpenOptionsExt;
-                    options.custom_flags(0x0020_0000).share_mode(3);
-                }
-                let file = options
-                    .open(&path)
-                    .map_err(unavailable(StorageOperation::OpenLock))?;
-                profile_security::verify_owner_only_file(&path, &file)
-                    .map_err(unavailable(StorageOperation::VerifyLock))?;
-                if file
-                    .metadata()
-                    .map_err(unavailable(StorageOperation::LockMetadata))?
-                    .len()
-                    != 0
-                {
-                    return Err(VaultError::Corrupt);
-                }
-                file
-            }
-            Err(error) => return Err(unavailable(StorageOperation::CreateLock)(error)),
-        };
+        let file = profile_security::open_private_lock(&path).map_err(|failure| match failure {
+            LockFailure::Create(error) => unavailable(StorageOperation::CreateLock)(error),
+            LockFailure::Protect(error) => unavailable(StorageOperation::ProtectLock)(error),
+            LockFailure::Open(error) => unavailable(StorageOperation::OpenLock)(error),
+            LockFailure::Verify(error) => unavailable(StorageOperation::VerifyLock)(error),
+            LockFailure::Metadata(error) => unavailable(StorageOperation::LockMetadata)(error),
+            LockFailure::NotEmpty => VaultError::Corrupt,
+        })?;
         file.try_lock().map_err(|error| match error {
             std::fs::TryLockError::WouldBlock => VaultError::Busy,
             std::fs::TryLockError::Error(error) => {
@@ -193,6 +163,16 @@ impl SealedFileVault {
     }
 }
 
+/// Whether an entry exists that may be replaced or removed: a readable one of
+/// this connection, or one whose sealing key is gone. Anything else refuses.
+fn replaceable(read: Result<Option<Document>, VaultError>) -> Result<bool, VaultError> {
+    match read {
+        Ok(document) => Ok(document.is_some()),
+        Err(VaultError::KeyMissing) => Ok(true),
+        Err(error) => Err(error),
+    }
+}
+
 impl CredentialVault for SealedFileVault {
     fn put(
         &mut self,
@@ -206,8 +186,10 @@ impl CredentialVault for SealedFileVault {
         }
         let _lock = self.lock()?;
         // Never replace an entry belonging to another connection or silently
-        // erase corrupt/legacy storage while trying to reconnect.
-        let _previous = self.read(key)?;
+        // erase corrupt/legacy storage while trying to reconnect. An entry
+        // whose sealing key is gone can only be replaced, so replacing it is
+        // the way back.
+        replaceable(self.read(key))?;
         self.discard_staged(key)?;
         let document = Document {
             schema: SCHEMA.into(),
@@ -250,10 +232,12 @@ impl CredentialVault for SealedFileVault {
     fn remove(&mut self, key: &VaultKey) -> Result<bool, VaultError> {
         let _lock = self.lock()?;
         self.discard_staged(key)?;
-        let Some(_document) = self.read(key)? else {
+        // An entry whose sealing key is gone cannot be read; removing the file
+        // this key names is how it is cleared.
+        if !replaceable(self.read(key))? {
             self.sync()?;
             return Ok(false);
-        };
+        }
         self.check_root()?;
         std::fs::remove_file(self.root.join(&key.file))
             .map_err(unavailable(StorageOperation::RemoveEntry))?;

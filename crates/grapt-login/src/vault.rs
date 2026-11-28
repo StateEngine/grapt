@@ -31,6 +31,10 @@ pub enum VaultError {
     BindingMismatch,
     #[error("legacy credential needs an explicit destination-bound import")]
     LegacyImportRequired,
+    /// The stored credential's sealing key is gone; it can be replaced or
+    /// removed, never read.
+    #[error("{}", crate::profile_security::KEY_MISSING)]
+    KeyMissing,
 }
 
 /// A finite storage boundary; never a caller-supplied path or request label.
