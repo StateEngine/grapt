@@ -181,6 +181,11 @@ where
             Attempt::Pending => {}
         }
         tokio::time::sleep_until((now + wait).min(deadline)).await;
+        // A probe begun at the deadline would still run its first,
+        // synchronous step before its timeout is checked.
+        if tokio::time::Instant::now() >= deadline {
+            return None;
+        }
         wait = (wait * 2).min(Duration::from_secs(1));
     }
 }

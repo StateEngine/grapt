@@ -54,6 +54,21 @@ async fn probing_stops_at_the_window_with_no_pause_after_it() {
 }
 
 #[tokio::test(start_paused = true)]
+async fn no_probe_starts_when_the_pause_ends_at_the_deadline() {
+    let probes = Cell::new(0);
+    let ready: Option<()> = poll_ready(WINDOW, || {
+        probes.set(probes.get() + 1);
+        async {
+            tokio::time::sleep(WINDOW - Duration::from_millis(50)).await;
+            Attempt::Pending
+        }
+    })
+    .await;
+    assert_eq!(ready, None);
+    assert_eq!(probes.get(), 1, "a probe was started at the deadline");
+}
+
+#[tokio::test(start_paused = true)]
 async fn a_slow_probe_cannot_outlast_the_window() {
     let started = tokio::time::Instant::now();
     let ready: Option<()> = poll_ready(WINDOW, || async {
