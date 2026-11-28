@@ -47,4 +47,10 @@ pub enum IpcError {
     RequestsExhausted,
     #[error("an earlier request on this connection failed mid-exchange; open another")]
     ConnectionBroken,
+    #[error("the host does not offer {0}; it predates it or did not agree to it")]
+    Unsupported(&'static str),
+    #[error("the request is invalid: {0}")]
+    Invalid(String),
+    #[error("the event stream has ended; subscribe again from its resume cursor")]
+    StreamEnded,
 }

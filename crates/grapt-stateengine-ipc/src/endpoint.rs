@@ -61,9 +61,10 @@ impl Endpoint {
 /// Read and check `<state_home>/endpoint.json` and `<state_home>/credential`
 /// through one opened handle on the state directory. The directory must be
 /// `principal`'s alone (0700) and each file owner-only (0600), all checked on
-/// the opened handles, and a Unix socket must be a socket of the principal's
-/// directly inside that directory. Windows refuses until its access lists can
-/// be verified.
+/// the opened handles. A Unix socket must be a socket of the principal's
+/// directly inside a directory that is the principal's alone: the state
+/// directory or the host's private runtime directory. Windows refuses until
+/// its access lists can be verified.
 pub fn discover(state_home: &Path, principal: &Principal) -> Result<Endpoint, IpcError> {
     let directory = StateDir::open(state_home, principal).map_err(IpcError::Endpoint)?;
     let bytes = directory
@@ -72,7 +73,7 @@ pub fn discover(state_home: &Path, principal: &Principal) -> Result<Endpoint, Ip
     let file: EndpointFile = crate::frame::decode(&bytes)?;
     validate(&file).map_err(IpcError::Endpoint)?;
     match &file.address {
-        Address::UnixSocket { path } => unix_socket(path, state_home, &directory),
+        Address::UnixSocket { path } => unix_socket(path, principal),
         Address::WindowsPipe { name } => pipe_name(name),
     }
     .map_err(IpcError::Endpoint)?;
@@ -97,26 +98,22 @@ fn validate(file: &EndpointFile) -> Result<(), String> {
 }
 
 #[cfg(unix)]
-fn unix_socket(path: &NativePath, state_home: &Path, directory: &StateDir) -> Result<(), String> {
+fn unix_socket(path: &NativePath, principal: &Principal) -> Result<(), String> {
     use std::os::unix::ffi::OsStrExt;
     let NativePath::UnixBytes(units) = path else {
         return Err("a Unix socket path is not in unix_bytes".into());
     };
     path.check()?;
     let socket = Path::new(std::ffi::OsStr::from_bytes(units));
-    let name = socket
-        .file_name()
-        .filter(|_| socket.parent() == Some(state_home))
-        .ok_or("the socket is not directly inside the state directory")?;
-    directory.socket(name)
+    let (Some(parent), Some(name)) = (socket.parent(), socket.file_name()) else {
+        return Err("the socket path names no file in a directory".into());
+    };
+    // The connected server is still verified by user, process and image.
+    StateDir::open(parent, principal)?.socket(name)
 }
 
 #[cfg(not(unix))]
-fn unix_socket(
-    _path: &NativePath,
-    _state_home: &Path,
-    _directory: &StateDir,
-) -> Result<(), String> {
+fn unix_socket(_path: &NativePath, _principal: &Principal) -> Result<(), String> {
     Err("a Unix socket endpoint cannot be reached from this platform".into())
 }
 

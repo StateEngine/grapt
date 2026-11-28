@@ -11,12 +11,14 @@
 //! supply the client nonce from their own named entropy adapter.
 #![forbid(unsafe_code)]
 
+mod activity;
 mod binary;
 mod canonical;
 mod connection;
 mod digest;
 mod endpoint;
 mod error;
+mod events;
 mod frame;
 mod handshake;
 #[cfg(target_os = "linux")]
@@ -26,13 +28,19 @@ mod proof;
 mod server_peer;
 mod state_dir;
 mod strict;
+mod turn;
 pub mod wire;
 
+pub use activity::{Activity, ActivityReceipt, ExternalRequest, ACTIVITY_CAPABILITY};
 pub use binary::verify_binary;
 pub use connection::Connection;
 pub use digest::Sha256Hex;
 pub use endpoint::{discover, Endpoint};
 pub use error::IpcError;
+pub use events::{
+    Event, EventCursor, EventKind, EventStream, StreamFrame, SubscribeRequest, EVENTS_CAPABILITY,
+    MIN_BATCH_BYTES,
+};
 pub use frame::{read_frame, write_frame};
 pub use grapt_stateengine_api::IdempotencyKey;
 pub use handshake::{Capabilities, HandshakeOptions, Session};
@@ -42,6 +50,10 @@ pub use peer::{PeerBinding, Principal};
 #[cfg(target_os = "linux")]
 pub use server_peer::connect;
 pub use server_peer::VerifiedPeer;
+pub use turn::{
+    CommitState, PublishTurn, PublishTurnReceipt, TurnCommit, TurnDecision, TurnDiff, TurnModel,
+    TurnNesting, TurnRole, TurnUsage, PUBLISH_TURN_CAPABILITY,
+};
 
 use std::time::Duration;
 

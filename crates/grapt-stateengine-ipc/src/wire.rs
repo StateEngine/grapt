@@ -285,7 +285,7 @@ pub struct IpcEnvelope {
     pub request: Request,
 }
 
-/// What a request asks for. This client sends only operations.
+/// What a request asks for.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(
     tag = "kind",
@@ -295,6 +295,10 @@ pub struct IpcEnvelope {
 )]
 pub enum Request {
     Operation(Operation),
+    /// External-seat turn state.
+    External(crate::activity::ExternalRequest),
+    /// A push event stream, on a connection of its own.
+    Subscribe(crate::events::SubscribeRequest),
 }
 
 /// One registered operation, with the idempotency key every mutation carries.
