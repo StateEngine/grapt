@@ -550,6 +550,17 @@ impl ProductPlan {
                 .map_err(|_| grapt_types::ContextFailure::CompactionFailed)?;
             estimate.basis = admission::EstimateBasis::Estimated;
         }
+        // Compaction cannot shrink a request with no history, so refusing it is
+        // final. Before any calibration the byte bound only proves it too large
+        // when even the densest tokenizer could not fit it; otherwise the
+        // provider's own count decides, and its usage calibrates the next one.
+        // Both the ceiling and the window judge this one size.
+        let judged =
+            if self.history_items == 0 && estimate.basis == admission::EstimateBasis::Estimated {
+                admission::densest(&planned.request, estimate.tokens)
+            } else {
+                estimate.tokens
+            };
         self.accounting.record_context(planned.context.as_ref());
         self.admission_diagnosis
             .record_calibration(self.accounting.calibration_for(planned.authority.model()));
@@ -561,7 +572,7 @@ impl ProductPlan {
                 trigger,
                 estimate_basis: estimate.basis,
                 // The number the threshold was judged on.
-                estimate: estimate.tokens,
+                estimate: judged,
                 budget,
             });
         // Universal ceiling: old auto/suppression settings cannot admit more
@@ -573,7 +584,7 @@ impl ProductPlan {
         // unreachable and the Session runs until the provider overflows.
         if self.compaction.auto
             && admission::auto_compact_reached(
-                admission::ceiling_size(context_usage, estimate.tokens.into()),
+                admission::ceiling_size(context_usage, judged.into()),
                 budget,
                 self.compaction.model_auto_compact_token_limit,
             )
@@ -581,16 +592,6 @@ impl ProductPlan {
             return Ok(Some(trigger));
         }
         let reserve = admission::output_reserve(&planned.request);
-        // Compaction cannot shrink a request with no history, so refusing it is
-        // final. Before any calibration the byte bound only proves it too large
-        // when even the densest tokenizer could not fit it; otherwise the
-        // provider's own count decides, and its usage calibrates the next one.
-        let judged =
-            if self.history_items == 0 && estimate.basis == admission::EstimateBasis::Estimated {
-                admission::densest(estimate.tokens)
-            } else {
-                estimate.tokens
-            };
         // Compacting again with nothing new since the last compaction would
         // only re-summarize its summary, and so would compacting history whose
         // every call repeats what the last compaction summarized (the reread

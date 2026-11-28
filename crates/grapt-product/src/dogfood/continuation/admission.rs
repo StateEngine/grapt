@@ -325,10 +325,23 @@ pub(in crate::dogfood) const CALIBRATION_MARGIN: u64 = 2;
 
 const MAX_ESTIMATED_PER_CONFIRMED: u64 = 8;
 
-/// The fewest tokens `units` uncalibrated local units can plausibly charge:
-/// the count at [`MAX_ESTIMATED_PER_CONFIRMED`] units per token.
-pub(in crate::dogfood) fn densest(units: u64) -> u64 {
-    units.div_ceil(MAX_ESTIMATED_PER_CONFIRMED)
+/// The fewest tokens `request`, estimated at `units` uncalibrated local
+/// units, can plausibly charge: its byte units at
+/// [`MAX_ESTIMATED_PER_CONFIRMED`] per token, plus its image charges, which
+/// are already tokens and stay whole.
+pub(in crate::dogfood) fn densest(request: &ProviderRequest, units: u64) -> u64 {
+    let images = input(request)
+        .iter()
+        .map(|item| match item {
+            CodexInputItem::ImageUser { images, .. }
+            | CodexInputItem::ImageToolOutput { images, .. } => images.estimated_tokens(),
+            _ => 0,
+        })
+        .fold(0u64, u64::saturating_add)
+        .min(units);
+    (units - images)
+        .div_ceil(MAX_ESTIMATED_PER_CONFIRMED)
+        .saturating_add(images)
 }
 
 /// Provider-confirmed input per locally estimated unit, for one exact target.
@@ -871,6 +884,36 @@ mod tests {
                 turn: Default::default(),
             },
         ))
+    }
+
+    #[test]
+    fn the_densest_size_keeps_image_charges_whole() -> Result<(), String> {
+        let mut request = request()?;
+        let ProviderRequest::ChatGptCodex(codex) = &mut request else {
+            return Err("fixture family".into());
+        };
+        let images =
+            grapt_provider::InputImages::try_new(vec![grapt_provider::InputImage::try_new(
+                grapt_provider::ImageMedia::Png,
+                "YWJj".into(),
+                grapt_provider::ImageDetail::High,
+                800,
+                600,
+            )
+            .map_err(|error| error.to_string())?])
+            .map_err(|error| error.to_string())?;
+        let charged = images.estimated_tokens();
+        codex.input.push(CodexInputItem::ImageUser {
+            text: grapt_provider::CodexToolText::try_new("describe".into())
+                .map_err(|error| error.to_string())?,
+            images,
+        });
+        let units = estimate(&request).map_err(|error| format!("{error:?}"))?;
+        assert_eq!(
+            densest(&request, units),
+            (units - charged).div_ceil(MAX_ESTIMATED_PER_CONFIRMED) + charged
+        );
+        Ok(())
     }
 
     #[test]

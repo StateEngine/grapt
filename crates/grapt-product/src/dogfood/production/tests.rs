@@ -281,6 +281,40 @@ fn compatible_selection_builds_chat_messages_and_reissues_on_retry() -> Result<(
     Ok(())
 }
 
+/// A first turn with nothing to compact is judged by one size at both the
+/// automatic ceiling and the window, so the ceiling cannot refuse what the
+/// window admits; with history behind it the byte bound holds at both.
+#[test]
+fn a_bare_first_turn_meets_the_ceiling_at_its_densest_size() -> Result<(), String> {
+    let concrete = targets(ProtocolFamily::ChatGptCodex)?;
+    let first = concrete.issue()?;
+    let step = StepNumber::new(1).ok_or("step")?;
+    let (continuation, _scratch) = DurableContinuation::empty_for_test("bare-ceiling")?;
+    let mut plan = ProductPlan::new(
+        ProtocolFamily::ChatGptCodex,
+        "hello".into(),
+        cache_key("bare_ceiling")?,
+        Some(first),
+        concrete,
+        Arc::new(super::super::mcp::PublishedTools::default()),
+        continuation,
+        step,
+    );
+    let planned = plan
+        .plan(step, 1, HistoryGeneration::new(1))
+        .map_err(|error| error.detail)?;
+    let raw = super::super::continuation::admission::estimate(&planned.request)
+        .map_err(|error| format!("estimate failed: {error:?}"))?;
+    plan.compaction.model_auto_compact_token_limit = Some(raw);
+    assert_eq!(plan.context_admission(&planned), Ok(None));
+    plan.history_items = 1;
+    assert_eq!(
+        plan.context_admission(&planned),
+        Ok(Some(grapt_types::CompactionTrigger::PolicyThreshold))
+    );
+    Ok(())
+}
+
 #[test]
 fn swr_c5_h1_description_bytes_drive_exact_product_admission_boundary() -> Result<(), String> {
     let concrete = targets(ProtocolFamily::ChatGptCodex)?;
@@ -309,6 +343,9 @@ fn swr_c5_h1_description_bytes_drive_exact_product_admission_boundary() -> Resul
     let planned = plan
         .plan(step, 1, HistoryGeneration::new(1))
         .map_err(|error| error.detail)?;
+    // A request with history behind it can be compacted, so the
+    // uncalibrated byte bound holds it to the exact boundary.
+    plan.history_items = 1;
     assert_eq!(plan.context_admission(&planned), Ok(None));
     let recorded = diagnosis
         .matching(grapt_types::CompactionTrigger::ContextOverflow)
@@ -347,9 +384,6 @@ fn swr_c5_h1_description_bytes_drive_exact_product_admission_boundary() -> Resul
         ))
         .and_then(|value| value.checked_add(super::super::continuation::admission::HEADROOM))
         .ok_or("admission threshold overflow")?;
-    // A request with history behind it can be compacted, so the
-    // uncalibrated byte bound holds it to the exact boundary.
-    plan.history_items = 1;
     concrete
         .context_tokens
         .store(threshold + 1, Ordering::SeqCst);
