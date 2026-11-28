@@ -743,6 +743,13 @@ impl<A: ArtifactStore, S: CommittedFactSink> AttemptOwner for DurableAttemptOwne
         self.capture_hosted(text)
     }
 
+    fn capture_diagnostic_detail(
+        &mut self,
+        text: &str,
+    ) -> Result<grapt_types::ToolTerminalArtifact, OwnerError> {
+        self.capture_diagnostic(text)
+    }
+
     fn commit(&mut self, fact: DurableFact) -> Result<(), OwnerError> {
         if self.settled
             && !matches!(

@@ -134,3 +134,261 @@ export function summarize(reports, window = null) {
     requests: rows,
   };
 }
+
+function toEpochMs(value) {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}/.test(value)) {
+    const parsed = Date.parse(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
+}
+
+function isoDayOf(value) {
+  const ms = toEpochMs(value);
+  return ms === null ? null : new Date(ms).toISOString().slice(0, 10);
+}
+
+function extractRecordedWindow(report) {
+  const windowPresent = report?.window !== null && report?.window !== undefined;
+  if (windowPresent && (typeof report.window !== 'object' || Array.isArray(report.window))) {
+    return { day: null, fromMs: null, untilMs: null, invalid: true };
+  }
+  const hasWindow = windowPresent;
+  let fromMs = null;
+  let untilMs = null;
+  let windowDay = null;
+  if (hasWindow) {
+    fromMs = toEpochMs(report.window.from);
+    untilMs = toEpochMs(report.window.until);
+    if (fromMs === null || untilMs === null || untilMs <= fromMs) {
+      return { day: null, fromMs, untilMs, invalid: true };
+    }
+    windowDay = isoDayOf(fromMs);
+    // Half-open [from, until) must fall within a single UTC calendar day.
+    const endDay = isoDayOf(untilMs - 1);
+    if (endDay !== windowDay) {
+      return { day: null, fromMs, untilMs, invalid: true };
+    }
+  }
+  if (Array.isArray(report?.requests) && report.requests.length > 0) {
+    const days = new Set();
+    for (const row of report.requests) {
+      const ts = toEpochMs(row?.opened_ms ?? row?.started_ms ?? row?.reported_ms ?? row?.at);
+      if (ts === null) return { day: null, fromMs, untilMs, invalid: true };
+      if (fromMs !== null && ts < fromMs) return { day: null, fromMs, untilMs, invalid: true };
+      if (untilMs !== null && ts >= untilMs) return { day: null, fromMs, untilMs, invalid: true };
+      days.add(isoDayOf(ts));
+    }
+    if (days.size !== 1) return { day: null, fromMs, untilMs, invalid: true };
+    const reqDay = [...days][0];
+    if (windowDay !== null && reqDay !== windowDay) {
+      return { day: null, fromMs, untilMs, invalid: true };
+    }
+    return { day: windowDay ?? reqDay, fromMs, untilMs, invalid: false };
+  }
+  return { day: windowDay, fromMs, untilMs, invalid: false };
+}
+
+function extractDay(recordedWindow, explicitDay) {
+  if (recordedWindow.invalid || recordedWindow.day === null) return null;
+  const explicit = typeof explicitDay === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(explicitDay) ? explicitDay : null;
+  // Never let a comparison label override the export's recorded date.
+  if (explicit !== null && explicit !== recordedWindow.day) return null;
+  return recordedWindow.day;
+}
+
+function windowsMatch(graptWindow, codexWindow) {
+  if (graptWindow.invalid || codexWindow.invalid) return false;
+  const graptWindowed = graptWindow.fromMs !== null;
+  const codexWindowed = codexWindow.fromMs !== null;
+  if (graptWindowed !== codexWindowed) return false;
+  if (graptWindowed && codexWindowed) {
+    return graptWindow.untilMs !== null
+      && codexWindow.untilMs !== null
+      && graptWindow.fromMs === codexWindow.fromMs
+      && graptWindow.untilMs === codexWindow.untilMs;
+  }
+  return true;
+}
+
+function extractRecordedModel(report) {
+  if (Array.isArray(report?.models)) {
+    const names = new Set();
+    for (const entry of report.models) {
+      if (typeof entry?.model === 'string' && entry.model.trim().length > 0) {
+        names.add(entry.model.trim());
+      }
+    }
+    if (names.size === 1) return [...names][0];
+    return null;
+  }
+  if (typeof report?.model === 'string' && report.model.trim().length > 0) return report.model.trim();
+  const models = report?.by_model && typeof report.by_model === 'object' ? Object.keys(report.by_model) : [];
+  return models.length === 1 ? models[0] : null;
+}
+
+function extractModel(report, explicitModel) {
+  const explicit = typeof explicitModel === 'string' && explicitModel.trim().length > 0 ? explicitModel.trim() : null;
+  const recorded = extractRecordedModel(report);
+  if (recorded !== null) {
+    // Never let a comparison label override the export's recorded model.
+    if (explicit !== null && explicit !== recorded) return null;
+    return recorded;
+  }
+  // Multi-model exports cannot be relabelled into a single-model comparison.
+  if (Array.isArray(report?.models) && report.models.length > 1) return null;
+  return explicit;
+}
+
+export const CRITERION_3_MIN_MATCHED_TASKS = 3;
+export const CRITERION_3_MAX_VARIANCE_RATIO = 0.20;
+export const CRITERION_5_MAX_INFRA_FAILURE_PERCENT = 3.0;
+
+/**
+ * Evaluate RELEASE-0.1.md Criteria #3 (matched tasks: first-review ACCEPT rate,
+ * tokens/accepted task, and cache read share vs Codex baseline) and #5
+ * (infrastructure tool failure rate <= 3%, zero unavailable/unreadable failure
+ * detail artifacts, and zero skipped/unsupported tool terminal event versions).
+ */
+export function evaluateReleaseGates(graptReport, comparison = null) {
+  const ops = graptReport?.operations;
+  const toolCount = ops?.tool_calls?.count ?? 0;
+  const infraFailedCount = ops?.tool_calls?.infrastructure_failed ?? null;
+  const unavailableEntries = Object.entries(ops?.failure_detail_unavailable ?? {});
+  const unavailableDetailCount = unavailableEntries.reduce((sum, [, count]) => sum + Number(count || 0), 0);
+  const unnamedCount = Number(ops?.failure_detail_unavailable?.['detail-not-recorded'] ?? 0);
+  const unsupportedVersions = ops?.coverage?.unsupported_event_versions ?? {};
+  const unsupportedTerminalVersions = Object.entries(unsupportedVersions)
+    .filter(([eventType]) => eventType.startsWith('session.tool.terminal.'))
+    .reduce((sum, [, count]) => sum + Number(count || 0), 0);
+
+  let criterion_5;
+  if (toolCount <= 0) {
+    criterion_5 = {
+      status: 'unavailable',
+      reason: 'no-tool-calls-observed',
+      unnamed_terminal_failures: unnamedCount,
+      unavailable_detail_artifacts: unavailableDetailCount,
+      unsupported_terminal_versions: unsupportedTerminalVersions,
+    };
+  } else if (infraFailedCount === null) {
+    criterion_5 = {
+      status: 'unavailable',
+      reason: 'infrastructure-failure-count-unavailable',
+      unnamed_terminal_failures: unnamedCount,
+      unavailable_detail_artifacts: unavailableDetailCount,
+      unsupported_terminal_versions: unsupportedTerminalVersions,
+    };
+  } else {
+    const infraRatePercent = (100 * infraFailedCount) / toolCount;
+    const passed = infraRatePercent <= CRITERION_5_MAX_INFRA_FAILURE_PERCENT
+      && unavailableDetailCount === 0
+      && unsupportedTerminalVersions === 0;
+    criterion_5 = {
+      status: passed ? 'pass' : 'fail',
+      tool_calls: toolCount,
+      infrastructure_failed_tool_calls: infraFailedCount,
+      infra_failure_rate_percent: Number(infraRatePercent.toFixed(4)),
+      max_infra_failure_rate_percent: CRITERION_5_MAX_INFRA_FAILURE_PERCENT,
+      unnamed_terminal_failures: unnamedCount,
+      unavailable_detail_artifacts: unavailableDetailCount,
+      unsupported_terminal_versions: unsupportedTerminalVersions,
+    };
+  }
+
+  const codexReport = comparison && 'codexReport' in comparison ? comparison.codexReport : comparison;
+  const matchedTasks = comparison && 'matchedTasks' in comparison ? comparison.matchedTasks : null;
+  const graptShare = graptReport?.totals?.read_share_percent ?? null;
+  const codexShare = codexReport?.totals?.read_share_percent ?? null;
+
+  let criterion_3;
+  if (graptShare === null || codexShare === null) {
+    criterion_3 = {
+      status: 'unavailable',
+      reason: codexReport ? 'cache-read-share-unavailable' : 'comparison-baseline-not-provided',
+      grapt_read_share_percent: graptShare === null ? null : Number(graptShare.toFixed(4)),
+      codex_read_share_percent: codexShare === null ? null : Number(codexShare.toFixed(4)),
+    };
+  } else {
+    const cacheShareOk = graptShare >= codexShare;
+    const hasMatchedTasks = matchedTasks !== null
+      && typeof matchedTasks === 'object'
+      && typeof matchedTasks.count === 'number'
+      && typeof matchedTasks.grapt_accepted_tasks === 'number'
+      && typeof matchedTasks.grapt_first_review_accept_rate === 'number'
+      && typeof matchedTasks.codex_first_review_accept_rate === 'number'
+      && typeof matchedTasks.grapt_tokens_per_accepted_task === 'number'
+      && typeof matchedTasks.codex_tokens_per_accepted_task === 'number';
+    if (!hasMatchedTasks) {
+      criterion_3 = {
+        status: cacheShareOk ? 'incomplete' : 'fail',
+        reason: 'matched-task-metrics-missing',
+        cache_share_status: cacheShareOk ? 'pass' : 'fail',
+        grapt_read_share_percent: Number(graptShare.toFixed(4)),
+        codex_read_share_percent: Number(codexShare.toFixed(4)),
+        cache_share_delta_percent: Number((graptShare - codexShare).toFixed(4)),
+      };
+    } else {
+      const graptWindow = extractRecordedWindow(graptReport);
+      const codexWindow = extractRecordedWindow(codexReport);
+      const graptDay = extractDay(graptWindow, matchedTasks.grapt_day);
+      const codexDay = extractDay(codexWindow, matchedTasks.codex_day);
+      const graptModel = extractModel(graptReport, matchedTasks.grapt_model);
+      const codexModel = extractModel(codexReport, matchedTasks.codex_model);
+      const validCounts = Number.isSafeInteger(matchedTasks.count) && matchedTasks.count > 0
+        && Number.isSafeInteger(matchedTasks.grapt_accepted_tasks)
+        && matchedTasks.grapt_accepted_tasks >= 0
+        && matchedTasks.grapt_accepted_tasks <= matchedTasks.count;
+      const validRates = Number.isFinite(matchedTasks.grapt_first_review_accept_rate)
+        && matchedTasks.grapt_first_review_accept_rate >= 0
+        && matchedTasks.grapt_first_review_accept_rate <= 1
+        && Number.isFinite(matchedTasks.codex_first_review_accept_rate)
+        && matchedTasks.codex_first_review_accept_rate >= 0
+        && matchedTasks.codex_first_review_accept_rate <= 1;
+      const validTokens = Number.isFinite(matchedTasks.grapt_tokens_per_accepted_task)
+        && matchedTasks.grapt_tokens_per_accepted_task > 0
+        && Number.isFinite(matchedTasks.codex_tokens_per_accepted_task)
+        && matchedTasks.codex_tokens_per_accepted_task > 0;
+      const sameDay = graptDay !== null && codexDay !== null && graptDay === codexDay
+        && windowsMatch(graptWindow, codexWindow);
+      const sameModel = graptModel !== null && codexModel !== null && graptModel === codexModel;
+      const enoughTasks = matchedTasks.count >= CRITERION_3_MIN_MATCHED_TASKS;
+      const allAccepted = matchedTasks.grapt_accepted_tasks === matchedTasks.count;
+      const acceptFloor = matchedTasks.codex_first_review_accept_rate * (1 - CRITERION_3_MAX_VARIANCE_RATIO);
+      const tokensCeiling = matchedTasks.codex_tokens_per_accepted_task * (1 + CRITERION_3_MAX_VARIANCE_RATIO);
+      const acceptOk = matchedTasks.grapt_first_review_accept_rate >= acceptFloor - 1e-12;
+      const tokensOk = matchedTasks.grapt_tokens_per_accepted_task <= tokensCeiling + 1e-12;
+      const reason = (!validCounts || !validRates || !validTokens)
+        ? 'invalid-matched-task-metrics'
+        : (!sameDay
+            ? 'mismatched-comparison-day'
+            : (!sameModel
+                ? 'mismatched-comparison-model'
+                : (!enoughTasks
+                    ? 'insufficient-matched-tasks'
+                    : (!allAccepted ? 'unaccepted-matched-tasks' : null))));
+      const passed = reason === null && cacheShareOk && acceptOk && tokensOk;
+      criterion_3 = {
+        status: passed ? 'pass' : 'fail',
+        reason,
+        grapt_day: graptDay,
+        codex_day: codexDay,
+        grapt_model: graptModel,
+        codex_model: codexModel,
+        matched_tasks: matchedTasks.count,
+        min_matched_tasks: CRITERION_3_MIN_MATCHED_TASKS,
+        grapt_accepted_tasks: matchedTasks.grapt_accepted_tasks,
+        grapt_read_share_percent: Number(graptShare.toFixed(4)),
+        codex_read_share_percent: Number(codexShare.toFixed(4)),
+        cache_share_delta_percent: Number((graptShare - codexShare).toFixed(4)),
+        grapt_first_review_accept_rate: matchedTasks.grapt_first_review_accept_rate,
+        codex_first_review_accept_rate: matchedTasks.codex_first_review_accept_rate,
+        grapt_tokens_per_accepted_task: matchedTasks.grapt_tokens_per_accepted_task,
+        codex_tokens_per_accepted_task: matchedTasks.codex_tokens_per_accepted_task,
+      };
+    }
+  }
+
+  return { criterion_3, criterion_5 };
+}

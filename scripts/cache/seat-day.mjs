@@ -1,12 +1,12 @@
 #!/usr/bin/env node
 // No provider calls or service startup: index sessions read-only, export through Product.
 import { execFile } from 'node:child_process';
-import { lstat } from 'node:fs/promises';
+import { lstat, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { pathToFileURL } from 'node:url';
 import { parseArgs, promisify } from 'node:util';
-import { summarize } from './seat-day-report.mjs';
+import { evaluateReleaseGates, summarize } from './seat-day-report.mjs';
 import { readEvents } from './seat-day-events.mjs';
 import { artifactReader } from './seat-day-artifacts.mjs';
 import { operationalReport } from './seat-day-operations.mjs';
@@ -33,6 +33,7 @@ export async function run(args) {
   const { values } = parseArgs({ args, options: {
     bundle: { type: 'string' }, service: { type: 'string' }, session: { type: 'string' },
     from: { type: 'string' }, until: { type: 'string' }, prices: { type: 'string' },
+    compare: { type: 'string' },
     'codex-rollout': { type: 'string', multiple: true },
   } });
   if (!!values.from !== !!values.until) throw new Error('Supply both --from and --until');
@@ -80,6 +81,16 @@ export async function run(args) {
   const history = await readEvents(path.join(service, 'database.sqlite3'), sessions);
   result.operations = await operationalReport(history.events, reports, artifactReader(service), window);
   result.operations.coverage = history.coverage;
+  let comparison = null;
+  if (values.compare) {
+    const comparePath = path.resolve(values.compare);
+    const stat = await lstat(comparePath);
+    if (!stat.isFile() || stat.size > 1024 * 1024) {
+      throw new Error('Comparison evidence must be a regular file under 1 MiB');
+    }
+    comparison = JSON.parse(await readFile(comparePath, 'utf8'));
+  }
+  result.release_gates = evaluateReleaseGates(result, comparison);
   if (Buffer.byteLength(JSON.stringify(result)) > 32 * 1024 * 1024) {
     throw new Error('Report exceeds 32 MiB; narrow the window');
   }

@@ -129,7 +129,7 @@ where
 
             // Nested commits must acknowledge before their parent can finish.
             Some(request) = nested_rx.recv() => {
-                if let Err(error) = nested_state.handle(request,&mut owner,&observed_calls) {
+                if let Err(error) = nested_state.handle(request, &mut owner, &observed_calls, tools.as_ref()) {
                     owner_error = Some(error);
                     break;
                 }
@@ -141,7 +141,7 @@ where
                 if settled_tools.contains_key(call.as_str()) {
                     continue;
                 }
-                if let Err(error) = nested_state.close_parent(&mut owner,&call) {
+                if let Err(error) = nested_state.close_parent(&mut owner, &call, tools.as_ref()) {
                     owner_error = Some(error);
                     break;
                 }
@@ -455,7 +455,7 @@ where
             biased;
 
             Some(request) = nested_rx.recv(), if !refused => {
-                if let Err(error) = nested_state.handle(request,&mut owner,&observed_calls) {
+                if let Err(error) = nested_state.handle(request, &mut owner, &observed_calls, tools.as_ref()) {
                     owner_error = Some(error);
                     refused = true;
                     nested_state.stop_admission();
@@ -467,7 +467,7 @@ where
                 if settled_tools.contains_key(call.as_str()) {
                     continue;
                 }
-                if let Err(error) = nested_state.close_parent(&mut owner,&call) {
+                if let Err(error) = nested_state.close_parent(&mut owner, &call, tools.as_ref()) {
                     owner_error = Some(error);
                     refused = true;
                     nested_state.stop_admission();
@@ -502,21 +502,15 @@ where
     let effects_settled = tokio::time::timeout(Duration::from_secs(2), tools.settle_attempt())
         .await
         .unwrap_or(false);
-    nested_state.stop_admission();
-    while let Ok(request) = nested_rx.try_recv() {
-        if !refused {
-            if let Err(error) = nested_state.handle(request, &mut owner, &observed_calls) {
-                owner_error = Some(error);
-                refused = true;
-            }
-        }
-    }
-    if !refused {
-        if let Err(error) = nested_state.close_all(&mut owner) {
-            owner_error = Some(error);
-            refused = true;
-        }
-    }
+    drain_and_close_nested(
+        &mut nested_state,
+        &mut nested_rx,
+        &mut owner,
+        &observed_calls,
+        tools.as_ref(),
+        &mut refused,
+        &mut owner_error,
+    );
 
     // Anything that landed after the last task joined.
     while let Ok(ToolMessage::Terminal { call, outcome }) = tool_rx.try_recv() {
@@ -538,23 +532,9 @@ where
         if settled_tools.contains_key(key.as_str()) {
             continue;
         }
-        let outcome = if !effects_settled {
-            ToolOutcome::Failed {
-                reason: ToolFailureReason::EffectUnknown,
-                detail: None,
-            }
-        } else {
-            match cancelled {
-                Some(AttemptCancelCause::Interrupted { by }) => cancelled_tool_outcome(by),
-                Some(AttemptCancelCause::NoProgress) => {
-                    cancelled_tool_outcome(InterruptionSource::ManagedShutdown)
-                }
-                None => ToolOutcome::Failed {
-                    reason: ToolFailureReason::EffectFailed,
-                    detail: None,
-                },
-            }
-        };
+        let known_unexecuted = tools.known_unexecuted(call);
+        let outcome =
+            unsettled_tool_outcome(&mut owner, effects_settled, cancelled, known_unexecuted);
         settled_tools.insert(key.clone(), outcome.clone());
         if !refused {
             if let Err(error) = commit(
@@ -662,6 +642,80 @@ where
             provider_failure,
         },
     )
+}
+
+fn drain_and_close_nested<O: AttemptOwner>(
+    nested_state: &mut nested::NestedState,
+    nested_rx: &mut mpsc::Receiver<nested::NestedRequest>,
+    owner: &mut O,
+    observed_calls: &BTreeMap<String, ToolCallId>,
+    tools: &dyn ToolRunner,
+    refused: &mut bool,
+    owner_error: &mut Option<OwnerError>,
+) {
+    nested_state.stop_admission();
+    while let Ok(request) = nested_rx.try_recv() {
+        if !*refused {
+            if let Err(error) = nested_state.handle(request, owner, observed_calls, tools) {
+                *owner_error = Some(error);
+                *refused = true;
+            }
+        }
+    }
+    if !*refused {
+        if let Err(error) = nested_state.close_all(owner, tools) {
+            *owner_error = Some(error);
+            *refused = true;
+        }
+    }
+}
+
+fn unsettled_tool_outcome<O: AttemptOwner>(
+    owner: &mut O,
+    effects_settled: bool,
+    cancelled: Option<AttemptCancelCause>,
+    known_unexecuted: bool,
+) -> ToolOutcome {
+    let capture_cause = |owner: &mut O, text: &str| match owner.capture_diagnostic_detail(text) {
+        Ok(detail) => Some(detail),
+        Err(error) => {
+            grapt_diagnostics::report(format!(
+                "tool failure diagnostic detail capture degraded: {}",
+                error.reason
+            ));
+            None
+        }
+    };
+    if !effects_settled {
+        ToolOutcome::Failed {
+            reason: ToolFailureReason::EffectUnknown,
+            detail: capture_cause(
+                owner,
+                "tool execution did not settle before attempt ended; external effect state is unknown",
+            ),
+        }
+    } else {
+        match cancelled {
+            Some(AttemptCancelCause::Interrupted { by }) => cancelled_tool_outcome(by),
+            Some(AttemptCancelCause::NoProgress) => {
+                cancelled_tool_outcome(InterruptionSource::ManagedShutdown)
+            }
+            None if known_unexecuted => ToolOutcome::Failed {
+                reason: ToolFailureReason::EffectFailed,
+                detail: capture_cause(
+                    owner,
+                    "tool execution was aborted before dispatch and produced no terminal result",
+                ),
+            },
+            None => ToolOutcome::Failed {
+                reason: ToolFailureReason::EffectUnknown,
+                detail: capture_cause(
+                    owner,
+                    "tool execution ended without producing a terminal result; external effect state is unknown",
+                ),
+            },
+        }
+    }
 }
 
 #[cfg(test)]

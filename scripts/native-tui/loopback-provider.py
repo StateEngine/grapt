@@ -36,6 +36,7 @@ import ssl
 import sys
 import threading
 import time
+import urllib.parse
 from pathlib import Path
 
 READ_BYTES = 64 * 1024
@@ -575,9 +576,141 @@ def prompt_of(body: bytes) -> str:
     return ""
 
 
-def serve(stream: socket.socket, delay_ms: int, served: list[float]) -> None:
+def _extract_stream_scope(
+    request_target: str, headers: dict[str, str], body: bytes
+) -> str | None:
+    """Identify which measured terminal/run owns this provider stream so traffic on
+    another socket can never satisfy a quiet T5 echo probe.
+
+    Precedence: explicit per-request headers (`X-Grapt-Stream-Scope`,
+    `X-Grapt-Session-Id`) win over the URL path prefix (`/scopes/<id>/...`) and
+    `stream_scope` query param, followed by explicit `stream_scope` or
+    `metadata.session_id` body fields. Shared `prompt_cache_key` values are
+    deliberately ignored because forked sessions and project-scoped requests
+    share cache keys."""
+    for header in ("x-grapt-stream-scope", "x-grapt-session-id"):
+        value = headers.get(header, "").strip()
+        if value:
+            return value
+    if request_target:
+        parsed = urllib.parse.urlsplit(request_target)
+        parts = [segment for segment in parsed.path.split("/") if segment]
+        if len(parts) >= 2 and parts[0] == "scopes":
+            scope = urllib.parse.unquote(parts[1]).strip()
+            if scope:
+                return scope
+        query = urllib.parse.parse_qs(parsed.query)
+        for value in query.get("stream_scope", ()):
+            if value.strip():
+                return value.strip()
     try:
-        prompt, continuing = read_request(stream)
+        decoded = json.loads(body.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return None
+    if not isinstance(decoded, dict):
+        return None
+    value = decoded.get("stream_scope")
+    if isinstance(value, str) and value.strip():
+        return value.strip()
+    metadata = decoded.get("metadata")
+    if isinstance(metadata, dict):
+        session_id = metadata.get("session_id")
+        if isinstance(session_id, str) and session_id.strip():
+            return session_id.strip()
+    return None
+
+
+def read_request_with_scope(
+    stream: socket.socket, diagnostics: bool = True
+) -> tuple[str, bool, str | None]:
+    buffered = b""
+    while b"\r\n\r\n" not in buffered:
+        chunk = stream.recv(READ_BYTES)
+        if not chunk:
+            return "", False, None
+        buffered += chunk
+        if len(buffered) > MAX_REQUEST_BYTES:
+            raise RuntimeError("provider request exceeded its bound")
+    head, _, rest = buffered.partition(b"\r\n\r\n")
+    head_lines = head.decode("latin-1").split("\r\n")
+    request_target = ""
+    if head_lines:
+        request_parts = head_lines[0].split(" ")
+        if len(request_parts) >= 2:
+            request_target = request_parts[1].strip()
+    length = 0
+    headers: dict[str, str] = {}
+    for line in head_lines[1:]:
+        name, sep, value = line.partition(":")
+        if sep:
+            key = name.strip().lower()
+            headers[key] = value.strip()
+            if key == "content-length":
+                length = int(value.strip() or 0)
+    body = rest
+    while len(body) < length:
+        chunk = stream.recv(READ_BYTES)
+        if not chunk:
+            break
+        body += chunk
+        if len(body) > MAX_REQUEST_BYTES:
+            raise RuntimeError("provider request body exceeded its bound")
+    try:
+        offered = json.loads(body.decode("utf-8")).get("tools") or []
+        names = [t.get("name") or (t.get("function") or {}).get("name") for t in offered]
+        if diagnostics:
+            print("TOOLS_OFFERED " + json.dumps([n for n in names if n]), flush=True)
+    except Exception:
+        pass
+    return (
+        prompt_of(body),
+        has_tool_result(body),
+        _extract_stream_scope(request_target, headers, body),
+    )
+
+
+def validated_sse_delta_tokens(frame: str) -> int:
+    """Count validated assistant text token units from a parsed SSE delta frame.
+    Rejects malformed JSON, raw substring spoofs, non-delta events, and empty
+    deltas; counts whitespace-delimited token units in valid single- and
+    multi-word deltas."""
+    data_lines = [
+        line[len("data:"):].strip()
+        for line in frame.splitlines()
+        if line.startswith("data:")
+    ]
+    if len(data_lines) != 1:
+        return 0
+    try:
+        payload = json.loads(data_lines[0])
+    except json.JSONDecodeError:
+        return 0
+    if not isinstance(payload, dict):
+        return 0
+    if payload.get("type") != "response.output_text.delta":
+        return 0
+    delta = payload.get("delta")
+    if not isinstance(delta, str):
+        return 0
+    return len(delta.split())
+
+
+def _write_stream_metrics(path: Path, scopes: dict[str, int]) -> None:
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    tmp.write_text(json.dumps({"scopes": scopes}), encoding="utf-8")
+    tmp.replace(path)
+
+
+def serve(
+    stream: socket.socket,
+    delay_ms: int,
+    served: list[float],
+    stream_metrics_path: Path | None = None,
+    stream_counter: dict[str, int] | None = None,
+    stream_lock: threading.Lock | None = None,
+) -> None:
+    try:
+        prompt, continuing, scope = read_request_with_scope(stream)
         # CHUNKED, with a terminating zero chunk. A stream that simply closed
         # after its last frame delivered every fragment and still ended the
         # execution as FAILED: the content decoded, and the response was then
@@ -595,6 +728,16 @@ def serve(stream: socket.socket, delay_ms: int, served: list[float]) -> None:
                 time.sleep(delay)
             payload = frame.encode("utf-8")
             stream.sendall(b"%x\r\n" % len(payload) + payload + b"\r\n")
+            if stream_metrics_path is not None and scope is not None and stream_counter is not None:
+                tokens = validated_sse_delta_tokens(frame)
+                if tokens > 0:
+                    if stream_lock is not None:
+                        with stream_lock:
+                            stream_counter[scope] = stream_counter.get(scope, 0) + tokens
+                            _write_stream_metrics(stream_metrics_path, dict(stream_counter))
+                    else:
+                        stream_counter[scope] = stream_counter.get(scope, 0) + tokens
+                        _write_stream_metrics(stream_metrics_path, dict(stream_counter))
         stream.sendall(b"0\r\n\r\n")
         served.append(time.monotonic() - started)
     except (OSError, RuntimeError):
@@ -633,8 +776,15 @@ def serve(stream: socket.socket, delay_ms: int, served: list[float]) -> None:
         stream.close()
 
 
-def serve_tls(stream: socket.socket, context: ssl.SSLContext, delay_ms: int,
-              served: list[float]) -> None:
+def serve_tls(
+    stream: socket.socket,
+    context: ssl.SSLContext,
+    delay_ms: int,
+    served: list[float],
+    stream_metrics_path: Path | None = None,
+    stream_counter: dict[str, int] | None = None,
+    stream_lock: threading.Lock | None = None,
+) -> None:
     """Complete the handshake, then serve exactly as the plaintext path does.
 
     The TLS wrapper is the ONLY difference. Everything the product exercises
@@ -659,7 +809,7 @@ def serve_tls(stream: socket.socket, context: ssl.SSLContext, delay_ms: int,
         except OSError:
             pass
         return
-    serve(secured, delay_ms, served)
+    serve(secured, delay_ms, served, stream_metrics_path, stream_counter, stream_lock)
 
 
 def main() -> int:
@@ -709,11 +859,16 @@ def main() -> int:
     listener.listen(64)
     address = listener.getsockname()
     served: list[float] = []
+    stream_metrics_path = arguments.receipt.with_suffix(".stream-tokens.json")
+    stream_counter: dict[str, int] = {}
+    stream_lock = threading.Lock()
+    _write_stream_metrics(stream_metrics_path, {})
     arguments.receipt.write_text(
         json.dumps(
             {
                 "contract": "native-tui-loopback-provider/v1",
                 "endpoint": f"{scheme}://{address[0]}:{address[1]}",
+                "stream_metrics": str(stream_metrics_path),
                 "tls": None if context is None else {
                     "cert": str(arguments.tls_cert),
                     "minimum_version": "TLSv1_2",
@@ -749,12 +904,29 @@ def main() -> int:
                 # CA — and it must close that connection, not end the fixture.
                 threading.Thread(
                     target=serve_tls,
-                    args=(stream, context, arguments.delay_ms, served),
+                    args=(
+                        stream,
+                        context,
+                        arguments.delay_ms,
+                        served,
+                        stream_metrics_path,
+                        stream_counter,
+                        stream_lock,
+                    ),
                     daemon=True,
                 ).start()
                 continue
             threading.Thread(
-                target=serve, args=(stream, arguments.delay_ms, served), daemon=True
+                target=serve,
+                args=(
+                    stream,
+                    arguments.delay_ms,
+                    served,
+                    stream_metrics_path,
+                    stream_counter,
+                    stream_lock,
+                ),
+                daemon=True,
             ).start()
     except KeyboardInterrupt:
         return 0

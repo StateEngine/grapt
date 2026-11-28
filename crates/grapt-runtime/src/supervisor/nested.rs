@@ -173,6 +173,7 @@ impl NestedState {
         request: NestedRequest,
         owner: &mut O,
         top_calls: &BTreeMap<String, ToolCallId>,
+        tools: &dyn ToolRunner,
     ) -> Result<(), OwnerError> {
         match request {
             NestedRequest::Start {
@@ -235,7 +236,7 @@ impl NestedState {
                 self.open.remove(&call);
                 let _sent = reply.send(Ok(()));
             }
-            NestedRequest::Abandoned { call } => self.close_call(owner, &call)?,
+            NestedRequest::Abandoned { call } => self.close_call(owner, &call, tools)?,
         }
         Ok(())
     }
@@ -243,16 +244,36 @@ impl NestedState {
         &mut self,
         owner: &mut O,
         call: &ToolCallId,
+        tools: &dyn ToolRunner,
     ) -> Result<(), OwnerError> {
         if self.open.contains_key(call) {
+            let (reason, message) = if tools.known_unexecuted(call) {
+                (
+                    ToolFailureReason::EffectFailed,
+                    "nested tool execution was aborted before dispatch and produced no terminal result",
+                )
+            } else {
+                (
+                    ToolFailureReason::EffectUnknown,
+                    "nested tool execution was abandoned before producing a terminal result; external effect state is unknown",
+                )
+            };
+            let detail = match owner.capture_diagnostic_detail(message) {
+                Ok(detail) => Some(detail),
+                Err(error) => {
+                    grapt_diagnostics::report(format!(
+                        "nested failure diagnostic detail capture degraded for call {}: {}",
+                        call.as_str(),
+                        error.reason
+                    ));
+                    None
+                }
+            };
             commit(
                 owner,
                 DurableFact::ToolTerminal {
                     call: call.clone(),
-                    outcome: ToolOutcome::Failed {
-                        reason: ToolFailureReason::EffectUnknown,
-                        detail: None,
-                    },
+                    outcome: ToolOutcome::Failed { reason, detail },
                 },
             )?;
             self.open.remove(call);
@@ -263,6 +284,7 @@ impl NestedState {
         &mut self,
         owner: &mut O,
         parent: &ToolCallId,
+        tools: &dyn ToolRunner,
     ) -> Result<(), OwnerError> {
         self.parents.remove(parent);
         let calls: Vec<_> = self
@@ -272,15 +294,19 @@ impl NestedState {
             .map(|(call, _)| call.clone())
             .collect();
         for call in calls {
-            self.close_call(owner, &call)?;
+            self.close_call(owner, &call, tools)?;
         }
         Ok(())
     }
-    pub(super) fn close_all<O: AttemptOwner>(&mut self, owner: &mut O) -> Result<(), OwnerError> {
+    pub(super) fn close_all<O: AttemptOwner>(
+        &mut self,
+        owner: &mut O,
+        tools: &dyn ToolRunner,
+    ) -> Result<(), OwnerError> {
         self.parents.clear();
         let calls: Vec<_> = self.open.keys().cloned().collect();
         for call in calls {
-            self.close_call(owner, &call)?;
+            self.close_call(owner, &call, tools)?;
         }
         Ok(())
     }

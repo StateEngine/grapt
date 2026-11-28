@@ -498,7 +498,7 @@ impl DogfoodApplication {
         let clock = Arc::new(SystemClock);
         let receipt_bytes = NonZeroU32::new(ATTEMPT_RECEIPT_BYTES)
             .ok_or_else(|| DogfoodRefusal::Compose("attempt receipt bound is zero".to_owned()))?;
-        startup_recovery::recover(&mut store, &ids, &clock, receipt_bytes)?;
+        startup_recovery::recover(service_root, &mut store, &ids, &clock, receipt_bytes)?;
         let inbox =
             Inbox::new(store).map_err(|error| DogfoodRefusal::Compose(error.to_string()))?;
         let readers = inbox

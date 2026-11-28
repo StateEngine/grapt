@@ -75,7 +75,13 @@ fn category(reason: ToolFailureReason, detail: &str) -> Option<&'static str> {
         (T::EffectUnknown, "CodeMode execution timed out") => return Some("CodeMode [timeout]: execution exceeded 30 seconds; split the work and verify any tool effects before retrying."),
         (T::EffectUnknown, "CodeMode worker settlement is unknown" | "CodeMode host exchange failed") => return Some("CodeMode [result_unknown]: the worker outcome is unknown; verify tool effects before retrying."),
         (T::CaptureFailed, "CodeMode result exceeded its output bound") => return Some("CodeMode [output_limit]: return fewer fields or a smaller result."),
-        (T::EffectFailed, "CodeMode worker could not start" | "CodeMode worker exited unsuccessfully" | "CodeMode host exchange failed") => return Some("CodeMode [worker_failure]: the local worker failed; retry a small execution and report a repeated failure."),
+        (T::InfrastructureFailed, _)
+        | (
+            T::EffectFailed,
+            "CodeMode worker could not start"
+            | "CodeMode worker exited unsuccessfully"
+            | "CodeMode host exchange failed",
+        ) => return Some("CodeMode [worker_failure]: the local worker failed; retry a small execution and report a repeated failure."),
         (T::EffectFailed, _) => {}
         (T::ApprovalUnavailable, _) => return Some("CodeMode [approval_unavailable]: approval unavailable (headless); attach an approval client before retrying the nested tool."),
         (T::AuthorityUnavailable, _) => return Some("CodeMode [permission_refused]: the Session's permission policy refused this execution; do not repeat it unless the policy changes."),

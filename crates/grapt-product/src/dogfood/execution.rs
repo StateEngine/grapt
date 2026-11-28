@@ -36,7 +36,7 @@ use super::usage::costed_usage_dto;
 use durable_history::DurableHistory;
 
 mod active;
-mod artifacts;
+pub(super) mod artifacts;
 use artifacts::open_artifacts;
 mod authorities;
 mod block_events;
