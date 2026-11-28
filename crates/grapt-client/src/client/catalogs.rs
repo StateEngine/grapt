@@ -132,10 +132,7 @@ impl<C: Connection> Client<C> {
             session: self.selected.clone(),
             operation,
         });
-        let result = self
-            .connection
-            .begin_operator(&request)
-            .map_err(ClientError::from);
+        let result = self.begin_operator(&request);
         self.finish_mcp_read(result).map(|_| ())
     }
 
@@ -147,6 +144,16 @@ impl<C: Connection> Client<C> {
         if self.mcp_read.take().is_some() {
             self.connection.cancel_operator();
             self.mcp_refusal = Some("MCP inspection canceled; draft kept.".into());
+        }
+    }
+
+    /// A refused service answers no MCP read: a waiting one ends with the
+    /// refusal, which the waiting command reports.
+    pub(super) fn refuse_mcp_catalog(&mut self, refusal: String) {
+        self.mcp_refresh_needed = false;
+        if self.mcp_read.take().is_some() {
+            self.connection.cancel_operator();
+            self.mcp_refusal = Some(refusal);
         }
     }
 
@@ -174,7 +181,7 @@ impl<C: Connection> Client<C> {
             self.location_forms
                 .startup_wait(&read.location, &read.existing_forms),
         );
-        let result = self.connection.poll_operator().map_err(ClientError::from);
+        let result = self.poll_operator();
         match self.finish_mcp_read(result) {
             Ok(changed) => changed,
             Err(error) => {

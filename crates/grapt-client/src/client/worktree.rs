@@ -105,10 +105,7 @@ impl<C: Connection> Client<C> {
         if operation == Operation::SessionCreate {
             self.worktree.creation_uncertain = true;
         }
-        let result = self
-            .connection
-            .begin_operator(&wire)
-            .map_err(ClientError::from);
+        let result = self.begin_operator(&wire);
         self.worktree_result(result)
     }
 
@@ -129,7 +126,7 @@ impl<C: Connection> Client<C> {
                 Err(error) => Err(self.fail_worktree(error)),
             };
         }
-        let result = self.connection.poll_operator().map_err(ClientError::from);
+        let result = self.poll_operator();
         self.worktree_result(result)
     }
 

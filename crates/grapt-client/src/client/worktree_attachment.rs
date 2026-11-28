@@ -9,7 +9,6 @@ enum Phase {
     Agents,
     Models,
     Default,
-    Permissions,
     History,
     Subagents,
     Forms,
@@ -23,7 +22,6 @@ impl Phase {
             Self::Agents => Operation::AgentList,
             Self::Models => Operation::ModelList,
             Self::Default => Operation::ModelDefault,
-            Self::Permissions => Operation::PermissionRequestList,
             // The session's coherent snapshot, which also proves the service
             // serves snapshots before the session goes live.
             Self::History => Operation::SessionSnapshot,
@@ -38,8 +36,7 @@ impl Phase {
             Self::Project => Self::Agents,
             Self::Agents => Self::Models,
             Self::Models => Self::Default,
-            Self::Default => Self::Permissions,
-            Self::Permissions => Self::History,
+            Self::Default => Self::History,
             Self::History => Self::Subagents,
             Self::Subagents => Self::Forms,
             Self::Forms => Self::Preset,
@@ -59,14 +56,7 @@ pub(super) struct Attachment {
     agents: Vec<crate::wire::AgentRow>,
     models: Vec<ModelRow>,
     default: Option<ModelRow>,
-    permissions: Vec<u8>,
-    /// The permission refresh when the list was read: a later refresh of a
-    /// session is newer than that session's staged asks.
-    permission_revision: Option<u64>,
     history: Vec<u8>,
-    /// The permission refresh when the snapshot was read: a later refresh of
-    /// the target session is newer than the snapshot's asks.
-    history_revision: Option<u64>,
     subagents: Option<ModelRow>,
     forms: Vec<crate::wire::FormRow>,
     preset: Option<crate::wire::PresetSnapshot>,
@@ -92,10 +82,7 @@ impl Attachment {
             agents: Vec::new(),
             models: Vec::new(),
             default: None,
-            permissions: Vec::new(),
-            permission_revision: None,
             history: Vec::new(),
-            history_revision: None,
             subagents: None,
             forms: Vec::new(),
             preset: None,
@@ -171,10 +158,6 @@ impl Attachment {
                     .map_err(crate::wire::WireError::from)?;
                 self.check_catalog_location(dto.location().get())?;
                 self.default = crate::wire::decode_model_default(&bytes)?;
-            }
-            Phase::Permissions => {
-                crate::wire::decode_permissions(&bytes)?;
-                self.permissions = bytes;
             }
             Phase::History => {
                 let snapshot = super::snapshot::decode(&bytes)?;
@@ -266,31 +249,13 @@ impl<C: Connection> Client<C> {
             .attachment
             .take()
             .ok_or(ClientError::NoSelection)?;
-        // A service already refused as too old is asked nothing more.
-        if let Some(missing) = self.recovery.too_old {
-            if attachment.waiting {
-                self.connection.cancel_operator();
-            }
-            return Err(super::snapshot::too_old(missing));
-        }
         let operation = attachment.phase.operation();
-        if !attachment.waiting {
-            match attachment.phase {
-                Phase::Permissions => {
-                    attachment.permission_revision = Some(self.permission_refresh.revision())
-                }
-                Phase::History => {
-                    attachment.history_revision = Some(self.permission_refresh.revision())
-                }
-                _ => {}
-            }
-        }
         let response = if attachment.waiting {
-            self.connection.poll_operator()?
+            self.poll_operator()?
         } else {
             // Host-started I/O never coexists with a pending resume.
             self.abandon_resume();
-            self.connection.begin_operator(&attachment.request()?)?
+            self.begin_operator(&attachment.request()?)?
         };
         let Some(response) = response else {
             attachment.waiting = true;
@@ -326,16 +291,6 @@ impl<C: Connection> Client<C> {
         let preset = attachment.preset.take().ok_or(ClientError::InvalidInput(
             "Attachment preset was not acquired.",
         ))?;
-        // Global asks remain interactive while later attachment reads wait.
-        // A refresh that covered a session after a staged read wins for that
-        // session alone; a refresh of another session never discards the
-        // target's staged asks.
-        let snapshot_permissions = attachment
-            .history_revision
-            .is_some_and(|staged| !self.permission_refresh.covered_since(&id, staged));
-        if let Some(staged) = attachment.permission_revision {
-            self.accept_staged_permissions(&attachment.permissions, staged)?;
-        }
         self.prepare_session_selection(&id)?;
         self.begin_tail();
         self.install_attachment_catalog(attachment.agents, attachment.models, attachment.default);
@@ -365,12 +320,12 @@ impl<C: Connection> Client<C> {
         self.subagent_model = Some(attachment.subagents);
         // Installed at the snapshot's committed position, never at zero. Its
         // forms are older than the form list read after it, which installs
-        // next, and its asks only count when no refresh came after it.
+        // next. Its asks are older than the list read once it is installed.
         self.install_snapshot_sections(
             &id,
             &attachment.history,
             super::snapshot::Sections {
-                permissions: snapshot_permissions,
+                permissions: false,
                 forms: false,
             },
         )?;
@@ -394,7 +349,10 @@ impl<C: Connection> Client<C> {
         if self.preset.launch.is_none() {
             self.preset.job = None;
         }
-        self.request_queued_inputs(&id);
+        // Every open ask, the new Session's included, comes from one list
+        // read after the install, so no ask staged earlier outlives a newer
+        // one.
+        self.request_asks_and_queued_inputs(&id);
         self.draft_creation = creation::Draft::Inactive;
         self.sessions.retain(|row| row.id != id);
         self.sessions.insert(

@@ -89,10 +89,10 @@ impl<C: Connection> Client<C> {
     pub fn recovery_wait_at(&self, now: Duration) -> Option<Duration> {
         let poll = Duration::from_millis(10);
         // A service refused as too old is never read or subscribed again, and
-        // the pump refuses before any read it owns advances: only a request
-        // its host polls can still settle.
+        // the reads the pump owns settled with the refusal: only a request its
+        // host polls still waits, to settle at its next poll.
         if self.recovery.too_old.is_some() {
-            return self.host_polled_request_pending().then_some(poll);
+            return self.operator_request_pending().then_some(poll);
         }
         let subscription = (!self.connection.subscribed()).then(|| {
             if self.recovery.subscription_pending {
@@ -155,9 +155,6 @@ impl<C: Connection> Client<C> {
     }
 
     pub(super) fn recover(&mut self, now: Duration) -> Result<bool, ClientError> {
-        if let Some(missing) = self.recovery.too_old {
-            return Err(super::snapshot::too_old(missing));
-        }
         let mut changed = false;
         if !self.connection.subscribed() {
             let result = if self.recovery.subscription_pending {
@@ -180,8 +177,7 @@ impl<C: Connection> Client<C> {
                     Ok(Some(false)) => self.defer_subscription(now),
                     Err(error) if error.is_transient() => self.defer_subscription(now),
                     Err(TransportError::ServerTooOld { missing }) => {
-                        self.recovery.too_old = Some(missing);
-                        return Err(super::snapshot::too_old(missing));
+                        return Err(self.settle_refused(missing));
                     }
                     Err(error) => return Err(error.into()),
                 }
@@ -292,6 +288,16 @@ impl<C: Connection> Client<C> {
     }
 
     pub(super) fn request_queued_inputs(&mut self, session: &SessionWireId) {
+        self.queue_presentation(session, false);
+    }
+
+    /// The open asks across sessions, then the queued inputs, re-read on the
+    /// same lane: for a session installed without a list of its own.
+    pub(super) fn request_asks_and_queued_inputs(&mut self, session: &SessionWireId) {
+        self.queue_presentation(session, true);
+    }
+
+    fn queue_presentation(&mut self, session: &SessionWireId, permissions: bool) {
         if self.selected.as_ref() == Some(session) {
             if self
                 .recovery
@@ -306,7 +312,7 @@ impl<C: Connection> Client<C> {
             // read lane, while live frames and the composer remain responsive.
             self.recovery.history = Some(History {
                 session: session.clone(),
-                permissions: false,
+                permissions,
                 messages: false,
                 pending: false,
             });

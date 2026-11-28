@@ -207,7 +207,7 @@ impl<C: Connection> Client<C> {
             .cloned()
             .collect();
         let permissions = if sections.permissions {
-            Some(self.permission_candidate(snapshot.permissions, kept, Some(session.clone()))?)
+            Some(self.permission_candidate(snapshot.permissions, kept))
         } else {
             None
         };
@@ -254,9 +254,6 @@ impl<C: Connection> Client<C> {
     /// owner when it is incomplete for now. A service without the snapshot
     /// is refused as too old where its answer is accepted.
     pub(super) fn read_snapshot(&mut self, session: &SessionWireId) -> Result<(), ClientError> {
-        if let Some(missing) = self.recovery.too_old {
-            return Err(too_old(missing));
-        }
         match self.ingest(
             Operation::SessionSnapshot,
             Some(session),
@@ -272,29 +269,6 @@ impl<C: Connection> Client<C> {
                 Ok(())
             }
             Err(error) => Err(self.latch_too_old(error)),
-        }
-    }
-
-    /// Refuse this service terminally as too old for this client. Its stream
-    /// is retired before the refusal, so nothing it sends later can count,
-    /// and no later cut, pump or reconnect asks it anything again.
-    pub(super) fn refuse_too_old(&mut self, missing: &'static str) -> ClientError {
-        self.connection.cancel_read();
-        self.connection.refuse_stream(missing);
-        self.recovery.too_old = Some(missing);
-        self.recovery.history = None;
-        self.positions.reset();
-        self.cursor.stream_closed();
-        too_old(missing)
-    }
-
-    /// A too-old refusal from any read becomes terminal; others pass through.
-    pub(super) fn latch_too_old(&mut self, error: ClientError) -> ClientError {
-        match error {
-            ClientError::Transport(TransportError::ServerTooOld { missing }) => {
-                self.refuse_too_old(missing)
-            }
-            error => error,
         }
     }
 }
@@ -399,18 +373,13 @@ pub(super) fn missing(body: &[u8], bound: usize) -> Option<ClientError> {
             .and_then(serde_json::Value::as_str)
     };
     match field("_tag") {
-        None => Some(too_old("session snapshots")),
+        None => Some(super::refusal::too_old("session snapshots")),
         Some(tag) => Some(ClientError::Refused {
             operation: Operation::SessionSnapshot.operation_id(),
             status: 404,
             message: field("message").unwrap_or(tag).to_owned(),
         }),
     }
-}
-
-/// The refusal for a service that predates what this client needs.
-pub(super) fn too_old(missing: &'static str) -> ClientError {
-    ClientError::Transport(TransportError::ServerTooOld { missing })
 }
 
 #[cfg(test)]

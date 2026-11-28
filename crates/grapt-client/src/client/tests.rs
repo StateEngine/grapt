@@ -278,7 +278,7 @@ mod interruption;
 mod live_output;
 mod newest_first;
 mod paging;
-mod permissions;
+mod refusal;
 mod streaming;
 mod submission;
 mod superseded;

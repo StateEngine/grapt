@@ -67,6 +67,8 @@ impl<C: Connection> Client<C> {
     }
 
     pub fn pump_at(&mut self, now: std::time::Duration) -> Result<bool, ClientError> {
+        // A refused service is asked nothing, so no owner below advances.
+        self.refused()?;
         let before = self.connection_status();
         // Before any frame: a certificate after the deadline is never read.
         let mut changed = self.expire_resume(now);

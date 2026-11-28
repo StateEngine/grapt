@@ -281,7 +281,6 @@ pub struct Client<C: Connection> {
     sessions: Vec<SessionSummary>,
     catalog_reach: CatalogReach,
     permissions: Vec<PermissionAsk>,
-    permission_refresh: authority::Refreshes,
     /// Bumped by every acknowledged close, rename, create, reply or cancel, so
     /// an off-loop snapshot issued before it is never applied over it.
     acknowledged: u64,
@@ -389,7 +388,6 @@ impl<C: Connection> Client<C> {
             sessions: Vec::new(),
             catalog_reach: CatalogReach::Read,
             permissions: Vec::new(),
-            permission_refresh: authority::Refreshes::default(),
             acknowledged: 0,
             grants: grants::State::default(),
             selected: None,
@@ -540,6 +538,7 @@ impl<C: Connection> Client<C> {
         location: Option<&str>,
         page: Option<Page<'_>>,
     ) -> Result<Vec<u8>, ClientError> {
+        self.refused()?;
         let wire = self.wire(operation, session, request, body, location, page)?;
         // A synchronous call is host-started I/O: it never coexists with a
         // pending resume.
@@ -749,6 +748,8 @@ impl<C: Connection> Client<C> {
     /// and stayed reconciling unless the walk finished: past 64 pages a session
     /// never went live, and recovery re-walked all 64 about once a second.
     pub fn reconcile(&mut self, session: &SessionWireId) -> Result<(), ClientError> {
+        // A refused service is read no more, not even through a queued read.
+        self.refused()?;
         self.begin_tail();
         // The snapshot is read once this stream's first frame has arrived. A
         // wait is queued, and the queued read applies its bound (this caller
@@ -930,5 +931,6 @@ mod workspace_diff;
 
 mod offloop;
 pub use offloop::{PeriodicRead, PreparedRead};
+mod refusal;
 mod response;
 mod snapshot;

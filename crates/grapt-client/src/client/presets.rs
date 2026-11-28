@@ -142,6 +142,17 @@ impl<C: Connection> Client<C> {
         ))
     }
 
+    /// A refused service answers no preset read: a waiting one ends with the
+    /// refusal.
+    pub(super) fn refuse_preset(&mut self, refusal: &str) {
+        if let Some(job) = self.preset.job.take() {
+            if job.pending {
+                self.connection.cancel_read();
+            }
+            self.preset.error = Some(refusal.to_owned());
+        }
+    }
+
     pub(super) fn advance_preset(&mut self) -> bool {
         if self
             .recovery

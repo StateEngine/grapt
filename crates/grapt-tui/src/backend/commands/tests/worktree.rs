@@ -997,8 +997,8 @@ fn a_staged_snapshot_never_overwrites_newer_forms_or_target_asks() -> TestResult
     Ok(())
 }
 
-/// Open a worktree whose new Session has an ask, run `interfere` once both
-/// the list and the snapshot are staged, and check the target's ask survives.
+/// Open a worktree whose new Session has an ask, run `interfere` once its
+/// snapshot is staged, and check the target's ask is open after the install.
 fn staged_target_asks_survive(
     interfere: impl FnOnce(&mut Client<WorktreePeer>, &grapt_client::wire::SessionWireId) -> TestResult,
 ) -> TestResult {
@@ -1042,12 +1042,14 @@ fn staged_target_asks_survive(
     client.peer_mut().nonblocking_only = true;
     finish_attachment(&mut submissions, &mut client)?;
     assert_eq!(client.selected(), Some(&target));
+    // The installed session's asks come from the list read after it.
+    client.pump()?;
     assert!(
         client
             .permissions()
             .iter()
             .any(|ask| ask.session_id == target && ask.title == "target ask"),
-        "a refresh of another session discarded the target's staged ask"
+        "an earlier refresh of another session hid the target's ask"
     );
     Ok(())
 }

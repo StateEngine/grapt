@@ -203,10 +203,7 @@ impl<C: Connection> Client<C> {
             server: server.into(),
             request,
         });
-        let result = self
-            .connection
-            .begin_operator(&wire)
-            .map_err(ClientError::from);
+        let result = self.begin_operator(&wire);
         self.mcp_auth_result(result)
     }
 
@@ -225,7 +222,7 @@ impl<C: Connection> Client<C> {
                     .startup_wait(location, &flight.existing_forms)
         });
         self.connection.operator_human_wait(waiting);
-        let result = self.connection.poll_operator().map_err(ClientError::from);
+        let result = self.poll_operator();
         self.mcp_auth_result(result)
     }
 
