@@ -176,7 +176,7 @@ pub(super) fn upsert_row(
     state: ResumeState,
     reason: Option<&str>,
     updated_at: i64,
-) -> Result<(), String> {
+) -> Result<usize, String> {
     upsert_row_with_input(
         store,
         session,
@@ -201,7 +201,7 @@ pub(super) fn upsert_row_with_input(
     reason: Option<&str>,
     updated_at: i64,
     active_input: Option<&MessageId>,
-) -> Result<(), String> {
+) -> Result<usize, String> {
     let seq = i64::try_from(turn_origin_seq)
         .map_err(|_| "turn_origin_seq overflows SQLite INTEGER".to_owned())?;
     let attempts = i64::from(attempts);
@@ -231,17 +231,20 @@ pub(super) fn upsert_row_with_input(
         ],
     )
     .map_err(|error| format!("pending_resume upsert failed: {error}"))?;
-    if let Some(input_id) = active_input {
+    let retired = if let Some(input_id) = active_input {
         grapt_inbox::Inbox::register_resume_input_within(&tx, session, input_id, turn_origin_seq)
             .map_err(|error| format!("resume input registration failed: {error}"))?;
+        0
     } else if matches!(state, ResumeState::Completed | ResumeState::Stopped) {
         grapt_inbox::Inbox::retire_resume_inputs_within(&tx, session)
-            .map_err(|error| format!("resume input retirement failed: {error}"))?;
-    }
+            .map_err(|error| format!("resume input retirement failed: {error}"))?
+    } else {
+        0
+    };
     tx.commit()
         .map_err(|error| format!("pending_resume commit failed: {error}"))?
         .discard();
-    Ok(())
+    Ok(retired)
 }
 
 pub(super) fn list_runnable_after(

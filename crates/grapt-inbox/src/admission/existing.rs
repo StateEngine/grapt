@@ -214,9 +214,35 @@ impl Inbox {
             })?
             .collect::<Result<_, _>>()?;
         match messages.as_slice() {
-            [] => Err(corrupt(
-                "admitted event exists but neither pending row nor projected message".into(),
-            )),
+            [] => {
+                // A retired synthetic auto-resume input is a valid terminal
+                // outcome: its `session_pending` slot was freed without
+                // promoting a message, and exact-key retries reconcile cleanly.
+                if input_type == "synthetic" {
+                    use rusqlite::OptionalExtension as _;
+                    let retired: Option<i64> = tx
+                        .query_row(
+                            "SELECT active FROM session_resume_input
+                             WHERE session_id = ?1 AND input_id = ?2",
+                            rusqlite::params![session, input.as_str()],
+                            |row| row.get(0),
+                        )
+                        .optional()?;
+                    if retired == Some(0) {
+                        return Ok(Some(ExistingAdmission {
+                            session: session.to_owned(),
+                            input_type: input_type.to_owned(),
+                            delivery: delivery.to_owned(),
+                            text: text.to_owned(),
+                            description,
+                            metadata,
+                        }));
+                    }
+                }
+                Err(corrupt(
+                    "admitted event exists but neither pending row nor projected message".into(),
+                ))
+            }
             [(
                 message_session,
                 message_type,

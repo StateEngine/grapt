@@ -824,7 +824,9 @@ impl Inbox {
                     continue;
                 }
                 if Self::native_mail_input_eligible_within(&tx, session, &candidate)?
-                    && Self::auto_resume_input_eligible_within(&tx, session, &candidate)?
+                    && Self::auto_resume_input_eligible_within(
+                        &tx, &held, &aggregate, session, &candidate,
+                    )?
                 {
                     next = Some(candidate);
                     break;
@@ -957,8 +959,57 @@ impl Inbox {
         }
     }
 
+    fn verify_writer_epoch_within(
+        tx: &GovernedTransaction<'_>,
+        held: &HeldWriters,
+        session: &SessionId,
+        aggregate: &AggregateId,
+    ) -> Result<(), InboxError> {
+        use rusqlite::OptionalExtension as _;
+        let writer = held.token(aggregate)?;
+        let submitted = writer.epoch().value();
+        let current_epoch: Option<i64> = tx
+            .query_row(
+                "SELECT epoch FROM aggregate_writer
+                 WHERE aggregate_family = 'session' AND aggregate_id = ?1",
+                [session.as_str()],
+                |row| row.get(0),
+            )
+            .optional()?;
+        match current_epoch {
+            Some(actual) if actual == i64::from(submitted) => Ok(()),
+            Some(actual) => {
+                let elected = u32::try_from(actual).map_err(|_| {
+                    InboxError::Store(grapt_store::WriteError::Election(
+                        grapt_store::ElectionError::CorruptEpoch {
+                            family: "session",
+                            aggregate: session.as_str().to_owned(),
+                            value: actual,
+                        },
+                    ))
+                })?;
+                Err(InboxError::Store(grapt_store::WriteError::Election(
+                    grapt_store::ElectionError::StaleWriter {
+                        family: "session",
+                        aggregate: session.as_str().to_owned(),
+                        submitted,
+                        elected,
+                    },
+                )))
+            }
+            None => Err(InboxError::Store(grapt_store::WriteError::Election(
+                grapt_store::ElectionError::UnknownWriter {
+                    family: "session",
+                    aggregate: session.as_str().to_owned(),
+                },
+            ))),
+        }
+    }
+
     fn auto_resume_input_eligible_within(
         tx: &GovernedTransaction<'_>,
+        held: &HeldWriters,
+        aggregate: &AggregateId,
         session: &SessionId,
         candidate: &PendingInput,
     ) -> Result<bool, InboxError> {
@@ -978,6 +1029,7 @@ impl Inbox {
             return Ok(true);
         };
         if active == 0 {
+            Self::verify_writer_epoch_within(tx, held, session, aggregate)?;
             tx.execute(
                 "DELETE FROM session_pending
                  WHERE session_id = ?1 AND id = ?2 AND input_type = 'synthetic'",
@@ -1002,6 +1054,7 @@ impl Inbox {
             )
             .optional()?;
         if newer_human.is_some() {
+            Self::verify_writer_epoch_within(tx, held, session, aggregate)?;
             tx.execute(
                 "UPDATE session_resume_input SET active = 0
                  WHERE session_id = ?1 AND input_id = ?2",

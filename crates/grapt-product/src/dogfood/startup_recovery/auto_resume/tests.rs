@@ -785,6 +785,31 @@ fn non_resume_synthetic_or_missing_start_never_inherits_finished_human_turn() ->
     Ok(())
 }
 
+fn admit_resume_in_inbox(
+    inbox: &mut grapt_inbox::Inbox,
+    ids: &OsRandomIds,
+    clock: &SystemClock,
+    session: &SessionId,
+    resume_id: &grapt_types::MessageId,
+) -> Result<grapt_inbox::AdmitOutcome, String> {
+    let ev: EventId = format!("evt_{}", ids.mint().as_str())
+        .parse()
+        .map_err(|e| format!("{e}"))?;
+    inbox
+        .admit_synthetic(grapt_inbox::SyntheticAdmitRequest {
+            event_id: &ev,
+            session,
+            input: resume_id,
+            text: "resume interrupted turn",
+            description: None,
+            metadata: None,
+            delivery: grapt_types::DeliveryMode::Queue,
+            resume: true,
+            created_ms: clock.now().as_millis(),
+        })
+        .map_err(|e| e.to_string())
+}
+
 #[test]
 fn retired_auto_resume_input_is_skipped_by_inbox_promotion() -> Result<(), String> {
     let (mut store, ids, clock) = test_store()?;
@@ -803,22 +828,7 @@ fn retired_auto_resume_input_is_skipped_by_inbox_promotion() -> Result<(), Strin
         Some(&resume_id),
     )?;
     let mut inbox = grapt_inbox::Inbox::new(store).map_err(|e| e.to_string())?;
-    let ev_resume: EventId = format!("evt_{}", ids.mint().as_str())
-        .parse()
-        .map_err(|e| format!("{e}"))?;
-    inbox
-        .admit_synthetic(grapt_inbox::SyntheticAdmitRequest {
-            event_id: &ev_resume,
-            session: &session,
-            input: &resume_id,
-            text: "resume interrupted turn",
-            description: None,
-            metadata: None,
-            delivery: grapt_types::DeliveryMode::Queue,
-            resume: true,
-            created_ms: clock.now().as_millis(),
-        })
-        .map_err(|e| e.to_string())?;
+    let _ = admit_resume_in_inbox(&mut inbox, &ids, &clock, &session, &resume_id)?;
     let pending_rows = |conn: &rusqlite::Connection| -> Result<i64, String> {
         conn.query_row(
             "SELECT COUNT(*) FROM session_pending WHERE session_id = ?1",
@@ -828,8 +838,6 @@ fn retired_auto_resume_input_is_skipped_by_inbox_promotion() -> Result<(), Strin
         .map_err(|e| e.to_string())
     };
     assert_eq!(pending_rows(inbox.store().connection())?, 1);
-    // Retiring the Running row must atomically remove the synthetic input from
-    // `session_pending` so it neither consumes inbox budget nor blocks undo.
     upsert_row(
         inbox.store_mut(),
         &session,
@@ -840,6 +848,13 @@ fn retired_auto_resume_input_is_skipped_by_inbox_promotion() -> Result<(), Strin
         Some("superseded_by_newer_prompt"),
         clock.now().as_millis(),
     )?;
+    assert_eq!(pending_rows(inbox.store().connection())?, 0);
+    // Exact-key retry of the retired synthetic input reconciles cleanly.
+    let retried = admit_resume_in_inbox(&mut inbox, &ids, &clock, &session, &resume_id)?;
+    assert!(matches!(
+        retried,
+        grapt_inbox::AdmitOutcome::Reconciled { .. }
+    ));
     assert_eq!(pending_rows(inbox.store().connection())?, 0);
     let human_id: grapt_types::MessageId = "msg_newer_human".parse().map_err(|e| format!("{e}"))?;
     let ev_human: EventId = format!("evt_{}", ids.mint().as_str())
@@ -924,5 +939,101 @@ fn queued_prompt_promoted_after_prior_process_loss_does_not_inherit_ambiguity() 
     let row = load_row(store.connection(), &session)?.ok_or("missing queued-b row")?;
     assert_eq!(row.state, ResumeState::Pending);
     assert_eq!(row.turn_origin_seq, queued_b_seq);
+    Ok(())
+}
+
+#[test]
+fn stale_writer_epoch_cannot_retire_resume_input_on_empty_promotion() -> Result<(), String> {
+    let dir = tempfile::Builder::new()
+        .prefix("grapt-auto-resume-stale-")
+        .tempdir()
+        .map_err(|e| e.to_string())?;
+    let db_path = dir.path().join("events.sqlite");
+    let ids = OsRandomIds::seed().map_err(|e| e.to_string())?;
+    let clock = SystemClock;
+    let session: SessionId = "ses_auto_stale_epoch".parse().map_err(|e| format!("{e}"))?;
+
+    let mut store_a = EventStore::open(&db_path, "test").map_err(|e| e.to_string())?;
+    grapt_inbox::Inbox::ensure_tables(store_a.connection()).map_err(|e| e.to_string())?;
+    let tx = store_a.governed_transaction().map_err(|e| e.to_string())?;
+    ensure_schema_within(&tx)?;
+    tx.commit().map_err(|e| e.to_string())?.discard();
+
+    let origin = seed_active_turn(&mut store_a, &ids, &clock, &session, None, "exec_s1")?;
+    let resume_id = synthetic_message_id(&session, origin, 1)?;
+    upsert_row_with_input(
+        &mut store_a,
+        &session,
+        origin,
+        "exec_s1",
+        1,
+        ResumeState::Running,
+        None,
+        clock.now().as_millis(),
+        Some(&resume_id),
+    )?;
+    let mut inbox_a = grapt_inbox::Inbox::new(store_a).map_err(|e| e.to_string())?;
+    let _ = admit_resume_in_inbox(&mut inbox_a, &ids, &clock, &session, &resume_id)?;
+
+    // Second store elects a newer writer epoch and appends a newer human prompt
+    // event (leaving `resume_id` as the only pending row so `promote_next` hits
+    // the empty-selection retirement path).
+    let mut store_b = EventStore::open(&db_path, "test").map_err(|e| e.to_string())?;
+    let aggregate = AggregateId::Session(session.clone());
+    store_b
+        .elect_writer(&aggregate)
+        .map_err(|e| e.to_string())?;
+    let _ = append_event(
+        &mut store_b,
+        &ids,
+        &clock,
+        &session,
+        "session.input.admitted",
+        1,
+        json!({"inputID": "msg_newer_b", "input": {"type": "user", "data": {"text": "newer"}}}),
+    )?;
+
+    // Stale store_a must be refused with StaleWriter and must NOT mutate
+    // `session_resume_input` or delete `resume_id` from `session_pending`.
+    let ev_promo: EventId = format!("evt_{}", ids.mint().as_str())
+        .parse()
+        .map_err(|e| format!("{e}"))?;
+    let mut mint = || ev_promo.clone();
+    let err = inbox_a
+        .promote_next(
+            &session,
+            grapt_inbox::PromoteScope::InputAtIdle,
+            &mut mint,
+            clock.now().as_millis(),
+        )
+        .err()
+        .ok_or("stale writer promote_next must fail")?;
+    assert!(
+        matches!(
+            err,
+            grapt_inbox::InboxError::Store(grapt_store::WriteError::Election(
+                grapt_store::ElectionError::StaleWriter { .. }
+            ))
+        ),
+        "expected StaleWriter, got {err:?}"
+    );
+    let active: i64 = store_b
+        .connection()
+        .query_row(
+            "SELECT active FROM session_resume_input WHERE session_id = ?1 AND input_id = ?2",
+            rusqlite::params![session.as_str(), resume_id.as_str()],
+            |row| row.get(0),
+        )
+        .map_err(|e| e.to_string())?;
+    assert_eq!(active, 1);
+    let still_pending: i64 = store_b
+        .connection()
+        .query_row(
+            "SELECT COUNT(*) FROM session_pending WHERE session_id = ?1 AND id = ?2",
+            rusqlite::params![session.as_str(), resume_id.as_str()],
+            |row| row.get(0),
+        )
+        .map_err(|e| e.to_string())?;
+    assert_eq!(still_pending, 1);
     Ok(())
 }

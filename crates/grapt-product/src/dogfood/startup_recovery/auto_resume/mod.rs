@@ -249,6 +249,39 @@ pub(in crate::dogfood) async fn drive(
     }
 }
 
+fn settle_drive_outcome(
+    application: &DogfoodApplication,
+    row: &PendingRow,
+    attempt: u32,
+    state: ResumeState,
+    reason: &str,
+) {
+    let retired = {
+        let mut inbox = application.lock_inbox();
+        let now_ms = application.clock.now().as_millis();
+        upsert_row(
+            inbox.store_mut(),
+            &row.session,
+            row.turn_origin_seq,
+            &row.interrupted_execution_id,
+            attempt,
+            state,
+            Some(reason),
+            now_ms,
+        )
+        .unwrap_or(0)
+    };
+    if retired > 0 {
+        application.hub.invalidate_session_because(
+            &row.session,
+            &format!(
+                "session {}: retired automatic resume input ({reason})",
+                row.session
+            ),
+        );
+    }
+}
+
 async fn drive_one(
     application: &Arc<DogfoodApplication>,
     principal: &SealedPrincipal,
@@ -309,35 +342,19 @@ async fn drive_one(
             ));
         }
         Ok(AutoResumeAdmission::Superseded(reason)) => {
-            let mut inbox = application.lock_inbox();
-            let now_ms = application.clock.now().as_millis();
-            let _ = upsert_row(
-                inbox.store_mut(),
-                &row.session,
-                row.turn_origin_seq,
-                &row.interrupted_execution_id,
-                attempt,
-                ResumeState::Completed,
-                Some(reason),
-                now_ms,
-            );
+            settle_drive_outcome(application, &row, attempt, ResumeState::Completed, reason);
             crate::server_log::info(format_args!(
                 "session {}: automatic resume superseded before admission reason={reason}",
                 row.session
             ));
         }
         Err(error) => {
-            let mut inbox = application.lock_inbox();
-            let now_ms = application.clock.now().as_millis();
-            let _ = upsert_row(
-                inbox.store_mut(),
-                &row.session,
-                row.turn_origin_seq,
-                &row.interrupted_execution_id,
+            settle_drive_outcome(
+                application,
+                &row,
                 attempt,
                 ResumeState::Stopped,
-                Some("resume_submission_failed"),
-                now_ms,
+                "resume_submission_failed",
             );
             crate::server_log::warn(format_args!(
                 "session {}: automatic resume submission failed: {error}",
@@ -442,7 +459,7 @@ fn claim_row(
         } else {
             ResumeState::Stopped
         };
-        upsert_row(
+        let retired = upsert_row(
             store,
             &row.session,
             current.turn_origin_seq,
@@ -452,6 +469,15 @@ fn claim_row(
             Some(reason),
             now_ms,
         )?;
+        if retired > 0 {
+            application.hub.invalidate_session_because(
+                &row.session,
+                &format!(
+                    "session {}: retired stale automatic resume input",
+                    row.session
+                ),
+            );
+        }
         return Ok(ClaimOutcome::Skip);
     }
     match current.state {
