@@ -84,16 +84,18 @@ impl Plan {
     }
 
     pub(super) fn filesystem(&self) -> grapt_types::FilesystemAuthority {
-        let identities = |paths: &[PathBuf]| {
+        let identities = |paths: &[PathBuf]| -> Vec<grapt_types::PathIdentity> {
             paths
                 .iter()
                 .map(|path| grapt_types::PathIdentity::canonical(super::path_text(path)))
                 .collect()
         };
+        let mut deny = identities(&self.protected);
+        deny.extend(identities(&self.denied));
         grapt_types::FilesystemAuthority::new(
             identities(&self.readable),
             identities(&self.writable),
-            identities(&self.protected),
+            deny,
         )
     }
     pub(super) fn egress(&self) -> grapt_types::EgressAuthority {

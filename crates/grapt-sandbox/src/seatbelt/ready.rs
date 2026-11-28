@@ -13,17 +13,23 @@ use std::os::fd::AsFd;
 
 pub(super) const READY: &[u8] = b"GRAPT_SEATBELT_READY\n";
 
-fn strip_deprecation_warnings(prefix: &[u8]) -> Vec<u8> {
-    let text = String::from_utf8_lossy(prefix);
-    let mut kept = String::new();
-    for line in text.split_inclusive('\n') {
-        let lower = line.to_ascii_lowercase();
-        if lower.contains("sandbox-exec") && lower.contains("deprecated") {
-            continue;
+fn is_deprecation_warning(line: &[u8]) -> bool {
+    let Ok(text) = std::str::from_utf8(line) else {
+        return false;
+    };
+    let lower = text.to_ascii_lowercase();
+    lower.contains("sandbox-exec") && lower.contains("deprecated")
+}
+
+fn strip_pre_ready_deprecation_warnings(prefix: &[u8], suffix: &[u8]) -> Vec<u8> {
+    let mut kept = Vec::with_capacity(prefix.len() + suffix.len());
+    for line in prefix.split_inclusive(|&byte| byte == b'\n') {
+        if !is_deprecation_warning(line) {
+            kept.extend_from_slice(line);
         }
-        kept.push_str(line);
     }
-    kept.into_bytes()
+    kept.extend_from_slice(suffix);
+    kept
 }
 
 pub(super) fn wait_ready(
@@ -54,8 +60,10 @@ pub(super) fn wait_ready(
             .windows(READY.len())
             .position(|window| window == READY)
         {
-            bytes.drain(position..position + READY.len());
-            return Ok(strip_deprecation_warnings(&bytes));
+            return Ok(strip_pre_ready_deprecation_warnings(
+                &bytes[..position],
+                &bytes[position + READY.len()..],
+            ));
         }
         if count == 0 {
             return Err(refused(
@@ -83,11 +91,14 @@ mod tests {
     ) -> Result<(), Box<dyn std::error::Error>> {
         let (mut reader, mut writer) = std::io::pipe()?;
         writer.write_all(
-            b"sandbox-exec: -p is deprecated\nwarning: keep this diagnostic\nGRAPT_SEATBELT_READY\n",
+            b"sandbox-exec: -p is deprecated\nwarning: keep \xff diagnostic\nGRAPT_SEATBELT_READY\nsandbox-exec: post-ready deprecated stays\n",
         )?;
         drop(writer);
         let prefix = wait_ready(&mut reader, 1000)?;
-        assert_eq!(prefix, b"warning: keep this diagnostic\n");
+        assert_eq!(
+            prefix,
+            b"warning: keep \xff diagnostic\nsandbox-exec: post-ready deprecated stays\n"
+        );
         Ok(())
     }
 

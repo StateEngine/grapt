@@ -130,16 +130,18 @@ mod tests {
         let Some(mode) = std::env::var_os(PROBE_ENV) else {
             return Ok(());
         };
+        let mode = mode.to_string_lossy();
         let network = mode == "on";
         install(network)?;
         let status = std::process::Command::new("python3")
             .args([
                 "-c",
-                "import socket, sys\na, b = socket.socketpair(socket.AF_UNIX, socket.SOCK_DGRAM)\ntry:\n    a.sendmsg([b'probe'])\n    sys.exit(0)\nexcept PermissionError:\n    sys.exit(77)\n",
+                "import errno, socket, sys\na, b = socket.socketpair(socket.AF_UNIX, socket.SOCK_DGRAM)\ntry:\n    a.sendmsg([b'probe'])\n    sys.exit(0)\nexcept OSError as exc:\n    sys.exit(77 if exc.errno == errno.EPERM else 78)\n",
             ])
             .status()?;
         let expected = if network { 0 } else { 77 };
         assert_eq!(status.code(), Some(expected));
+        println!("GRAPT_SECCOMP_PROBE_RAN={mode}");
         Ok(())
     }
 
@@ -159,6 +161,11 @@ mod tests {
                 output.status.success(),
                 "seccomp sendmsg probe ({mode}) failed: {}",
                 String::from_utf8_lossy(&output.stderr)
+            );
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            assert!(
+                stdout.contains(&format!("GRAPT_SECCOMP_PROBE_RAN={mode}")),
+                "seccomp sendmsg probe ({mode}) did not execute witness child: {stdout}"
             );
         }
         Ok(())
