@@ -64,8 +64,8 @@ impl PreparedProviderInputs {
     }
 
     /// Check an optional handover build pin against the inputs actually used.
-    /// The configured store directive is validated as configuration but never
-    /// grants database inspection, initialization, migration or open authority.
+    /// A `store.authority` still named in the configuration is validated but
+    /// grants nothing: the store is opened as it is found.
     pub fn prepare_for_build(
         service_root: &Path,
         expected_build: Option<&str>,

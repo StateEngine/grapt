@@ -1,11 +1,10 @@
-//! Test-only credentials in the formats real Windows accounts hold: a DPAPI
-//! envelope sealed by Windows itself, and a keystore envelope naming a key
-//! Credential Manager never held.
-use super::{entropy, envelope, DPAPI_ENVELOPE};
-use base64::{engine::general_purpose::STANDARD, Engine as _};
-use std::io::{self, Read, Write};
-use std::process::{Command, Stdio};
+//! Test-only credentials in the formats real accounts hold: a DPAPI envelope
+//! sealed by Windows itself, and a keystore envelope naming a key the
+//! keystore never held.
+use super::{entropy, envelope};
+use std::io;
 
+#[cfg(windows)]
 const PROTECT: &str = "Add-Type -AssemblyName System.Security; \
     $data = [Convert]::FromBase64String([Console]::In.ReadLine()); \
     $sealed = [Security.Cryptography.ProtectedData]::Protect($data, $null, \
@@ -13,7 +12,11 @@ const PROTECT: &str = "Add-Type -AssemblyName System.Security; \
     [Console]::Out.Write([Convert]::ToBase64String($sealed))";
 
 /// `plaintext` sealed with CurrentUser DPAPI, in the earlier envelope.
+#[cfg(windows)]
 pub(crate) fn dpapi_sealed(plaintext: &[u8]) -> io::Result<Vec<u8>> {
+    use base64::{engine::general_purpose::STANDARD, Engine as _};
+    use std::io::{Read, Write};
+    use std::process::{Command, Stdio};
     let root = std::env::var_os("SystemRoot")
         .map(std::path::PathBuf::from)
         .ok_or_else(|| io::Error::other("SystemRoot is unset"))?;
@@ -47,7 +50,7 @@ pub(crate) fn dpapi_sealed(plaintext: &[u8]) -> io::Result<Vec<u8>> {
     let blob = STANDARD
         .decode(output.trim())
         .map_err(|_| io::Error::other("DPAPI output is not base64"))?;
-    Ok([DPAPI_ENVELOPE, &blob].concat())
+    Ok([super::DPAPI_ENVELOPE, &blob].concat())
 }
 
 /// `plaintext` sealed in the keystore envelope under a fresh key identity

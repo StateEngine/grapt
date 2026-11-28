@@ -187,10 +187,10 @@
       "file": "crates/grapt-platform/src/store.rs",
       "package": "grapt-product",
       "test_target": "product_root",
-      "old": "            (StoreReadiness::Ready, StoreDirective::OpenReady) => OwnedOpenAuthority::OpenReady,",
-      "new": "            (StoreReadiness::Ready, StoreDirective::OpenReady) => OwnedOpenAuthority::OpenReady,\n            (StoreReadiness::Absent, StoreDirective::OpenReady) => OwnedOpenAuthority::OpenReady,",
-      "test": "absent_store_refuses_before_registration_authority",
-      "red": "absent_store_refuses_before_registration_authority ... FAILED"
+      "old": "        StoreReadiness::QuarantinedOrCorrupt(obstruction) => Err(\n            PlatformStoreRefusal::CorruptOrQuarantined(Box::new(obstruction)),\n        ),",
+      "new": "        StoreReadiness::QuarantinedOrCorrupt(_) => Ok(OwnedOpenAuthority::OpenReady), // MUTATED: SHV17",
+      "test": "damaged_store_refuses_before_registration_authority",
+      "red": "damaged_store_refuses_before_registration_authority ... FAILED"
     }
   ]
 }

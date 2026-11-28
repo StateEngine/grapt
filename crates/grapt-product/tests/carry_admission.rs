@@ -497,50 +497,6 @@ fn request(
     (status, parsed)
 }
 
-/// Bounded wait for the pre-bind refusal: no ready receipt for this pid
-/// may appear, and the process must exit non-zero. A clean exit over an
-/// incomplete carry is the failure this witness exists to catch.
-fn wait_refused(root: &Path, child: &mut ServeChild) -> Output {
-    let child_pid = child.child.id();
-    let ready_path = root.join("serve-ready.json");
-    for _ in 0..6000 {
-        if let Ok(bytes) = fs::read(&ready_path) {
-            if let Ok(value) = serde_json::from_slice::<serde_json::Value>(&bytes) {
-                if value["pid"].as_u64() == Some(u64::from(child_pid)) {
-                    let _ = child.child.kill();
-                    let output = collect_output(child);
-                    panic!(
-                        "the incomplete carry bound its endpoint before refusing: {}",
-                        String::from_utf8_lossy(&output.stderr)
-                    );
-                }
-            }
-        }
-        match child.child.try_wait() {
-            Ok(Some(status)) => {
-                let output = collect_output(child);
-                assert!(
-                    !status.success(),
-                    "the product exited cleanly over an incomplete carry: stdout={} stderr={}",
-                    String::from_utf8_lossy(&output.stdout),
-                    String::from_utf8_lossy(&output.stderr)
-                );
-                return output;
-            }
-            Ok(None) => {}
-            Err(error) => panic!("product status could not be read: {error}"),
-        }
-        thread::sleep(Duration::from_millis(10));
-    }
-    let _ = child.child.kill();
-    let output = collect_output(child);
-    panic!(
-        "the incomplete carry neither bound nor refused within the bounded wait: stdout={} stderr={}",
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr)
-    );
-}
-
 /// Wait for the answer's terminal finish before saving the history that a
 /// reopened service must reproduce. Text can be visible while still streaming.
 fn wait_message(address: SocketAddr, session_id: &str) -> serde_json::Value {
@@ -728,8 +684,8 @@ fn an_incomplete_session_carry_is_refused_on_open() {
 fn the_first_launch_of_a_pre_fix_store_migrates_before_bind() {
     // J02 shipped-composition witness for the F4 correction. The claim
     // under test is the ORDER of the shipped serve, not a library
-    // property: the authorized store open - and, under the migrate
-    // directive, the migration it runs - establishes the type-leading
+    // property: the store open - and the migration it runs on a store
+    // pending one - establishes the type-leading
     // carry index before the first carried-reference query, with the
     // admission still before the listener bind. Only the real binary can
     // witness that, so the test drives it end to end from the exact
@@ -741,7 +697,6 @@ fn the_first_launch_of_a_pre_fix_store_migrates_before_bind() {
     // Phase 0: the exact pre-fix state, and the hazard it names. Without
     // the type-leading index the admission enumeration has no bounded
     // access path on the grown table.
-    let make_root = root;
     let root = root("j02-prefix");
     reset(&root);
     let database = root.join("database.sqlite3");
@@ -794,43 +749,7 @@ fn the_first_launch_of_a_pre_fix_store_migrates_before_bind() {
         "the first launch must not leave a full-scan access path: {plan_text}"
     );
 
-    // Phase 2: the order disambiguation. Even a REFUSED store open precedes
-    // the admission: under the open-ready directive the pre-fix database is
-    // refused at the store authorization itself, before any event table is
-    // read and before the admission could refuse.
-    let ready_root = make_root("j02-prefix-ready");
-    reset(&ready_root);
-    let ready_database = ready_root.join("database.sqlite3");
-    pre_fix_state(&ready_database, &ready_root.join("migration-backup"));
-    write_inputs(&ready_root, 5000, "open-ready");
-    let mut product = launch_serve(&ready_root);
-    let output = wait_refused(&ready_root, &mut product);
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(
-        stdout.contains("\"outcome\":\"refused\""),
-        "the refusal receipt is missing: {stdout}"
-    );
-    assert!(
-        stderr.contains("does not authorize first-contact state MigrationNeeded"),
-        "the store authorization refusal is not named: {stderr}"
-    );
-    assert!(
-        !stderr.contains("incomplete database carry refused before bind"),
-        "the store open must refuse before the carry admission runs: {stderr}"
-    );
-    assert_eq!(
-        index_migration_rows(&ready_database),
-        0,
-        "the refused open must not have migrated the database"
-    );
-    assert!(
-        !index_present(&ready_database, "event_type_id_idx"),
-        "the refused open must not have created the index"
-    );
-
     reset(&root);
-    reset(&ready_root);
 }
 
 #[test]

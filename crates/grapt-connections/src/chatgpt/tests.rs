@@ -31,6 +31,8 @@ impl Profile {
             std::env::temp_dir().join(format!("grapt-connections-{case}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&path);
         std::fs::create_dir(&path).unwrap_or_else(|error| panic!("profile: {error}"));
+        grapt_login::profile_security::isolate_test_keystore()
+            .unwrap_or_else(|error| panic!("test keystore: {error}"));
         Self(path)
     }
 

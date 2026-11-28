@@ -51,15 +51,12 @@ pub(in crate::compose) fn platform(error: PlatformRefusal) -> ProductRefusal {
         error @ PlatformRefusal::Store(
             grapt_platform::PlatformStoreRefusal::CorruptOrQuarantined(_),
         ) => return crate::installation::platform_refusal(error),
-        // Owned-open refusals name their safe state and the store.authority
-        // advice that repairs it; the refusal's payloads (migration plans,
-        // backup paths, lower-level causes) never cross this boundary.
+        // Owned-open refusals name their safe state and the step that gets
+        // past it; the refusal's payloads (migration plans, backup paths,
+        // lower-level causes) never cross this boundary.
         PlatformRefusal::Store(grapt_platform::PlatformStoreRefusal::OwnedOpen(cause)) => {
             return ProductRefusal::TerminalSetup(owned_open_setup(&cause))
         }
-        PlatformRefusal::Store(
-            cause @ grapt_platform::PlatformStoreRefusal::DirectiveMismatch { .. },
-        ) => return ProductRefusal::TerminalSetup(cause.to_string()),
         PlatformRefusal::Store(_) => {
             "profile store could not be opened; preserve the profile and repair its store access"
         }
@@ -89,27 +86,16 @@ fn readiness_state(readiness: &grapt_store::StoreReadiness) -> &'static str {
     }
 }
 
-/// The store.authority tail that repairs an observed state. The directive
-/// policy matches the platform mismatch advice: initialize an absent
-/// store, migrate a pending plan, open-ready a ready store; obstructed
-/// states admit no directive, because none would succeed.
-fn directive_advice(readiness: &grapt_store::StoreReadiness) -> &'static str {
+/// The step past a store that changed while it was being opened: the next
+/// start observes it again and acts on what it finds. Obstructed states keep
+/// their refusal, because no restart would get past them.
+fn restart_advice(readiness: &grapt_store::StoreReadiness) -> &'static str {
     match readiness {
-        grapt_store::StoreReadiness::Absent => {
-            "in grapt.jsonc set store.authority to \"initialize\" to match it"
-        }
-        grapt_store::StoreReadiness::MigrationNeeded(_) => {
-            "in grapt.jsonc set store.authority to \"migrate\" to apply the pending migration plan, then to \"open-ready\" to open the store once it is ready"
-        }
-        grapt_store::StoreReadiness::HotJournal
-        | grapt_store::StoreReadiness::Slow
-        | grapt_store::StoreReadiness::Ready => {
-            "in grapt.jsonc set store.authority to \"open-ready\" to match it"
-        }
         grapt_store::StoreReadiness::Unreadable(_)
         | grapt_store::StoreReadiness::QuarantinedOrCorrupt(_) => {
             "the refusal stands until the obstruction is repaired"
         }
+        _ => "close any other Grapt process using this profile and start again",
     }
 }
 
@@ -118,12 +104,12 @@ fn state_advice(readiness: &grapt_store::StoreReadiness, wrong: &str) -> String 
         "the store is {} and {}; {}",
         readiness_state(readiness),
         wrong,
-        directive_advice(readiness)
+        restart_advice(readiness)
     )
 }
 
 /// The terminal text for an owned-open refusal: safe typed state plus the
-/// store.authority advice that repairs it. Raw plans, paths and
+/// step that gets past it. Raw plans, paths and
 /// lower-level causes are refused at the source (review AR-H1 on 3e8cae9c),
 /// so no final redaction has to catch them.
 fn owned_open_setup(cause: &grapt_store::OwnedOpenError) -> String {
@@ -135,19 +121,11 @@ fn owned_open_setup(cause: &grapt_store::OwnedOpenError) -> String {
             "profile store is quarantined or corrupt; preserve the profile and repair its store"
                 .to_owned()
         }
-        grapt_store::OwnedOpenError::AuthorityMismatch { observed, .. } => state_advice(
-            observed,
-            "the current store.authority does not authorize that state",
-        ),
-        grapt_store::OwnedOpenError::StaleMigrationPlan { observed, .. } => state_advice(
-            observed,
-            "the stored migration authority no longer matches it",
-        ),
-        grapt_store::OwnedOpenError::MigrationAuthorizationRequired(_) => {
-            "initialized store requires explicit migration authority; in grapt.jsonc set \
-             store.authority to \"migrate\" to apply the pending migration plan, then to \
-             \"open-ready\" to open the store once it is ready"
-                .to_owned()
+        grapt_store::OwnedOpenError::AuthorityMismatch { observed, .. } => {
+            state_advice(observed, "it changed while it was being opened")
+        }
+        grapt_store::OwnedOpenError::StaleMigrationPlan { observed, .. } => {
+            state_advice(observed, "it changed after its migration was planned")
         }
         grapt_store::OwnedOpenError::InitializationConflict(observed) => {
             state_advice(observed, "another process created it before this open")
@@ -372,97 +350,6 @@ mod tests {
         Ok(())
     }
 
-    /// F2 witness: a directive that does not authorize the store's state is a
-    /// configuration fix, and the terminal names the directive that would.
-    /// Driven through inspect_for_build, the product's own first call.
-    #[test]
-    fn directive_mismatch_keeps_its_store_authority_advice_at_the_terminal() -> Result<(), String> {
-        let root = scratch("directive")?;
-        std::fs::write(
-            root.join("grapt.jsonc"),
-            r#"{
-                "store": {"authority": "open-ready"},
-                "product": {"build": "df0-feedback-build"},
-                "provider": {"id":"openai","model":"fixture-model","base_model":"fixture-model","family":"openai-responses","protocol_family":"openai-responses","endpoint":"http://127.0.0.1:1",
-                    "route":"responses","account":"fixture","credential_version":"fixture-v1","policy_version":"first-use-v1","variants":[]}
-            }"#,
-        )
-        .map_err(|error| error.to_string())?;
-        std::fs::write(
-            root.join("account-models.json"),
-            r#"{"data":[{"id":"fixture-model","max_model_len":128000}]}"#,
-        )
-        .map_err(|error| error.to_string())?;
-        std::fs::write(
-            root.join("provider.credential"),
-            "synthetic-provider-secret",
-        )
-        .map_err(|error| error.to_string())?;
-        let refusal = grapt_platform::PlatformOwner::inspect_for_build(&root, None)
-            .err()
-            .ok_or("the mismatched profile unexpectedly loaded")?;
-        let PlatformRefusal::Store(grapt_platform::PlatformStoreRefusal::DirectiveMismatch {
-            directive,
-            observed,
-        }) = refusal
-        else {
-            let _cleanup = std::fs::remove_dir_all(&root);
-            return Err(format!(
-                "first contact lost its directive mismatch: {refusal}"
-            ));
-        };
-        assert_eq!(directive, grapt_platform::StoreDirective::OpenReady);
-        assert_eq!(observed, grapt_platform::FirstContactKind::Absent);
-        for message in [
-            platform(PlatformRefusal::Store(
-                grapt_platform::PlatformStoreRefusal::DirectiveMismatch {
-                    directive,
-                    observed,
-                },
-            ))
-            .to_string(),
-            redact(platform(PlatformRefusal::Store(
-                grapt_platform::PlatformStoreRefusal::DirectiveMismatch {
-                    directive,
-                    observed,
-                },
-            )))
-            .to_string(),
-        ] {
-            assert!(
-                message.contains(
-                    "store directive OpenReady does not authorize first-contact state Absent"
-                ),
-                "terminal lost the mismatch cause: {message}"
-            );
-            assert!(
-                message.contains("set store.authority to \"initialize\""),
-                "terminal lost the directive advice: {message}"
-            );
-        }
-        std::fs::remove_dir_all(&root).map_err(|error| error.to_string())?;
-        Ok(())
-    }
-
-    #[test]
-    fn terminal_reuses_platform_store_mismatch_wording() {
-        for observed in [
-            grapt_platform::FirstContactKind::Ready,
-            grapt_platform::FirstContactKind::MigrationNeeded,
-        ] {
-            let cause = grapt_platform::PlatformStoreRefusal::DirectiveMismatch {
-                directive: grapt_platform::StoreDirective::Initialize,
-                observed,
-            };
-            let expected = cause.to_string();
-            let ProductRefusal::TerminalSetup(actual) = platform(PlatformRefusal::Store(cause))
-            else {
-                panic!("store mismatch lost its terminal setup classification");
-            };
-            assert_eq!(actual, expected);
-        }
-    }
-
     fn owned_open(cause: grapt_store::OwnedOpenError) -> PlatformRefusal {
         PlatformRefusal::Store(grapt_platform::PlatformStoreRefusal::OwnedOpen(cause))
     }
@@ -489,7 +376,7 @@ mod tests {
     }
 
     /// The assertion applied to every owned-open terminal form: the safe
-    /// state and the expected store.authority advice are present; the
+    /// state and the expected advice are present; the
     /// classified payload (the sentinel path, and the raw enum shapes only a
     /// `Debug` render would print) is absent.
     fn assert_owned_open_terminal(
@@ -528,12 +415,12 @@ mod tests {
     }
 
     /// F2 witness (corrected for AR-H1): an owned-open refusal reaches the
-    /// terminal as safe state plus store.authority advice, never as the raw
-    /// refusal Display. These variants fire only when the store state moves
+    /// terminal as safe state plus the restart that gets past it, never as the
+    /// raw refusal Display. These variants fire only when the store state moves
     /// between classification and open, so the refusals are constructed; the
     /// mapping under test is the real terminal boundary.
     #[test]
-    fn owned_open_refusal_keeps_its_store_authority_advice_at_the_terminal() -> Result<(), String> {
+    fn owned_open_refusal_names_a_restart_at_the_terminal() -> Result<(), String> {
         let dir = scratch("owned-open")?;
         assert_owned_open_terminal(
             || grapt_store::OwnedOpenError::AuthorityMismatch {
@@ -541,10 +428,7 @@ mod tests {
                 authority: Box::new(grapt_store::OwnedOpenAuthority::OpenReady),
             },
             None,
-            &[
-                "the store is absent",
-                "set store.authority to \"initialize\"",
-            ],
+            &["the store is absent", "start again"],
         );
         assert_owned_open_terminal(
             || grapt_store::OwnedOpenError::StaleMigrationPlan {
@@ -552,22 +436,7 @@ mod tests {
                 observed: Box::new(grapt_store::StoreReadiness::Ready),
             },
             None,
-            &[
-                "the store is ready",
-                "set store.authority to \"open-ready\"",
-            ],
-        );
-        assert_owned_open_terminal(
-            || {
-                grapt_store::OwnedOpenError::MigrationAuthorizationRequired(Box::new(
-                    sentinel_plan(&dir),
-                ))
-            },
-            None,
-            &[
-                "initialized store requires explicit migration authority",
-                "then to \"open-ready\" to open the store once it is ready",
-            ],
+            &["the store is ready", "start again"],
         );
         std::fs::remove_dir_all(&dir).map_err(|error| error.to_string())?;
         Ok(())
@@ -580,7 +449,6 @@ mod tests {
     /// platform mapping and the final redaction. The other path-bearing and
     /// cause-bearing variants are covered the same way.
     #[test]
-    #[expect(clippy::too_many_lines, reason = "legacy")]
     fn owned_open_payloads_never_cross_the_terminal_boundary() -> Result<(), String> {
         let dir = scratch("owned-open-sentinel")?;
         let sentinel = dir
@@ -589,15 +457,6 @@ mod tests {
             .to_string_lossy()
             .into_owned();
         assert_owned_open_terminal(
-            || {
-                grapt_store::OwnedOpenError::MigrationAuthorizationRequired(Box::new(
-                    sentinel_plan(&dir),
-                ))
-            },
-            Some(&sentinel),
-            &["set store.authority to \"migrate\""],
-        );
-        assert_owned_open_terminal(
             || grapt_store::OwnedOpenError::StaleMigrationPlan {
                 authorized: Box::new(sentinel_plan(&dir)),
                 observed: Box::new(grapt_store::StoreReadiness::MigrationNeeded(sentinel_plan(
@@ -605,10 +464,7 @@ mod tests {
                 ))),
             },
             Some(&sentinel),
-            &[
-                "the store is pending a migration",
-                "set store.authority to \"migrate\"",
-            ],
+            &["the store is pending a migration", "start again"],
         );
         assert_owned_open_terminal(
             || {
@@ -617,10 +473,7 @@ mod tests {
                 ))
             },
             Some(&sentinel),
-            &[
-                "another process created it before this open",
-                "store.authority",
-            ],
+            &["another process created it before this open", "start again"],
         );
         assert_owned_open_terminal(
             || {
@@ -641,10 +494,7 @@ mod tests {
                 ))),
             },
             Some(&sentinel),
-            &[
-                "does not authorize that state",
-                "set store.authority to \"migrate\"",
-            ],
+            &["changed while it was being opened", "start again"],
         );
         assert_owned_open_terminal(
             || {

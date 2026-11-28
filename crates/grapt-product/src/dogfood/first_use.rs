@@ -40,7 +40,7 @@ fn write_new(path: &Path, bytes: &[u8]) -> Result<(), String> {
             .file_name()
             .is_some_and(|name| name != "basic.credential")
     {
-        protected = grapt_login::profile_security::seal(bytes).map_err(|error| {
+        protected = grapt_login::profile_security::seal_for(bytes, path).map_err(|error| {
             format!(
                 "profile credential protection failed: {}",
                 grapt_login::profile_security::failure_diagnostic(&error)

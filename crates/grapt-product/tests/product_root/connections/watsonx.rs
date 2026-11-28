@@ -88,6 +88,10 @@ fn launch(profile: &Path, endpoint: &str) -> TestResult<(RestartProcess, Client)
         .encoded()?;
     let mut process = RestartProcess(
         grapt_service::launcher_environment::command(shipped_cli::product_binary())
+            .env(
+                grapt_login::profile_security::TEST_KEYSTORE_VARIABLE,
+                grapt_login::profile_security::isolate_test_keystore()?,
+            )
             .args([
                 "serve-terminal",
                 "--profile-approval",
@@ -147,6 +151,10 @@ fn fresh_watsonx_connect_refuses_without_publication_then_renews_and_restarts() 
     reset(&root);
     let profile = root.join("profile");
     let initialized = Command::new(shipped_cli::product_binary())
+        .env(
+            grapt_login::profile_security::TEST_KEYSTORE_VARIABLE,
+            grapt_login::profile_security::isolate_test_keystore()?,
+        )
         .args(["init-profile", "--service"])
         .arg(&profile)
         .output()?;
@@ -192,11 +200,7 @@ fn fresh_watsonx_connect_refuses_without_publication_then_renews_and_restarts() 
     );
     let vault = profile.join(&records.connections[0].credential_file);
     let sealed = fs::read(&vault)?;
-    if cfg!(windows) {
-        assert!(grapt_login::profile_security::is_protected(&sealed));
-    } else {
-        assert!(sealed.starts_with(b"secode.credential-vault.v1\n"));
-    }
+    assert!(grapt_login::profile_security::is_protected(&sealed));
     let metadata = fs::read(profile.join("connections.json"))?;
     assert!(!String::from_utf8_lossy(&metadata).contains("fixture-ibm-cloud-api-key"));
     assert_eq!(client.response("POST", route, r#"{"key":"fixture-ibm-cloud-api-key","watsonx":{"region":"us-south.foreign.invalid","project":"fixture-project","model":"ibm/granite-4-h-small"}}"#, true)?.0, 400);

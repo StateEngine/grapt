@@ -142,10 +142,29 @@ pub(super) fn stage(
         }
         write_new(&journal.join(file.name(spelling)), file.bytes())?;
     }
-    let state = crate::profile_security::seal(&super::encode(tokens))?;
-    write_new(&journal.join(super::STATE_FILE), state.as_slice())?;
-    let credential = crate::profile_security::seal(tokens.access.as_bytes())?;
-    write_new(&journal.join(super::CREDENTIAL_FILE), credential.as_slice())?;
+    // Staged files are published over the profile's own, so both are sealed
+    // together as replacements for the files they will become.
+    let state_bytes = super::encode(tokens);
+    let items: [&[u8]; 2] = [&state_bytes, tokens.access.as_bytes()];
+    let sealed = match journal.parent() {
+        Some(profile) => {
+            let targets = [
+                profile.join(super::STATE_FILE),
+                profile.join(super::CREDENTIAL_FILE),
+            ];
+            crate::profile_security::seal_all(&items, &[&targets[0], &targets[1]])?
+        }
+        None => items
+            .iter()
+            .map(|bytes| crate::profile_security::seal(bytes))
+            .collect::<std::io::Result<Vec<_>>>()?,
+    };
+    for (name, bytes) in [super::STATE_FILE, super::CREDENTIAL_FILE]
+        .iter()
+        .zip(&sealed)
+    {
+        write_new(&journal.join(name), bytes.as_slice())?;
+    }
     super::sync_directory(journal);
     if commit {
         write_new(&journal.join(COMMITTING), MARKER)?;

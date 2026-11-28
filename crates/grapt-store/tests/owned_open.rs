@@ -327,3 +327,32 @@ fn unreadable_corrupt_and_quarantined_paths_remain_distinct_refusals() -> TestRe
     std::fs::remove_dir_all(root)?;
     Ok(())
 }
+
+/// A database reached through a file link is backed up beside the real file,
+/// on its filesystem, never beside the link, and only its owner can read it.
+#[cfg(unix)]
+#[test]
+fn a_linked_database_is_backed_up_beside_the_file_it_names() -> TestResult {
+    let root = scratch("linked-backup")?;
+    let (real, link) = (root.join("real"), root.join("link"));
+    std::fs::create_dir_all(&real)?;
+    std::fs::create_dir_all(&link)?;
+    legacy_database(&real.join("store.db"))?;
+    let alias = link.join("store.db");
+    std::os::unix::fs::symlink(real.join("store.db"), &alias)?;
+    let plan = migration_plan(&alias);
+    assert_eq!(plan.backup.location, real.canonicalize()?);
+    let opened = open_with(&alias, OwnedOpenAuthority::Migrate(plan), &FixedAuthorities)?;
+    drop(opened);
+    assert_eq!(backup_count(&real)?, 1);
+    assert_eq!(backup_count(&link)?, 0);
+    for entry in std::fs::read_dir(&real)? {
+        let entry = entry?;
+        if entry.file_name().to_string_lossy().ends_with(".bak") {
+            use std::os::unix::fs::PermissionsExt;
+            assert_eq!(entry.metadata()?.permissions().mode() & 0o777, 0o600);
+        }
+    }
+    std::fs::remove_dir_all(root)?;
+    Ok(())
+}

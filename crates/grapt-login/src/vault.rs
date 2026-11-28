@@ -35,6 +35,17 @@ pub enum VaultError {
     /// removed, never read.
     #[error("{}", crate::profile_security::KEY_MISSING)]
     KeyMissing,
+    /// The keystore that seals the stored credential cannot be reached. The
+    /// credential is never read or overwritten another way; it can be removed.
+    #[error(
+        "the system keystore that seals this credential is unavailable; start it and try \
+         again, or remove this connection and add it again"
+    )]
+    KeystoreUnavailable,
+    /// The keystore on the bus `DBUS_SESSION_BUS_ADDRESS` names was not used:
+    /// the address is malformed or that keystore failed.
+    #[error("{}", .0.guidance())]
+    KeystoreBus(crate::profile_security::BusRefusal),
 }
 
 /// A finite storage boundary; never a caller-supplied path or request label.
@@ -193,7 +204,11 @@ pub enum CredentialView<'a> {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BackendKind {
+    /// Sealed under a key the operating system's keystore holds.
+    SystemKeystoreEncryption,
+    /// Sealed with Windows DPAPI by an earlier release.
     WindowsCurrentUserEncryption,
+    /// An owner-only file, not sealed.
     OwnerOnlyLegacyPlaintext,
 }
 

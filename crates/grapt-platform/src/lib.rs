@@ -24,8 +24,8 @@ use grapt_types::{ClockAuthority, IdAuthority, ResolvedModelTarget};
 
 pub use config::{
     composed_catalogs_advice, BuildAttribution, ComposedCatalog, ConfigPublicationError,
-    CredentialGrant, ProviderTargetAuthority, PublishedConfig, PublishedReload, StoreDirective,
-    COMPOSED_CATALOGS, MAX_CATALOG_ROWS,
+    CredentialGrant, ProviderTargetAuthority, PublishedConfig, PublishedReload, COMPOSED_CATALOGS,
+    MAX_CATALOG_ROWS,
 };
 pub use credential::{
     CredentialAuthority, CredentialCustody, CredentialRefusal, CredentialResolutionRequest,
@@ -209,6 +209,17 @@ impl PreparedPlatformInputs {
     }
 }
 
+/// Tell the operator once per start that `store.authority` no longer does
+/// anything, so it can be removed instead of kept in step with the store.
+fn note_legacy_store_authority(config: &PublishedConfig) {
+    if config.names_legacy_store_authority() {
+        eprintln!(
+            "grapt.jsonc: store.authority is ignored and can be removed; the store is \
+             created, migrated behind a verified backup, or opened as it is found."
+        );
+    }
+}
+
 impl PlatformOwner {
     /// First activation of a setup profile consumes the normal store owner
     /// with the pending, already validated connection generation.
@@ -223,7 +234,8 @@ impl PlatformOwner {
             credential,
             secondary_credentials,
         } = PreparedProviderInputs::prepare_pending_connections(service_root, records)?;
-        let store = first_contact.authorize(config.store_directive())?;
+        note_legacy_store_authority(&config);
+        let store = first_contact.authorize()?;
         PreparedPlatformInputs {
             first_contact: observed,
             store,
@@ -258,7 +270,8 @@ impl PlatformOwner {
             secondary_credentials,
         } = PreparedProviderInputs::load_for_build(service_root, expected_build)?;
         let observed = first_contact.kind();
-        let store = first_contact.authorize(config.store_directive())?;
+        note_legacy_store_authority(&config);
+        let store = first_contact.authorize()?;
         Ok(PreparedPlatformInputs {
             first_contact: observed,
             store,
@@ -280,12 +293,8 @@ impl PlatformOwner {
             credential,
             secondary_credentials,
         } = PreparedProviderInputs::load_for_build(service_root, None)?;
-        let store = first_contact.open_with_authorities(
-            config.store_directive(),
-            config.build().as_str(),
-            clock,
-            ids,
-        )?;
+        note_legacy_store_authority(&config);
+        let store = first_contact.open_with_authorities(config.build().as_str(), clock, ids)?;
         Ok(Self {
             store,
             config,
