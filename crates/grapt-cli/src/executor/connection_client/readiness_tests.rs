@@ -3,8 +3,8 @@
 use super::*;
 use std::cell::Cell;
 
-const WINDOW: Duration = Duration::from_secs(8);
-const ALLOWANCE: Duration = Duration::from_secs(3);
+const WINDOW: Duration = Duration::from_secs(10);
+const ALLOWANCE: Duration = Duration::from_secs(5);
 
 #[tokio::test(start_paused = true)]
 async fn a_winner_that_becomes_ready_within_the_window_is_borrowed() {
@@ -42,14 +42,14 @@ async fn the_last_probe_starts_with_its_allowance_left() {
 
 #[tokio::test(start_paused = true)]
 async fn a_winner_ready_just_before_the_last_start_is_borrowed_in_time() {
-    // Ready from 4.95 seconds on; each probe's health check takes 2.5 seconds
+    // Ready from 4.95 seconds on; each probe's health check takes 4.5 seconds
     // once the winner answers, which the last probe has time for.
     let started = tokio::time::Instant::now();
     let ready = poll_ready(WINDOW, ALLOWANCE, || async move {
         if started.elapsed() < Duration::from_millis(4_950) {
             return Attempt::Pending;
         }
-        tokio::time::sleep(Duration::from_millis(2_500)).await;
+        tokio::time::sleep(Duration::from_millis(4_500)).await;
         Attempt::Ready(())
     })
     .await;
@@ -72,7 +72,7 @@ async fn an_answer_after_the_window_is_not_used() {
 async fn a_slow_probe_cannot_outlast_the_window() {
     let started = tokio::time::Instant::now();
     let ready: Option<()> = poll_ready(WINDOW, ALLOWANCE, || async {
-        tokio::time::sleep(Duration::from_secs(4)).await;
+        tokio::time::sleep(Duration::from_secs(6)).await;
         Attempt::Pending
     })
     .await;
@@ -86,4 +86,27 @@ async fn a_refusal_stops_the_poll_at_once() {
     let ready: Option<()> = poll_ready(WINDOW, ALLOWANCE, || async { Attempt::Stop }).await;
     assert_eq!(ready, None);
     assert_eq!(started.elapsed(), Duration::ZERO);
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_probe_pending_at_the_last_start_is_followed_by_one_more() {
+    // The first probe runs until exactly the last start; the winner is ready
+    // for the probe that follows it.
+    let started = tokio::time::Instant::now();
+    let probes = Cell::new(0);
+    let ready = poll_ready(WINDOW, ALLOWANCE, || {
+        probes.set(probes.get() + 1);
+        let first = probes.get() == 1;
+        async move {
+            if first {
+                tokio::time::sleep(WINDOW - ALLOWANCE).await;
+                Attempt::Pending
+            } else {
+                Attempt::Ready(())
+            }
+        }
+    })
+    .await;
+    assert_eq!(ready, Some(()), "stopped while the allowance remained");
+    assert_eq!(started.elapsed(), WINDOW - ALLOWANCE);
 }

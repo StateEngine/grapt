@@ -19,6 +19,11 @@ const MAX_RESPONSE_BYTES: usize = 8_192;
 const MAX_BODY_BYTES: usize = 4_096;
 const CONNECT_ALLOWANCE: Duration = Duration::from_secs(1);
 const IO_ALLOWANCE: Duration = Duration::from_secs(2);
+/// The longest one probe can take: its connect, then its request write and
+/// its response read, each under its own allowance.
+pub const HEALTH_PROBE_ALLOWANCE: Duration = CONNECT_ALLOWANCE
+    .saturating_add(IO_ALLOWANCE)
+    .saturating_add(IO_ALLOWANCE);
 
 #[derive(Debug, Clone)]
 pub struct HealthExpectation {

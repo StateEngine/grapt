@@ -59,6 +59,10 @@ fn a_row_without_tools_or_text_output_is_not_capable() -> TestResult {
     assert!(!provider.capable(&row(serde_json::json!({
         "output_modalities":["embedding"],"architecture":{"output_modalities":[]}
     })))?);
+    assert!(!provider.capable(&row(serde_json::json!({
+        "output_modalities":["text","text","text","text","text","text","text","text","text"],
+        "architecture":{"output_modalities":["embedding"]}
+    })))?);
     Ok(())
 }
 

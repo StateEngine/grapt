@@ -120,13 +120,14 @@ pub(super) async fn default_profile(limits: CliLimits) -> Result<ApiClient, Fail
     }
 }
 
+/// The time a discovery probe needs to finish: its authenticated health
+/// check's connect, write and read, end to end. No probe starts with less
+/// than this left in the window.
+const BORROW_PROBE_ALLOWANCE: Duration = grapt_service::HEALTH_PROBE_ALLOWANCE;
 /// How long a command that lost the profile's election waits, in total, for
-/// the winner's service to finish starting.
-const BORROW_WINDOW: Duration = Duration::from_secs(8);
-/// The time a discovery probe needs to finish, its authenticated health
-/// check's connect and exchange included: no probe starts with less than this
-/// left in the window.
-const BORROW_PROBE_ALLOWANCE: Duration = Duration::from_secs(3);
+/// the winner's service to finish starting: probes start for five seconds,
+/// and the last one has its whole allowance to finish.
+const BORROW_WINDOW: Duration = Duration::from_secs(5).saturating_add(BORROW_PROBE_ALLOWANCE);
 /// The first pause between discovery attempts; each later one doubles, up to
 /// one second.
 const BORROW_FIRST_WAIT: Duration = Duration::from_millis(100);
@@ -174,12 +175,16 @@ where
     let last_start = deadline - allowance.min(window);
     let mut wait = BORROW_FIRST_WAIT;
     loop {
+        let started = tokio::time::Instant::now();
         let attempt = tokio::time::timeout_at(deadline, probe()).await.ok()?;
         let now = tokio::time::Instant::now();
         match attempt {
             Attempt::Ready(value) if now <= deadline => return Some(value),
             Attempt::Ready(_) | Attempt::Stop => return None,
-            Attempt::Pending if now >= last_start => return None,
+            // Pending while the allowance is still left: probe again, at the
+            // latest as the last start arrives. A probe started then was the
+            // last.
+            Attempt::Pending if started >= last_start || now > last_start => return None,
             Attempt::Pending => {}
         }
         tokio::time::sleep_until((now + wait).min(last_start)).await;

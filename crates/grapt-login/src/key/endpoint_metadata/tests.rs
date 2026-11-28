@@ -191,4 +191,10 @@ fn a_row_states_its_modalities_one_way() {
         fields(&empty_own)["output_modalities"],
         json!(["embedding"])
     );
+    // A malformed or oversized own list gives way to a valid nested one.
+    for own in [json!(vec!["text"; 9]), json!([1])] {
+        let row = json!({"output_modalities":own,
+            "architecture":{"output_modalities":["embedding"]}});
+        assert_eq!(fields(&row)["output_modalities"], json!(["embedding"]));
+    }
 }

@@ -115,7 +115,8 @@ pub(super) fn fields(row: &Value) -> Value {
 /// The modalities a listing row states for one side ("input" or "output"),
 /// read one way wherever a row is judged: the row's own list first, as a local
 /// server states it, then the one under `architecture`. An empty list states
-/// nothing, and a list outside its bounds is not a model fact.
+/// nothing, and a malformed or oversized one is not a model fact, so the next
+/// candidate is read instead.
 pub fn stated_modalities<'a>(row: &'a Value, side: &str) -> Option<&'a Vec<Value>> {
     let name = format!("{side}_modalities");
     [
@@ -125,14 +126,16 @@ pub fn stated_modalities<'a>(row: &'a Value, side: &str) -> Option<&'a Vec<Value
     ]
     .into_iter()
     .flatten()
-    .find_map(|value| value.as_array().filter(|items| !items.is_empty()))
-    .filter(|modalities| {
-        modalities.len() <= MAX_MODALITIES
-            && modalities.iter().all(|value| {
-                value
-                    .as_str()
-                    .is_some_and(|name| !name.is_empty() && name.len() <= 32)
-            })
+    .find_map(|value| {
+        value.as_array().filter(|modalities| {
+            !modalities.is_empty()
+                && modalities.len() <= MAX_MODALITIES
+                && modalities.iter().all(|value| {
+                    value
+                        .as_str()
+                        .is_some_and(|name| !name.is_empty() && name.len() <= 32)
+                })
+        })
     })
 }
 
