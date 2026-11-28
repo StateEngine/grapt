@@ -263,19 +263,22 @@ impl InstructionService {
         Self::refresh_folded(store, &session, |_, _| Ok((input, ()))).map(|(outcome, ())| outcome)
     }
 
-    /// Refresh with an input chosen from what the Session records for `key`,
-    /// read from the same fold the refresh applies, so the journal is read
-    /// once. A move or rewind clears the Session's instructions but not what
-    /// it began with, so a cleared Session answers from the values it last
-    /// held.
+    /// Refresh with an input chosen from what the Session records for each
+    /// of `keys`, in order, read from the same fold the refresh applies, so
+    /// the journal is read once. A move or rewind clears the Session's
+    /// instructions but not what it began with, so a cleared Session answers
+    /// from the values it last held.
     pub fn refresh_recorded<E: From<InstructionError>>(
         store: &mut EventStore,
         session: &SessionId,
-        key: &InstructionKey,
-        build: impl FnOnce(&RecordedValue) -> Result<RefreshInput, E>,
-    ) -> Result<(RefreshOutcome, RecordedValue), E> {
+        keys: &[InstructionKey],
+        build: impl FnOnce(&[RecordedValue]) -> Result<RefreshInput, E>,
+    ) -> Result<(RefreshOutcome, Vec<RecordedValue>), E> {
         Self::refresh_folded(store, session, |conn, fold| {
-            let recorded = recorded_in(conn, fold, key)?;
+            let recorded = keys
+                .iter()
+                .map(|key| recorded_in(conn, fold, key))
+                .collect::<Result<Vec<_>, _>>()?;
             Ok((build(&recorded)?, recorded))
         })
     }

@@ -574,7 +574,8 @@ fn a_session_keeps_its_epochs_base_bytes_and_tools_across_a_rewind(
 }
 
 #[test]
-fn an_epoch_a_newer_grapt_recorded_is_kept_untouched() -> Result<(), Box<dyn std::error::Error>> {
+fn an_epoch_a_newer_grapt_recorded_is_kept_across_a_rewind(
+) -> Result<(), Box<dyn std::error::Error>> {
     let fixture = Fixture::new()?;
     let text = |value: &str| InstructionValue::Text(value.to_owned());
     {
@@ -597,25 +598,32 @@ fn an_epoch_a_newer_grapt_recorded_is_kept_untouched() -> Result<(), Box<dyn std
         };
         InstructionService::refresh(inbox.store_mut(), input)?;
     }
-    let request = planned_catalog_request(&fixture, Vec::new(), false)?;
-    let names: Vec<_> = request
-        .tools
-        .iter()
-        .map(|tool| tool.name.as_str())
-        .collect();
-    assert!(!names.contains(&"read_lines") && !names.contains(&"subagent"));
-    let current = {
-        let inbox = fixture.effective.inbox.lock().map_err(|_| "poisoned")?;
-        InstructionService::current(inbox.store(), &fixture.effective.session)?
-            .values
-            .ok_or("no current values")?
-    };
-    let value = |name: &str| {
-        let found = current.iter().find(|value| value.key.as_str() == name);
-        found.map(|value| value.value.clone())
-    };
-    assert_eq!(value("core/base").as_deref(), Some("newer base"));
-    assert_eq!(value(builtin_epoch::KEY).as_deref(), Some("3"));
+    // A rewind clears both; the refresh restores the ones the Session held.
+    for rewound in [false, true] {
+        if rewound {
+            rewind(&fixture)?;
+        }
+        let request = planned_catalog_request(&fixture, Vec::new(), false)?;
+        let names: Vec<_> = request
+            .tools
+            .iter()
+            .map(|tool| tool.name.as_str())
+            .collect();
+        assert!(!names.contains(&"read_lines") && !names.contains(&"subagent"));
+        assert!(format!("{:?}", request.input).contains("newer base"));
+        let current = {
+            let inbox = fixture.effective.inbox.lock().map_err(|_| "poisoned")?;
+            InstructionService::current(inbox.store(), &fixture.effective.session)?
+                .values
+                .ok_or("no current values")?
+        };
+        let value = |name: &str| {
+            let found = current.iter().find(|value| value.key.as_str() == name);
+            found.map(|value| value.value.clone())
+        };
+        assert_eq!(value("core/base").as_deref(), Some("newer base"));
+        assert_eq!(value(builtin_epoch::KEY).as_deref(), Some("3"));
+    }
     Ok(())
 }
 

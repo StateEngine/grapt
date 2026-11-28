@@ -338,7 +338,7 @@ impl EffectiveInstructions {
         let refreshed = InstructionService::refresh_recorded(
             inbox.store_mut(),
             &self.session,
-            &BuiltinEpoch::key()?,
+            &BuiltinEpoch::keys()?,
             |recorded| {
                 Ok::<_, RefreshError>(RefreshInput {
                     event,

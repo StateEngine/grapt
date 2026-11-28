@@ -18,32 +18,44 @@ pub(in crate::dogfood) enum BuiltinEpoch {
     Legacy,
     /// `read` and the agent tools cover them, so neither is advertised.
     Current,
-    /// Recorded by a newer Grapt; its record and base are kept as they are.
-    Newer(String),
+    /// Recorded by a newer Grapt: its record and the base it last held are
+    /// kept, and restored after a move or rewind clears them.
+    Newer {
+        record: String,
+        base: Option<String>,
+    },
     /// The Session's journal could not be read whole, so nothing about its
     /// epoch is written and every built-in tool stays advertised.
     Unreadable,
 }
 
 impl BuiltinEpoch {
-    pub(super) fn key() -> Result<InstructionKey, String> {
-        super::key(KEY)
+    /// The records a refresh reads: the epoch, then the base it held.
+    pub(super) fn keys() -> Result<Vec<InstructionKey>, String> {
+        Ok(vec![super::key(KEY)?, super::key("core/base")?])
     }
 
-    /// The epoch a Session's record names; one with none yet begins now.
-    pub(super) fn from_recorded(recorded: &RecordedValue) -> Self {
+    /// The epoch the records of [`Self::keys`] name; a Session with none yet
+    /// begins now.
+    pub(super) fn from_recorded(recorded: &[RecordedValue]) -> Self {
         match recorded {
-            RecordedValue::Never => Self::Current,
-            RecordedValue::Present(value) if value == CURRENT => Self::Current,
-            RecordedValue::Present(value) => Self::Newer(value.clone()),
-            RecordedValue::Absent => Self::Legacy,
-            RecordedValue::Unreadable => Self::Unreadable,
+            [RecordedValue::Never, ..] => Self::Current,
+            [RecordedValue::Present(value), ..] if value == CURRENT => Self::Current,
+            [RecordedValue::Present(record), base] => Self::Newer {
+                record: record.clone(),
+                base: match base {
+                    RecordedValue::Present(base) => Some(base.clone()),
+                    _ => None,
+                },
+            },
+            [RecordedValue::Absent, ..] => Self::Legacy,
+            _ => Self::Unreadable,
         }
     }
 
     /// Whether `read_lines` and `subagent` go unadvertised.
     pub(in crate::dogfood) fn retires_tools(&self) -> bool {
-        matches!(self, Self::Current | Self::Newer(_))
+        matches!(self, Self::Current | Self::Newer { .. })
     }
 
     /// The base guidance and record this epoch keeps. A newer or unreadable
@@ -60,19 +72,25 @@ impl BuiltinEpoch {
                 key,
                 value: text(super::BASE.to_owned()),
             },
-            Self::Newer(_) | Self::Unreadable => SourceObservation::AvailableOnce {
+            Self::Newer {
+                base: Some(base), ..
+            } => SourceObservation::AvailableOnce {
+                key,
+                value: text(base.clone()),
+            },
+            Self::Newer { base: None, .. } | Self::Unreadable => SourceObservation::AvailableOnce {
                 key,
                 value: text(super::BASE.to_owned()),
             },
         }];
         let record = match self {
             Self::Current => Some(CURRENT.to_owned()),
-            Self::Newer(value) => Some(value.clone()),
+            Self::Newer { record, .. } => Some(record.clone()),
             Self::Legacy | Self::Unreadable => None,
         };
         if let Some(record) = record {
             observations.push(SourceObservation::AvailableOnce {
-                key: Self::key()?,
+                key: super::key(KEY)?,
                 value: text(record),
             });
         }

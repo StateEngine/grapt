@@ -924,8 +924,11 @@ fn recorded(
     session: &SessionId,
     key: &InstructionKey,
 ) -> Result<RecordedValue, Box<dyn std::error::Error>> {
-    let seen = |recorded: &RecordedValue| Err::<RefreshInput, _>(Probe::Seen(recorded.clone()));
-    match InstructionService::refresh_recorded(store, session, key, seen) {
+    let seen = |recorded: &[RecordedValue]| {
+        let first = recorded.first().cloned().unwrap_or(RecordedValue::Never);
+        Err::<RefreshInput, _>(Probe::Seen(first))
+    };
+    match InstructionService::refresh_recorded(store, session, std::slice::from_ref(key), seen) {
         Err(Probe::Seen(recorded)) => Ok(recorded),
         Err(Probe::Failed(error)) => Err(error.into()),
         Ok(_) => Err("the probe refreshed".into()),
