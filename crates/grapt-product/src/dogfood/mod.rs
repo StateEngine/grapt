@@ -95,6 +95,7 @@ mod source_file;
 mod startup_fixture;
 mod startup_recovery;
 mod stateengine_resume;
+pub(crate) mod stateengine_seat;
 mod step_events;
 pub(crate) mod stream_diagnostics;
 mod subagent;

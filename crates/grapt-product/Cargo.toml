@@ -113,6 +113,7 @@ grapt-session = { path = "../grapt-session" }
 grapt-service-state = { path = "../grapt-service-state" }
 grapt-shell = { path = "../grapt-shell" }
 grapt-stateengine-api = { path = "../grapt-stateengine-api" }
+grapt-stateengine-ipc = { path = "../grapt-stateengine-ipc" }
 grapt-store = { path = "../grapt-store" }
 grapt-subagent = { path = "../grapt-subagent" }
 grapt-toolchain = { path = "../grapt-toolchain" }

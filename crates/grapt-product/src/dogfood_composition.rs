@@ -20,6 +20,7 @@ pub(crate) fn production_dogfood_composition(
 ) -> Result<DogfoodComposition, ProductRefusal> {
     let hub = crate::dogfood::event_hub_with_grace(close_grace).map_err(ProductRefusal::Compose)?;
     crate::dogfood::stream_diagnostics::install(&hub, service_root);
+    crate::dogfood::stateengine_seat::install(&hub, service_root);
     let (application, driver, _plugins) = open_production_application(
         service_root,
         store,
