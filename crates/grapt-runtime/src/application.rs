@@ -148,6 +148,10 @@ pub trait LocationRuntime: Send + Sync + 'static {
         Ok(None)
     }
 
+    /// Notify live listeners when pending inputs changed without a promotion
+    /// (for example, when stale synthetic resume inputs were retired).
+    fn notify_pending_inputs_changed(&self, _session: &SessionId) {}
+
     /// Open the Step chain for a promotion that found no chain in flight.
     ///
     /// Called after the promotion is durable and after its position in
@@ -203,6 +207,10 @@ where
         session: &SessionId,
     ) -> Result<Option<std::num::NonZeroU32>, LocationError> {
         self.inner.input_step_limit(session)
+    }
+
+    fn notify_pending_inputs_changed(&self, session: &SessionId) {
+        self.inner.notify_pending_inputs_changed(session);
     }
 
     fn open_chain(
@@ -790,20 +798,25 @@ impl<M: LocationServiceMap> RuntimeApplication<M> {
         let created_ms = self.clock.now_ms();
         let ids = Arc::clone(&self.ids);
         let mut mint = move || ids.mint();
-        let promoted = {
+        let outcome = {
             let mut inbox = self.lock_inbox();
             if !authorize(&inbox)? {
                 return Ok(None);
             }
             inbox
-                .promote_next(&drain.session, scope, &mut mint, created_ms)
+                .promote_next_with_retirement(&drain.session, scope, &mut mint, created_ms)
                 .map_err(|error| CoordinatorError::Inbox {
                     session: drain.session.as_str().to_owned(),
                     reason: error.to_string(),
                 })?
         };
-        let Some(promoted) = promoted else {
-            return Ok(None);
+        let promoted = match outcome {
+            grapt_inbox::PromoteOutcome::Promoted(promoted) => promoted,
+            grapt_inbox::PromoteOutcome::RetiredOnly { .. } => {
+                drain.runtime.notify_pending_inputs_changed(&drain.session);
+                return Ok(None);
+            }
+            grapt_inbox::PromoteOutcome::Empty => return Ok(None),
         };
         let promotion = Promotion {
             input: PendingInputId::new(promoted.input),

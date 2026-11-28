@@ -19,6 +19,7 @@ const REQUIRED: &[&str] = &[
     "session_message",
     "inbox_legacy_synthetic_audit",
     "session_operation_delivery_pending",
+    "session_resume_input",
     "permission_request",
     "form_request",
     "instruction_entry",
@@ -30,6 +31,47 @@ const REQUIRED: &[&str] = &[
     "mailbox_message",
     "session_list_projection",
 ];
+
+const OPTIONAL_KNOWN: &[&str] = &[
+    "event",
+    "event_sequence",
+    "aggregate_writer",
+    "session",
+    "session_list_legacy_baseline",
+    "product_shell_binding",
+    "permission_http_request",
+    "permission_http_rule",
+    "subagent_operation_legacy_synthetic",
+    "subagent_operation_pre_delivery_settlement",
+    "session_operation_delivery_completed_audit",
+    "compaction_window_cache",
+    "compaction_cache_watermark",
+    "plan_read_receipt",
+    "pending_resume",
+];
+
+fn validate_schema_tables(source: &Source<'_>, tables: &BTreeSet<String>) -> Result<(), String> {
+    for table in REQUIRED {
+        if !tables.contains(*table) {
+            return Err(format!(
+                "required evidence table {table} is absent; cleanup does not repair schemas"
+            ));
+        }
+    }
+    for table in tables {
+        if REQUIRED.contains(&table.as_str()) || OPTIONAL_KNOWN.contains(&table.as_str()) {
+            continue;
+        }
+        if source
+            .columns(table)?
+            .iter()
+            .any(|column| column.to_ascii_lowercase().contains("session"))
+        {
+            return Err(format!("unfamiliar session-bearing evidence table {table}"));
+        }
+    }
+    Ok(())
+}
 
 pub(super) fn protect(
     source: &Source<'_>,
@@ -55,43 +97,7 @@ pub(super) fn protect(
             Ok(())
         },
     )?;
-    for table in REQUIRED {
-        if !tables.contains(*table) {
-            return Err(format!(
-                "required evidence table {table} is absent; cleanup does not repair schemas"
-            ));
-        }
-    }
-    for table in &tables {
-        if REQUIRED.contains(&table.as_str())
-            || matches!(
-                table.as_str(),
-                "event"
-                    | "event_sequence"
-                    | "aggregate_writer"
-                    | "session"
-                    | "session_list_legacy_baseline"
-                    | "product_shell_binding"
-                    | "permission_http_request"
-                    | "permission_http_rule"
-                    | "subagent_operation_legacy_synthetic"
-                    | "subagent_operation_pre_delivery_settlement"
-                    | "session_operation_delivery_completed_audit"
-                    | "compaction_window_cache"
-                    | "compaction_cache_watermark"
-                    | "plan_read_receipt"
-            )
-        {
-            continue;
-        }
-        if source
-            .columns(table)?
-            .iter()
-            .any(|column| column.to_ascii_lowercase().contains("session"))
-        {
-            return Err(format!("unfamiliar session-bearing evidence table {table}"));
-        }
-    }
+    validate_schema_tables(source, &tables)?;
     // Pending means unpromoted work, not the permanent session_message history.
     // These predicates include unknown/NULL states rather than silently hiding them.
     for query in [
@@ -100,6 +106,7 @@ pub(super) fn protect(
         // sessions remain unsupported legacy histories, not cleanup candidates.
         "SELECT CASE WHEN length(CAST(session_id AS BLOB))<=512 THEN session_id END FROM inbox_legacy_synthetic_audit LIMIT 100001",
         "SELECT CASE WHEN length(CAST(session_id AS BLOB))<=512 THEN session_id END FROM session_operation_delivery_pending LIMIT 100001",
+        "SELECT CASE WHEN length(CAST(session_id AS BLOB))<=512 THEN session_id END FROM session_resume_input WHERE active IS NULL OR active<>0 LIMIT 100001",
         "SELECT CASE WHEN length(CAST(session_id AS BLOB))<=512 THEN session_id END FROM attempt_receipt_quarantine LIMIT 100001",
         "SELECT CASE WHEN length(CAST(session_id AS BLOB))<=512 THEN session_id END FROM permission_request WHERE status IS NULL OR status NOT IN ('replied','cancelled') LIMIT 100001",
         "SELECT CASE WHEN length(CAST(session_id AS BLOB))<=512 THEN session_id END FROM form_request WHERE session_id IS NOT NULL AND (status IS NULL OR status NOT IN ('answered','cancelled')) LIMIT 100001",
@@ -110,6 +117,15 @@ pub(super) fn protect(
     }
     // HTTP rows are adjunct history; the authoritative request status above owns
     // pendingness. An orphan adjunct has lost its Session attribution and refuses.
+    if tables.contains("pending_resume") {
+        source.select(
+            "SELECT CASE WHEN length(CAST(session_id AS BLOB))<=512 THEN session_id END
+             FROM pending_resume
+             WHERE state IS NULL OR state NOT IN ('completed','stopped')
+             LIMIT 100001",
+            |[session]| protect_session(sessions, required(session)?),
+        )?;
+    }
     if tables.contains("permission_http_request") {
         source.select(
             "SELECT 'orphan' FROM permission_http_request h WHERE NOT EXISTS(

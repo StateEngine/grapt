@@ -123,6 +123,8 @@ pub enum WakeDisposition {
     AdmitOnly,
     /// `resume: true` — the caller may advise its supervisor to wake.
     WakeAdvised,
+    /// Existing admission is already retired/terminal; no wake is advised.
+    Settled,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -166,6 +168,18 @@ pub struct Promoted {
     pub input: MessageId,
     pub delivery: DeliveryMode,
     pub seq: u64,
+}
+
+/// Outcome of attempting to promote the next eligible pending input.
+#[derive(Debug, PartialEq, Eq)]
+pub enum PromoteOutcome {
+    /// One eligible pending input was durably promoted.
+    Promoted(Promoted),
+    /// No input was promoted, but one or more stale synthetic resume inputs
+    /// were retired out of `session_pending` so live listeners must refresh.
+    RetiredOnly { retired: usize },
+    /// No eligible input existed and `session_pending` was unchanged.
+    Empty,
 }
 
 fn delivery_str(d: DeliveryMode) -> &'static str {
@@ -767,6 +781,22 @@ impl Inbox {
         mint: &mut dyn FnMut() -> EventId,
         created_ms: i64,
     ) -> Result<Option<Promoted>, InboxError> {
+        match self.promote_next_with_retirement(session, scope, mint, created_ms)? {
+            PromoteOutcome::Promoted(promoted) => Ok(Some(promoted)),
+            PromoteOutcome::RetiredOnly { .. } | PromoteOutcome::Empty => Ok(None),
+        }
+    }
+
+    /// Promote the next eligible pending input, distinguishing an empty
+    /// promotion that retired stale synthetic resume rows from a no-op so
+    /// callers can refresh live pending-input listeners.
+    pub fn promote_next_with_retirement(
+        &mut self,
+        session: &SessionId,
+        scope: PromoteScope,
+        mint: &mut dyn FnMut() -> EventId,
+        created_ms: i64,
+    ) -> Result<PromoteOutcome, InboxError> {
         let held = self.store.held_writers();
         let aggregate = AggregateId::Session(session.clone());
         let tx = self.store.governed_transaction()?;
@@ -774,7 +804,7 @@ impl Inbox {
         // A pending compaction never holds input: it runs inside the next
         // promoted input's first Step, so holding that input would leave it
         // pending forever.
-        let promoted = {
+        let outcome = {
             // A closed delivery vocabulary must reject corrupt durable work,
             // not hide it behind the valid-value filters below. Otherwise an
             // unknown row can strand a Session while this boundary reports no
@@ -816,6 +846,7 @@ impl Inbox {
             let mut pending = Self::pending_inputs_for_promotion_within(&tx, session)?;
             pending.sort_by_key(|input| (input.delivery != DeliveryMode::Steer, input.seq));
             let mut next = None;
+            let mut retired = 0usize;
             for candidate in pending {
                 if candidate.delivery == DeliveryMode::Queue
                     && scope != PromoteScope::InputAtIdle
@@ -823,14 +854,24 @@ impl Inbox {
                 {
                     continue;
                 }
-                if Self::native_mail_input_eligible_within(&tx, session, &candidate)? {
+                if !Self::native_mail_input_eligible_within(&tx, session, &candidate)? {
+                    continue;
+                }
+                if Self::auto_resume_input_eligible_within(
+                    &tx, &held, &aggregate, session, &candidate,
+                )? {
                     next = Some(candidate);
                     break;
                 }
+                retired = retired.saturating_add(1);
             }
             let Some(selected) = next else {
                 tx.commit()?.discard();
-                return Ok(None);
+                return Ok(if retired > 0 {
+                    PromoteOutcome::RetiredOnly { retired }
+                } else {
+                    PromoteOutcome::Empty
+                });
             };
             Self::resume_native_mail_after_human_within(
                 &tx, &held, session, &selected, created_ms,
@@ -861,12 +902,165 @@ impl Inbox {
             let seq = match appended {
                 Appended::Committed { seq } | Appended::Idempotent { seq } => seq,
             };
-            Promoted {
+            PromoteOutcome::Promoted(Promoted {
                 input,
                 delivery,
                 seq,
-            }
+            })
         };
-        Ok(Some(promoted))
+        Ok(outcome)
+    }
+
+    /// Register an owner-issued automatic-resume synthetic input binding inside
+    /// the caller's governed transaction, fencing against stale writer epochs
+    /// and retiring any earlier inactive resume inputs for the session out of
+    /// `session_pending` atomically.
+    pub fn register_resume_input_within(
+        tx: &GovernedTransaction<'_>,
+        writer: grapt_store::FencedWriter,
+        session: &SessionId,
+        input: &MessageId,
+        turn_origin_seq: u64,
+    ) -> Result<(), InboxError> {
+        EventStore::verify_writer_within(tx, &AggregateId::Session(session.clone()), writer)?;
+        let seq = i64::try_from(turn_origin_seq)
+            .map_err(|_| InboxError::PendingBound("resume turn origin seq exceeds SQLite range"))?;
+        tx.execute(
+            "UPDATE session_resume_input SET active = 0
+             WHERE session_id = ?1 AND input_id != ?2 AND active != 0",
+            rusqlite::params![session.as_str(), input.as_str()],
+        )?;
+        tx.execute(
+            "DELETE FROM session_pending
+             WHERE session_id = ?1 AND input_type = 'synthetic'
+               AND id IN (
+                   SELECT input_id FROM session_resume_input
+                   WHERE session_id = ?1 AND active = 0
+               )",
+            [session.as_str()],
+        )?;
+        tx.execute(
+            "INSERT INTO session_resume_input (session_id, input_id, turn_origin_seq, active)
+             VALUES (?1, ?2, ?3, 1)
+             ON CONFLICT(session_id, input_id) DO UPDATE SET
+                 turn_origin_seq = excluded.turn_origin_seq,
+                 active = 1",
+            rusqlite::params![session.as_str(), input.as_str(), seq],
+        )?;
+        Ok(())
+    }
+
+    /// Retire all active automatic-resume bindings for `session` and remove
+    /// their queued synthetic rows from `session_pending` inside the caller's
+    /// governed transaction after verifying the caller's elected writer epoch.
+    pub fn retire_resume_inputs_within(
+        tx: &GovernedTransaction<'_>,
+        writer: grapt_store::FencedWriter,
+        session: &SessionId,
+    ) -> Result<usize, InboxError> {
+        EventStore::verify_writer_within(tx, &AggregateId::Session(session.clone()), writer)?;
+        tx.execute(
+            "UPDATE session_resume_input SET active = 0
+             WHERE session_id = ?1 AND active != 0",
+            [session.as_str()],
+        )?;
+        let removed = tx.execute(
+            "DELETE FROM session_pending
+             WHERE session_id = ?1 AND input_type = 'synthetic'
+               AND id IN (
+                   SELECT input_id FROM session_resume_input
+                   WHERE session_id = ?1 AND active = 0
+               )",
+            [session.as_str()],
+        )?;
+        Ok(removed)
+    }
+
+    /// Look up the owner-issued `turn_origin_seq` for a synthetic resume input.
+    /// Fails closed if `session_resume_input` is absent or corrupt.
+    pub fn resume_input_origin(
+        conn: &rusqlite::Connection,
+        session: &SessionId,
+        input: &str,
+    ) -> Result<Option<u64>, InboxError> {
+        use rusqlite::OptionalExtension as _;
+        let origin: Option<i64> = conn
+            .query_row(
+                "SELECT turn_origin_seq FROM session_resume_input
+                 WHERE session_id = ?1 AND input_id = ?2",
+                rusqlite::params![session.as_str(), input],
+                |row| row.get(0),
+            )
+            .optional()?;
+        match origin.filter(|value| *value > 0) {
+            Some(value) => u64::try_from(value)
+                .map(Some)
+                .map_err(|_| InboxError::PendingBound("resume turn origin seq negative")),
+            None => Ok(None),
+        }
+    }
+
+    fn auto_resume_input_eligible_within(
+        tx: &GovernedTransaction<'_>,
+        held: &HeldWriters,
+        aggregate: &AggregateId,
+        session: &SessionId,
+        candidate: &PendingInput,
+    ) -> Result<bool, InboxError> {
+        use rusqlite::OptionalExtension as _;
+        if candidate.kind != PromotedInputKind::Synthetic {
+            return Ok(true);
+        }
+        let binding: Option<(i64, i64)> = tx
+            .query_row(
+                "SELECT active, turn_origin_seq FROM session_resume_input
+                 WHERE session_id = ?1 AND input_id = ?2",
+                rusqlite::params![session.as_str(), candidate.input.as_str()],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .optional()?;
+        let Some((active, turn_origin_seq)) = binding else {
+            return Ok(true);
+        };
+        if active == 0 {
+            EventStore::verify_writer_within(tx, aggregate, held.token(aggregate)?)?;
+            tx.execute(
+                "DELETE FROM session_pending
+                 WHERE session_id = ?1 AND id = ?2 AND input_type = 'synthetic'",
+                rusqlite::params![session.as_str(), candidate.input.as_str()],
+            )?;
+            return Ok(false);
+        }
+        let newer_human: Option<i64> = tx
+            .query_row(
+                "SELECT 1 FROM event
+                 WHERE aggregate_family = 'session' AND aggregate_id = ?1
+                   AND type = 'session.input.admitted.1'
+                   AND seq > ?2
+                   AND CASE WHEN json_valid(data)
+                       THEN COALESCE(json_extract(data, '$.input.type'), json_extract(data, '$.kind'), 'user') = 'user'
+                            AND COALESCE(json_extract(data, '$.input.data.metadata.origin'), '') != 'seat-startup'
+                       ELSE 0
+                   END
+                 LIMIT 1",
+                rusqlite::params![session.as_str(), turn_origin_seq],
+                |row| row.get(0),
+            )
+            .optional()?;
+        if newer_human.is_some() {
+            EventStore::verify_writer_within(tx, aggregate, held.token(aggregate)?)?;
+            tx.execute(
+                "UPDATE session_resume_input SET active = 0
+                 WHERE session_id = ?1 AND input_id = ?2",
+                rusqlite::params![session.as_str(), candidate.input.as_str()],
+            )?;
+            tx.execute(
+                "DELETE FROM session_pending
+                 WHERE session_id = ?1 AND id = ?2 AND input_type = 'synthetic'",
+                rusqlite::params![session.as_str(), candidate.input.as_str()],
+            )?;
+            return Ok(false);
+        }
+        Ok(true)
     }
 }
