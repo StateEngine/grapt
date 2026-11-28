@@ -81,6 +81,9 @@ impl SessionEvidence {
             if !self.seeded {
                 return Err("session work has no seed".into());
             }
+            if kind == "session.status.changed.1" {
+                self.close_process_loss_execution(session, &data);
+            }
             if !self.work.observe(session, seq, kind, &data)? {
                 self.unfamiliar_work = true;
                 self.retain(RetentionReason::UnfamiliarOrWorkEvidence);
@@ -163,6 +166,27 @@ impl SessionEvidence {
                 .execution_settled(self.seq.ok_or("execution has no sequence")?);
         }
         Ok(())
+    }
+
+    /// Startup recovery records `session.status.changed.1` with
+    /// `disconnected/process-loss` for an execution cut by process loss rather
+    /// than inventing an execution terminal. Clear `open_execution` when the
+    /// matching recovery record appears so a successor execution (auto-resume
+    /// or follow-up prompt) is not refused as an overlapping start.
+    fn close_process_loss_execution(&mut self, session: &SessionId, data: &Value) {
+        let Some(open) = self.open_execution.as_ref() else {
+            return;
+        };
+        let matches_session =
+            data.get("sessionID").and_then(Value::as_str) == Some(session.as_str());
+        let matches_execution =
+            data.get("executionID").and_then(Value::as_str) == Some(open.as_str());
+        let is_process_loss_disconnect = data.pointer("/state/type").and_then(Value::as_str)
+            == Some("disconnected")
+            && data.pointer("/state/reason").and_then(Value::as_str) == Some("process-loss");
+        if matches_session && matches_execution && is_process_loss_disconnect {
+            self.open_execution = None;
+        }
     }
 }
 

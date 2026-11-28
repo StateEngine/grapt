@@ -121,6 +121,17 @@ impl EventStore {
         self.transaction_with_policy(true)
     }
 
+    /// Verify that `writer` is still the currently elected writer for
+    /// `aggregate` inside `tx`, using the store's authoritative election fence.
+    pub fn verify_writer_within(
+        tx: &GovernedTransaction<'_>,
+        aggregate: &AggregateId,
+        writer: FencedWriter,
+    ) -> Result<(), WriteError> {
+        crate::election::fence(tx, aggregate, writer.epoch())?;
+        Ok(())
+    }
+
     /// Fixture-only durable injection, store-owned: the transaction opens and
     /// closes on this store's connection and the rows take the store's own
     /// one-statement lift. It exists for the counterexample states no

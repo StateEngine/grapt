@@ -249,6 +249,13 @@ impl LocationRuntime for LiveLocation {
         })
     }
 
+    fn notify_pending_inputs_changed(&self, session: &SessionId) {
+        self.hub.invalidate_session_because(
+            session,
+            &format!("session {session}: retired stale automatic resume input"),
+        );
+    }
+
     #[expect(clippy::too_many_lines, reason = "legacy")]
     fn open_chain(
         &self,

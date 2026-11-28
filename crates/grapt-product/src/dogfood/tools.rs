@@ -963,6 +963,7 @@ mod agent_interrupt;
 mod agent_message;
 mod agent_spawn;
 pub(super) mod agent_wait;
+mod call_repair;
 mod delegation;
 mod effects;
 pub(in crate::dogfood) mod read_history;

@@ -103,11 +103,11 @@ impl Inbox {
         let tables: i64 = conn.query_row(
             "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name IN
                  ('session_pending', 'session_message', 'inbox_legacy_synthetic_audit',
-                  'session_operation_delivery_pending')",
+                  'session_operation_delivery_pending', 'session_resume_input')",
             [],
             |row| row.get(0),
         )?;
-        if tables != 4 {
+        if tables != 5 {
             return Ok(false);
         }
         for (table, column, _definition) in MIGRATED_COLUMNS {
@@ -166,6 +166,13 @@ impl Inbox {
                 input_id TEXT PRIMARY KEY,
                 session_id TEXT NOT NULL,
                 event_data TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS session_resume_input (
+                session_id TEXT NOT NULL,
+                input_id TEXT NOT NULL,
+                turn_origin_seq INTEGER NOT NULL,
+                active INTEGER NOT NULL,
+                PRIMARY KEY (session_id, input_id)
             );",
         )?;
         for (table, column, definition) in MIGRATED_COLUMNS {

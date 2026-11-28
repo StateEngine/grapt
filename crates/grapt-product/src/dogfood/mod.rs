@@ -635,6 +635,9 @@ impl DogfoodApplication {
         lifecycle::attach_notice(&mut driver, &application);
         skills_watch::attach(&mut driver, &application);
         lifecycle::attach_close_grace(&mut driver, &application);
+        if !ephemeral {
+            driver.attach_auto_resume_app(Arc::clone(&application));
+        }
         Ok((application, driver))
     }
 

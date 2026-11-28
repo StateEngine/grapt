@@ -925,6 +925,9 @@ mod credential_children;
 #[path = "dogfood_headless/plugin_transient.rs"]
 mod plugin_transient;
 
+#[path = "dogfood_headless/repeated_keys.rs"]
+mod repeated_keys;
+
 #[path = "dogfood_headless/terminal_coordination.rs"]
 mod terminal_coordination;
 

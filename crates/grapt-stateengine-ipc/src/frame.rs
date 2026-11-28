@@ -12,9 +12,18 @@ pub async fn read_frame<R: AsyncRead + Unpin>(
     reader: &mut R,
     limit: u32,
 ) -> Result<Zeroizing<Vec<u8>>, IpcError> {
-    let limit = limit.min(crate::MAX_FRAME_BYTES);
     let mut prefix = [0; 4];
     reader.read_exact(&mut prefix).await?;
+    let length = announced_length(prefix, limit)?;
+    let mut payload = Zeroizing::new(vec![0; length]);
+    reader.read_exact(&mut payload).await?;
+    Ok(payload)
+}
+
+/// The payload length a frame's prefix announces, refused when it is zero or
+/// over `limit` or [`MAX_FRAME_BYTES`](crate::MAX_FRAME_BYTES).
+pub(crate) fn announced_length(prefix: [u8; 4], limit: u32) -> Result<usize, IpcError> {
+    let limit = limit.min(crate::MAX_FRAME_BYTES);
     let announced = u32::from_be_bytes(prefix);
     if announced == 0 {
         return Err(IpcError::EmptyFrame);
@@ -22,11 +31,7 @@ pub async fn read_frame<R: AsyncRead + Unpin>(
     if announced > limit {
         return Err(IpcError::FrameTooLarge { announced, limit });
     }
-    let length =
-        usize::try_from(announced).map_err(|_| IpcError::FrameTooLarge { announced, limit })?;
-    let mut payload = Zeroizing::new(vec![0; length]);
-    reader.read_exact(&mut payload).await?;
-    Ok(payload)
+    usize::try_from(announced).map_err(|_| IpcError::FrameTooLarge { announced, limit })
 }
 
 /// Write one frame of at most `limit` bytes, and never more than

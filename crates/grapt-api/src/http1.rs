@@ -181,6 +181,18 @@ impl AuthenticatedApiService {
         )
     }
 
+    /// Authenticate a service-internal credential through the same trust
+    /// boundary used by HTTP ingress.
+    pub fn authenticate_credential(
+        &self,
+        credential: &crate::auth::PresentedCredential,
+    ) -> Result<SealedPrincipal, crate::ApiRefusal> {
+        self.inner
+            .boundary
+            .authenticate(credential)
+            .map(SealedPrincipal::seal)
+    }
+
     /// Admit bounded inline images only on the ordinary authenticated prompt route.
     /// Other routes retain the caller's ordinary body bound.
     pub fn with_inline_image_prompts(
