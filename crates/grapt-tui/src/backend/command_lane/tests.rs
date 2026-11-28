@@ -153,36 +153,54 @@ fn a_discarded_history_move_and_agent_choice_are_settled() -> Result {
     Ok(())
 }
 
-/// A Session search in flight on an attachment that is no longer current.
-fn revoked_search(
+/// A Session search in flight, fenced to `attachment`.
+fn search_on(
     client: &mut Client<Bridge>,
     id: CommandId,
+    attachment: Arc<AtomicBool>,
 ) -> std::result::Result<InFlight, Box<dyn std::error::Error>> {
     Ok(InFlight {
         job: Job::Search(id, "held".into()),
         call: client.prepare_session_search("held")?,
         fence: Fence {
-            attachment: Some(Arc::new(AtomicBool::new(false))),
+            attachment: Some(attachment),
             ..Fence::default()
         },
     })
 }
 
 #[test]
-fn a_moved_read_answer_raises_and_clears_its_read_notice() -> Result {
+fn only_answers_on_the_live_attachment_raise_or_clear_its_read_notice() -> Result {
     let mut client = quiet_client()?;
     let (wake, _ready) = mpsc::sync_channel(1);
     let mut reads = Reads::start(wake)?;
     let id = Handoff::default().envelope(Command::Commands).0;
+    let live = client.peer_mut().attachment();
+    let revoked = Arc::new(AtomicBool::new(false));
     let mut lane = Lane::default();
-    for (status, notice) in [(503, true), (200, false)] {
-        lane.in_flight = Some(revoked_search(&mut client, id)?);
+    // (attachment, status, whether a notice shows afterwards)
+    let answers = [
+        (&live, 503, true),
+        (&live, 200, false),
+        (&revoked, 503, false),
+        (&live, 503, true),
+        (&revoked, 200, true),
+        (&live, 200, false),
+    ];
+    for (attachment, status, notice) in answers {
+        lane.in_flight = Some(search_on(&mut client, id, attachment.clone())?);
         let response = WireResponse {
             status,
             body: Vec::new(),
         };
         lane.answer((&mut client, &mut reads), Ok(response));
-        assert_eq!(client.peer_mut().read_health.message().is_some(), notice);
+        let shown = client.peer_mut().read_health.message().is_some();
+        assert_eq!(
+            shown,
+            notice,
+            "after {status} on the live attachment: {}",
+            Arc::ptr_eq(attachment, &live)
+        );
     }
     Ok(())
 }

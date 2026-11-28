@@ -300,6 +300,12 @@ impl Transport for Bridge {
 impl Bridge {
     /// Whether `attachment` is still this bridge's live attachment: an answer
     /// read on a replaced or closed one is never applied.
+    /// The live attachment, as a command sent now would be fenced to it.
+    #[cfg(test)]
+    pub(crate) fn attachment(&self) -> Arc<AtomicBool> {
+        self.fence.clone()
+    }
+
     pub(crate) fn attachment_current(&self, attachment: &Arc<AtomicBool>) -> bool {
         Arc::ptr_eq(attachment, &self.fence) && self.fence.load(Ordering::Acquire)
     }

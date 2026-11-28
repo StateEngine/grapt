@@ -296,13 +296,14 @@ impl Lane {
             return;
         };
         let bridge = client.peer_mut();
-        // Every answer counts toward read health, as a synchronous one does.
-        bridge.read_health.call(&call.request, &response);
         let current = fence
             .attachment
             .as_ref()
             .is_some_and(|attachment| bridge.attachment_current(attachment));
         if current {
+            // An answer on the live attachment counts toward its read health,
+            // as a synchronous one does; a revoked one speaks for nothing.
+            bridge.read_health.call(&call.request, &response);
             let next = client.accept(call, response);
             self.drive((client, reads), job, next, fence);
         } else {
