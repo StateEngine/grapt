@@ -31,6 +31,39 @@ fn entry(service: &str, name: &str) -> io::Result<keyring::Entry> {
 /// including a locked keystore, a dismissed prompt or a read-only keychain,
 /// is a refusal: a credential is then never stored another way.
 fn refused(error: keyring::Error) -> io::Error {
+    #[cfg(target_os = "linux")]
+    let configured = std::env::var_os("DBUS_SESSION_BUS_ADDRESS");
+    #[cfg(target_os = "linux")]
+    return classify(error, configured.as_deref());
+    #[cfg(not(target_os = "linux"))]
+    classify(error)
+}
+
+/// Linux: `configured` is `DBUS_SESSION_BUS_ADDRESS`. An address that is set
+/// but malformed is a refusal, never absence, even though the Secret Service
+/// client reports it as no bus.
+#[cfg(target_os = "linux")]
+fn classify(error: keyring::Error, configured: Option<&std::ffi::OsStr>) -> io::Error {
+    let malformed = configured.is_some_and(|value| {
+        value
+            .to_str()
+            .is_none_or(|text| text.parse::<zbus::Address>().is_err())
+    });
+    if malformed {
+        return io::Error::other(format!(
+            "DBUS_SESSION_BUS_ADDRESS is not a valid D-Bus address, so the system keystore was \
+             not reached: {error}; correct or unset it, then try again"
+        ));
+    }
+    unavailable_or_refused(error)
+}
+
+#[cfg(not(target_os = "linux"))]
+fn classify(error: keyring::Error) -> io::Error {
+    unavailable_or_refused(error)
+}
+
+fn unavailable_or_refused(error: keyring::Error) -> io::Error {
     if absent(&error) {
         super::unavailable(format!("no system keystore is present: {error}"))
     } else {
@@ -89,7 +122,7 @@ mod tests {
 
     #[test]
     fn only_an_absent_secret_service_is_unavailable() {
-        let unavailable = |error| super::super::is_unavailable(&refused(error));
+        let unavailable = |error| super::super::is_unavailable(&classify(error, None));
         let failure = |error| keyring::Error::PlatformFailure(Box::new(error));
         let no_access = |error| keyring::Error::NoStorageAccess(Box::new(error));
         assert!(unavailable(failure(secret_service::Error::Unavailable)));
@@ -105,5 +138,18 @@ mod tests {
         assert!(!unavailable(keyring::Error::NoStorageAccess(
             "an unrecognised refusal".into()
         )));
+    }
+
+    /// No bus is absence only when the configured address is a valid one.
+    #[test]
+    fn a_malformed_session_bus_address_refuses_instead_of_falling_back() {
+        let unavailable = |configured: &str| {
+            let error =
+                keyring::Error::PlatformFailure(Box::new(secret_service::Error::Unavailable));
+            super::super::is_unavailable(&classify(error, Some(configured.as_ref())))
+        };
+        assert!(!unavailable("not-a-bus-address"));
+        assert!(!unavailable("unix:path"));
+        assert!(unavailable("unix:path=/nonexistent/grapt-bus"));
     }
 }

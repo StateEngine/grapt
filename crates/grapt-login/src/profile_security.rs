@@ -41,9 +41,8 @@ pub use fallback::{keystore_fallback, KeystoreFallback, KEYSTORE_FALLBACK};
 #[cfg(test)]
 pub(crate) mod fixtures;
 mod keystore;
-/// Makes this thread's test keystore unavailable while held.
-#[cfg(all(test, not(windows)))]
-pub(crate) use keystore::test_store::Unavailable as TestKeystoreUnavailable;
+#[cfg(all(not(windows), any(test, feature = "loopback-testkit")))]
+pub use keystore::test_store::Unavailable as TestKeystoreUnavailable;
 #[cfg(any(test, feature = "loopback-testkit"))]
 pub use keystore::{isolate_test_keystore, TEST_KEYSTORE_VARIABLE};
 
@@ -112,22 +111,29 @@ pub fn seal(bytes: &[u8]) -> io::Result<Vec<u8>> {
     seal_with(&keystore::current()?, bytes)
 }
 
-/// Protect bytes that will be written as `target`.
+/// Protect bytes that will be written as `target`; see [`seal_replacing`].
+pub fn seal_for(bytes: &[u8], target: &Path) -> io::Result<Vec<u8>> {
+    seal_replacing(bytes, &[target])
+}
+
+/// Protect bytes that will take the place of every file in `targets`: the
+/// file they are written as, and any file whose credential they succeed.
 ///
 /// Off Windows, when no keystore is present at all, the bytes are returned as
 /// they are for the owner-only file and [`keystore_fallback`] reports it, but
-/// only while `target` holds no sealed credential: a sealed file is never
-/// replaced by an unsealed one, so that case refuses as keystore unavailable.
-pub fn seal_for(bytes: &[u8], target: &Path) -> io::Result<Vec<u8>> {
+/// only while no target holds a sealed credential: a sealed credential is
+/// never succeeded by an unsealed one, so that case refuses as keystore
+/// unavailable.
+pub fn seal_replacing(bytes: &[u8], targets: &[&Path]) -> io::Result<Vec<u8>> {
     match keystore::current() {
         Ok(key) => seal_with(&key, bytes),
         #[cfg(not(windows))]
         Err(error) if keystore::is_unavailable(&error) => {
-            fallback::permit(target, error)?;
+            fallback::permit(targets, error)?;
             Ok(bytes.to_vec())
         }
         Err(error) => {
-            let _ = target;
+            let _ = targets;
             Err(error)
         }
     }

@@ -196,15 +196,34 @@ fn replaceable(read: Result<Option<Document>, VaultError>) -> Result<bool, Vault
     }
 }
 
-impl CredentialVault for SealedFileVault {
-    fn put(
+impl SealedFileVault {
+    /// Store `secret` as `key`, the next generation of the connection whose
+    /// current material is `predecessor`. While no keystore is present, this
+    /// refuses as keystore unavailable when either file is sealed, so a
+    /// reconnect never succeeds a sealed credential with an unsealed one.
+    pub fn put_succeeding(
         &mut self,
         key: &VaultKey,
+        predecessor: &VaultKey,
         binding: &DestinationBinding,
         secret: VaultSecret,
         updated: Timestamp,
     ) -> Result<(), VaultError> {
-        if !binding.valid() || secret.0.expose().oauth() != binding.has_refresh() {
+        self.store(key, Some(predecessor), binding, secret, updated)
+    }
+
+    fn store(
+        &mut self,
+        key: &VaultKey,
+        predecessor: Option<&VaultKey>,
+        binding: &DestinationBinding,
+        secret: VaultSecret,
+        updated: Timestamp,
+    ) -> Result<(), VaultError> {
+        if !binding.valid()
+            || secret.0.expose().oauth() != binding.has_refresh()
+            || predecessor.is_some_and(|predecessor| predecessor.connection != key.connection)
+        {
             return Err(VaultError::InvalidInput);
         }
         let _lock = self.lock()?;
@@ -229,14 +248,37 @@ impl CredentialVault for SealedFileVault {
         if plaintext.len() > BYTE_CAP {
             return Err(VaultError::InvalidInput);
         }
+        let target = self.root.join(&key.file);
+        let succeeded = predecessor.map(|predecessor| self.root.join(&predecessor.file));
+        let targets: Vec<&Path> = [Some(target.as_path()), succeeded.as_deref()]
+            .into_iter()
+            .flatten()
+            .collect();
         let stored = Zeroizing::new(
-            profile_security::seal_for(&plaintext, &self.root.join(&key.file))
-                .map_err(unavailable(StorageOperation::Seal))?,
+            profile_security::seal_replacing(&plaintext, &targets).map_err(|error| {
+                if profile_security::is_keystore_unavailable(&error) {
+                    VaultError::KeystoreUnavailable
+                } else {
+                    unavailable(StorageOperation::Seal)(error)
+                }
+            })?,
         );
         self.check_root()?;
         profile_security::replace_private_file(&self.root, &key.file, &stored)
             .map_err(unavailable(StorageOperation::WriteEntry))?;
         self.sync()
+    }
+}
+
+impl CredentialVault for SealedFileVault {
+    fn put(
+        &mut self,
+        key: &VaultKey,
+        binding: &DestinationBinding,
+        secret: VaultSecret,
+        updated: Timestamp,
+    ) -> Result<(), VaultError> {
+        self.store(key, None, binding, secret, updated)
     }
 
     fn get(

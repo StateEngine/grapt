@@ -8,25 +8,23 @@ use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use zeroize::Zeroizing;
 
-#[cfg(test)]
 thread_local! {
     static UNAVAILABLE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 }
 
-/// While held, this thread's keystore is unavailable.
-#[cfg(test)]
+/// While held, this thread's test keystore is unavailable, as on a machine
+/// with no Secret Service. It never affects the system keystore.
 #[derive(Debug)]
-pub(crate) struct Unavailable(());
+pub struct Unavailable(());
 
-#[cfg(test)]
 impl Unavailable {
-    pub(crate) fn now() -> Self {
+    #[must_use]
+    pub fn now() -> Self {
         UNAVAILABLE.set(true);
         Self(())
     }
 }
 
-#[cfg(test)]
 impl Drop for Unavailable {
     fn drop(&mut self) {
         UNAVAILABLE.set(false);
@@ -34,7 +32,6 @@ impl Drop for Unavailable {
 }
 
 fn reachable() -> io::Result<()> {
-    #[cfg(test)]
     if UNAVAILABLE.get() {
         return Err(super::unavailable(
             "the test keystore is unavailable on this thread".to_owned(),

@@ -102,7 +102,7 @@ impl SignInFiles {
             self.check_generation(profile)?;
             return vault.save(profile, tokens, updated);
         }
-        replace(profile, &self.state, &encode(tokens))?;
+        replace_beside(profile, &self.state, &encode(tokens), &self.credential)?;
         self.project(profile, tokens)
     }
 

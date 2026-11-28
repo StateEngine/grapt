@@ -373,9 +373,27 @@ impl Store {
         if let Some(secret) = secret {
             let mut vault = SealedFileVault::open(&self.root).map_err(vault_error)?;
             let key = VaultKey::new(connection.clone(), &intent.material()).map_err(vault_error)?;
-            vault
-                .put(&key, binding, secret, updated)
-                .map_err(vault_error)?;
+            // A reconnect writes a new slot; its sealing must also answer for
+            // the material it succeeds.
+            let current = old.as_ref().and_then(|records| {
+                records
+                    .connections
+                    .iter()
+                    .find(|record| &record.id == connection)
+            });
+            match current {
+                Some(record) => {
+                    let material = record
+                        .oauth_file
+                        .as_deref()
+                        .unwrap_or(&record.credential_file);
+                    let predecessor =
+                        VaultKey::new(connection.clone(), material).map_err(vault_error)?;
+                    vault.put_succeeding(&key, &predecessor, binding, secret, updated)
+                }
+                None => vault.put(&key, binding, secret, updated),
+            }
+            .map_err(vault_error)?;
         }
         discard(
             &self.root,

@@ -42,18 +42,18 @@ pub fn keystore_fallback() -> Option<KeystoreFallback> {
     NOTED.get().cloned()
 }
 
-/// Allow `target` to be written unsealed because the keystore is absent, or
-/// return `absent` when `target` holds a sealed credential or cannot be read.
+/// Allow an unsealed write in place of `targets` because the keystore is
+/// absent, or return `absent` when any target holds a sealed credential; a
+/// target that cannot be read refuses too.
 #[cfg_attr(windows, expect(dead_code, reason = "Windows always has its keystore"))]
-pub(super) fn permit(target: &Path, absent: io::Error) -> io::Result<()> {
-    match sealed(target) {
-        Ok(false) => {
-            note(&absent);
-            Ok(())
+pub(super) fn permit(targets: &[&Path], absent: io::Error) -> io::Result<()> {
+    for target in targets {
+        if sealed(target)? {
+            return Err(absent);
         }
-        Ok(true) => Err(absent),
-        Err(error) => Err(error),
     }
+    note(&absent);
+    Ok(())
 }
 
 /// Whether `target` holds a sealed credential. Only its first bytes are read;

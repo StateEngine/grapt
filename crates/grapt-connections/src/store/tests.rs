@@ -668,3 +668,53 @@ fn drop_releases_the_lock_for_an_inherited_descriptor() -> io::Result<()> {
     drop(inherited);
     Ok(())
 }
+
+/// A reconnect: the next key slot, with its listing, under the same binding.
+#[cfg(not(windows))]
+fn reconnect(
+    store: &mut Store,
+    records: &Connections,
+    binding: &grapt_login::vault::DestinationBinding,
+    token: &str,
+) -> Result<Connections, Box<dyn std::error::Error>> {
+    let connection = records.connections[0].id.clone();
+    let (file, listing) = next_key_files(&connection, records.connections.first(), token)?;
+    let mut next = records.clone();
+    next.connections[0].credential_file = file;
+    next.connections[0].discovery_file = listing;
+    next.connections[0].credential_format = CredentialFormat::Vault {
+        binding: binding.clone(),
+    };
+    let secret = grapt_login::vault::VaultSecret::api_key(format!("key-{token}").into())?;
+    let listing = br#"{"data":[{"id":"retained-model"}]}"#;
+    store.install_key(
+        &next,
+        &connection,
+        secret,
+        binding,
+        listing,
+        grapt_types::Timestamp::from_millis(1),
+    )?;
+    Ok(next)
+}
+
+/// While the keystore is away, a reconnect never succeeds a sealed key with
+/// an unsealed one: it refuses and the published connection stays as it was.
+#[cfg(not(windows))]
+#[test]
+fn a_reconnect_during_a_keystore_outage_keeps_the_sealed_key(
+) -> Result<(), Box<dyn std::error::Error>> {
+    use grapt_login::vault::{ApiDestination, DestinationBinding};
+    let profile = Profile::new("reconnect-outage")?;
+    let mut store = Store::open(&profile.0)?;
+    let records = store.migrate(&legacy("openai-responses", None))?;
+    let binding = DestinationBinding::key(ApiDestination::parse("https://api.example/v1")?);
+    let sealed = reconnect(&mut store, &records, &binding, "sealed")?;
+    let stored = std::fs::read(profile.0.join(&sealed.connections[0].credential_file))?;
+    assert!(profile_security::is_keystore_sealed(&stored));
+    let headless = profile_security::TestKeystoreUnavailable::now();
+    assert!(reconnect(&mut store, &sealed, &binding, "outage").is_err());
+    drop(headless);
+    assert_eq!(store.load()?, Some(sealed));
+    Ok(())
+}

@@ -440,7 +440,7 @@ pub(crate) fn form(pairs: &[(&str, &str)]) -> String {
 /// Store `tokens` as the profile's sign-in generation, then derive the
 /// product's credential from it.
 pub fn save(profile: &Path, tokens: &Tokens) -> Result<(), SignInError> {
-    replace(profile, STATE_FILE, &encode(tokens))?;
+    replace_beside(profile, STATE_FILE, &encode(tokens), CREDENTIAL_FILE)?;
     project(profile, tokens)
 }
 
@@ -802,6 +802,21 @@ fn same_file(_before: &std::fs::Metadata, _opened: &std::fs::Metadata) -> bool {
 /// atomic rename, so a reader sees the old bytes or the new, never a mix.
 fn replace(directory: &Path, name: &str, bytes: &[u8]) -> Result<(), SignInError> {
     let protected = crate::profile_security::seal_for(bytes, &directory.join(name))
+        .map_err(|error| write_failure(name, "protected", &error))?;
+    write_replacing(directory, name, protected.as_slice())
+}
+
+/// [`replace`] for sign-in state whose projection `companion` is written
+/// next: the state is stored unsealed only when neither file is sealed, so a
+/// projection that would refuse never leaves unsealed state behind.
+fn replace_beside(
+    directory: &Path,
+    name: &str,
+    bytes: &[u8],
+    companion: &str,
+) -> Result<(), SignInError> {
+    let targets = [directory.join(name), directory.join(companion)];
+    let protected = crate::profile_security::seal_replacing(bytes, &[&targets[0], &targets[1]])
         .map_err(|error| write_failure(name, "protected", &error))?;
     write_replacing(directory, name, protected.as_slice())
 }

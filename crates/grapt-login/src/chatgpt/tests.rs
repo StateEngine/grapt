@@ -730,6 +730,23 @@ fn a_sealed_sign_in_is_never_replaced_unsealed_without_its_keystore(
     Ok(())
 }
 
+/// While the keystore is away, a save whose projection is sealed leaves even
+/// unsealed sign-in state untouched rather than publishing it first.
+#[cfg(not(windows))]
+#[test]
+fn a_save_never_publishes_state_its_sealed_projection_would_refuse(
+) -> Result<(), Box<dyn std::error::Error>> {
+    let profile = Profile::new("sealed-projection-outage");
+    save(&profile.0, &signed_in(NOW + HOUR))?;
+    std::fs::write(profile.0.join(STATE_FILE), encode(&signed_in(NOW + HOUR)))?;
+    let state = std::fs::read(profile.0.join(STATE_FILE))?;
+    let headless = crate::profile_security::TestKeystoreUnavailable::now();
+    assert!(save(&profile.0, &signed_in(NOW + 2 * HOUR)).is_err());
+    drop(headless);
+    assert_eq!(std::fs::read(profile.0.join(STATE_FILE))?, state);
+    Ok(())
+}
+
 fn write_config(profile: &std::path::Path, credential_version: &str) {
     let config =
         serde_json::json!({"provider": {"id": "openai", "credential_version": credential_version}});
