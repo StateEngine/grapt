@@ -2901,7 +2901,7 @@
   },
   {
    "file": "crates/grapt-product/src/dogfood/mod.rs",
-   "line": 663,
+   "line": 739,
    "function": "lock_inbox",
    "guard": "self.inbox",
    "kind": "std-lock",
@@ -3284,7 +3284,7 @@
   },
   {
    "file": "crates/grapt-product/src/dogfood/prompt_submission.rs",
-   "line": 150,
+   "line": 322,
    "function": "submit_prompt_run",
    "guard": null,
    "kind": "unresolved",

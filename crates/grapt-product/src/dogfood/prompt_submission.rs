@@ -140,37 +140,11 @@ impl ServerApplication {
         })
     }
 
-    fn parse_prompt_submission(
+    fn parse_prompt_input(
         &self,
-        session: &SessionId,
-        request: PromptRequestDto,
-    ) -> Result<ParsedPromptSubmission, SessionPromptApplicationError> {
-        let request = serde_json::to_value(request).map_err(|error| {
-            SessionPromptApplicationError::InvalidRequest(invalid(error.to_string()))
-        })?;
-        let max_steps = grapt_inbox::admission::options::max_steps(request.get("metadata"))
-            .map_err(|error| SessionPromptApplicationError::InvalidRequest(invalid(error)))?;
-        let seat_startup =
-            request.pointer("/metadata/origin").and_then(Value::as_str) == Some("seat-startup");
-        let record = self
-            .get_record(session)
-            .map_err(|_| SessionPromptApplicationError::SessionNotFound(not_found(session)))?;
-        // The old-client fallback: a launcher that stated no mode left no
-        // durable fact, so decide here from the only evidence there is — whether
-        // a window is watching this Session as its prompt arrives. A launcher
-        // that names no window is the headless pattern, which keeps the
-        // exception older drivers already relied on. `record.launch` being
-        // `Some` means the fact exists and this never overrides it.
-        if record.launch.is_none() {
-            self.launches
-                .decide_without_fact(session, self.hub.windows().has_window(session));
-        }
-        let agent = grapt_types::AgentId::new(record.agent.unwrap_or_else(|| "default".to_owned()))
-            .ok_or_else(|| {
-                SessionPromptApplicationError::InvalidRequest(invalid(
-                    "session agent identity is invalid",
-                ))
-            })?;
+        request: &Value,
+    ) -> Result<(String, MessageId, Option<DeliveryMode>, bool), SessionPromptApplicationError>
+    {
         let text = request
             .get("text")
             .and_then(Value::as_str)
@@ -178,7 +152,7 @@ impl ServerApplication {
             .ok_or_else(|| {
                 SessionPromptApplicationError::InvalidRequest(invalid("prompt text is absent"))
             })?;
-        let text = support::compose_prompt_extensions(&request, text)
+        let text = support::compose_prompt_extensions(request, text)
             .map_err(|error| SessionPromptApplicationError::InvalidRequest(invalid(error)))?;
         let input = request
             .get("id")
@@ -209,34 +183,26 @@ impl ServerApplication {
             .get("resume")
             .and_then(Value::as_bool)
             .is_none_or(|value| value);
-        Ok(ParsedPromptSubmission {
-            request,
-            max_steps,
-            seat_startup,
-            directory: record.placement.directory().to_owned(),
-            agent,
-            text,
-            input,
-            delivery,
-            resume,
-        })
+        Ok((text, input, delivery, resume))
     }
 
     fn resolve_delivery_and_verify_effects(
         &self,
         session: &SessionId,
-        parsed: &ParsedPromptSubmission,
+        input: &MessageId,
+        requested_delivery: Option<DeliveryMode>,
+        seat_startup: bool,
     ) -> Result<DeliveryMode, SessionPromptApplicationError> {
         self.ensure_session_writer(session)
             .map_err(|error| SessionPromptApplicationError::Conflict(conflict(error)))?;
         // Busy submissions join the next safe Step. At idle, preserve queued
         // work's admission order; stable retries always keep their stored mode.
         let idle = self.wake_slots.reserve_idle(session);
-        let delivery = match parsed.delivery {
+        let delivery = match requested_delivery {
             Some(delivery) => delivery,
-            None => match self.lock_inbox().admitted_delivery(&parsed.input) {
+            None => match self.lock_inbox().admitted_delivery(input) {
                 Ok(Some(delivery)) => delivery,
-                Ok(None) if parsed.seat_startup => DeliveryMode::Queue,
+                Ok(None) if seat_startup => DeliveryMode::Queue,
                 Ok(None) if idle.is_ok() => DeliveryMode::Queue,
                 Ok(None) => DeliveryMode::Steer,
                 Err(error) => {
@@ -257,14 +223,21 @@ impl ServerApplication {
         Ok(delivery)
     }
 
+    #[allow(clippy::too_many_arguments, reason = "prompt admission parameters")]
     fn admit_prompt_entry(
         &self,
         session: &SessionId,
-        parsed: &ParsedPromptSubmission,
+        request: &Value,
+        input: &MessageId,
+        text: &str,
         delivery: DeliveryMode,
+        resume: bool,
+        seat_startup: bool,
         child_execution: Option<&ExecutionId>,
-    ) -> Result<AdmittedPromptEntry, SessionPromptApplicationError> {
-        let images = prompt_images::capture(self, &parsed.request)
+    ) -> Result<(u64, Value, bool), SessionPromptApplicationError> {
+        let max_steps = grapt_inbox::admission::options::max_steps(request.get("metadata"))
+            .map_err(|error| SessionPromptApplicationError::InvalidRequest(invalid(error)))?;
+        let images = prompt_images::capture(self, request)
             .map_err(|error| SessionPromptApplicationError::InvalidRequest(invalid(error)))?;
         let claim = if child_execution.is_some() {
             subagent::claim_single_prompt(self, session)
@@ -273,16 +246,7 @@ impl ServerApplication {
         };
         claim.map_err(|error| SessionPromptApplicationError::Conflict(conflict(error)))?;
         let authorities = DeterministicAuthorities::new(&*self.clock, &*self.ids);
-        let reservation = self
-            .prompt_mailbox
-            .reserve()
-            .map_err(|error| SessionPromptApplicationError::Conflict(conflict(error)))?;
-        let wake = self
-            .wake_slots
-            .reserve_for_workspace(session, Path::new(&parsed.directory))
-            .map(Some)
-            .map_err(|error| SessionPromptApplicationError::Conflict(conflict(error)))?;
-        let origin = if parsed.seat_startup {
+        let origin = if seat_startup {
             grapt_inbox::UserInputOrigin::SeatStartup
         } else {
             grapt_inbox::UserInputOrigin::Human
@@ -290,14 +254,14 @@ impl ServerApplication {
         let admission = SessionPorts::new(Arc::clone(&self.inbox), &authorities)
             .prompt_with_options(
                 session,
-                parsed.input.clone(),
-                &parsed.text,
+                input.clone(),
+                text,
                 delivery,
-                parsed.resume,
+                resume,
                 grapt_inbox::UserInputOptions {
                     images: &images,
                     origin,
-                    max_steps: parsed.max_steps,
+                    max_steps,
                 },
             )
             .map_err(|error| {
@@ -308,7 +272,7 @@ impl ServerApplication {
             AdmitOutcome::Reconciled { .. } => {
                 let coordinates = self
                     .lock_inbox()
-                    .admission_coordinates(&parsed.input)
+                    .admission_coordinates(input)
                     .map_err(|error| SessionPromptApplicationError::Conflict(conflict(error)))?;
                 (coordinates.seq, coordinates.created_ms)
             }
@@ -319,21 +283,33 @@ impl ServerApplication {
         }
         session_title::automatic(self, session);
         let body = Self::build_prompt_response_body(
-            session,
-            &parsed.input,
-            &parsed.text,
-            seq,
-            created_ms,
-            delivery,
-            origin,
+            session, input, text, seq, created_ms, delivery, origin,
         );
-        Ok(AdmittedPromptEntry {
-            seq,
-            reservation,
-            wake,
-            body,
-            should_execute: should_execute(&admission.outcome),
-        })
+        Ok((seq, body, should_execute(&admission.outcome)))
+    }
+
+    fn prepare_prompt_session(
+        &self,
+        session: &SessionId,
+        request: PromptRequestDto,
+    ) -> Result<(Value, String, grapt_types::AgentId), SessionPromptApplicationError> {
+        let request = serde_json::to_value(request).map_err(|error| {
+            SessionPromptApplicationError::InvalidRequest(invalid(error.to_string()))
+        })?;
+        let record = self
+            .get_record(session)
+            .map_err(|_| SessionPromptApplicationError::SessionNotFound(not_found(session)))?;
+        if record.launch.is_none() {
+            self.launches
+                .decide_without_fact(session, self.hub.windows().has_window(session));
+        }
+        let agent = grapt_types::AgentId::new(record.agent.unwrap_or_else(|| "default".to_owned()))
+            .ok_or_else(|| {
+                SessionPromptApplicationError::InvalidRequest(invalid(
+                    "session agent identity is invalid",
+                ))
+            })?;
+        Ok((request, record.placement.directory().to_owned(), agent))
     }
 
     fn submit_prompt_run(
@@ -344,34 +320,72 @@ impl ServerApplication {
         child_execution: Option<ExecutionId>,
     ) -> ApplicationFuture<PromptResponseDto, SessionPromptApplicationError> {
         let session = session_id.into_inner();
-        let parsed = match self.parse_prompt_submission(&session, request) {
+        let (request, directory, agent) = match self.prepare_prompt_session(&session, request) {
+            Ok(prepared) => prepared,
+            Err(error) => return ready(Err(error)),
+        };
+        let seat_startup =
+            request.pointer("/metadata/origin").and_then(Value::as_str) == Some("seat-startup");
+        let (text, input, requested_delivery, resume) = match self.parse_prompt_input(&request) {
             Ok(parsed) => parsed,
             Err(error) => return ready(Err(error)),
         };
-        let delivery = match self.resolve_delivery_and_verify_effects(&session, &parsed) {
+        let delivery = match self.resolve_delivery_and_verify_effects(
+            &session,
+            &input,
+            requested_delivery,
+            seat_startup,
+        ) {
             Ok(delivery) => delivery,
             Err(error) => return ready(Err(error)),
         };
-        let admitted =
-            match self.admit_prompt_entry(&session, &parsed, delivery, child_execution.as_ref()) {
-                Ok(admitted) => admitted,
-                Err(error) => return ready(Err(error)),
-            };
+        let reservation = match self.prompt_mailbox.reserve() {
+            Ok(reservation) => reservation,
+            Err(error) => {
+                return ready(Err(SessionPromptApplicationError::Conflict(conflict(
+                    error,
+                ))));
+            }
+        };
+        let wake = match self
+            .wake_slots
+            .reserve_for_workspace(&session, Path::new(&directory))
+        {
+            Ok(wake) => Some(wake),
+            Err(error) => {
+                return ready(Err(SessionPromptApplicationError::Conflict(conflict(
+                    error,
+                ))));
+            }
+        };
+        let (seq, body, should_exec) = match self.admit_prompt_entry(
+            &session,
+            &request,
+            &input,
+            &text,
+            delivery,
+            resume,
+            seat_startup,
+            child_execution.as_ref(),
+        ) {
+            Ok(admitted) => admitted,
+            Err(error) => return ready(Err(error)),
+        };
         let respond = |body: Value| {
             decode(body)
                 .map_err(|error| SessionPromptApplicationError::InvalidRequest(invalid(error)))
         };
-        if !admitted.should_execute {
-            return ready(respond(admitted.body));
+        if !should_exec {
+            return ready(respond(body));
         }
         let accepted = match self.schedule_admitted(
             principal,
             session,
-            parsed.input,
-            admitted.seq,
-            parsed.agent,
-            admitted.reservation,
-            admitted.wake,
+            input,
+            seq,
+            agent,
+            reservation,
+            wake,
             child_execution,
             None,
         ) {
@@ -382,7 +396,6 @@ impl ServerApplication {
                 ))));
             }
         };
-        let body = admitted.body;
         Box::pin(async move {
             let queued = accepted
                 .await

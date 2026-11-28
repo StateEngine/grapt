@@ -349,26 +349,6 @@ struct InitializedProductionInbox {
     clock: Arc<SystemClock>,
 }
 
-struct AdmittedPromptEntry {
-    seq: u64,
-    reservation: prompt_driver::Reservation,
-    wake: Option<execution::WakeReservation>,
-    body: Value,
-    should_execute: bool,
-}
-
-struct ParsedPromptSubmission {
-    request: Value,
-    max_steps: Option<std::num::NonZero<u32>>,
-    seat_startup: bool,
-    directory: String,
-    agent: grapt_types::AgentId,
-    text: String,
-    input: MessageId,
-    delivery: Option<DeliveryMode>,
-    resume: bool,
-}
-
 #[derive(Clone)]
 pub struct ServerApplication {
     readers: Option<grapt_store::read_pool::ReadPool>,
