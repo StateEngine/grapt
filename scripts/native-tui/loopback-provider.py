@@ -36,6 +36,7 @@ import ssl
 import sys
 import threading
 import time
+import urllib.parse
 from pathlib import Path
 
 READ_BYTES = 64 * 1024
@@ -575,9 +576,28 @@ def prompt_of(body: bytes) -> str:
     return ""
 
 
-def _extract_stream_scope(headers: dict[str, str], body: bytes) -> str | None:
-    """Identify which terminal/session owns this provider stream so traffic on
-    another socket can never satisfy a quiet T5 echo probe."""
+def _extract_stream_scope(
+    request_target: str, headers: dict[str, str], body: bytes
+) -> str | None:
+    """Identify which measured terminal/run owns this provider stream so traffic on
+    another socket can never satisfy a quiet T5 echo probe.
+
+    Scope attribution uses only a unique per-measured-run/per-terminal identifier
+    (dedicated `/scopes/<id>/...` path prefix, `stream_scope` query param, dedicated
+    headers, or explicit `stream_scope`/`metadata.session_id` body fields). Shared
+    `prompt_cache_key` values are deliberately ignored because forked sessions and
+    project-scoped requests share cache keys."""
+    if request_target:
+        parsed = urllib.parse.urlsplit(request_target)
+        parts = [segment for segment in parsed.path.split("/") if segment]
+        if len(parts) >= 2 and parts[0] == "scopes":
+            scope = urllib.parse.unquote(parts[1]).strip()
+            if scope:
+                return scope
+        query = urllib.parse.parse_qs(parsed.query)
+        for value in query.get("stream_scope", ()):
+            if value.strip():
+                return value.strip()
     for header in ("x-grapt-stream-scope", "x-grapt-session-id"):
         value = headers.get(header, "").strip()
         if value:
@@ -588,10 +608,9 @@ def _extract_stream_scope(headers: dict[str, str], body: bytes) -> str | None:
         return None
     if not isinstance(decoded, dict):
         return None
-    for key in ("stream_scope", "prompt_cache_key"):
-        value = decoded.get(key)
-        if isinstance(value, str) and value.strip():
-            return value.strip()
+    value = decoded.get("stream_scope")
+    if isinstance(value, str) and value.strip():
+        return value.strip()
     metadata = decoded.get("metadata")
     if isinstance(metadata, dict):
         session_id = metadata.get("session_id")
@@ -612,9 +631,15 @@ def read_request_with_scope(
         if len(buffered) > MAX_REQUEST_BYTES:
             raise RuntimeError("provider request exceeded its bound")
     head, _, rest = buffered.partition(b"\r\n\r\n")
+    head_lines = head.decode("latin-1").split("\r\n")
+    request_target = ""
+    if head_lines:
+        request_parts = head_lines[0].split(" ")
+        if len(request_parts) >= 2:
+            request_target = request_parts[1].strip()
     length = 0
     headers: dict[str, str] = {}
-    for line in head.decode("latin-1").split("\r\n"):
+    for line in head_lines[1:]:
         name, sep, value = line.partition(":")
         if sep:
             key = name.strip().lower()
@@ -636,13 +661,18 @@ def read_request_with_scope(
             print("TOOLS_OFFERED " + json.dumps([n for n in names if n]), flush=True)
     except Exception:
         pass
-    return prompt_of(body), has_tool_result(body), _extract_stream_scope(headers, body)
+    return (
+        prompt_of(body),
+        has_tool_result(body),
+        _extract_stream_scope(request_target, headers, body),
+    )
 
 
 def validated_sse_delta_tokens(frame: str) -> int:
-    """Count validated assistant text delta chunks from a parsed SSE frame.
-    Rejects malformed JSON, raw substring spoofs, empty deltas, and prevents
-    multiword frames from inflating token counts."""
+    """Count validated assistant text token units from a parsed SSE delta frame.
+    Rejects malformed JSON, raw substring spoofs, non-delta events, and empty
+    deltas; counts whitespace-delimited token units in valid single- and
+    multi-word deltas."""
     data_lines = [
         line[len("data:"):].strip()
         for line in frame.splitlines()
@@ -659,9 +689,9 @@ def validated_sse_delta_tokens(frame: str) -> int:
     if payload.get("type") != "response.output_text.delta":
         return 0
     delta = payload.get("delta")
-    if not isinstance(delta, str) or not delta.strip():
+    if not isinstance(delta, str):
         return 0
-    return 1
+    return len(delta.split())
 
 
 def _write_stream_metrics(path: Path, scopes: dict[str, int]) -> None:

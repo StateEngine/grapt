@@ -502,23 +502,15 @@ where
     let effects_settled = tokio::time::timeout(Duration::from_secs(2), tools.settle_attempt())
         .await
         .unwrap_or(false);
-    nested_state.stop_admission();
-    while let Ok(request) = nested_rx.try_recv() {
-        if !refused {
-            if let Err(error) =
-                nested_state.handle(request, &mut owner, &observed_calls, tools.as_ref())
-            {
-                owner_error = Some(error);
-                refused = true;
-            }
-        }
-    }
-    if !refused {
-        if let Err(error) = nested_state.close_all(&mut owner, tools.as_ref()) {
-            owner_error = Some(error);
-            refused = true;
-        }
-    }
+    drain_and_close_nested(
+        &mut nested_state,
+        &mut nested_rx,
+        &mut owner,
+        &observed_calls,
+        tools.as_ref(),
+        &mut refused,
+        &mut owner_error,
+    );
 
     // Anything that landed after the last task joined.
     while let Ok(ToolMessage::Terminal { call, outcome }) = tool_rx.try_recv() {
@@ -650,6 +642,32 @@ where
             provider_failure,
         },
     )
+}
+
+fn drain_and_close_nested<O: AttemptOwner>(
+    nested_state: &mut nested::NestedState,
+    nested_rx: &mut mpsc::Receiver<nested::NestedRequest>,
+    owner: &mut O,
+    observed_calls: &BTreeMap<String, ToolCallId>,
+    tools: &dyn ToolRunner,
+    refused: &mut bool,
+    owner_error: &mut Option<OwnerError>,
+) {
+    nested_state.stop_admission();
+    while let Ok(request) = nested_rx.try_recv() {
+        if !*refused {
+            if let Err(error) = nested_state.handle(request, owner, observed_calls, tools) {
+                *owner_error = Some(error);
+                *refused = true;
+            }
+        }
+    }
+    if !*refused {
+        if let Err(error) = nested_state.close_all(owner, tools) {
+            *owner_error = Some(error);
+            *refused = true;
+        }
+    }
 }
 
 fn unsettled_tool_outcome<O: AttemptOwner>(
