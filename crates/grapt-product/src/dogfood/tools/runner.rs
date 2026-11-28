@@ -646,9 +646,10 @@ impl PermissionToolRunner {
             }
             let call_for_cleanup = call.clone();
             let unexecuted_for_dispatch = unexecuted_approvals.clone();
+            // Clear pending-approval status inside consume_and_run BEFORE
+            // entering governed.run_effect so any abort after dispatch fails
+            // closed with EffectUnknown.
             let authorization = pending.consume_and_run(move |capability| {
-                // Mark as dispatched BEFORE entering the governed effect so any
-                // abort after this point fails closed with EffectUnknown.
                 unexecuted_for_dispatch.clear(&call);
                 if let Some(observation) = authorization_observation {
                     observation.authorized();
