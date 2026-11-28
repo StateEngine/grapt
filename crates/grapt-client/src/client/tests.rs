@@ -278,6 +278,7 @@ mod interruption;
 mod live_output;
 mod newest_first;
 mod paging;
+mod permission_fence;
 mod refusal;
 mod streaming;
 mod submission;

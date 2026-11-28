@@ -67,6 +67,9 @@ pub(super) struct History {
     permissions: bool,
     messages: bool,
     pub(super) pending: bool,
+    /// The acknowledgment count when the permission list was asked for: a
+    /// reply acknowledged since makes that list older than the open asks.
+    acknowledged: u64,
 }
 
 impl ClientError {
@@ -253,6 +256,7 @@ impl<C: Connection> Client<C> {
                 permissions: true,
                 messages: true,
                 pending: false,
+                acknowledged: self.acknowledged,
             });
         }
     }
@@ -305,6 +309,7 @@ impl<C: Connection> Client<C> {
                 permissions: false,
                 messages: false,
                 pending: false,
+                acknowledged: self.acknowledged,
             });
         }
     }
@@ -347,6 +352,7 @@ impl<C: Connection> Client<C> {
                 self.connection.poll_read()
             } else {
                 let request = if history.permissions {
+                    history.acknowledged = self.acknowledged;
                     WireRequest::new(operation, None, None)?
                 } else {
                     WireRequest::new(operation, Some(&history.session), None)?
@@ -380,7 +386,13 @@ impl<C: Connection> Client<C> {
             let accepted = self.accept_response(operation, response);
             let bytes = accepted.map_err(|error| self.latch_too_old(error))?;
             if history.permissions {
-                self.accept_permissions(bytes)?;
+                // A reply acknowledged while the list was read is newer than
+                // it: the host re-reads on its fenced lane instead.
+                if history.acknowledged == self.acknowledged {
+                    self.accept_permissions(bytes)?;
+                } else {
+                    self.permissions_stale = true;
+                }
                 history.permissions = false;
                 self.recovery.history = Some(history);
                 continue;

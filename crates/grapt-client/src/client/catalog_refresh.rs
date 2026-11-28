@@ -102,6 +102,7 @@ impl Snapshot {
 impl<C: Connection> Client<C> {
     /// Revalidate the existing location after a provider connection changes.
     pub fn refresh_connection_catalog(&mut self) -> Result<(), ClientError> {
+        self.refused()?;
         let agent = self.agent.clone();
         let model = self.model.clone();
         if self.catalog_refresh.enabled() {
@@ -151,6 +152,8 @@ impl<C: Connection> Client<C> {
     }
 
     pub(super) fn start_catalog_refresh(&mut self) -> Result<(), ClientError> {
+        // A refused service gets no new catalog job; its refusal stands.
+        self.refused()?;
         self.connection.cancel_catalog();
         self.catalog_refresh.validated = false;
         self.catalog_refresh.repository = None;

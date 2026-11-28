@@ -79,3 +79,19 @@ fn a_list_read_before_a_reply_is_acknowledged_never_brings_the_ask_back() -> Tes
         .all(|open| open.request_id != ask));
     Ok(())
 }
+
+#[test]
+fn refresh_actions_after_a_refusal_keep_it() -> TestResult {
+    let mut client = client();
+    client.create_session()?;
+    client.settle_refused("session snapshots");
+    client.open_commands();
+    client.refresh_commands();
+    assert!(client
+        .commands_status()
+        .is_some_and(|status| status.contains("Upgrade")));
+    assert!(too_old(client.refresh_connection_catalog()));
+    assert!(!client.catalog_pending());
+    assert_eq!(client.recovery_wait(), None);
+    Ok(())
+}

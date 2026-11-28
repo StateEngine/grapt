@@ -142,15 +142,21 @@ impl ReadPeer {
         Arc::clone(&self.valid)
     }
 
-    /// Blocking: invoke only on the read worker.
+    /// Blocking: invoke only on the read worker. An attachment revoked
+    /// before the send, by a reconnect or a refusal, is sent nothing; one
+    /// revoked during it has its answer refused.
     pub(crate) fn call(mut self, request: &WireRequest) -> Result<WireResponse, TransportError> {
+        let revoked = || TransportError::Unavailable {
+            reason: "service reconnecting; read retried".into(),
+        };
+        if !self.valid.load(Ordering::Acquire) {
+            return Err(revoked());
+        }
         let response = self.rpc.call(request);
         if self.valid.load(Ordering::Acquire) {
             response
         } else {
-            Err(TransportError::Unavailable {
-                reason: "service reconnecting; read retried".into(),
-            })
+            Err(revoked())
         }
     }
 }
@@ -742,3 +748,6 @@ mod restart_tests;
 
 #[cfg(test)]
 mod replacement_tests;
+
+#[cfg(test)]
+mod read_peer_tests;
