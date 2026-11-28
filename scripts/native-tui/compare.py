@@ -932,6 +932,69 @@ def apply_step(
     raise HarnessError(f"[{label}] unrecognised step {step!r}")
 
 
+DEFAULT_T5_ECHO_P95_MAX_MS = 16.0
+DEFAULT_T5_IDLE_CPU_MAX_SECONDS = 0.5
+
+
+def _percentile(values: list[float], fraction: float) -> float | None:
+    if not values:
+        return None
+    ordered = sorted(values)
+    index = max(0, min(len(ordered) - 1, int((len(ordered) * fraction) + 0.999999999) - 1))
+    return ordered[index]
+
+
+def evaluate_t5_budgets(
+    sides: list[dict],
+    echo_p95_max_ms: float = DEFAULT_T5_ECHO_P95_MAX_MS,
+    idle_cpu_max_seconds: float = DEFAULT_T5_IDLE_CPU_MAX_SECONDS,
+) -> dict:
+    """Evaluate T5 smoothness budgets (streaming echo p95 <= 16 ms, idle CPU ceiling)
+    against the native client's recorded step timings and OS resource counters."""
+    native = next((side for side in sides if side.get("client") == "native"), None)
+    if native is None:
+        return {"status": "not-measured", "reason": "native-side-absent"}
+    steps = native.get("steps") or []
+    echo_samples = [
+        float(step["elapsed_ms"])
+        for step in steps
+        if step.get("elapsed_ms") is not None
+        and (step.get("t5_echo") is True or step.get("kind") in ("type", "key", "echo"))
+    ]
+    echo_p95 = _percentile(echo_samples, 0.95)
+    echo_status = (
+        "not-measured"
+        if echo_p95 is None
+        else ("pass" if echo_p95 <= echo_p95_max_ms else "fail")
+    )
+    cpu_seconds = (native.get("resources") or {}).get("processor_seconds")
+    idle_status = (
+        "not-measured"
+        if cpu_seconds is None
+        else ("pass" if float(cpu_seconds) <= idle_cpu_max_seconds else "fail")
+    )
+    statuses = [s for s in (echo_status, idle_status) if s != "not-measured"]
+    overall = (
+        "not-measured"
+        if not statuses
+        else ("fail" if "fail" in statuses else "pass")
+    )
+    return {
+        "status": overall,
+        "echo_p95_ms": {
+            "status": echo_status,
+            "observed": None if echo_p95 is None else round(echo_p95, 3),
+            "budget": echo_p95_max_ms,
+            "samples": len(echo_samples),
+        },
+        "idle_cpu_seconds": {
+            "status": idle_status,
+            "observed": None if cpu_seconds is None else round(float(cpu_seconds), 3),
+            "budget": idle_cpu_max_seconds,
+        },
+    }
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--scenario", required=True, type=Path)
@@ -965,6 +1028,23 @@ def main() -> int:
         "--only",
         choices=["native", "retained"],
         help="run one side only; the receipt says which side is missing and why",
+    )
+    parser.add_argument(
+        "--echo-p95-max-ms",
+        type=float,
+        default=DEFAULT_T5_ECHO_P95_MAX_MS,
+        help="T5 streaming/echo p95 latency budget in milliseconds (default: 16.0)",
+    )
+    parser.add_argument(
+        "--idle-cpu-max-seconds",
+        type=float,
+        default=DEFAULT_T5_IDLE_CPU_MAX_SECONDS,
+        help="T5 idle CPU processor-seconds ceiling (default: 0.5)",
+    )
+    parser.add_argument(
+        "--enforce-t5-budgets",
+        action="store_true",
+        help="exit nonzero if any measured T5 smoothness budget fails",
     )
     arguments = parser.parse_args()
 
@@ -1051,11 +1131,26 @@ def main() -> int:
             "poll interval and their figure is an upper bound."
         ),
         "sides": sides,
+        "t5_budgets": evaluate_t5_budgets(
+            sides,
+            echo_p95_max_ms=arguments.echo_p95_max_ms,
+            idle_cpu_max_seconds=arguments.idle_cpu_max_seconds,
+        ),
     }
     path = arguments.evidence / "comparison.json"
     path.write_text(json.dumps(receipt, indent=2), encoding="utf-8")
-    print(json.dumps({"comparison": str(path), "failures": [s["failure"] for s in sides]}, indent=2))
-    return 1 if any(side["failure"] for side in sides) else 0
+    print(
+        json.dumps(
+            {
+                "comparison": str(path),
+                "failures": [s["failure"] for s in sides],
+                "t5_budgets": receipt["t5_budgets"]["status"],
+            },
+            indent=2,
+        )
+    )
+    t5_failed = arguments.enforce_t5_budgets and receipt["t5_budgets"]["status"] == "fail"
+    return 1 if (any(side["failure"] for side in sides) or t5_failed) else 0
 
 
 if __name__ == "__main__":

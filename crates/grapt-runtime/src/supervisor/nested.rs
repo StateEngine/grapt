@@ -245,13 +245,18 @@ impl NestedState {
         call: &ToolCallId,
     ) -> Result<(), OwnerError> {
         if self.open.contains_key(call) {
+            let detail = owner
+                .capture_hosted_output(
+                    "nested tool execution was abandoned before producing a terminal result; external effect state is unknown",
+                )
+                .ok();
             commit(
                 owner,
                 DurableFact::ToolTerminal {
                     call: call.clone(),
                     outcome: ToolOutcome::Failed {
                         reason: ToolFailureReason::EffectUnknown,
-                        detail: None,
+                        detail,
                     },
                 },
             )?;

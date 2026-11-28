@@ -195,3 +195,47 @@ test('seat-day estimate requires all settled window attempts, retaining the know
   }
   assert.equal(summarize([report([known, attempt('missing-cost', 10, 0)])]).totals.cost.usd, 0.25);
 });
+
+test('evaluateReleaseGates reports explicit Criterion #3 and #5 pass/fail verdicts', async () => {
+  const { evaluateReleaseGates } = await import('./seat-day-report.mjs');
+  const passing = evaluateReleaseGates(
+    {
+      totals: { read_share_percent: 98.8 },
+      operations: {
+        tool_calls: { count: 200, failed: 1 },
+        failure_detail_unavailable: {},
+      },
+    },
+    { totals: { read_share_percent: 98.5 } },
+  );
+  assert.equal(passing.criterion_3.status, 'pass');
+  assert.equal(passing.criterion_3.cache_share_delta_percent, 0.3);
+  assert.equal(passing.criterion_5.status, 'pass');
+  assert.equal(passing.criterion_5.unnamed_terminal_failures, 0);
+
+  const failingUnnamed = evaluateReleaseGates(
+    {
+      totals: { read_share_percent: 97.7 },
+      operations: {
+        tool_calls: { count: 350, failed: 1 },
+        failure_detail_unavailable: { 'detail-not-recorded': 1 },
+      },
+    },
+    { totals: { read_share_percent: 98.7 } },
+  );
+  assert.equal(failingUnnamed.criterion_3.status, 'fail');
+  assert.equal(failingUnnamed.criterion_3.cache_share_delta_percent, -1);
+  assert.equal(failingUnnamed.criterion_5.status, 'fail');
+  assert.equal(failingUnnamed.criterion_5.unnamed_terminal_failures, 1);
+
+  const failingRate = evaluateReleaseGates({
+    totals: { read_share_percent: 99.0 },
+    operations: {
+      tool_calls: { count: 100, failed: 4 },
+      failure_detail_unavailable: {},
+    },
+  });
+  assert.equal(failingRate.criterion_3.status, 'unavailable');
+  assert.equal(failingRate.criterion_5.status, 'fail');
+  assert.equal(failingRate.criterion_5.infra_failure_rate_percent, 4);
+});

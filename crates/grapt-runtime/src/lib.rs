@@ -88,7 +88,9 @@ pub use mailbox_advisory::{
     MAX_HANDLED_MAILBOX_ADVISORY_BYTES, MAX_RESCAN_REQUIRED_MAILBOX_ADVISORY_BYTES,
     MAX_RETAINED_MAILBOX_ADVISORIES, MAX_RETAINED_MAILBOX_ADVISORY_BYTES,
 };
-pub use nested_reconcile::{reconcile_orphaned_nested, MAX_ORPHANED_NESTED};
+pub use nested_reconcile::{
+    reconcile_orphaned_nested, reconcile_orphaned_nested_with_artifacts, MAX_ORPHANED_NESTED,
+};
 pub use owner::{
     AttemptOwner, DurableFact, Observation, OwnerError, RecordingOwner, StepFailure, ToolOutcome,
 };

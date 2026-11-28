@@ -33,12 +33,18 @@ impl DogfoodApplication {
         let mut inbox = self.lock_inbox();
         let orphans = continuation::orphaned_nested(inbox.store(), &session)
             .map_err(|error| Error::Conflict(conflict(error)))?;
-        grapt_runtime::reconcile_orphaned_nested(
+        let artifacts = if orphans.is_empty() {
+            None
+        } else {
+            execution::artifacts::open_artifacts(&self.service_root).ok()
+        };
+        grapt_runtime::reconcile_orphaned_nested_with_artifacts(
             inbox.store_mut(),
             &session,
             &orphans,
             &execution::RuntimeEventIds(Arc::clone(&self.ids)),
             &execution::RuntimeClock(Arc::clone(&self.clock)),
+            artifacts.as_ref(),
         )
         .map_err(|error| Error::Unknown(unknown(error)))?;
         drop(inbox);

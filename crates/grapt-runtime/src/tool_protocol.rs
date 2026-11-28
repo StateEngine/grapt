@@ -368,10 +368,30 @@ where
         _tool: String,
         _input: BoundedToolInput,
     ) -> BoxFuture<'static, ToolTerminalOutcome> {
-        Box::pin(async {
+        let artifacts = Arc::clone(&self.artifacts);
+        Box::pin(async move {
+            let detail = CaptureBound::new(2048, 2048).and_then(|bound| {
+                artifacts
+                    .capture(
+                        std::io::Cursor::new(
+                            b"tool execution refused: governed tool authority is unavailable"
+                                .as_slice(),
+                        ),
+                        bound,
+                        ArtifactKind::CapturedOutput,
+                        Sensitivity::Ordinary,
+                    )
+                    .ok()
+                    .and_then(|captured| {
+                        ToolTerminalArtifact::new(
+                            captured.reference().clone(),
+                            captured.disposition(),
+                        )
+                    })
+            });
             ToolTerminalOutcome::Failed {
                 reason: ToolFailureReason::AuthorityUnavailable,
-                detail: None,
+                detail,
             }
         })
     }
@@ -671,13 +691,15 @@ mod tests {
         let outcome =
             ToolRunner::run(&runner, call(), "provider-authored-label".to_owned(), input).await;
 
-        assert_eq!(
-            outcome,
+        match outcome {
             ToolTerminalOutcome::Failed {
                 reason: ToolFailureReason::AuthorityUnavailable,
-                detail: None,
+                detail: Some(detail),
+            } => {
+                assert!(detail.reference().length() > 0);
             }
-        );
+            other => panic!("expected AuthorityUnavailable with named detail artifact: {other:?}"),
+        }
         assert_eq!(calls.load(Ordering::SeqCst), 0);
     }
 

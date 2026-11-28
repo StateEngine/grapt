@@ -134,3 +134,49 @@ export function summarize(reports, window = null) {
     requests: rows,
   };
 }
+
+export const CRITERION_5_MAX_INFRA_FAILURE_PERCENT = 3.0;
+
+/**
+ * Evaluate RELEASE-0.1.md Criteria #3 (cache read share >= comparison baseline)
+ * and #5 (infrastructure tool failure rate <= 3% and zero unnamed terminal failures).
+ */
+export function evaluateReleaseGates(graptReport, codexReport = null) {
+  const ops = graptReport?.operations;
+  const toolCount = ops?.tool_calls?.count ?? 0;
+  const failedCount = ops?.tool_calls?.failed ?? 0;
+  const unnamedCount = ops?.failure_detail_unavailable?.['detail-not-recorded'] ?? 0;
+  const infraRatePercent = toolCount > 0 ? (100 * failedCount) / toolCount : null;
+  const criterion_5 = toolCount > 0
+    ? {
+        status: infraRatePercent <= CRITERION_5_MAX_INFRA_FAILURE_PERCENT && unnamedCount === 0 ? 'pass' : 'fail',
+        tool_calls: toolCount,
+        failed_tool_calls: failedCount,
+        infra_failure_rate_percent: Number(infraRatePercent.toFixed(4)),
+        max_infra_failure_rate_percent: CRITERION_5_MAX_INFRA_FAILURE_PERCENT,
+        unnamed_terminal_failures: unnamedCount,
+      }
+    : {
+        status: 'unavailable',
+        reason: 'no-tool-calls-observed',
+        unnamed_terminal_failures: unnamedCount,
+      };
+
+  const graptShare = graptReport?.totals?.read_share_percent ?? null;
+  const codexShare = codexReport?.totals?.read_share_percent ?? null;
+  const criterion_3 = graptShare !== null && codexShare !== null
+    ? {
+        status: graptShare >= codexShare ? 'pass' : 'fail',
+        grapt_read_share_percent: Number(graptShare.toFixed(4)),
+        codex_read_share_percent: Number(codexShare.toFixed(4)),
+        cache_share_delta_percent: Number((graptShare - codexShare).toFixed(4)),
+      }
+    : {
+        status: 'unavailable',
+        reason: codexReport ? 'cache-read-share-unavailable' : 'comparison-baseline-not-provided',
+        grapt_read_share_percent: graptShare === null ? null : Number(graptShare.toFixed(4)),
+        codex_read_share_percent: codexShare === null ? null : Number(codexShare.toFixed(4)),
+      };
+
+  return { criterion_3, criterion_5 };
+}

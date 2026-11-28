@@ -4,7 +4,7 @@ use grapt_artifact::FilesystemArtifactStore;
 use grapt_store::SystemClock;
 use std::path::Path;
 
-pub(super) fn open_artifacts(
+pub(in crate::dogfood) fn open_artifacts(
     service_root: &Path,
 ) -> Result<FilesystemArtifactStore, ExecutionRefusal> {
     FilesystemArtifactStore::open(

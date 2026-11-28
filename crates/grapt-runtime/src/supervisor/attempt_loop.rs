@@ -541,7 +541,11 @@ where
         let outcome = if !effects_settled {
             ToolOutcome::Failed {
                 reason: ToolFailureReason::EffectUnknown,
-                detail: None,
+                detail: owner
+                    .capture_hosted_output(
+                        "tool execution did not settle before attempt ended; external effect state is unknown",
+                    )
+                    .ok(),
             }
         } else {
             match cancelled {
@@ -551,7 +555,11 @@ where
                 }
                 None => ToolOutcome::Failed {
                     reason: ToolFailureReason::EffectFailed,
-                    detail: None,
+                    detail: owner
+                        .capture_hosted_output(
+                            "tool execution ended without producing a terminal result",
+                        )
+                        .ok(),
                 },
             }
         };

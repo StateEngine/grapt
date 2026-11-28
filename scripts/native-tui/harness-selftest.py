@@ -677,6 +677,51 @@ def call_identity_witnesses() -> None:
     PROVIDER._call_sequence = 0
 
 
+def t5_budget_witnesses() -> None:
+    passing = CMP.evaluate_t5_budgets(
+        [
+            {
+                "client": "native",
+                "steps": [
+                    {"kind": "type", "elapsed_ms": 8.0},
+                    {"kind": "key", "elapsed_ms": 12.5},
+                    {"kind": "echo", "elapsed_ms": 15.9},
+                ],
+                "resources": {"processor_seconds": 0.12},
+            }
+        ]
+    )
+    check(
+        "t5 smoothness budgets pass within 16ms echo p95 and idle CPU ceiling",
+        passing["status"] == "pass"
+        and passing["echo_p95_ms"]["status"] == "pass"
+        and passing["idle_cpu_seconds"]["status"] == "pass",
+        f"got={passing!r}",
+    )
+    failing = CMP.evaluate_t5_budgets(
+        [
+            {
+                "client": "native",
+                "steps": [{"kind": "echo", "elapsed_ms": 22.0}],
+                "resources": {"processor_seconds": 0.8},
+            }
+        ]
+    )
+    check(
+        "t5 smoothness budgets fail when echo p95 or idle CPU exceeds budget",
+        failing["status"] == "fail"
+        and failing["echo_p95_ms"]["status"] == "fail"
+        and failing["idle_cpu_seconds"]["status"] == "fail",
+        f"got={failing!r}",
+    )
+    unmeasured = CMP.evaluate_t5_budgets([{"client": "retained", "steps": []}])
+    check(
+        "t5 smoothness budgets report not-measured when native side is absent",
+        unmeasured["status"] == "not-measured",
+        f"got={unmeasured!r}",
+    )
+
+
 def main() -> int:
     with tempfile.TemporaryDirectory() as raw:
         root = Path(raw)
@@ -802,6 +847,9 @@ def main() -> int:
     undrained_pipe_witnesses()
     print()
     capture_coherence_witnesses()
+    print()
+    t5_budget_witnesses()
+    print()
     provider_shape_witnesses()
     call_identity_witnesses()
 

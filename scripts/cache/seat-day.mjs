@@ -6,7 +6,7 @@ import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { pathToFileURL } from 'node:url';
 import { parseArgs, promisify } from 'node:util';
-import { summarize } from './seat-day-report.mjs';
+import { evaluateReleaseGates, summarize } from './seat-day-report.mjs';
 import { readEvents } from './seat-day-events.mjs';
 import { artifactReader } from './seat-day-artifacts.mjs';
 import { operationalReport } from './seat-day-operations.mjs';
@@ -80,6 +80,7 @@ export async function run(args) {
   const history = await readEvents(path.join(service, 'database.sqlite3'), sessions);
   result.operations = await operationalReport(history.events, reports, artifactReader(service), window);
   result.operations.coverage = history.coverage;
+  result.release_gates = evaluateReleaseGates(result);
   if (Buffer.byteLength(JSON.stringify(result)) > 32 * 1024 * 1024) {
     throw new Error('Report exceeds 32 MiB; narrow the window');
   }
