@@ -68,6 +68,8 @@ pub(super) enum CacheStatus {
 pub(super) struct Fold {
     pub(super) history: Option<FoldedHistory>,
     pub(super) skipped: Vec<SkippedInstructionEvent>,
+    /// The values a move or rewind last cleared, if any history was cleared.
+    pub(super) cleared: Option<BTreeMap<InstructionKey, InstructionHash>>,
 }
 
 impl Fold {
@@ -179,8 +181,9 @@ pub(super) fn check_cache(
 }
 
 fn fold_segments(conn: &Connection, lineage: &ForkLineage) -> Result<Fold, InstructionError> {
-    let mut folded = None;
+    let mut folded: Option<FoldedHistory> = None;
     let mut skipped = Vec::new();
+    let mut cleared = None;
     for segment in lineage.segments() {
         let mut stmt = conn.prepare(
             "SELECT id, seq, created, type, data FROM event
@@ -201,6 +204,9 @@ fn fold_segments(conn: &Connection, lineage: &ForkLineage) -> Result<Fold, Instr
             let decoded = decode_journal_row(row, segment.session());
             match decoded.and_then(|decoded| row_blobs(conn, &decoded.1).map(|()| decoded)) {
                 Ok((event, payload)) => {
+                    if let (Payload::Cleared, Some(history)) = (&payload, &folded) {
+                        cleared = Some(history.state.current.clone());
+                    }
                     apply_payload(&mut folded, &event, payload, FoldMode::Current)?;
                 }
                 Err(error) if row_damage(&error) => {
@@ -213,6 +219,7 @@ fn fold_segments(conn: &Connection, lineage: &ForkLineage) -> Result<Fold, Instr
     Ok(Fold {
         history: folded,
         skipped,
+        cleared,
     })
 }
 

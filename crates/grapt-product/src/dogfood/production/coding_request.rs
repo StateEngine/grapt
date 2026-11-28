@@ -65,6 +65,20 @@ impl ProductPlan {
         }
     }
 
+    /// The built-in tools this request offers: an ephemeral Session begins
+    /// now, and any other keeps the epoch its refreshed records name.
+    fn builtin_definitions(
+        &self,
+        instructions: Option<&crate::dogfood::instructions::PreparedInstructions>,
+    ) -> Vec<grapt_provider::ToolDefinition> {
+        use crate::dogfood::instructions::BuiltinEpoch;
+        if self.ephemeral {
+            return super::super::tools::ephemeral_definitions(self.family);
+        }
+        let epoch = instructions.map_or(&BuiltinEpoch::Current, |prepared| &prepared.tools.epoch);
+        super::super::tools::offered_definitions(self.family, epoch)
+    }
+
     #[expect(clippy::cognitive_complexity, reason = "legacy")]
     #[expect(clippy::too_many_lines, reason = "legacy")]
     fn prepare_coding_request(
@@ -132,11 +146,7 @@ impl ProductPlan {
                 }
                 PlanRefusal::new(error.to_string(), compaction)
             })?;
-        let mut tools = if self.ephemeral {
-            super::super::tools::ephemeral_definitions(self.family)
-        } else {
-            super::super::tools::offered_definitions(self.family)
-        };
+        let mut tools = self.builtin_definitions(instructions.as_ref());
         if let (Some(description), Some(tool)) = (
             &self.shell_description,
             tools.iter_mut().find(|tool| tool.name == "exec_command"),
@@ -146,7 +156,7 @@ impl ProductPlan {
         tools.extend(
             instructions
                 .as_ref()
-                .and_then(|instructions| instructions.frozen_tools.as_deref())
+                .and_then(|instructions| instructions.tools.frozen.as_deref())
                 .unwrap_or(if self.published.refresh_failed {
                     &[]
                 } else {

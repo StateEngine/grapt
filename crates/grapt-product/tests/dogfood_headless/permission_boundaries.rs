@@ -857,7 +857,7 @@ fn a_tool_denied_outright_is_not_offered_and_still_refused_if_called() {
             "inspect offered the denied {withheld}: {inspected:?}"
         );
     }
-    for kept in ["read", "read_lines", "list", "grep", "glob"] {
+    for kept in ["read", "list", "grep", "glob"] {
         assert!(
             inspected.iter().any(|name| name == kept),
             "inspect withheld the allowed {kept}: {inspected:?}"

@@ -669,6 +669,134 @@ fn skd_no_offered_skills_withdraws_the_guidance() -> Result<(), Box<dyn std::err
 }
 
 #[test]
+fn a_session_keeps_its_epochs_base_bytes_and_tools_across_a_rewind(
+) -> Result<(), Box<dyn std::error::Error>> {
+    let shown = |request: &grapt_provider::ChatGptCodexRequest| {
+        let names: Vec<_> = request.tools.iter().map(|tool| tool.name.clone()).collect();
+        let input = format!("{:?}", request.input);
+        let base = input.contains("read_lines reads source with line numbers.");
+        (
+            names.contains(&"read_lines".to_owned()),
+            names.contains(&"subagent".to_owned()),
+            base,
+        )
+    };
+    let current = Fixture::new()?;
+    assert_eq!(
+        shown(&planned_catalog_request(&current, Vec::new(), false)?),
+        (false, false, false)
+    );
+    // A Session that began before the record holds the base it began with.
+    let legacy = Fixture::new()?;
+    let observations = vec![SourceObservation::Available {
+        key: key("core/base")?,
+        value: InstructionValue::Text(builtin_epoch::legacy_base()),
+    }];
+    {
+        let mut inbox = legacy.effective.inbox.lock().map_err(|_| "poisoned")?;
+        let input = RefreshInput {
+            event: "evt_legacy_baseline".parse()?,
+            session: legacy.effective.session.clone(),
+            created_ms: 1,
+            required: Vec::new(),
+            observations,
+        };
+        InstructionService::refresh(inbox.store_mut(), input)?;
+    }
+    rewind(&current)?;
+    rewind(&legacy)?;
+    // A rewind clears the instructions but not the epoch either began in.
+    assert_eq!(
+        shown(&planned_catalog_request(&current, Vec::new(), false)?),
+        (false, false, false)
+    );
+    for _ in 0..2 {
+        let request = planned_catalog_request(&legacy, Vec::new(), false)?;
+        assert_eq!(shown(&request), (true, true, true));
+    }
+    Ok(())
+}
+
+#[test]
+fn an_epoch_a_newer_grapt_recorded_is_kept_across_a_rewind(
+) -> Result<(), Box<dyn std::error::Error>> {
+    let fixture = Fixture::new()?;
+    let text = |value: &str| InstructionValue::Text(value.to_owned());
+    {
+        let mut inbox = fixture.effective.inbox.lock().map_err(|_| "poisoned")?;
+        let input = RefreshInput {
+            event: "evt_newer_baseline".parse()?,
+            session: fixture.effective.session.clone(),
+            created_ms: 1,
+            required: Vec::new(),
+            observations: vec![
+                SourceObservation::Available {
+                    key: key("core/base")?,
+                    value: text("newer base"),
+                },
+                SourceObservation::Available {
+                    key: key(builtin_epoch::KEY)?,
+                    value: text("3"),
+                },
+            ],
+        };
+        InstructionService::refresh(inbox.store_mut(), input)?;
+    }
+    // A rewind clears both; the refresh restores the ones the Session held.
+    for rewound in [false, true] {
+        if rewound {
+            rewind(&fixture)?;
+        }
+        let request = planned_catalog_request(&fixture, Vec::new(), false)?;
+        let names: Vec<_> = request
+            .tools
+            .iter()
+            .map(|tool| tool.name.as_str())
+            .collect();
+        assert!(!names.contains(&"read_lines") && !names.contains(&"subagent"));
+        assert!(format!("{:?}", request.input).contains("newer base"));
+        let current = {
+            let inbox = fixture.effective.inbox.lock().map_err(|_| "poisoned")?;
+            InstructionService::current(inbox.store(), &fixture.effective.session)?
+                .values
+                .ok_or("no current values")?
+        };
+        let value = |name: &str| {
+            let found = current.iter().find(|value| value.key.as_str() == name);
+            found.map(|value| value.value.clone())
+        };
+        assert_eq!(value("core/base").as_deref(), Some("newer base"));
+        assert_eq!(value(builtin_epoch::KEY).as_deref(), Some("3"));
+    }
+    Ok(())
+}
+
+/// Commit a rewind, which clears the Session's instruction history.
+fn rewind(fixture: &Fixture) -> Result<(), Box<dyn std::error::Error>> {
+    let mut inbox = fixture.effective.inbox.lock().map_err(|_| "poisoned")?;
+    let session = &fixture.effective.session;
+    let data = serde_json::json!({"sessionID": session.as_str(), "to": "msg_boundary"});
+    let aggregate = AggregateId::Session(session.clone());
+    let writer = inbox.store_mut().fencing_token(&aggregate)?;
+    let input = grapt_store::AppendInput {
+        id: &"evt_rewind".parse()?,
+        aggregate,
+        writer,
+        kind_name: "session.revert.committed",
+        version: grapt_types::EventVersion::new(1).ok_or("version")?,
+        created_ms: 2,
+        data: &data,
+    };
+    let projector = &mut grapt_instruction::InstructionProjector;
+    inbox
+        .store_mut()
+        .append(input, &mut [projector])?
+        .1
+        .discard();
+    Ok(())
+}
+
+#[test]
 fn base_guidance_names_only_tools_the_catalog_offers() {
     for family in [
         grapt_provider::ProtocolFamily::OpenAiResponses,
@@ -676,16 +804,11 @@ fn base_guidance_names_only_tools_the_catalog_offers() {
         grapt_provider::ProtocolFamily::AnthropicMessages,
         grapt_provider::ProtocolFamily::OpenAiCompatible,
     ] {
-        let offered = crate::dogfood::tools::offered_definitions(family);
-        for name in [
-            "glob",
-            "grep",
-            "list",
-            "read_lines",
-            "shell",
-            "edit",
-            "write",
-        ] {
+        let offered = crate::dogfood::tools::offered_definitions(
+            family,
+            &crate::dogfood::instructions::BuiltinEpoch::Current,
+        );
+        for name in ["glob", "grep", "list", "read", "shell", "edit", "write"] {
             assert!(BASE.contains(name), "base guidance no longer names {name}");
             assert!(
                 offered.iter().any(|tool| tool.name == name),
@@ -794,7 +917,7 @@ fn mcp_tool_epoch_keeps_the_header_and_orders_changes_across_failure_and_reopen(
     let first = fixture
         .effective
         .refresh_with_tools(Some((&original, false)))?;
-    assert_eq!(first.frozen_tools.as_ref(), Some(&original));
+    assert_eq!(first.tools.frozen.as_ref(), Some(&original));
     assert!(first.updates.is_empty());
     assert!(
         !text(&first).contains("fixture_lookup"),
@@ -803,7 +926,7 @@ fn mcp_tool_epoch_keeps_the_header_and_orders_changes_across_failure_and_reopen(
     let changed = fixture
         .effective
         .refresh_with_tools(Some((&replacement, false)))?;
-    assert_eq!(changed.frozen_tools.as_ref(), Some(&original));
+    assert_eq!(changed.tools.frozen.as_ref(), Some(&original));
     assert_eq!(first.initial, changed.initial);
     assert_eq!(changed.updates.len(), 1);
     let update = changed.updates.first().ok_or("missing catalog update")?;
@@ -814,7 +937,7 @@ fn mcp_tool_epoch_keeps_the_header_and_orders_changes_across_failure_and_reopen(
     assert!(update_text.content.contains("new"));
     assert!(!update_text.content.contains(tool_epoch::FROZEN));
     let unavailable = fixture.effective.refresh_with_tools(Some((&[], true)))?;
-    assert_eq!(unavailable.frozen_tools, changed.frozen_tools);
+    assert_eq!(unavailable.tools.frozen, changed.tools.frozen);
     assert_eq!(
         unavailable.updates, changed.updates,
         "failed refresh keeps the last good catalog"
@@ -827,10 +950,10 @@ fn mcp_tool_epoch_keeps_the_header_and_orders_changes_across_failure_and_reopen(
     let reopened = fixture
         .effective
         .refresh_with_tools(Some((&replacement, false)))?;
-    assert_eq!(reopened.frozen_tools, first.frozen_tools);
+    assert_eq!(reopened.tools.frozen, first.tools.frozen);
     assert_eq!(reopened.updates, changed.updates);
     let removed = fixture.effective.refresh_with_tools(Some((&[], false)))?;
-    assert_eq!(removed.frozen_tools, first.frozen_tools);
+    assert_eq!(removed.tools.frozen, first.tools.frozen);
     assert_eq!(
         removed.updates.len(),
         2,
@@ -859,7 +982,7 @@ fn mcp_tool_epoch_keeps_the_header_and_orders_changes_across_failure_and_reopen(
         notices.discard();
     }
     let compacted = fixture.effective.refresh_with_tools(Some((&[], false)))?;
-    assert_eq!(compacted.frozen_tools, first.frozen_tools);
+    assert_eq!(compacted.tools.frozen, first.tools.frozen);
     assert!(compacted.updates.is_empty());
     assert!(compacted.initial.iter().any(|item| matches!(item, CodexInputItem::Message(message) if message.content.contains("MCP catalog update"))), "compaction must carry the current catalog into the new epoch baseline");
     let other = Fixture::new()?;
@@ -867,7 +990,8 @@ fn mcp_tool_epoch_keeps_the_header_and_orders_changes_across_failure_and_reopen(
         other
             .effective
             .refresh_with_tools(Some((&replacement, false)))?
-            .frozen_tools,
+            .tools
+            .frozen,
         Some(replacement)
     );
     Ok(())
@@ -909,7 +1033,8 @@ fn production_requests_keep_the_tools_header_after_catalog_failure_and_change(
         fixture
             .effective
             .refresh_with_tools(Some((&[], true)))?
-            .frozen_tools,
+            .tools
+            .frozen,
         Some(original)
     );
     let removed = planned_catalog_request(&fixture, Vec::new(), false)?;
@@ -935,7 +1060,7 @@ fn first_failed_or_partial_mcp_discovery_recovers_after_reopen(
             .effective
             .refresh_with_tools(Some((&partial, true)))?;
         assert!(
-            failed.frozen_tools.is_none(),
+            failed.tools.frozen.is_none(),
             "a failed snapshot must never install the Session header"
         );
         assert!(text(&failed).contains("Before the first complete discovery"));
@@ -952,7 +1077,7 @@ fn first_failed_or_partial_mcp_discovery_recovers_after_reopen(
         let recovered = fixture
             .effective
             .refresh_with_tools(Some((&complete, false)))?;
-        assert_eq!(recovered.frozen_tools, Some(complete));
+        assert_eq!(recovered.tools.frozen, Some(complete));
     }
     Ok(())
 }
