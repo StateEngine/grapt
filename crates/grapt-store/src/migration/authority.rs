@@ -100,10 +100,14 @@ impl DatabaseFileHandle {
 /// reads and writes, its `-wal` and `-journal` sidecars and the backup must
 /// all use the real file: SQLite on Windows would otherwise put sidecars
 /// beside the link, where an open through the real path never finds them.
+/// An absent path stays as given, for initialization; any other failure to
+/// read the path is returned, never mistaken for a path without a link.
 pub(crate) fn real_database_path(path: &Path) -> Result<PathBuf, std::io::Error> {
     match std::fs::symlink_metadata(path) {
         Ok(metadata) if metadata.file_type().is_symlink() => std::fs::canonicalize(path),
-        _ => Ok(path.to_path_buf()),
+        Ok(_) => Ok(path.to_path_buf()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(path.to_path_buf()),
+        Err(error) => Err(error),
     }
 }
 
@@ -461,6 +465,27 @@ mod tests {
                 write_file,
             },
         }
+    }
+
+    /// A path through a regular file cannot be read; it must not be taken
+    /// for a plain path, while a truly absent path stays usable.
+    #[cfg(unix)]
+    #[test]
+    fn unreadable_paths_refuse_and_absent_paths_stay_as_given() -> Result<(), std::io::Error> {
+        let root = std::env::temp_dir().join(format!("grapt-real-path-{}", std::process::id()));
+        let _stale = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root)?;
+        let file = root.join("file");
+        std::fs::write(&file, b"")?;
+        let through_file = real_database_path(&file.join("store.db"));
+        let absent = real_database_path(&root.join("store.db"))?;
+        std::fs::remove_dir_all(&root)?;
+        assert_eq!(
+            through_file.map_err(|error| error.kind()),
+            Err(std::io::ErrorKind::NotADirectory)
+        );
+        assert_eq!(absent, root.join("store.db"));
+        Ok(())
     }
 
     #[test]

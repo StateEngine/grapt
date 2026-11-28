@@ -100,13 +100,18 @@ mod tests {
 
     /// A file link, or `None` when this Windows account may not make one:
     /// Windows grants symlink creation only with a privilege or Developer Mode.
+    /// CI runners can, so there a refusal fails rather than skipping the links.
     fn link(target: &Path, link: &Path) -> std::io::Result<Option<()>> {
         #[cfg(unix)]
         return std::os::unix::fs::symlink(target, link).map(Some);
         #[cfg(windows)]
         match std::os::windows::fs::symlink_file(target, link) {
             Ok(()) => Ok(Some(())),
-            Err(error) if error.raw_os_error() == Some(1314) => Ok(None),
+            Err(error)
+                if error.raw_os_error() == Some(1314) && std::env::var_os("CI").is_none() =>
+            {
+                Ok(None)
+            }
             Err(error) => Err(error),
         }
     }
