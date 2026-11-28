@@ -26,6 +26,7 @@ pub mod run;
 pub mod seat;
 mod selection;
 mod server_log;
+mod startup_stderr;
 #[cfg(test)]
 mod testfs;
 

@@ -348,7 +348,8 @@ async fn embedded_client_mode(
             )
         })?)
     } else {
-        std::process::Stdio::inherit()
+        // The service creates this profile, so no log exists yet.
+        std::process::Stdio::piped()
     };
     let mut launch = tokio::process::Command::new(&product_binary);
     grapt_service::launcher_environment::scrub(launch.as_std_mut());
@@ -367,12 +368,17 @@ async fn embedded_client_mode(
         .kill_on_drop(true)
         .spawn()
         .map_err(|error| (ExitClass::Child, format!("child launch failed: {error}")))?;
+    let startup = child
+        .stderr
+        .take()
+        .map(crate::startup_stderr::StartupStderr::capture);
     let child_pid = child.id().ok_or_else(|| {
         (
             ExitClass::Child,
             "embedded child has no process identity".to_owned(),
         )
     })?;
+    let profile = service_root.clone();
     let discovery = ServiceDiscovery::try_new(service_root, env!("CARGO_PKG_VERSION"))
         .map_err(|error| (ExitClass::Discovery, error.to_string()))?;
     let child_alive = || match child.try_wait() {
@@ -385,6 +391,25 @@ async fn embedded_client_mode(
     let ready = discovery
         .await_child_readiness(child_pid, child_alive)
         .await;
+    let launched = launched(ready, child, child_pid, limits).await;
+    match (launched, startup) {
+        (Ok(client), Some(startup)) => {
+            startup.into_log(&profile);
+            Ok(client)
+        }
+        (Err((class, message)), Some(startup)) => Err((class, startup.refusal(message).await)),
+        (launched, None) => launched,
+    }
+}
+
+/// The client for a child that became ready, or the refusal for one that did
+/// not, with the child killed and reaped unless its exit already reaped it.
+async fn launched(
+    ready: Result<crate::DiscoveredService, ReadinessWait>,
+    child: tokio::process::Child,
+    child_pid: u32,
+    limits: CliLimits,
+) -> Result<ApiClient, (ExitClass, String)> {
     match ready {
         Ok(service) => match ApiClient::from_embedded(&service, child, limits) {
             Ok(client) => Ok(client),
