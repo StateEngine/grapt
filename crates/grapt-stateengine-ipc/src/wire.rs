@@ -17,10 +17,68 @@ pub struct Version {
 
 /// A path in the host's native encoding.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(tag = "encoding", rename_all = "snake_case", deny_unknown_fields)]
+#[serde(
+    tag = "encoding",
+    content = "units",
+    rename_all = "snake_case",
+    deny_unknown_fields
+)]
 pub enum NativePath {
-    UnixBytes { units: Vec<u8> },
-    WindowsUtf16 { units: Vec<u16> },
+    /// 1 to 32768 bytes, absolute, without NUL.
+    UnixBytes(Vec<u8>),
+    /// At most 32768 UTF-16 units, a Windows absolute path, without NUL.
+    WindowsUtf16(Vec<u16>),
+}
+
+const MAX_PATH_UNITS: usize = 32_768;
+
+impl NativePath {
+    /// Why the path breaks its encoding's rules, if it does.
+    pub fn check(&self) -> Result<(), &'static str> {
+        match self {
+            Self::UnixBytes(units) => {
+                if units.is_empty() || units.len() > MAX_PATH_UNITS {
+                    Err("a Unix path is empty or longer than 32768 bytes")
+                } else if units.first() != Some(&b'/') || units.contains(&0) {
+                    Err("a Unix path is not absolute or holds NUL")
+                } else {
+                    Ok(())
+                }
+            }
+            Self::WindowsUtf16(units) => {
+                if units.len() > MAX_PATH_UNITS || units.contains(&0) {
+                    Err("a Windows path is longer than 32768 units or holds NUL")
+                } else if !windows_absolute(units) {
+                    Err("a Windows path is not absolute")
+                } else {
+                    Ok(())
+                }
+            }
+        }
+    }
+}
+
+/// `\\?\...`, `\\.\...`, `\\server\share`, or a drive with `\` or `/`.
+fn windows_absolute(units: &[u16]) -> bool {
+    let unit = |index: usize| {
+        units
+            .get(index)
+            .copied()
+            .and_then(|unit| u8::try_from(unit).ok())
+    };
+    let backslash = Some(b'\\');
+    let drive = unit(0).is_some_and(|letter| letter.is_ascii_alphabetic())
+        && unit(1) == Some(b':')
+        && matches!(unit(2), Some(b'\\' | b'/'));
+    let device = unit(0) == backslash
+        && unit(1) == backslash
+        && matches!(unit(2), Some(b'?' | b'.'))
+        && unit(3) == backslash;
+    let share = unit(0) == backslash
+        && unit(1) == backslash
+        && unit(2).is_some_and(|first| first != b'\\')
+        && units.iter().skip(3).any(|unit| *unit == u16::from(b'\\'));
+    drive || device || share
 }
 
 /// When a process started, in its operating system's own terms.
@@ -49,6 +107,26 @@ pub struct ProcessInstance {
     pub started: StartIdentity,
     pub executable: NativePath,
     pub argv_sha256: Sha256Hex,
+}
+
+impl ProcessInstance {
+    /// Why the process identity is inconsistent, if it is: a Windows start
+    /// goes with a Windows path, a Linux or macOS start with a Unix one.
+    pub fn check(&self) -> Result<(), &'static str> {
+        self.executable.check()?;
+        match (&self.started, &self.executable) {
+            (StartIdentity::Windows { .. }, NativePath::WindowsUtf16(_))
+            | (StartIdentity::Linux { .. }, NativePath::UnixBytes(_)) => Ok(()),
+            (StartIdentity::Macos { start_micros, .. }, NativePath::UnixBytes(_)) => {
+                if *start_micros < 1_000_000 {
+                    Ok(())
+                } else {
+                    Err("a macOS start has 1000000 or more microseconds")
+                }
+            }
+            _ => Err("the start identity and executable path are for different platforms"),
+        }
+    }
 }
 
 /// A host process and its generation.
@@ -210,7 +288,7 @@ pub struct IpcResponse {
 )]
 pub enum IpcResult {
     Output(Output),
-    Error(ErrorEnvelope),
+    Error(Box<ErrorEnvelope>),
 }
 
 /// An operation's output under its schema.
@@ -228,25 +306,53 @@ pub struct Output {
 pub struct ErrorEnvelope {
     pub schema: String,
     pub code: String,
+    /// The per-code payload.
     pub detail: Value,
-    pub retry: Value,
+    pub retry: Retry,
     pub class: String,
     pub exit: i32,
     pub message: String,
     pub remedy: Remedy,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub recovery: Option<Value>,
+    pub recovery: Option<Remedy>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub far: Option<Value>,
+    pub far: Option<bool>,
 }
 
-/// The step an error names. A command, when there is one, is the host's
-/// tagged object, kept whole after the frame's depth and key checks.
+/// Whether and when the same request may be tried again.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(
+    tag = "kind",
+    content = "value",
+    rename_all = "snake_case",
+    deny_unknown_fields
+)]
+pub enum Retry {
+    Never,
+    AfterReread,
+    /// After this many milliseconds.
+    After(u64),
+    WhenRuntimeReady,
+}
+
+/// The step an error names.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Remedy {
     pub text: String,
-    pub command: Option<serde_json::Map<String, Value>>,
+    pub command: Option<Command>,
+}
+
+/// A command that takes the step.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub enum Command {
+    /// A StateEngine command line.
+    Se { argv: Vec<String> },
+    /// A tool call with its arguments.
+    Tool { name: String, args: Value },
+    /// A step the user takes by hand.
+    Manual,
 }
 
 #[cfg(test)]
@@ -254,26 +360,25 @@ mod tests {
     use super::*;
 
     #[test]
-    fn a_windows_path_and_a_remedy_command_decode() -> Result<(), serde_json::Error> {
+    fn windows_paths_and_typed_remedies_decode() -> Result<(), serde_json::Error> {
         let path: NativePath =
             serde_json::from_str(r#"{"encoding":"windows_utf16","units":[67,58,92]}"#)?;
-        assert_eq!(
-            path,
-            NativePath::WindowsUtf16 {
-                units: vec![67, 58, 92]
-            }
-        );
+        assert_eq!(path, NativePath::WindowsUtf16(vec![67, 58, 92]));
+        assert_eq!(path.check(), Ok(()));
+        let relative = NativePath::WindowsUtf16("se.exe".encode_utf16().collect());
+        assert!(relative.check().is_err());
+        assert!(NativePath::UnixBytes(b"se".to_vec()).check().is_err());
         let error: ErrorEnvelope = serde_json::from_str(
-            r#"{"schema":"se.error/v1","code":"usage","detail":{},"retry":{"kind":"never"},
+            r#"{"schema":"se.error/v1","code":"usage","detail":{},"retry":{"kind":"after","value":250},
                 "class":"usage","exit":64,"message":"fixture","remedy":{"text":"fixture",
-                "command":{"kind":"argv","argv":["se","status"]}}}"#,
+                "command":{"kind":"se","argv":["se","status"]}},"far":true}"#,
         )?;
+        assert_eq!(error.retry, Retry::After(250));
         assert_eq!(
-            error
-                .remedy
-                .command
-                .and_then(|command| command.get("kind").cloned()),
-            Some(Value::from("argv"))
+            error.remedy.command,
+            Some(Command::Se {
+                argv: vec!["se".into(), "status".into()]
+            })
         );
         Ok(())
     }

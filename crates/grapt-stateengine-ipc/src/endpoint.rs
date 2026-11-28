@@ -25,7 +25,7 @@ impl Endpoint {
         use std::os::unix::ffi::OsStrExt;
         match &self.file.address {
             Address::UnixSocket {
-                path: NativePath::UnixBytes { units },
+                path: NativePath::UnixBytes(units),
             } => Some(Path::new(std::ffi::OsStr::from_bytes(units))),
             _ => None,
         }
@@ -65,18 +65,16 @@ fn validate(file: &EndpointFile) -> Result<(), String> {
     if file.package_version.is_empty() || file.package_version.len() > MAX_VERSION_BYTES {
         return Err("package_version is empty or too long".into());
     }
-    Ok(())
+    file.epoch.owner.check().map_err(String::from)
 }
 
 #[cfg(unix)]
 fn unix_socket(path: &NativePath, state_home: &Path, directory: &StateDir) -> Result<(), String> {
     use std::os::unix::ffi::OsStrExt;
-    let NativePath::UnixBytes { units } = path else {
+    let NativePath::UnixBytes(units) = path else {
         return Err("a Unix socket path is not in unix_bytes".into());
     };
-    if units.is_empty() || units.contains(&0) {
-        return Err("the socket path is empty or holds NUL".into());
-    }
+    path.check()?;
     let socket = Path::new(std::ffi::OsStr::from_bytes(units));
     let name = socket
         .file_name()

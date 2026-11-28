@@ -128,7 +128,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin> Connection<S> {
         self.broken = false;
         match response.result {
             IpcResult::Output(output) => Ok(output),
-            IpcResult::Error(error) => Err(IpcError::Refused(Box::new(error))),
+            IpcResult::Error(error) => Err(IpcError::Refused(error)),
         }
     }
 }
