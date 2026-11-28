@@ -124,7 +124,7 @@ pub(super) fn prepare(
         initial_session_index,
         current_session_index,
         subagent_context: None,
-        frozen_tools,
+        tools: super::tool_epoch::SessionTools::frozen(frozen_tools),
         initial,
         current,
         updates,

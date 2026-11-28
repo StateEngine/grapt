@@ -34,6 +34,12 @@ impl fmt::Display for RefreshError {
 
 impl std::error::Error for RefreshError {}
 
+impl From<grapt_instruction::InstructionError> for RefreshError {
+    fn from(error: grapt_instruction::InstructionError) -> Self {
+        Self::Failed(error.to_string())
+    }
+}
+
 impl From<String> for RefreshError {
     fn from(detail: String) -> Self {
         Self::Failed(detail)
