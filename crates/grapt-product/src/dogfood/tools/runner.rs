@@ -201,6 +201,12 @@ impl PermissionToolRunner {
                 runner
                     .shadow
                     .dispatch(&runner.session, attempt.as_ref(), origin, &tool);
+            // Before hooks, preparation and permissions: every later check
+            // sees the repaired call.
+            let (input, repair) = call_repair::repair(&tool, input);
+            if let (Some(repair), Some(observation)) = (repair, &observation) {
+                observation.repaired(repair);
+            }
             let outcome = runner
                 .apply_input_callbacks(
                     attempt,
@@ -345,6 +351,18 @@ impl PermissionToolRunner {
                 return self.early_failure(&tool, ToolFailureReason::EffectFailed, detail.into());
             }
         }
+        // A builtin call that still does not fit its parameters is refused
+        // here, naming the fix, before preparation or any permission work.
+        if options.hook.input.is_none() {
+            if let Some((hint, detail)) = call_repair::parameter_hint(&tool, &input) {
+                options.hinted(hint);
+                return self.early_failure(
+                    &tool,
+                    ToolFailureReason::EffectFailed,
+                    format!("tool input is invalid: {detail}"),
+                );
+            }
+        }
         // Every published MCP or plugin tool keeps its original schema on
         // ordinary model calls as well as CodeMode/machine-output calls.
         if let Err(error) = schema::validate_published(&self.published, &tool, input.as_bytes()) {
@@ -401,6 +419,9 @@ impl PermissionToolRunner {
             Err(error) => {
                 if options.hook.input.is_some() {
                     return self.rejected_hook_input(&tool, &error);
+                }
+                if error.starts_with(UNKNOWN_TOOL) {
+                    options.hinted(call_repair::Hint::UnknownTool);
                 }
                 return self.early_failure(
                     &tool,
@@ -700,4 +721,13 @@ pub(super) fn refusal_detail(receipt: Option<&sandbox::Receipt>, detail: &str) -
         || detail.to_owned(),
         |receipt| native_failure::format(SHELL_TOOL, false, &receipt.error(detail), &[]),
     )
+}
+
+impl ToolRunOptions {
+    /// Record a recovery hint on this call's dispatch observation.
+    fn hinted(&self, hint: call_repair::Hint) {
+        if let Some(observation) = &self.observation {
+            observation.hinted(hint);
+        }
+    }
 }
