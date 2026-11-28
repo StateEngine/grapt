@@ -90,6 +90,7 @@ fn restarted_bound_mail_exposes_rebind_and_wakes_after_authenticated_provision()
     let _journey = process_journey_custody();
     let root = root("native-mail-clean-restart");
     prepare(&root, 90_000);
+    unattended(&root);
     stateengine_native::configure(&root, "ready");
     let mail = mail::Mail::start()?;
     let path = root.join("grapt.jsonc");
@@ -162,12 +163,16 @@ fn prompt(address: SocketAddr, session: &str, id: &str, text: &str) {
     );
 }
 
+fn workspace_dir(root: &Path) -> PathBuf {
+    root.with_extension("workspace")
+}
+
 fn wait_file(root: &Path, name: &str) {
     assert!(
         permission_residuals::wait_until(
             Duration::from_secs(10),
             Duration::from_millis(10),
-            || root.join(name).exists()
+            || workspace_dir(root).join(name).exists()
         )
         .is_some(),
         "real tool did not reach {name}"
@@ -225,6 +230,7 @@ fn setup_with_grace(
 ) -> Result<Fixture, Box<dyn std::error::Error>> {
     let root = root(label);
     prepare(&root, 90_000);
+    unattended(&root);
     if let Some(grace_ms) = grace_ms {
         close_grace::lease::set_close_grace(&root, grace_ms);
     }
@@ -245,10 +251,12 @@ fn setup_with_grace(
             ]);
     }
     fs::write(&path, serde_json::to_vec(&config)?)?;
+    let workspace = workspace_dir(&root);
+    fs::create_dir_all(&workspace)?;
     let held = |number| {
         serde_json::json!({
-            "cmd":format!("printf ready > '{0}/tool-{1}-ready'; while [ ! -f '{0}/tool-{1}-release' ]; do sleep 0.02; done; printf TOOL_{1}_FINISHED",root.display(),number),
-            "workdir":root,"yield_time_ms":10000,"timeout_ms":20000,"max_output_tokens":200,
+            "cmd":format!("printf ready > '{0}/tool-{1}-ready'; while [ ! -f '{0}/tool-{1}-release' ]; do sleep 0.02; done; printf TOOL_{1}_FINISHED",workspace.display(),number),
+            "workdir":workspace,"yield_time_ms":10000,"timeout_ms":20000,"max_output_tokens":200,
         })
     };
     let provider = ProviderFixture::start(vec![
@@ -271,7 +279,7 @@ fn setup_with_grace(
         "POST",
         "/api/session",
         &serde_json::json!({
-            "agent":"agt_live_headless1", "location":{"directory":root},
+            "agent":"agt_live_headless1", "location":{"directory":workspace},
         })
         .to_string(),
     );
@@ -323,7 +331,7 @@ fn native_notices_during_successive_tools_reach_the_next_requests_in_user_fifo()
         1,
         "mail cancelled the in-flight tool"
     );
-    fs::write(root.join("tool-1-release"), "release")?;
+    fs::write(workspace_dir(&root).join("tool-1-release"), "release")?;
     wait_file(&root, "tool-2-ready");
     let bodies = locked(&provider.bodies).clone();
     let next = bodies.get(1).ok_or("second actual model request absent")?;
@@ -341,7 +349,7 @@ fn native_notices_during_successive_tools_reach_the_next_requests_in_user_fifo()
     assert!(next.contains("mail-1"));
     mail.arrive(2);
     wait_notice(address, &session, 2);
-    fs::write(root.join("tool-2-release"), "release")?;
+    fs::write(workspace_dir(&root).join("tool-2-release"), "release")?;
     permission_residuals::wait_session_idle(address, &session);
     let bodies = locked(&provider.bodies).clone();
     let last = bodies.get(2).ok_or("third actual model request absent")?;
@@ -498,7 +506,7 @@ fn ordinary_human_resume_includes_the_held_native_notice_before_provider_work() 
         1,
         "ordinary human resume reached provider work before the held native notice"
     );
-    fs::write(root.join("tool-2-release"), "release")?;
+    fs::write(workspace_dir(&root).join("tool-2-release"), "release")?;
     permission_residuals::wait_session_idle(address, &session);
     assert_eq!(locked(&provider.bodies).len(), 3);
     let pending = json(
@@ -520,8 +528,8 @@ fn request_preparation_failure_releases_active_and_later_native_mail_succeeds() 
     let _journey = process_journey_custody();
     let (root, provider, mut child, address, session, mail) =
         setup_case("native-plan-recovery", true)?;
-    fs::write(root.join("tool-1-release"), "release")?;
-    fs::write(root.join("tool-2-release"), "release")?;
+    fs::write(workspace_dir(&root).join("tool-1-release"), "release")?;
+    fs::write(workspace_dir(&root).join("tool-2-release"), "release")?;
     prompt(address, &session, "msg_native_failed_plan", "inspect");
     permission_residuals::wait_session_idle(address, &session);
     assert!(json(address, "GET", "/api/session/active", "")["data"][&session].is_null());

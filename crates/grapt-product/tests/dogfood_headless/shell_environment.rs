@@ -42,7 +42,7 @@ fn a_launcher_identity_never_reaches_embedded_shell_pipe_or_pty(
         .args(["run", "--embedded", "--service"])
         .arg(&root)
         .arg("--product")
-        .arg(shipped_cli::product_binary())
+        .arg(process_fixture::installed_product_binary())
         .args([
             "--new",
             "--auto",

@@ -21,19 +21,13 @@ fn tool_output(body: &str) -> String {
         .to_owned()
 }
 
-/// Run one command turn on a new Session, optionally at `preset`; the
-/// output the model was shown, and the permission rows left pending.
-fn command_turn(
-    label: &str,
-    preset: Option<&str>,
+fn prepare_preset_fixture(
+    root: &Path,
     profile_default: Option<&str>,
     global_default: Option<&str>,
     project_default: Option<&str>,
-    approve: bool,
-) -> (String, usize) {
-    let _journey = process_journey_custody();
-    let root = root(label);
-    prepare(&root, 200_000);
+) -> PathBuf {
+    prepare(root, 200_000);
     if let Some(name) = profile_default {
         let config = root.join("service.conf");
         let mut text = fs::read_to_string(&config).unwrap_or_else(|error| panic!("{error}"));
@@ -61,6 +55,22 @@ fn command_turn(
             .unwrap_or_else(|error| panic!("{error}"));
         }
     }
+    binary
+}
+
+/// Run one command turn on a new Session, optionally at `preset`; the
+/// output the model was shown, and the permission rows left pending.
+fn command_turn(
+    label: &str,
+    preset: Option<&str>,
+    profile_default: Option<&str>,
+    global_default: Option<&str>,
+    project_default: Option<&str>,
+    approve: bool,
+) -> (String, usize) {
+    let _journey = process_journey_custody();
+    let root = root(label);
+    let binary = prepare_preset_fixture(&root, profile_default, global_default, project_default);
     let provider = ProviderFixture::start(vec![
         Script::ToolInput {
             call: CALL,

@@ -499,7 +499,6 @@ fn write_target(root: &Path, requested: &str) -> Result<WriteTarget, String> {
     let target = parent.join(name);
     // Apply the existing control-metadata policy even when the target does not exist.
     if crate::dogfood::tools::paths::instruction_path(&target)
-        || crate::dogfood::tools::paths::is_instruction_symlink_target(root, &target)
         || protected_paths(root).iter().any(|protected| {
             protected.as_canonical().is_some_and(|protected| {
                 if cfg!(windows) {

@@ -5,15 +5,66 @@ use super::*;
 #[path = "../../../../test-support/executable.rs"]
 mod executable;
 
-/// Runs this root's Sessions at the `author` preset, where a subagent, a
-/// skill or a plugin tool still asks: for witnesses of that ask. Under the
-/// default `maintainer` those run without asking.
+/// Runs this root's Sessions at the `author` preset, where commands are denied
+/// and destructive writes/skills/subagents ask: for witnesses of `author`.
 pub(super) fn attended(root: &Path) {
     let config = root.join("service.conf");
     let mut text = fs::read_to_string(&config)
         .unwrap_or_else(|error| panic!("service config unreadable: {error}"));
     text.push_str("permission_preset=author\n");
     fs::write(&config, text).unwrap_or_else(|error| panic!("service config failed: {error}"));
+}
+
+/// Explicitly allows ordinary built-in tool actions in this fixture's user
+/// config (`global-config/grapt.json`) while keeping default-on sandbox
+/// containment, owner floor, and external MCP tool approval intact.
+///
+/// Use only for fixtures whose subject is orthogonal to interactive approval
+/// under the default `maintainer` preset.
+pub(super) fn unattended(root: &Path) {
+    let config_dir = root.join("global-config");
+    fs::create_dir_all(&config_dir)
+        .unwrap_or_else(|error| panic!("global-config dir failed: {error}"));
+    let path = config_dir.join("grapt.json");
+    let mut config: serde_json::Value = if path.is_file() {
+        serde_json::from_slice(
+            &fs::read(&path).unwrap_or_else(|error| panic!("global config read failed: {error}")),
+        )
+        .unwrap_or_else(|error| panic!("global config parse failed: {error}"))
+    } else {
+        serde_json::json!({})
+    };
+    let permission = config
+        .as_object_mut()
+        .unwrap_or_else(|| panic!("global config must be an object"))
+        .entry("permission")
+        .or_insert_with(|| serde_json::json!({}));
+    let rules = permission
+        .as_object_mut()
+        .unwrap_or_else(|| panic!("global config permission must be an object"));
+    for action in [
+        "shell",
+        "execute",
+        "skill",
+        "subagent",
+        "task",
+        "spawn_agent",
+        "fs.overwrite",
+        "fs.move",
+        "fs.delete",
+        "diagnostics",
+        "lsp",
+    ] {
+        rules
+            .entry(action.to_owned())
+            .or_insert_with(|| serde_json::json!("allow"));
+    }
+    fs::write(
+        &path,
+        serde_json::to_vec(&config)
+            .unwrap_or_else(|error| panic!("global config encode failed: {error}")),
+    )
+    .unwrap_or_else(|error| panic!("global config write failed: {error}"));
 }
 
 pub(super) fn prepare(root: &Path, window_ms: u64) {

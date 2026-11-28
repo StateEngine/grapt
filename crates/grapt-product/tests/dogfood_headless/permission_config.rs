@@ -7,6 +7,9 @@ fn sec03_configured_denial_governs_api_and_shell_effects_after_an_approval_and_r
     let _journey = process_journey_custody();
     for tool in ["shell", "exec_command"] {
         let root = root(&format!("sec03-config-{tool}"));
+        let workspace = root.with_extension("workspace");
+        let _ws_cleanup = terminal_coordination::RootCleanup(workspace.clone());
+        fs::create_dir_all(&workspace)?;
         prepare(&root, 200_000);
         fs::create_dir_all(root.join("global-config"))?;
         let config = root.join("global-config/grapt.json");
@@ -28,7 +31,7 @@ fn sec03_configured_denial_governs_api_and_shell_effects_after_an_approval_and_r
         let mut child = spawn(&root, provider.address);
         let address = await_ready(&root, &mut child);
         let _approver = approval::Attachment::open(address, "*");
-        let session = create(address);
+        let session = create_in(address, &workspace);
         let endpoint = format!("/api/session/{session}/permission");
         let approved = [
             "echo ordinary",
@@ -71,11 +74,11 @@ fn sec03_configured_denial_governs_api_and_shell_effects_after_an_approval_and_r
         permission_residuals::wait_session_idle(address, &session);
         assert_eq!(provider.calls.load(Ordering::SeqCst), 3);
         assert!(
-            root.join("sc-sec03-allowed.txt").is_file(),
+            workspace.join("sc-sec03-allowed.txt").is_file(),
             "the permitted effect did not run"
         );
         assert!(
-            !root.join("sc-sec03-denied.txt").exists(),
+            !workspace.join("sc-sec03-denied.txt").exists(),
             "a configured denial was bypassed"
         );
         let output = permission_boundaries::output(&provider, "call_sec03_denied");

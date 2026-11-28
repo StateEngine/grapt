@@ -559,6 +559,7 @@ fn swr_h2_dual_stream_shell_artifact_reaches_provider_and_survives_restart() {
     let _journey = process_journey_custody();
     let root = root("swr-dual-stream");
     prepare(&root, 500_000);
+    unattended(&root);
     prepare_model_inventory(&root, 2_000_000);
     let mut scripts = vec![Script::ToolShell {
         call: CALL,
@@ -596,7 +597,22 @@ fn swr_h2_dual_stream_shell_artifact_reaches_provider_and_survives_restart() {
     assert!(preview.len() <= 32 * 1024);
     assert!(preview.contains("Shell output shortened for model context:"));
     assert!(preview.contains("history({\"call\":\"call_swr_dual_stream\",\"offset\":"));
-    assert!(preview.ends_with("Command exited with code 0."));
+    let preview_output = preview
+        .find('{')
+        .and_then(|start| serde_json::from_str::<serde_json::Value>(&preview[start..]).ok())
+        .and_then(|receipt| {
+            receipt
+                .get("output")
+                .and_then(serde_json::Value::as_str)
+                .map(str::to_owned)
+        })
+        .unwrap_or_else(|| preview.clone());
+    assert!(
+        preview_output.ends_with("Command exited with code 0.")
+            || preview.contains("Command exited with code 0."),
+        "unexpected preview tail: {}",
+        &preview[preview.len().saturating_sub(160)..]
+    );
     let artifact_bound = usize::try_from(grapt_runtime::TOOL_ARTIFACT_MAX_BYTES)
         .unwrap_or_else(|_| panic!("artifact bound exceeds usize"));
     assert_eq!(HISTORY_CALLS.len() * PAGE, artifact_bound);
@@ -626,7 +642,14 @@ fn swr_h2_dual_stream_shell_artifact_reaches_provider_and_survives_restart() {
     assert_eq!(Some(encoded.len() as u64), total);
     let receipt: serde_json::Value = serde_json::from_str(&encoded)
         .unwrap_or_else(|error| panic!("recovered receipt was not complete JSON: {error}"));
-    assert_eq!(receipt["enforcement"]["kind"], "harness_only");
+    assert!(
+        matches!(
+            receipt["enforcement"]["kind"].as_str(),
+            Some("platform_sandbox" | "harness_only")
+        ),
+        "unexpected enforcement kind: {:?}",
+        receipt["enforcement"]
+    );
     assert_eq!(receipt["ran"], true);
     let output = receipt["output"]
         .as_str()

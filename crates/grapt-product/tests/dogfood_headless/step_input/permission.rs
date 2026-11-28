@@ -12,7 +12,7 @@ fn a_rejected_permission_after_steering_cannot_poison_the_chain_or_next_input() 
     )?;
     let _approver = approval::Attachment::open(address, "*");
     submit(address, &session, "msg_step_permission_steer", FIRST);
-    fs::write(root.join("step-release"), "release")?;
+    fs::write(workspace_dir(&root).join("step-release"), "release")?;
     let path = format!("/api/session/{session}/permission");
     let ask =
         permission_residuals::wait_tool_ask("call_second_step", || json(address, "GET", &path, ""));

@@ -112,7 +112,7 @@ impl AcpProcess {
         let mut command = Command::new(super::cli_continuity::cli_binary());
         command
             .args(["acp", "--embedded", "--product"])
-            .arg(env!("CARGO_BIN_EXE_grapt-server"))
+            .arg(process_fixture::installed_product_binary())
             .arg("--service")
             .arg(root)
             .env("GRAPT_LIVE_HEADLESS_LOOPBACK", format!("http://{provider}"))

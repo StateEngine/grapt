@@ -67,6 +67,7 @@ fn fixture(label: &str, formatted: bool) -> TestResult<(PathBuf, PathBuf)> {
     let service = root(&format!("diagnostics-{label}-service"));
     let workspace = root(&format!("diagnostics-{label}-workspace"));
     prepare(&service, 120_000);
+    unattended(&service);
     process_fixture::cleanup(&workspace);
     fs::create_dir_all(&workspace)?;
     let script = service.join("fixture.py");

@@ -501,7 +501,10 @@ pub fn decide(action: &str, resources: &[&str], layers: &[Layer]) -> Decision {
             .filter(|layer| layer.compose == Compose::Narrow)
         {
             if let Some(found) = find_rule(action, resource, &layer.rules) {
-                if opinion.is_none_or(|(effect, _)| found.effect > effect) {
+                if opinion.is_none_or(|(effect, by)| {
+                    found.effect > effect
+                        || (found.effect == effect && layer.floor && by != LayerName::Owner)
+                }) {
                     opinion = Some((found.effect, layer.name));
                 }
             }

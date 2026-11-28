@@ -6,6 +6,7 @@ fn startup(tty: bool, label: &str) -> Result<(), Box<dyn std::error::Error>> {
     let root = root(label);
     let _cleanup = terminal_coordination::RootCleanup(root.clone());
     prepare(&root, 120_000);
+    unattended(&root);
     let provider = ProviderFixture::start(Vec::new());
     let mut service = process_fixture::spawn_controlled_with(
         &root,

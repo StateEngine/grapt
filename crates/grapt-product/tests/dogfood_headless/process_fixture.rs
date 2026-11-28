@@ -107,6 +107,37 @@ pub(super) fn spawn_with(
     spawn_service(root, provider, environment, "serve", Stdio::inherit())
 }
 
+/// Copy Cargo's hard-linked test binary once per test process into a private
+/// single-link file (`nlink == 1`) so default-on Linux `bwrap` containment
+/// accepts the executable as an installed identity rather than rejecting
+/// Cargo's `target/debug/deps` hard-link alias.
+pub(super) fn installed_product_binary() -> &'static Path {
+    static INSTALLED: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
+    INSTALLED
+        .get_or_init(|| {
+            let source = shipped_cli::product_binary();
+            let dir = std::env::temp_dir().join(format!(
+                "grapt-installed-bin-{}-{}",
+                std::process::id(),
+                source
+                    .file_name()
+                    .and_then(|name| name.to_str())
+                    .unwrap_or("grapt")
+            ));
+            fs::create_dir_all(&dir)
+                .unwrap_or_else(|error| panic!("installed binary dir creation failed: {error}"));
+            let destination = dir.join(if cfg!(windows) {
+                "grapt-server.exe"
+            } else {
+                "grapt-server"
+            });
+            fs::copy(&source, &destination)
+                .unwrap_or_else(|error| panic!("installed binary copy failed: {error}"));
+            destination
+        })
+        .as_path()
+}
+
 fn spawn_service(
     root: &Path,
     provider: SocketAddr,
@@ -142,7 +173,7 @@ fn spawn_service(
                 .unwrap_or_else(|| panic!("fixture config path is not UTF-8")),
         ));
     }
-    let mut command = grapt_service::launcher_environment::command(shipped_cli::product_binary());
+    let mut command = grapt_service::launcher_environment::command(installed_product_binary());
     command.env("GRAPT_TEST_CATALOG_ROOT", root);
     for (name, value) in &environment {
         command.env(name, value);

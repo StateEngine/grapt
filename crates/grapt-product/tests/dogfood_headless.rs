@@ -285,6 +285,19 @@ fn create(address: SocketAddr) -> String {
         .to_owned()
 }
 
+fn create_in(address: SocketAddr, directory: &Path) -> String {
+    json(
+        address,
+        "POST",
+        "/api/session",
+        &serde_json::json!({"agent":"agt_live_headless1","location":{"directory":directory}})
+            .to_string(),
+    )["data"]["id"]
+        .as_str()
+        .unwrap_or_else(|| panic!("created session had no id"))
+        .to_owned()
+}
+
 fn event_stream(address: SocketAddr) -> (TcpStream, Vec<u8>) {
     let mut stream = TcpStream::connect(address)
         .unwrap_or_else(|error| panic!("event stream connect failed: {error}"));

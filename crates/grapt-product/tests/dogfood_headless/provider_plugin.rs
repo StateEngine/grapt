@@ -41,6 +41,11 @@ fn provider_calls_a_declared_plugin_tool() -> Result<(), Box<dyn std::error::Err
     let _journey = process_journey_custody();
     let root = root("provider-plugin");
     prepare(&root, 120_000);
+    fs::create_dir_all(root.join("global-config"))?;
+    fs::write(
+        root.join("global-config/grapt.json"),
+        r#"{"permission":{"cpk_fixture_echo":"allow"}}"#,
+    )?;
     let config = declaration(&root);
     let environment = plugin_tool::plugin_environment(&root, &plugin_tool::node(), &config);
     let pairs = environment

@@ -8,12 +8,18 @@ const POLL: Duration = Duration::from_millis(20);
 fn interrupt_joins_idle_exec_and_busy_shell_trees_without_stopping_another_session() -> TestResult {
     let _journey = process_journey_custody();
     let root = root("session-stop");
+    let workspace = root.with_extension("workspace");
+    let _ws_cleanup = terminal_coordination::RootCleanup(workspace.clone());
+    fs::create_dir_all(&workspace)?;
     prepare(&root, 120_000);
+    unattended(&root);
     let _root_cleanup = terminal_coordination::RootCleanup(root.clone());
     fs::create_dir_all(root.join("global-config"))?;
+    // This fixture reads child PIDs written by `$$` and checks host `/proc/{pid}/stat`,
+    // which is incompatible with Linux `bwrap --unshare-pid` PID namespaces.
     fs::write(
         root.join("global-config/grapt.json"),
-        r#"{"permission":{"shell":"allow"}}"#,
+        r#"{"permission":{"shell":"allow"},"sandbox":{"enabled":false}}"#,
     )?;
     let provider = ProviderFixture::start(vec![
         tool("call_stop_other", "shell", "other"),
@@ -24,9 +30,9 @@ fn interrupt_joins_idle_exec_and_busy_shell_trees_without_stopping_another_sessi
     ]);
     let mut product = spawn(&root, provider.address);
     let address = await_ready(&root, &mut product);
-    let mut processes = Processes::new(&root)?;
-    let other = create(address);
-    let session = create(address);
+    let mut processes = Processes::new(&workspace)?;
+    let other = create_in(address, &workspace);
+    let session = create_in(address, &workspace);
 
     prompt(address, &other, "msg_stop_other");
     let other_tree = processes.observe("other")?;
@@ -51,7 +57,7 @@ fn interrupt_joins_idle_exec_and_busy_shell_trees_without_stopping_another_sessi
     // No settle polling here: 204 itself must witness process exit and idle state.
     assert_tree(&idle_tree, false)?;
     assert_idle(address, &session);
-    assert_other_running(address, &other, &other_execution, &root, &other_tree)?;
+    assert_other_running(address, &other, &other_execution, &workspace, &other_tree)?;
 
     prompt(address, &session, "msg_stop_busy");
     let busy_tree = processes.observe("busy")?;
@@ -63,7 +69,7 @@ fn interrupt_joins_idle_exec_and_busy_shell_trees_without_stopping_another_sessi
     );
     assert_tree(&busy_tree, false)?;
     assert_idle(address, &session);
-    assert_other_running(address, &other, &other_execution, &root, &other_tree)?;
+    assert_other_running(address, &other, &other_execution, &workspace, &other_tree)?;
 
     prompt(address, &session, "msg_stop_later");
     wait_calls(&provider.calls, 5);

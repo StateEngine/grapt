@@ -86,6 +86,10 @@ fn setup_with_permission(
     )
 }
 
+fn workspace_dir(root: &Path) -> PathBuf {
+    root.with_extension("workspace")
+}
+
 fn setup_with_spawner(
     label: &str,
     hold_second: bool,
@@ -94,21 +98,24 @@ fn setup_with_spawner(
     spawn: impl FnOnce(&Path, SocketAddr, &[(&str, &str)]) -> process_fixture::ManagedChild,
 ) -> Result<Fixture, Box<dyn std::error::Error>> {
     let root = root(label);
+    let workspace = workspace_dir(&root);
+    fs::create_dir_all(&workspace)?;
     prepare(&root, 90_000);
+    unattended(&root);
     let path = root.join("grapt.jsonc");
     let mut config: serde_json::Value = serde_json::from_slice(&fs::read(&path)?)?;
     config["permission"] = permission;
     fs::write(path, serde_json::to_vec(&config)?)?;
-    fs::write(root.join("step-two.txt"), "second tool completed")?;
+    fs::write(workspace.join("step-two.txt"), "second tool completed")?;
     let command = format!(
         "printf ready > '{}/step-ready'; while [ ! -f '{}/step-release' ]; do sleep 0.02; done; printf {FINISHED}",
-        root.display(), root.display());
+        workspace.display(), workspace.display());
     let provider = ProviderFixture::start(vec![
         Script::ToolInput {
             call: "call_first_step",
             tool: "exec_command",
             arguments: serde_json::json!({
-                "cmd":command, "workdir":root, "yield_time_ms":10000, "timeout_ms":20000, "max_output_tokens":200
+                "cmd":command, "workdir":workspace, "yield_time_ms":10000, "timeout_ms":20000, "max_output_tokens":200
             }),
         },
         if hold_second {
@@ -116,8 +123,8 @@ fn setup_with_spawner(
                 call: "call_second_step",
                 tool: "exec_command",
                 arguments: serde_json::json!({
-                    "cmd": format!("printf ready > '{}/second-ready'; while [ ! -f '{}/second-release' ]; do sleep 0.02; done; printf SECOND_TOOL_FINISHED",root.display(),root.display()),
-                    "workdir":root,"yield_time_ms":10000,"timeout_ms":20000,"max_output_tokens":200
+                    "cmd": format!("printf ready > '{}/second-ready'; while [ ! -f '{}/second-release' ]; do sleep 0.02; done; printf SECOND_TOOL_FINISHED",workspace.display(),workspace.display()),
+                    "workdir":workspace,"yield_time_ms":10000,"timeout_ms":20000,"max_output_tokens":200
                 }),
             }
         } else {
@@ -131,7 +138,7 @@ fn setup_with_spawner(
     ]);
     let mut child = spawn(&root, provider.address, env);
     let address = await_ready(&root, &mut child);
-    let session = create(address);
+    let session = create_in(address, &workspace);
     submit(
         address,
         &session,
@@ -141,7 +148,7 @@ fn setup_with_spawner(
     let ready = permission_residuals::wait_until(
         Duration::from_secs(10),
         Duration::from_millis(10),
-        || root.join("step-ready").exists(),
+        || workspace.join("step-ready").exists(),
     );
     assert!(
         ready.is_some(),
@@ -192,7 +199,7 @@ fn ordinary_inputs_during_a_tool_reach_the_second_request_in_order_once() -> Tes
         queued, 200,
         "a parked owner must not spend running capacity"
     );
-    fs::write(root.join("step-release"), "release")?;
+    fs::write(workspace_dir(&root).join("step-release"), "release")?;
     let sent = permission_residuals::wait_until(
         Duration::from_secs(10),
         Duration::from_millis(10),
@@ -307,7 +314,7 @@ fn esc_restarts_queued_inputs_once_after_terminal_and_a_stale_stop_cannot_hit_th
     let ready = permission_residuals::wait_until(
         Duration::from_secs(10),
         Duration::from_millis(10),
-        || root.join("second-ready").exists(),
+        || workspace_dir(&root).join("second-ready").exists(),
     );
     assert!(
         ready.is_some(),
@@ -338,7 +345,7 @@ fn esc_restarts_queued_inputs_once_after_terminal_and_a_stale_stop_cannot_hit_th
     );
     assert_eq!(next.matches(FIRST).count(), 1);
     assert_eq!(next.matches(SECOND).count(), 1);
-    fs::write(root.join("second-release"), "release")?;
+    fs::write(workspace_dir(&root).join("second-release"), "release")?;
     permission_residuals::wait_session_idle(address, &session);
     assert_eq!(
         provider.calls.load(Ordering::SeqCst),
@@ -371,11 +378,11 @@ fn an_input_promoted_before_esc_is_not_resubmitted() -> TestResult {
     let (root, provider, mut child, address, session) =
         setup_second("ordinary-promoted-before-esc", true)?;
     submit(address, &session, "msg_step_promoted", FIRST);
-    fs::write(root.join("step-release"), "release")?;
+    fs::write(workspace_dir(&root).join("step-release"), "release")?;
     let ready = permission_residuals::wait_until(
         Duration::from_secs(10),
         Duration::from_millis(10),
-        || root.join("second-ready").exists(),
+        || workspace_dir(&root).join("second-ready").exists(),
     );
     assert!(ready.is_some(), "second tool never started");
     assert_eq!(users(address, &session), ["run the three step task", FIRST]);
@@ -422,7 +429,7 @@ fn omitted_mode_retry_retains_an_existing_queue_until_idle() -> TestResult {
         "retry changed stored delivery"
     );
     assert_eq!(users(address, &session), ["run the three step task"]);
-    fs::write(root.join("step-release"), "release")?;
+    fs::write(workspace_dir(&root).join("step-release"), "release")?;
     permission_residuals::wait_session_idle(address, &session);
     let bodies = locked(&provider.bodies).clone();
     assert!(!bodies.get(1).ok_or("second step absent")?.contains(FIRST));

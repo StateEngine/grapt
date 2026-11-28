@@ -68,43 +68,6 @@ pub(super) fn instruction_path(relative: &Path) -> bool {
         })
 }
 
-/// True if `target` is the resolved target of an in-scope `AGENTS.md` or
-/// `AGENTS.override.md` symlink between `target`'s parent and `root`.
-pub(super) fn is_instruction_symlink_target(root: &Path, target: &Path) -> bool {
-    let Ok(canonical_root) = std::fs::canonicalize(root) else {
-        return false;
-    };
-    let canonical_target = std::fs::canonicalize(target).unwrap_or_else(|_| target.to_path_buf());
-    let mut current = canonical_target.parent();
-    for _ in 0..64 {
-        let Some(dir) = current else {
-            break;
-        };
-        if !dir.starts_with(&canonical_root) {
-            break;
-        }
-        for name in ["AGENTS.md", "AGENTS.override.md"] {
-            let candidate = dir.join(name);
-            if std::fs::symlink_metadata(&candidate).is_ok_and(|meta| meta.is_symlink())
-                && std::fs::canonicalize(&candidate).is_ok_and(|resolved| {
-                    if cfg!(windows) {
-                        path_text(&resolved).eq_ignore_ascii_case(&path_text(&canonical_target))
-                    } else {
-                        resolved == canonical_target
-                    }
-                })
-            {
-                return true;
-            }
-        }
-        if dir == canonical_root {
-            break;
-        }
-        current = dir.parent();
-    }
-    false
-}
-
 pub(super) fn resolve_existing(
     root: &Path,
     requested: &str,
@@ -141,7 +104,7 @@ pub(super) fn resolve_existing(
                 )
             ))
         });
-        if protected || instruction_path(relative) || is_instruction_symlink_target(root, &target) {
+        if protected || instruction_path(relative) {
             return Err("tool path names protected control metadata".to_owned());
         }
     }

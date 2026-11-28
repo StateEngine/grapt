@@ -8,6 +8,7 @@ fn guide_line_input_and_plan_examples_use_the_real_product(
     let root = root("terminal-guide-examples");
     let _cleanup = terminal_coordination::RootCleanup(root.clone());
     prepare(&root, 120_000);
+    unattended(&root);
     let provider = ProviderFixture::start(Vec::new());
     let mut service = spawn(&root, provider.address);
     let address = await_ready(&root, &mut service);

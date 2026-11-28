@@ -225,6 +225,7 @@ fn a_terminal_role_cannot_rewrite_its_tool_authority_before_or_after_restart(
     let root = root("terminal-agent-authority");
     let _cleanup = terminal_coordination::RootCleanup(root.clone());
     prepare(&root, 120_000);
+    unattended(&root);
     let path = root.join(".grapt/agents/terminal.toml");
     fs::create_dir_all(path.parent().ok_or("agent directory missing")?)?;
     let definition = "name='terminal'\ndescription='Run commands'\ndeveloper_instructions='Run assigned commands.'\ntools=['exec_command']\n";

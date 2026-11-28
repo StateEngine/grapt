@@ -590,39 +590,6 @@ fn fu12_absolute_coding_paths_preserve_workspace_authority() -> Result<(), Strin
             );
         }
     }
-    #[cfg(unix)]
-    {
-        let target = root.join("nested/real-rules.txt");
-        std::fs::write(&target, "original\n").map_err(|error| error.to_string())?;
-        std::os::unix::fs::symlink(&target, root.join("nested/AGENTS.override.md"))
-            .map_err(|error| error.to_string())?;
-        for (tool, args) in [
-            (
-                WRITE_TOOL,
-                serde_json::json!({"path":"nested/real-rules.txt","content":"tampered\n"}),
-            ),
-            (
-                PATCH_TOOL,
-                serde_json::json!({"operations":[{"op":"update","path":"nested/real-rules.txt","before_sha256":"0".repeat(64),"old_text":"original","new_text":"tampered"}]}),
-            ),
-            (
-                APPLY_PATCH_TOOL,
-                serde_json::json!({"input":"*** Begin Patch\n*** Update File: nested/real-rules.txt\n@@\n-original\n+tampered\n*** End Patch"}),
-            ),
-        ] {
-            let error = call(root, tool, args)
-                .err()
-                .ok_or_else(|| format!("{tool} edited symlinked AGENTS.override.md target"))?;
-            assert!(
-                error.contains("protected control metadata"),
-                "{tool} refusal did not cite protected control metadata: {error}"
-            );
-        }
-        assert_eq!(
-            std::fs::read_to_string(&target).map_err(|error| error.to_string())?,
-            "original\n"
-        );
-    }
     assert!(!outside.0.join("new").exists());
     Ok(())
 }

@@ -87,6 +87,7 @@ fn skd_repository_task_uses_scope_skill_and_delegation_across_compaction_and_res
     let root = root("skd-workflow");
     let _cleanup = terminal_coordination::RootCleanup(root.clone());
     prepare(&root, 500_000);
+    unattended(&root);
     offer_child_model(&root, true);
     let home = install_skills(&root);
     fs::write(

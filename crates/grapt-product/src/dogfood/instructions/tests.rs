@@ -299,6 +299,84 @@ fn skd_project_instructions_linking_outside_the_project_are_refused(
 
 #[cfg(unix)]
 #[test]
+fn skd_project_instructions_refuse_in_scope_sibling_and_dangling_symlinks(
+) -> Result<(), Box<dyn std::error::Error>> {
+    let fixture = Fixture::new()?;
+    std::fs::write(fixture.root.join("project/AGENTS.md"), "project rule")?;
+    let good = text(&fixture.effective.refresh()?);
+    assert!(good.contains("project rule"));
+
+    // Cross-sibling symlink inside the project root must be refused.
+    std::fs::create_dir_all(fixture.root.join("project/sibling"))?;
+    std::fs::write(
+        fixture.root.join("project/sibling/real-rules.txt"),
+        "sibling linked rule",
+    )?;
+    std::os::unix::fs::symlink(
+        fixture.root.join("project/sibling/real-rules.txt"),
+        fixture.root.join("project/sub/AGENTS.override.md"),
+    )?;
+    let after_sibling = text(&fixture.effective.refresh()?);
+    assert!(
+        !after_sibling.contains("sibling linked rule"),
+        "in-scope sibling symlink contributed"
+    );
+    assert!(
+        after_sibling.contains("must not be a symlink"),
+        "expected symlink refusal, got: {after_sibling}"
+    );
+
+    // Dangling symlink must also be refused before its target is ever created.
+    std::fs::remove_file(fixture.root.join("project/sub/AGENTS.override.md"))?;
+    std::os::unix::fs::symlink(
+        fixture.root.join("project/sibling/future-target.txt"),
+        fixture.root.join("project/sub/AGENTS.md"),
+    )?;
+    let after_dangling = text(&fixture.effective.refresh()?);
+    assert!(
+        after_dangling.contains("must not be a symlink"),
+        "expected dangling symlink refusal, got: {after_dangling}"
+    );
+    Ok(())
+}
+
+#[cfg(unix)]
+#[test]
+fn skd_scoped_instructions_refuse_in_scope_sibling_and_dangling_symlinks(
+) -> Result<(), Box<dyn std::error::Error>> {
+    let fixture = Fixture::new()?;
+    let session = fixture.root.join("project/sub");
+    std::fs::create_dir_all(session.join("a"))?;
+    std::fs::create_dir_all(session.join("sibling"))?;
+    std::fs::write(session.join("sibling/rules.txt"), "scoped sibling rule")?;
+    std::os::unix::fs::symlink(
+        session.join("sibling/rules.txt"),
+        session.join("a/AGENTS.md"),
+    )?;
+    let canonical = std::fs::canonicalize(&session)?;
+    let scoped = scoped_for_read(&canonical, &canonical.join("a/file.rs")).instructions;
+    assert_eq!(scoped.len(), 1);
+    match &scoped[0].content {
+        Err(reason) => assert!(reason.contains("must not be a symlink"), "{reason}"),
+        Ok(content) => panic!("in-scope sibling symlink was delivered: {content}"),
+    }
+
+    std::fs::remove_file(session.join("a/AGENTS.md"))?;
+    std::os::unix::fs::symlink(
+        session.join("sibling/dangling.txt"),
+        session.join("a/AGENTS.override.md"),
+    )?;
+    let scoped = scoped_for_read(&canonical, &canonical.join("a/file.rs")).instructions;
+    assert_eq!(scoped.len(), 1);
+    match &scoped[0].content {
+        Err(reason) => assert!(reason.contains("must not be a symlink"), "{reason}"),
+        Ok(content) => panic!("dangling symlink was delivered: {content}"),
+    }
+    Ok(())
+}
+
+#[cfg(unix)]
+#[test]
 fn skd_global_instructions_may_link_into_a_dotfiles_tree() -> Result<(), Box<dyn std::error::Error>>
 {
     let fixture = Fixture::new()?;

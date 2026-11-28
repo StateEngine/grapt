@@ -124,6 +124,25 @@ fn session_msys_consent_cannot_bypass_git_protection_in_real_tools(
         &format!("/api/session/{session}/prompt"),
         r#"{"text":"exercise protected commands with retained compatibility consent"}"#,
     );
+    let wait = PollDeadline::new();
+    while wait.pending() && provider.calls.load(Ordering::SeqCst) < 4 {
+        let asked = json(
+            address,
+            "GET",
+            &format!("/api/session/{session}/permission"),
+            "",
+        );
+        for row in asked["data"].as_array().into_iter().flatten() {
+            if let Some(id) = row["id"].as_str() {
+                let path = format!("/api/session/{session}/permission/{id}/reply");
+                assert_eq!(
+                    request(address, "POST", &path, r#"{"reply":"once"}"#).0,
+                    204
+                );
+            }
+        }
+        thread::sleep(Duration::from_millis(20));
+    }
     wait_calls(&provider.calls, 4);
     permission_residuals::wait_session_idle(address, &session);
     let bodies = locked(&provider.bodies).clone();
