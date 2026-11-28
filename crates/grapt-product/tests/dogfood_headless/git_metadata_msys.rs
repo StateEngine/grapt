@@ -133,6 +133,16 @@ fn session_msys_consent_cannot_bypass_git_protection_in_real_tools(
             "",
         );
         for row in asked["data"].as_array().into_iter().flatten() {
+            let action = row["action"].as_str().unwrap_or_default();
+            assert_ne!(
+                action,
+                grapt_permission::SANDBOX_MSYS_ACTION,
+                "retained MSYS consent unexpectedly re-prompted: {row}"
+            );
+            assert_eq!(
+                action, "shell",
+                "unexpected non-shell permission prompt: {row}"
+            );
             if let Some(id) = row["id"].as_str() {
                 let path = format!("/api/session/{session}/permission/{id}/reply");
                 assert_eq!(

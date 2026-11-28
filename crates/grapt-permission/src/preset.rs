@@ -536,7 +536,7 @@ pub fn decide(action: &str, resources: &[&str], layers: &[Layer]) -> Decision {
     }
     let (effect, layer) = decided
         .into_iter()
-        .max_by_key(|(effect, _)| *effect)
+        .max_by_key(|(effect, layer)| (*effect, *layer == Some(LayerName::Owner)))
         .unwrap_or((Effect::Ask, None));
     Decision { effect, layer }
 }

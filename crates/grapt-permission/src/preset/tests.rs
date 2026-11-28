@@ -336,6 +336,23 @@ fn the_config_that_grants_authority_is_never_edited_unseen() {
 }
 
 #[test]
+fn owner_floor_ask_wins_attribution_over_maintainer_ask() {
+    let layers = [Layer::preset(Preset::Maintainer), Layer::owner()];
+    let single = decide("fs.overwrite", &["/repo/grapt.json"], &layers);
+    assert_eq!(single.effect, Effect::Ask);
+    assert_eq!(single.layer, Some(LayerName::Owner));
+
+    for resources in [
+        ["/repo/ordinary.txt", "/repo/grapt.json"],
+        ["/repo/grapt.json", "/repo/ordinary.txt"],
+    ] {
+        let multi = decide("fs.overwrite", &resources, &layers);
+        assert_eq!(multi.effect, Effect::Ask);
+        assert_eq!(multi.layer, Some(LayerName::Owner));
+    }
+}
+
+#[test]
 fn every_renamed_configuration_edit_keeps_the_owner_floor() {
     for preset in [Preset::Author, Preset::Maintainer] {
         for action in [

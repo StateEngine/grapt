@@ -55,6 +55,21 @@ pub(super) const NONBLOCK: i32 = 0o4000;
 #[cfg(all(unix, not(any(target_os = "linux", target_os = "android"))))]
 pub(super) const NONBLOCK: i32 = 0x0004;
 
+/// `O_NOFOLLOW`, which std does not name: 0o100000 on Linux ARM/AArch64,
+/// 0o400000 on Linux x86/x86_64/other, and 0x0100 on Apple/BSD.
+#[cfg(all(
+    any(target_os = "linux", target_os = "android"),
+    any(target_arch = "aarch64", target_arch = "arm")
+))]
+const NOFOLLOW: i32 = 0o100_000;
+#[cfg(all(
+    any(target_os = "linux", target_os = "android"),
+    not(any(target_arch = "aarch64", target_arch = "arm"))
+))]
+const NOFOLLOW: i32 = 0o400_000;
+#[cfg(all(unix, not(any(target_os = "linux", target_os = "android"))))]
+const NOFOLLOW: i32 = 0x0100;
+
 /// `base` is the canonical authority anchor; `relative` has only normal components.
 #[cfg(not(windows))]
 pub(super) fn open_contained(base: &Path, relative: &Path) -> std::io::Result<OpenedResource> {
@@ -70,6 +85,50 @@ pub(super) fn open_contained(base: &Path, relative: &Path) -> std::io::Result<Op
         #[cfg(not(any(target_os = "linux", target_os = "android")))]
         requested,
     })
+}
+
+/// Like [`open_contained`], but refuses symlinks atomically with `O_NOFOLLOW`
+/// on every relative component and the final open (for scoped instruction files).
+#[cfg(not(windows))]
+pub(super) fn open_contained_nofollow(
+    base: &Path,
+    relative: &Path,
+) -> std::io::Result<OpenedResource> {
+    use std::os::unix::fs::OpenOptionsExt as _;
+    let mut prefix = base.to_path_buf();
+    let mut components = relative.components().peekable();
+    while let Some(component) = components.next() {
+        prefix.push(component);
+        if components.peek().is_some() {
+            let dir = std::fs::OpenOptions::new()
+                .read(true)
+                .custom_flags(NONBLOCK | NOFOLLOW)
+                .open(&prefix)?;
+            if !dir.metadata()?.is_dir() {
+                return Err(std::io::Error::other(
+                    "a non-directory component is on the source file's path",
+                ));
+            }
+        }
+    }
+    Ok(OpenedResource {
+        file: std::fs::OpenOptions::new()
+            .read(true)
+            .custom_flags(NONBLOCK | NOFOLLOW)
+            .open(&prefix)?,
+        #[cfg(not(any(target_os = "linux", target_os = "android")))]
+        requested: prefix,
+    })
+}
+
+#[cfg(windows)]
+pub(super) fn open_contained_nofollow(
+    base: &Path,
+    relative: &Path,
+) -> std::io::Result<OpenedResource> {
+    // Windows `open_contained` already pins every component with
+    // `FILE_FLAG_OPEN_REPARSE_POINT` and refuses reparse points.
+    open_contained(base, relative)
 }
 
 #[cfg(windows)]

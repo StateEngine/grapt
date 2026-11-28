@@ -642,6 +642,9 @@ fn swr_h2_dual_stream_shell_artifact_reaches_provider_and_survives_restart() {
     assert_eq!(Some(encoded.len() as u64), total);
     let receipt: serde_json::Value = serde_json::from_str(&encoded)
         .unwrap_or_else(|error| panic!("recovered receipt was not complete JSON: {error}"));
+    #[cfg(target_os = "linux")]
+    assert_eq!(receipt["enforcement"]["kind"], "platform_sandbox");
+    #[cfg(not(target_os = "linux"))]
     assert!(
         matches!(
             receipt["enforcement"]["kind"].as_str(),

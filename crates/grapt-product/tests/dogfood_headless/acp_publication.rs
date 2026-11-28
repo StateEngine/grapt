@@ -112,6 +112,9 @@ p=Path("gap-executions.log"); p.write_text(p.read_text()+"run\n"); print("z" * 3
     // fields; the actual ACP truncation marker still accounts for raw bytes.
     let partial: Value = serde_json::from_str(&format!("{prefix}\"}}"))
         .unwrap_or_else(|error| panic!("recovered receipt prefix was malformed: {error}"));
+    #[cfg(target_os = "linux")]
+    assert_eq!(partial["enforcement"]["kind"], "platform_sandbox");
+    #[cfg(not(target_os = "linux"))]
     assert!(
         matches!(
             partial["enforcement"]["kind"].as_str(),

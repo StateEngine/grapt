@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use grapt_config::{ConfigSourcePath, MaxPathBytes};
 
 use super::MAX_FILE_BYTES;
-use crate::dogfood::source_file::open_contained;
+use crate::dogfood::source_file::{open_contained, open_contained_nofollow};
 
 pub(super) struct InstructionFile {
     pub(super) path: PathBuf,
@@ -72,7 +72,12 @@ pub(super) fn read_file(
     #[cfg(test)]
     testing::observe(testing::Phase::Opening, &target);
     let unreadable = |error| format!("instruction source is unreadable: {error}");
-    let opened = open_contained(&scope, relative).map_err(unreadable)?;
+    let opened = if supplied_scope.is_some() {
+        open_contained_nofollow(&scope, relative)
+    } else {
+        open_contained(&scope, relative)
+    }
+    .map_err(unreadable)?;
     #[cfg(test)]
     testing::observe(testing::Phase::Opened, &target);
     let metadata = opened.file.metadata().map_err(unreadable)?;

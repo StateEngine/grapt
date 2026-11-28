@@ -15,12 +15,14 @@ fn interrupt_joins_idle_exec_and_busy_shell_trees_without_stopping_another_sessi
     unattended(&root);
     let _root_cleanup = terminal_coordination::RootCleanup(root.clone());
     fs::create_dir_all(root.join("global-config"))?;
-    // This fixture reads child PIDs written by `$$` and checks host `/proc/{pid}/stat`,
-    // which is incompatible with Linux `bwrap --unshare-pid` PID namespaces.
-    fs::write(
-        root.join("global-config/grapt.json"),
-        r#"{"permission":{"shell":"allow"},"sandbox":{"enabled":false}}"#,
-    )?;
+    // On Linux, this fixture reads child PIDs written by `$$` and checks host
+    // `/proc/{pid}/stat`, which is incompatible with `bwrap --unshare-pid`.
+    // Keep sandbox enabled on Windows so Windows retains sandboxed stop coverage.
+    #[cfg(target_os = "linux")]
+    let global_config = r#"{"permission":{"shell":"allow"},"sandbox":{"enabled":false}}"#;
+    #[cfg(not(target_os = "linux"))]
+    let global_config = r#"{"permission":{"shell":"allow"}}"#;
+    fs::write(root.join("global-config/grapt.json"), global_config)?;
     let provider = ProviderFixture::start(vec![
         tool("call_stop_other", "shell", "other"),
         tool("call_stop_idle", "exec_command", "idle"),
