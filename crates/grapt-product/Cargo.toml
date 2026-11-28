@@ -136,8 +136,7 @@ conpty-oxide = { version = "=0.1.2", default-features = false, features = ["bloc
 windows-spawn = { version = "=0.1.0", default-features = false }
 # Same safe adapter already used by the CLI: refuse hard-linked plugin resources.
 winapi-util = "=0.1.11"
-# Handle-based Windows directory tree deletion (CVE-2022-21658) without workspace unsafe.
-remove_dir_all = "=1.0.0"
+# Handle-based Windows directory tree deletion without workspace unsafe.
 fs_at = "=0.2.1"
 
 [target.'cfg(windows)'.dev-dependencies]

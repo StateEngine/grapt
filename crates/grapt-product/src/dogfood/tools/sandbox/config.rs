@@ -5,21 +5,38 @@ use grapt_config::ConfigValue;
 
 const INSTRUCTION_FILES: [&str; 2] = ["AGENTS.md", "AGENTS.override.md"];
 
-fn initial_writable_roots(root: &Path) -> Result<(Vec<PathBuf>, Option<PathBuf>), String> {
+fn initial_writable_roots(root: &Path) -> Result<(Vec<PathBuf>, PathBuf), String> {
     let canonical_root = canonical(root)?;
     let canonical_temp = canonical(&std::env::temp_dir())?;
-    let mut writable = vec![canonical_root.clone()];
-    // Never widen a workspace into a shared ancestor temp directory (e.g. when
-    // `root` itself lives under `/tmp` or `$TMPDIR`): exposing an ancestor lets
-    // sandboxed commands write into sibling workspaces and causes synthetic
-    // read-only mount targets to be created in the shared parent directory.
-    let private_temp_parent = if canonical_root.starts_with(&canonical_temp) {
-        Some(canonical_temp)
-    } else {
-        writable.push(canonical_temp);
-        None
-    };
-    Ok((writable, private_temp_parent))
+    // Never grant the shared host temp directory as a writable root: every
+    // sandboxed command gets its own per-command private scratch directory
+    // under `canonical_temp` (same 1-slot path budget, uniform isolation for
+    // all workspaces).
+    Ok((vec![canonical_root], canonical_temp))
+}
+
+#[cfg(unix)]
+fn maybe_protect_unix_scratch_anchor(
+    protected: &mut Vec<PathBuf>,
+    canonical_temp: &Path,
+    writable_overlaps_temp: bool,
+) {
+    if writable_overlaps_temp {
+        // Protect the UID-exclusive 0700 scratch anchor whenever an explicit
+        // user writable_roots grant overlaps the host temp directory so no
+        // sandboxed command under the same UID can tamper with scratch entries.
+        protected.push(
+            canonical_temp.join(format!("grapt-scratch-{}", nix::unistd::geteuid().as_raw())),
+        );
+    }
+}
+
+#[cfg(not(unix))]
+fn maybe_protect_unix_scratch_anchor(
+    _protected: &mut Vec<PathBuf>,
+    _canonical_temp: &Path,
+    _writable_overlaps_temp: bool,
+) {
 }
 
 pub(super) fn check_path_budget(count: usize, reserves_private_temp: bool) -> Result<(), String> {
@@ -85,12 +102,12 @@ pub(super) fn read(root: &Path, sources: &CatalogSources) -> Result<Option<Plan>
     if !enabled && !git_metadata_read_only {
         return Ok(None);
     }
-    let (mut writable, private_temp_parent) = initial_writable_roots(root)?;
+    let (mut writable, canonical_temp) = initial_writable_roots(root)?;
     writable.extend(declared);
     writable.sort();
     writable.dedup();
-    let private_temp_parent =
-        private_temp_parent.filter(|temp| !writable.iter().any(|root| temp.starts_with(root)));
+    let writable_overlaps_temp = writable.iter().any(|root| canonical_temp.starts_with(root));
+    let private_temp_parent = (!writable_overlaps_temp).then_some(canonical_temp.clone());
     if writable.iter().any(|path| path.parent().is_none()) {
         return Err("sandbox cannot make a filesystem root writable".into());
     }
@@ -106,6 +123,7 @@ pub(super) fn read(root: &Path, sources: &CatalogSources) -> Result<Option<Plan>
         binaries,
         root.join(".stateengine"),
     ]);
+    maybe_protect_unix_scratch_anchor(&mut protected, &canonical_temp, writable_overlaps_temp);
     protected.extend(
         crate::dogfood::legacy_names::PROJECT_DIRECTORIES
             .iter()

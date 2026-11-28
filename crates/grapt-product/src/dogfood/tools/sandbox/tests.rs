@@ -442,5 +442,29 @@ fn workspace_under_temp_dir_never_exposes_ancestor_or_obstructs_sibling() -> Res
     assert!(config::check_path_budget(127, true).is_ok());
     assert!(config::check_path_budget(128, true).is_err());
     assert!(config::check_path_budget(128, false).is_ok());
+    #[cfg(unix)]
+    {
+        // When a user explicitly grants temp as a writable root, the Unix
+        // 0700 scratch anchor must be protected so no sandboxed command under
+        // the same UID can tamper with sibling scratch directories.
+        std::fs::write(
+            config.join("grapt.json"),
+            format!(
+                r#"{{"sandbox":{{"writable_roots":[{:?}]}}}}"#,
+                canonical_temp.to_string_lossy()
+            ),
+        )
+        .map_err(|e| e.to_string())?;
+        let sources_temp =
+            CatalogSources::read(&workspace, CatalogEnvironment::isolated(dir.path()))?;
+        let temp_plan = Plan::read(&workspace, &sources_temp)?.ok_or("sandbox plan absent")?;
+        let anchor =
+            canonical_temp.join(format!("grapt-scratch-{}", nix::unistd::geteuid().as_raw()));
+        assert!(
+            temp_plan.protected.contains(&anchor),
+            "Unix scratch anchor must be protected when user writable_roots overlaps temp: {:?}",
+            temp_plan.protected
+        );
+    }
     Ok(())
 }

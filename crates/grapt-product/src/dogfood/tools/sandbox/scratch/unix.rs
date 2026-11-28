@@ -27,7 +27,6 @@ use nix::sys::stat::{fchmod, fstat, fstatat, mkdirat, Mode, SFlag};
 use nix::unistd::{geteuid, unlinkat, UnlinkatFlags};
 use std::ffi::{CStr, CString};
 use std::os::fd::{AsFd as _, BorrowedFd, OwnedFd};
-use std::os::unix::ffi::OsStrExt as _;
 use std::path::{Path, PathBuf};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -110,6 +109,35 @@ fn open_verified_uid_anchor(parent: &Path) -> Result<(OwnedFd, PathBuf), String>
     Ok((anchor_fd, parent.join(anchor_str)))
 }
 
+fn create_unique_child_dir(
+    anchor_fd: BorrowedFd<'_>,
+    anchor_path: &Path,
+) -> Result<(CString, String), String> {
+    const MAX_ATTEMPTS: usize = 64;
+    for _ in 0..MAX_ATTEMPTS {
+        let ids = grapt_store::OsRandomIds::seed()
+            .map_err(|error| format!("sandbox private temp entropy unavailable: {error}"))?;
+        let suffix = &ids.instance()[..12.min(ids.instance().len())];
+        let name_str = format!("grapt-sandbox-tmp-{suffix}");
+        let name = CString::new(name_str.as_bytes())
+            .map_err(|_| "sandbox private temp name contains NUL".to_owned())?;
+        match mkdirat(anchor_fd, name.as_c_str(), Mode::S_IRWXU) {
+            Ok(()) => return Ok((name, name_str)),
+            Err(Errno::EEXIST) => continue,
+            Err(error) => {
+                return Err(format!(
+                    "sandbox private temp mkdirat failed at {}: {error}",
+                    anchor_path.join(&name_str).display()
+                ));
+            }
+        }
+    }
+    Err(format!(
+        "sandbox private temp exhausted {MAX_ATTEMPTS} unique directory attempts under {}",
+        anchor_path.display()
+    ))
+}
+
 pub(super) struct PinnedScratch {
     anchor_fd: OwnedFd,
     root_name: CString,
@@ -121,54 +149,71 @@ pub(super) struct PinnedScratch {
 impl PinnedScratch {
     pub(super) fn create(parent: &Path) -> Result<Self, String> {
         let (anchor_fd, anchor_path) = open_verified_uid_anchor(parent)?;
-        // Disarm TempDir::drop immediately via `.keep()` so neither attach
-        // errors nor unwinds can ever trigger recursive pathname remove_dir_all.
-        let path = tempfile::Builder::new()
-            .prefix("grapt-sandbox-tmp-")
-            .tempdir_in(&anchor_path)
-            .map_err(|error| format!("sandbox private temp directory unavailable: {error}"))?
-            .keep();
-        match Self::pin_under_anchor(anchor_fd, path.clone()) {
+        let euid = geteuid().as_raw();
+        let (root_name, name_str) = create_unique_child_dir(anchor_fd.as_fd(), &anchor_path)?;
+        let path = anchor_path.join(&name_str);
+        match Self::pin_under_anchor(anchor_fd, root_name.clone(), path.clone(), euid) {
             Ok(pinned) => Ok(pinned),
-            Err(reason) => {
-                let cleanup_err = std::fs::remove_dir(&path)
-                    .err()
-                    .map(|error| format!("sandbox private temp root rmdir failed: {error}"));
+            Err((anchor_fd, reason)) => {
+                let cleanup_err = match unlinkat(
+                    anchor_fd.as_fd(),
+                    root_name.as_c_str(),
+                    UnlinkatFlags::RemoveDir,
+                ) {
+                    Ok(()) | Err(Errno::ENOENT) => None,
+                    Err(error) => Some(format!("sandbox private temp root rmdir failed: {error}")),
+                };
                 Err(combine_errors(reason, [cleanup_err]))
             }
         }
     }
 
-    fn pin_under_anchor(anchor_fd: OwnedFd, path: PathBuf) -> Result<Self, String> {
-        let raw_name = path
-            .file_name()
-            .ok_or_else(|| format!("sandbox private temp has no file name: {}", path.display()))?;
-        let root_name = CString::new(raw_name.as_bytes())
-            .map_err(|_| format!("sandbox private temp name contains NUL: {}", path.display()))?;
+    fn pin_under_anchor(
+        anchor_fd: OwnedFd,
+        root_name: CString,
+        path: PathBuf,
+        euid: nix::libc::uid_t,
+    ) -> Result<Self, (OwnedFd, String)> {
         let root_flags =
             OFlag::O_RDONLY | OFlag::O_DIRECTORY | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC;
-        let root_fd = openat(
+        let root_fd = match openat(
             anchor_fd.as_fd(),
             root_name.as_c_str(),
             root_flags,
             Mode::empty(),
-        )
-        .map_err(|error| {
-            format!(
-                "sandbox private temp root openat failed at {}: {error}",
-                path.display()
-            )
-        })?;
-        let st = fstat(root_fd.as_fd()).map_err(|error| {
-            format!(
-                "sandbox private temp root fstat failed at {}: {error}",
-                path.display()
-            )
-        })?;
-        if !is_directory_mode(st.st_mode) || st.st_uid != geteuid().as_raw() {
-            return Err(format!(
-                "sandbox private temp root failed identity check: {}",
-                path.display()
+        ) {
+            Ok(fd) => fd,
+            Err(error) => {
+                return Err((
+                    anchor_fd,
+                    format!(
+                        "sandbox private temp root openat failed at {}: {error}",
+                        path.display()
+                    ),
+                ));
+            }
+        };
+        let st = match fstat(root_fd.as_fd()) {
+            Ok(st) => st,
+            Err(error) => {
+                return Err((
+                    anchor_fd,
+                    format!(
+                        "sandbox private temp root fstat failed at {}: {error}",
+                        path.display()
+                    ),
+                ));
+            }
+        };
+        let perms = st.st_mode & 0o7777;
+        if !is_directory_mode(st.st_mode) || st.st_uid != euid || perms != 0o700 {
+            return Err((
+                anchor_fd,
+                format!(
+                    "sandbox private temp root failed 0700 ownership check (uid={}, mode={perms:04o}) at {}",
+                    st.st_uid,
+                    path.display()
+                ),
             ));
         }
         Ok(Self {
