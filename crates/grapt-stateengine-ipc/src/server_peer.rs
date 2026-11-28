@@ -78,7 +78,7 @@ pub async fn connect(
     let directory = crate::linux_proc::process(pid);
     crate::linux_proc::observe(&directory)?.matches(&expected)?;
     let hashed = directory.clone();
-    let (image, hashed_file) = tokio::task::spawn_blocking(move || {
+    let (image, hashed_file, open_image) = tokio::task::spawn_blocking(move || {
         crate::linux_proc::hashed_image(&hashed, max_image_bytes)
     })
     .await
@@ -91,6 +91,8 @@ pub async fn connect(
             "the server's executable is not the file that was hashed".into(),
         ));
     }
+    // Held open until now, so its device and inode could not be reused.
+    drop(open_image);
     if !crate::binary::same_digest(&image, pinned_image) {
         return Err(IpcError::BinaryMismatch);
     }

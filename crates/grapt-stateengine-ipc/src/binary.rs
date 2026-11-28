@@ -28,11 +28,12 @@ pub(crate) fn sha256_file(path: &Path, max_bytes: u64) -> Result<Sha256Hex, IpcE
     sha256_opened(path, max_bytes).map(|(digest, _)| digest)
 }
 
-/// [`sha256_file`], with the metadata of the very file it opened and hashed.
+/// [`sha256_file`], with the very file it opened and hashed, still open so
+/// its identity cannot pass to another file while the caller holds it.
 pub(crate) fn sha256_opened(
     path: &Path,
     max_bytes: u64,
-) -> Result<(Sha256Hex, std::fs::Metadata), IpcError> {
+) -> Result<(Sha256Hex, std::fs::File), IpcError> {
     let unreadable =
         |error: std::io::Error| IpcError::Binary(format!("{}: {error}", path.display()));
     let mut file = std::fs::File::open(path).map_err(unreadable)?;
@@ -65,7 +66,7 @@ pub(crate) fn sha256_opened(
         .as_ref()
         .try_into()
         .map_err(|_| IpcError::Binary("SHA-256 did not produce 32 bytes".into()))?;
-    Ok((Sha256Hex(bytes), metadata))
+    Ok((Sha256Hex(bytes), file))
 }
 
 #[cfg(test)]

@@ -73,7 +73,7 @@ pub(crate) fn start_ticks(directory: &Path) -> Result<u64, IpcError> {
 
 /// The SHA-256 of the process's executable, at most `max_bytes` of it.
 pub(crate) fn image(directory: &Path, max_bytes: u64) -> Result<Sha256Hex, IpcError> {
-    hashed_image(directory, max_bytes).map(|(digest, _)| digest)
+    hashed_image(directory, max_bytes).map(|(digest, _, _)| digest)
 }
 
 /// A file's device and inode: which file it is, whatever its name.
@@ -93,13 +93,16 @@ impl FileId {
     }
 }
 
-/// [`image`], with the identity of the very file that was opened and hashed.
+/// [`image`], with the identity of the very file that was opened and hashed
+/// and that file, still open: while it is held, no other file can take its
+/// device and inode.
 pub(crate) fn hashed_image(
     directory: &Path,
     max_bytes: u64,
-) -> Result<(Sha256Hex, FileId), IpcError> {
-    crate::binary::sha256_opened(&directory.join("exe"), max_bytes)
-        .map(|(digest, metadata)| (digest, FileId::of(&metadata)))
+) -> Result<(Sha256Hex, FileId, std::fs::File), IpcError> {
+    let (digest, file) = crate::binary::sha256_opened(&directory.join("exe"), max_bytes)?;
+    let metadata = file.metadata().map_err(|_| unreadable(directory, "exe"))?;
+    Ok((digest, FileId::of(&metadata), file))
 }
 
 /// The identity of the file the process at `directory` runs now.
@@ -144,7 +147,7 @@ mod tests {
         assert_eq!(effective_uid("Name:\tx\nUid:\t1\t2\t3\t4\n"), Some(2));
         let stat = format!("9 (a) b) S {} 77 0", "0 ".repeat(18));
         assert_eq!(parse_start_ticks(&stat), Some(77));
-        let (_, hashed) = hashed_image(Path::new("/proc/self"), 1 << 32)?;
+        let (_, hashed, _open) = hashed_image(Path::new("/proc/self"), 1 << 32)?;
         assert_eq!(executable_id(Path::new("/proc/self"))?, hashed);
         let observed = observe_self(1 << 32)?;
         assert_eq!(observed.pid, std::process::id());
