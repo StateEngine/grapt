@@ -1,4 +1,4 @@
-use super::super::{prepare_effect, EDIT_TOOL, READ_TOOL, SHELL_TOOL};
+use super::super::{prepare_effect, EDIT_TOOL, EXECUTE_TOOL, READ_TOOL, SHELL_TOOL};
 use super::*;
 
 type TestResult = Result<(), Box<dyn std::error::Error>>;
@@ -169,5 +169,13 @@ fn a_repeated_key_leaves_the_call_unrepaired() -> TestResult {
         assert_eq!((change, kept.as_bytes()), (None, raw.as_bytes()));
         assert!(refused(READ_TOOL, &kept).is_none());
     }
+    // `execute` is published beside the catalog; a repeat there is refused too.
+    let code = BoundedToolInput::new(br#"{"code":"a","code":"b"}"#.to_vec())?;
+    let refusal = repeated(EXECUTE_TOOL, &code).ok_or("a repeat on execute was not refused")?;
+    assert!(
+        refusal.detail.ends_with("execute takes: code, description"),
+        "{}",
+        refusal.detail
+    );
     Ok(())
 }

@@ -106,6 +106,18 @@ fn builtin(tool: &str) -> Option<&'static Fields> {
         .get(tool)
 }
 
+/// `execute`'s declared arguments. It is published beside the catalog, not in
+/// it, and is never repaired.
+fn execute(tool: &str) -> Option<&'static Fields> {
+    static SCHEMA: OnceLock<Option<Fields>> = OnceLock::new();
+    if tool != super::EXECUTE_TOOL {
+        return None;
+    }
+    SCHEMA
+        .get_or_init(|| fields(&super::codemode::argument_schema()))
+        .as_ref()
+}
+
 /// Only an object schema that refuses unknown properties is used.
 fn fields(schema: &str) -> Option<Fields> {
     let schema: Value = serde_json::from_str(schema).ok()?;
@@ -145,7 +157,7 @@ pub(super) fn repair(tool: &str, input: BoundedToolInput) -> (BoundedToolInput, 
     let Some(fields) = builtin(tool) else {
         return (input, None);
     };
-    let Parsed::Unique(Value::Object(mut object)) = parse(input.as_bytes()) else {
+    let Some(Value::Object(mut object)) = unique_value(input.as_bytes()) else {
         return (input, None);
     };
     let repair = match (rename(&mut object, fields), coerce(&mut object, fields)) {
@@ -212,11 +224,11 @@ pub(super) struct Refusal {
     pub(super) detail: String,
 }
 
-/// Refuse a builtin call that repeats a JSON key anywhere, naming only the
-/// tool's own parameters.
+/// Refuse a builtin or `execute` call that repeats a JSON key anywhere,
+/// naming only the tool's own parameters.
 pub(super) fn repeated(tool: &str, input: &BoundedToolInput) -> Option<Refusal> {
-    let fields = builtin(tool)?;
-    matches!(parse(input.as_bytes()), Parsed::Repeated).then(|| Refusal {
+    let fields = builtin(tool).or_else(|| execute(tool))?;
+    repeats_key(input.as_bytes()).then(|| Refusal {
         hint: Hint::RepeatedParameter,
         detail: format!(
             "tool input is invalid: a parameter is repeated; {tool} takes: {}",
@@ -252,7 +264,7 @@ pub(super) fn screen(
 /// JSON object, or repeats a key ([`repeated`] refuses that).
 fn parameter_refusal(tool: &str, input: &BoundedToolInput) -> Option<Refusal> {
     let fields = builtin(tool)?;
-    let Parsed::Unique(Value::Object(object)) = parse(input.as_bytes()) else {
+    let Some(Value::Object(object)) = unique_value(input.as_bytes()) else {
         return None;
     };
     let unknown: Vec<&String> = object
@@ -359,26 +371,21 @@ fn distance(left: &str, right: &str) -> Option<usize> {
     previous.last().copied()
 }
 
-/// What a call's bytes hold as JSON.
-enum Parsed {
-    Unique(Value),
-    /// Some object repeats a key: any value read from it keeps one repeat.
-    Repeated,
-    Invalid,
+/// Whether some object in valid JSON repeats a key, found by the key scan
+/// alone: no value is built.
+fn repeats_key(bytes: &[u8]) -> bool {
+    let mut deserializer = serde_json::Deserializer::from_slice(bytes);
+    // Valid JSON fails the walk only on its repeated-key refusal.
+    matches!(UniqueKeys.deserialize(&mut deserializer), Err(error) if error.is_data())
 }
 
-fn parse(bytes: &[u8]) -> Parsed {
+/// The JSON value of `bytes`, or `None` when it is not JSON or any object
+/// in it repeats a key: a value read from it would keep only one repeat.
+fn unique_value(bytes: &[u8]) -> Option<Value> {
     let mut deserializer = serde_json::Deserializer::from_slice(bytes);
-    match UniqueKeys.deserialize(&mut deserializer) {
-        // Valid JSON fails the walk only on its repeated-key refusal.
-        Err(error) if error.is_data() => return Parsed::Repeated,
-        Err(_) => return Parsed::Invalid,
-        Ok(()) => {}
-    }
-    if deserializer.end().is_err() {
-        return Parsed::Invalid;
-    }
-    serde_json::from_slice(bytes).map_or(Parsed::Invalid, Parsed::Unique)
+    UniqueKeys.deserialize(&mut deserializer).ok()?;
+    deserializer.end().ok()?;
+    serde_json::from_slice(bytes).ok()
 }
 
 /// Walks a JSON document and refuses the first object that repeats a key.
