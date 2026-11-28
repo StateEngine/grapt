@@ -4,7 +4,8 @@
 use crate::activity::{
     Activity, ActivityReceipt, AgentSelector, ExternalRequest, ACTIVITY_CAPABILITY,
 };
-use crate::events::{EventStream, SubscribeRequest, EVENTS_CAPABILITY, MIN_BATCH_BYTES};
+use crate::event_stream::EventStream;
+use crate::events::{SubscribeRequest, EVENTS_CAPABILITY, MIN_BATCH_BYTES};
 use crate::frame::{decode, encode, read_frame, write_frame};
 use crate::handshake::{handshake, HandshakeOptions, Session};
 use crate::peer::PeerBinding;

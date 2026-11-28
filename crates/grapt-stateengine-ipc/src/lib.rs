@@ -18,6 +18,7 @@ mod connection;
 mod digest;
 mod endpoint;
 mod error;
+mod event_stream;
 mod events;
 mod frame;
 mod handshake;
@@ -40,8 +41,9 @@ pub use connection::Connection;
 pub use digest::Sha256Hex;
 pub use endpoint::{discover, Endpoint};
 pub use error::IpcError;
+pub use event_stream::EventStream;
 pub use events::{
-    Event, EventCursor, EventKind, EventStream, StreamFrame, SubscribeRequest, EVENTS_CAPABILITY,
+    Event, EventCursor, EventKind, StreamFrame, SubscribeRequest, EVENTS_CAPABILITY,
     MIN_BATCH_BYTES,
 };
 pub use frame::{read_frame, write_frame};

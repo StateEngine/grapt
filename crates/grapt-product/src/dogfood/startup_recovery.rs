@@ -18,7 +18,15 @@
 //! Every step reports what it skipped as a warning and lets startup continue.
 //! A Session's settlement commits on its own; nothing after it can undo or
 //! misreport it.
-use super::*;
+use std::num::NonZeroU32;
+use std::path::Path;
+use std::sync::Arc;
+
+use grapt_runtime::{recover_process_loss_attempts, Clock, EventIds};
+use grapt_store::{AttemptRecordCeiling, OsRandomIds, SystemClock};
+use grapt_types::SessionId;
+
+use super::elicitation;
 
 pub(in crate::dogfood) mod auto_resume;
 
@@ -28,10 +36,10 @@ pub(super) fn recover(
     ids: &Arc<OsRandomIds>,
     clock: &Arc<SystemClock>,
     receipt_bytes: NonZeroU32,
-) -> Result<(), DogfoodRefusal> {
-    auto_resume::ensure_schema_if_missing(store).map_err(DogfoodRefusal::Compose)?;
-    let runtime_ids = execution::RuntimeEventIds(Arc::clone(ids));
-    let runtime_clock = execution::RuntimeClock(Arc::clone(clock));
+) -> Result<(), String> {
+    auto_resume::ensure_schema_if_missing(store)?;
+    let runtime_ids = super::execution::RuntimeEventIds(Arc::clone(ids));
+    let runtime_clock = super::execution::RuntimeClock(Arc::clone(clock));
     let mut attempt_first = |store: &mut grapt_store::EventStore, session: &SessionId| {
         settle_lost_tool_runs(service_root, store, session, &runtime_ids, &runtime_clock)
     };
@@ -41,7 +49,7 @@ pub(super) fn recover(
         AttemptRecordCeiling::new(receipt_bytes),
         &mut attempt_first,
     )
-    .map_err(|error| DogfoodRefusal::Compose(error.to_string()))?;
+    .map_err(|error| error.to_string())?;
     for warning in &attempts.warnings {
         crate::server_log::warn(format_args!(
             "startup warning reason=attempt-recovery-skipped detail={warning}"
@@ -53,10 +61,8 @@ pub(super) fn recover(
             attempts.warnings_omitted
         ));
     }
-    let pre_recovery_forms = auto_resume::fence_pre_recovery_form_sessions(store, clock.as_ref())
-        .map_err(DogfoodRefusal::Compose)?;
-    let forms = elicitation::recover(store, ids.as_ref(), clock.as_ref())
-        .map_err(DogfoodRefusal::Compose)?;
+    let pre_recovery_forms = auto_resume::fence_pre_recovery_form_sessions(store, clock.as_ref())?;
+    let forms = elicitation::recover(store, ids.as_ref(), clock.as_ref())?;
     for warning in &forms {
         crate::server_log::warn(format_args!(
             "startup warning reason=form-recovery-skipped detail={warning}"
@@ -72,7 +78,7 @@ pub(super) fn recover(
             ids.as_ref(),
         )
     };
-    session_status::SessionStatusEmitter::recover(store, clock, ids, &mut status_first);
+    super::session_status::SessionStatusEmitter::recover(store, clock, ids, &mut status_first);
     Ok(())
 }
 
@@ -85,26 +91,26 @@ fn settle_lost_tool_runs(
     service_root: &Path,
     store: &mut grapt_store::EventStore,
     session: &SessionId,
-    ids: &execution::RuntimeEventIds,
-    clock: &execution::RuntimeClock,
+    ids: &dyn EventIds,
+    clock: &dyn Clock,
 ) -> Result<(), String> {
-    let orphans = match continuation::orphaned_nested(store, session) {
+    let orphans = match super::continuation::orphaned_nested(store, session) {
         Ok(orphans) => orphans,
-        Err(continuation::OrphanScan::Unsettleable(reason)) => {
+        Err(super::continuation::OrphanScan::Unsettleable(reason)) => {
             crate::server_log::warn(format_args!(
                 "startup warning reason=lost-tool-runs-unsettleable detail=session {session}: \
                  {reason}; neither restart nor /reconcile can record them"
             ));
             return Ok(());
         }
-        Err(continuation::OrphanScan::Unreadable(reason)) => {
+        Err(super::continuation::OrphanScan::Unreadable(reason)) => {
             return Err(format!("its lost tool runs could not be read: {reason}"))
         }
     };
     if orphans.is_empty() {
         return Ok(());
     }
-    let artifacts = match execution::artifacts::open_artifacts(service_root) {
+    let artifacts = match super::execution::artifacts::open_artifacts(service_root) {
         Ok(store) => Some(store),
         Err(error) => {
             crate::server_log::warn(format_args!(

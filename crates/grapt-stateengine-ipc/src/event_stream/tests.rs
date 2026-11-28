@@ -1,5 +1,6 @@
 use super::*;
-use serde_json::json;
+use crate::events::EventKind;
+use serde_json::{json, Value};
 use std::time::Duration;
 use tokio::io::AsyncWriteExt;
 

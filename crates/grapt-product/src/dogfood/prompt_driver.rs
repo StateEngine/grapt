@@ -333,7 +333,7 @@ impl PromptDriver {
             self.auto_resume_principal.take(),
         ) {
             (Some(application), Some(principal)) => Some(tokio::task::spawn(async move {
-                super::startup_recovery::auto_resume::drive(application, principal).await;
+                super::prompt_submission::auto_resume::drive(application, principal).await;
             })),
             _ => None,
         };

@@ -76,7 +76,7 @@ impl ProductPlan {
             return super::super::tools::ephemeral_definitions(self.family);
         }
         let epoch = instructions.map_or(&BuiltinEpoch::Current, |prepared| &prepared.tools.epoch);
-        super::super::tools::offered_definitions(self.family, epoch)
+        super::super::tools::offered_definitions(self.family, epoch.retires_tools())
     }
 
     #[expect(clippy::cognitive_complexity, reason = "legacy")]

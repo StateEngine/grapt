@@ -4,7 +4,8 @@ use super::store::{
 };
 use super::*;
 use grapt_store::{AggregateId, AppendInput, Appended, OsRandomIds, SystemClock};
-use grapt_types::{DeterministicAuthorities, EventId, EventVersion, ExecutionId};
+use grapt_types::{DeterministicAuthorities, EventId, EventVersion, ExecutionId, IdAuthority};
+use serde_json::{json, Value};
 
 fn test_store() -> Result<(EventStore, OsRandomIds, SystemClock), String> {
     let mut store = EventStore::open_in_memory().map_err(|error| error.to_string())?;

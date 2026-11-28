@@ -131,9 +131,9 @@ use grapt_artifact::{ArtifactStore, ReadBudget};
 use grapt_inbox::{AdmitOutcome, Inbox};
 use grapt_permission::{PermissionHttpState, ToolPermissionAuthority};
 use grapt_platform::{CredentialAuthority, ProviderTargetAuthority};
-use grapt_runtime::{recover_process_loss_attempts, SessionPorts};
+use grapt_runtime::SessionPorts;
 use grapt_session::{AssistantMessage, SessionSeed};
-use grapt_store::{AggregateId, AttemptRecordCeiling, OsRandomIds, SystemClock, WriteError};
+use grapt_store::{AggregateId, OsRandomIds, SystemClock, WriteError};
 #[cfg(test)]
 use grapt_types::ResolvedModelTarget;
 use grapt_types::{
@@ -277,6 +277,19 @@ impl ExecutionBackend {
             .map(|_| ())
             .map_err(|error| error.to_string())
     }
+}
+
+/// Settle what process loss left open before the server admits any work.
+fn recover_at_startup(
+    service_root: &Path,
+    store: &mut grapt_store::EventStore,
+    ids: &Arc<OsRandomIds>,
+    clock: &Arc<SystemClock>,
+) -> Result<(), DogfoodRefusal> {
+    let receipt_bytes = NonZeroU32::new(ATTEMPT_RECEIPT_BYTES)
+        .ok_or_else(|| DogfoodRefusal::Compose("attempt receipt bound is zero".to_owned()))?;
+    startup_recovery::recover(service_root, store, ids, clock, receipt_bytes)
+        .map_err(DogfoodRefusal::Compose)
 }
 
 pub(crate) fn event_hub() -> Result<Arc<DogfoodEventHub>, String> {
@@ -497,9 +510,7 @@ impl DogfoodApplication {
             OsRandomIds::seed().map_err(|error| DogfoodRefusal::Compose(error.to_string()))?,
         );
         let clock = Arc::new(SystemClock);
-        let receipt_bytes = NonZeroU32::new(ATTEMPT_RECEIPT_BYTES)
-            .ok_or_else(|| DogfoodRefusal::Compose("attempt receipt bound is zero".to_owned()))?;
-        startup_recovery::recover(service_root, &mut store, &ids, &clock, receipt_bytes)?;
+        recover_at_startup(service_root, &mut store, &ids, &clock)?;
         let inbox =
             Inbox::new(store).map_err(|error| DogfoodRefusal::Compose(error.to_string()))?;
         let readers = inbox

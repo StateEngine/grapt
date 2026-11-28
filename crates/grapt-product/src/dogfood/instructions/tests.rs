@@ -806,7 +806,7 @@ fn base_guidance_names_only_tools_the_catalog_offers() {
     ] {
         let offered = crate::dogfood::tools::offered_definitions(
             family,
-            &crate::dogfood::instructions::BuiltinEpoch::Current,
+            BuiltinEpoch::Current.retires_tools(),
         );
         for name in ["glob", "grep", "list", "read", "shell", "edit", "write"] {
             assert!(BASE.contains(name), "base guidance no longer names {name}");
