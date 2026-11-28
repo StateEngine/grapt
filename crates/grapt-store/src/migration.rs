@@ -235,6 +235,8 @@ fn take_backup(
         let mut options = std::fs::OpenOptions::new();
         options.write(true).create_new(true);
         // The backup holds everything the store holds; only its owner reads it.
+        // Unix enforces 0600; Windows inherits the resolved parent directory's
+        // ACL until shared Windows ACL extraction lands.
         #[cfg(unix)]
         std::os::unix::fs::OpenOptionsExt::mode(&mut options, 0o600);
         match options.open(&candidate_path) {

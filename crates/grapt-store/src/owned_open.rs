@@ -134,6 +134,35 @@ impl OwnedOpenError {
     }
 }
 
+/// The path a caller named, which may be a file link, and the real file it
+/// resolved to when the open began. SQLite only ever opens the real file. The
+/// caller's path must still lead to the bound file before the store is
+/// written and before it is handed over, so a link removed or retargeted
+/// meanwhile refuses rather than leaving the caller with another file.
+struct StorePath<'a> {
+    supplied: &'a Path,
+    real: std::path::PathBuf,
+}
+
+impl<'a> StorePath<'a> {
+    fn resolve(supplied: &'a Path) -> Result<Self, OwnedOpenError> {
+        let real = crate::migration::authority::real_database_path(supplied)
+            .map_err(OwnedOpenError::FileIdentity)?;
+        Ok(Self { supplied, real })
+    }
+
+    fn still_names(&self, handle: &DatabaseFileHandle) -> Result<(), OwnedOpenError> {
+        let real = crate::migration::authority::real_database_path(self.supplied)
+            .map_err(|_| OwnedOpenError::PathIdentityChanged)?;
+        let identity = crate::migration::authority::database_file_identity(self.supplied)
+            .map_err(|_| OwnedOpenError::PathIdentityChanged)?;
+        if real != self.real || identity != *handle.identity() {
+            return Err(OwnedOpenError::PathIdentityChanged);
+        }
+        Ok(())
+    }
+}
+
 trait MigrationDriver {
     fn migrate(
         &self,
@@ -220,9 +249,8 @@ impl EventStore {
         ids: &dyn IdAuthority,
         driver: &dyn MigrationDriver,
     ) -> Result<OwnedEventStore, OwnedOpenError> {
-        let real = crate::migration::authority::real_database_path(path)
-            .map_err(OwnedOpenError::FileIdentity)?;
-        let path = real.as_path();
+        let store_path = StorePath::resolve(path)?;
+        let path = store_path.real.as_path();
         // Ready opens verify ownership, schema and compatibility without walking
         // every historical page. Explicit first contact still audits the DB.
         let observation = match &authority {
@@ -243,7 +271,7 @@ impl EventStore {
             StoreReadiness::Slow => match authority {
                 OwnedOpenAuthority::OpenReady => {
                     let handle = Self::require_handle(observation.handle)?;
-                    let store = Self::open_existing(path, &handle, engine_version, ids)?;
+                    let store = Self::open_existing(&store_path, &handle, engine_version, ids)?;
                     Ok(OwnedEventStore {
                         store,
                         receipt: OwnedOpenReceipt::OpenedReady,
@@ -254,7 +282,7 @@ impl EventStore {
             StoreReadiness::Ready => match authority {
                 OwnedOpenAuthority::OpenReady => {
                     let handle = Self::require_handle(observation.handle)?;
-                    let store = Self::open_existing(path, &handle, engine_version, ids)?;
+                    let store = Self::open_existing(&store_path, &handle, engine_version, ids)?;
                     Ok(OwnedEventStore {
                         store,
                         receipt: OwnedOpenReceipt::OpenedReady,
@@ -265,7 +293,13 @@ impl EventStore {
             StoreReadiness::HotJournal => match authority {
                 OwnedOpenAuthority::OpenReady => {
                     let handle = Self::require_handle(observation.handle)?;
-                    Self::recover_hot_journal_and_open(path, &handle, engine_version, ids, None)
+                    Self::recover_hot_journal_and_open(
+                        &store_path,
+                        &handle,
+                        engine_version,
+                        ids,
+                        None,
+                    )
                 }
                 other => Err(Self::authority_mismatch(StoreReadiness::HotJournal, other)),
             },
@@ -290,32 +324,15 @@ impl EventStore {
                         });
                     }
                     let handle = Self::require_handle(observation.handle)?;
-                    driver.hook(OpenHook::BeforeMigration, path)?;
-                    let migration =
-                        match driver.migrate(path, &authorized, &handle, engine_version, clock) {
-                            Ok(migration) => migration,
-                            Err(MigrationError::AuthorizedPlanStale) => {
-                                return Err(OwnedOpenError::StaleMigrationPlan {
-                                    authorized: Box::new(authorized),
-                                    observed: Box::new(preflight_read_only(path)),
-                                });
-                            }
-                            Err(MigrationError::PathIdentityChanged) => {
-                                return Err(OwnedOpenError::PathIdentityChanged);
-                            }
-                            Err(error) => return Err(OwnedOpenError::Migration(error)),
-                        };
-                    driver.hook(OpenHook::AfterMigration, path)?;
-                    let ready_handle = Self::require_ready(path)?;
-                    driver.hook(OpenHook::BeforeFinalOpen, path)?;
-                    let store = Self::open_existing(path, &ready_handle, engine_version, ids)?;
-                    Ok(OwnedEventStore {
-                        store,
-                        receipt: OwnedOpenReceipt::Migrated {
-                            authorized,
-                            migration,
-                        },
-                    })
+                    Self::migrate_and_open(
+                        &store_path,
+                        authorized,
+                        &handle,
+                        engine_version,
+                        clock,
+                        ids,
+                        driver,
+                    )
                 }
                 other => Err(Self::authority_mismatch(
                     StoreReadiness::MigrationNeeded(observed),
@@ -323,6 +340,46 @@ impl EventStore {
                 )),
             },
         }
+    }
+
+    /// Migrate the classified store under the exact authorized plan, then
+    /// open it once it classifies Ready again.
+    fn migrate_and_open(
+        store_path: &StorePath<'_>,
+        authorized: MigrationPlan,
+        handle: &DatabaseFileHandle,
+        engine_version: &str,
+        clock: &dyn ClockAuthority,
+        ids: &dyn IdAuthority,
+        driver: &dyn MigrationDriver,
+    ) -> Result<OwnedEventStore, OwnedOpenError> {
+        let path = store_path.real.as_path();
+        driver.hook(OpenHook::BeforeMigration, store_path.supplied)?;
+        store_path.still_names(handle)?;
+        let migration = match driver.migrate(path, &authorized, handle, engine_version, clock) {
+            Ok(migration) => migration,
+            Err(MigrationError::AuthorizedPlanStale) => {
+                return Err(OwnedOpenError::StaleMigrationPlan {
+                    authorized: Box::new(authorized),
+                    observed: Box::new(preflight_read_only(path)),
+                });
+            }
+            Err(MigrationError::PathIdentityChanged) => {
+                return Err(OwnedOpenError::PathIdentityChanged);
+            }
+            Err(error) => return Err(OwnedOpenError::Migration(error)),
+        };
+        driver.hook(OpenHook::AfterMigration, path)?;
+        let ready_handle = Self::require_ready(path)?;
+        driver.hook(OpenHook::BeforeFinalOpen, store_path.supplied)?;
+        let store = Self::open_existing(store_path, &ready_handle, engine_version, ids)?;
+        Ok(OwnedEventStore {
+            store,
+            receipt: OwnedOpenReceipt::Migrated {
+                authorized,
+                migration,
+            },
+        })
     }
 
     /// Recovery driven with a caller-chosen page-walk bound.
@@ -337,9 +394,16 @@ impl EventStore {
         ids: &dyn IdAuthority,
         operations: i64,
     ) -> Result<OwnedEventStore, OwnedOpenError> {
-        let handle = crate::migration::authority::database_file_handle(path)
+        let store_path = StorePath::resolve(path)?;
+        let handle = crate::migration::authority::database_file_handle(&store_path.real)
             .map_err(OwnedOpenError::FileIdentity)?;
-        Self::recover_hot_journal_and_open(path, &handle, engine_version, ids, Some(operations))
+        Self::recover_hot_journal_and_open(
+            &store_path,
+            &handle,
+            engine_version,
+            ids,
+            Some(operations),
+        )
     }
 
     /// Rolls back the classified hot journal through one bounded writable
@@ -352,12 +416,14 @@ impl EventStore {
     /// no epoch stamp, no migration. The second classification is the only
     /// gate between the rollback and the returned store.
     fn recover_hot_journal_and_open(
-        path: &Path,
+        store_path: &StorePath<'_>,
         handle: &DatabaseFileHandle,
         engine_version: &str,
         ids: &dyn IdAuthority,
         walk_operations: Option<i64>,
     ) -> Result<OwnedEventStore, OwnedOpenError> {
+        let path = store_path.real.as_path();
+        store_path.still_names(handle)?;
         let sqlite =
             |error: rusqlite::Error| OwnedOpenError::HotJournalRecovery(WriteError::Sqlite(error));
         let connection = handle
@@ -392,7 +458,7 @@ impl EventStore {
                 if ready_handle.identity() != handle.identity() {
                     return Err(OwnedOpenError::PathIdentityChanged);
                 }
-                let store = Self::open_existing(path, &ready_handle, engine_version, ids)?;
+                let store = Self::open_existing(store_path, &ready_handle, engine_version, ids)?;
                 Ok(OwnedEventStore {
                     store,
                     receipt: OwnedOpenReceipt::RecoveredHotJournal { slow },
@@ -428,13 +494,16 @@ impl EventStore {
         }
     }
 
+    /// The one way an owned open hands over a store, after the caller's path
+    /// is checked to still lead to the bound file.
     fn open_existing(
-        path: &Path,
+        store_path: &StorePath<'_>,
         handle: &DatabaseFileHandle,
         engine_version: &str,
         ids: &dyn IdAuthority,
     ) -> Result<EventStore, OwnedOpenError> {
-        match Self::open_existing_with_ids(path, handle, engine_version, ids) {
+        store_path.still_names(handle)?;
+        match Self::open_existing_with_ids(&store_path.real, handle, engine_version, ids) {
             Ok(store) => Ok(store),
             Err(ExistingOpenError::Identity(error)) => Err(OwnedOpenError::FileIdentity(error)),
             Err(ExistingOpenError::Replaced) => Err(OwnedOpenError::PathIdentityChanged),
@@ -482,6 +551,12 @@ mod tests {
         ReplaceReady,
         CreateLegacy,
         ReplaceAfterReady,
+        /// Point the caller's link at another file before the migration writes.
+        #[cfg(unix)]
+        RetargetLinkBeforeMigration(PathBuf),
+        /// Remove the caller's link before the store is handed over.
+        #[cfg(unix)]
+        RemoveLinkBeforeFinalOpen,
     }
 
     impl MigrationDriver for TestDriver {
@@ -533,6 +608,15 @@ mod tests {
                 }
                 (Self::ReplaceAfterReady, OpenHook::BeforeFinalOpen) => {
                     replace_with_copy(path, "ready")?
+                }
+                #[cfg(unix)]
+                (Self::RetargetLinkBeforeMigration(target), OpenHook::BeforeMigration) => {
+                    std::fs::remove_file(path)?;
+                    std::os::unix::fs::symlink(target, path)?;
+                }
+                #[cfg(unix)]
+                (Self::RemoveLinkBeforeFinalOpen, OpenHook::BeforeFinalOpen) => {
+                    std::fs::remove_file(path)?
                 }
                 _ => {}
             }
@@ -704,6 +788,47 @@ mod tests {
             StoreReadiness::Ready
         ));
 
+        std::fs::remove_dir_all(root)?;
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_link_retargeted_or_removed_during_the_open_refuses() -> TestResult {
+        let root = scratch("link-races")?;
+        let (real, other, link) = (
+            root.join("real.db"),
+            root.join("other.db"),
+            root.join("link.db"),
+        );
+        legacy_database(&real)?;
+        legacy_database(&other)?;
+        std::os::unix::fs::symlink(&real, &link)?;
+        let before = std::fs::read(&real)?;
+        assert!(matches!(
+            open_with(
+                &link,
+                OwnedOpenAuthority::Migrate(plan(&link)),
+                &TestDriver::RetargetLinkBeforeMigration(other.clone()),
+            ),
+            Err(OwnedOpenError::PathIdentityChanged)
+        ));
+        assert_eq!(
+            std::fs::read(&real)?,
+            before,
+            "a store behind a retargeted link was written"
+        );
+        assert_eq!(backup_count(&root)?, 0);
+        std::fs::remove_file(&link)?;
+        std::os::unix::fs::symlink(&real, &link)?;
+        assert!(matches!(
+            open_with(
+                &link,
+                OwnedOpenAuthority::Migrate(plan(&link)),
+                &TestDriver::RemoveLinkBeforeFinalOpen,
+            ),
+            Err(OwnedOpenError::PathIdentityChanged)
+        ));
         std::fs::remove_dir_all(root)?;
         Ok(())
     }
