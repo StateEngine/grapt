@@ -24,27 +24,26 @@ BASELINE = Path(__file__).with_name('module-cycles.json')
 VERSION = 'cargo-modules 0.27.0'
 NODE = re.compile(r'^\s*"([^"]+)" \[label="([^|"]*)\|')
 USES = re.compile(r'^\s*"([^"]+)" -> "([^"]+)" \[label="uses"')
-FEATURE_CONFIG_SUFFIX = re.compile(r'^(?P<base>.+)\[(?:all-features|feature:[^\[\]\s]+)\]$')
+FEATURE_CONFIG_SUFFIX = re.compile(r'\A(?P<base>[^\[\]\s]+)\[(?:all-features|feature:[^\[\]\s]+)\]\Z')
 MODULE_KINDS = {'crate', 'mod'}
 
 
-def baseline_key_for(target, base_configs):
-    """Return the baseline lookup key for `target` against `base_configs`.
+def baseline_key_for(target, base_configs, live_configs=None):
+    """Return the baseline lookup key for `target`.
 
-    - Existing configs in `base_configs` always compare strictly against
-      themselves (never falling back to a parent target).
-    - Newly added feature-variant configs (`<base>[all-features]` or
-      `<base>[feature:<name>]`) whose `<base>` target already exists in
-      `base_configs` inherit `<base>`'s baseline so adding a Cargo feature
-      passes iff it introduces zero new cycles or cyclic edges beyond `<base>`.
-    - Brand-new targets not in `base_configs` compare strictly against empty.
+    Inherits an existing unqualified base target only when `target` is absent
+    from `base_configs`, present in `live_configs`, and matches a single
+    feature-variant suffix (`[all-features]` or `[feature:<name>]`).
     """
-    if base_configs is not None and target not in base_configs:
+    if (
+        base_configs is not None
+        and live_configs is not None
+        and target not in base_configs
+        and target in live_configs
+    ):
         match = FEATURE_CONFIG_SUFFIX.match(target)
-        if match is not None:
-            base_target = match.group('base')
-            if base_target in base_configs:
-                return base_target
+        if match is not None and match.group('base') in base_configs:
+            return match.group('base')
     return target
 
 
@@ -235,15 +234,16 @@ def main():
     recorded_edges = baseline.get('edges', {})
     recorded_configs = baseline.get('configs')
     recorded_config_set = set(recorded_configs) if isinstance(recorded_configs, list) else None
+    checked_config_set = set(checked_configs)
     all_targets = sorted(set(current_cycles) | set(recorded_cycles) | set(current_edges) | set(recorded_edges))
     problems = [
         problem for name in all_targets
         for problem in differences(
             name,
             current_cycles.get(name, []),
-            recorded_cycles.get(baseline_key_for(name, recorded_config_set), []),
+            recorded_cycles.get(baseline_key_for(name, recorded_config_set, checked_config_set), []),
             current_edges.get(name, []),
-            recorded_edges.get(baseline_key_for(name, recorded_config_set), []),
+            recorded_edges.get(baseline_key_for(name, recorded_config_set, checked_config_set), []),
         )
     ]
     if recorded_configs is not None and sorted(recorded_configs) != checked_configs:

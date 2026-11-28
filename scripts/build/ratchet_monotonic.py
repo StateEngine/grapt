@@ -174,13 +174,13 @@ def check_cycles_ratchet(base_doc, head_doc, live_configs=None):
     base_edges = base_doc['edges']
     head_edges = head_doc.get('edges', {})
     for target, groups in sorted(head_cycles.items()):
-        lookup = module_cycles.baseline_key_for(target, base_config_set)
+        lookup = module_cycles.baseline_key_for(target, base_config_set, live_configs)
         prior = base_cycles.get(lookup, [])
         for group in groups:
             if not any(set(group) <= set(old) for old in prior):
                 problems.append(f'{CYCLES_RATCHET}: {target} new or larger cycle {group} vs base')
     for target, edges in sorted(head_edges.items()):
-        lookup = module_cycles.baseline_key_for(target, base_config_set)
+        lookup = module_cycles.baseline_key_for(target, base_config_set, live_configs)
         prior_edges = {tuple(edge) for edge in base_edges.get(lookup, [])}
         for edge in edges:
             pair = tuple(edge)
