@@ -71,7 +71,7 @@ pub(crate) mod prompt_driver;
 mod prompt_images;
 mod prompt_submission;
 pub(crate) mod provider_capacity;
-pub(crate) mod provider_errors;
+mod provider_errors;
 mod provider_generation;
 mod public_terminal;
 mod read_projection;
