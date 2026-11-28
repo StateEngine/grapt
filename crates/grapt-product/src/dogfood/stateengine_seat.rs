@@ -12,6 +12,7 @@
 //! [`STOP_WAIT`] for it.
 use grapt_api::{DogfoodEventHub, DogfoodEventSubscription, SseError};
 use std::path::Path;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{
     channel, sync_channel, Receiver, RecvTimeoutError, Sender, SyncSender, TrySendError,
 };
@@ -106,45 +107,50 @@ impl Drop for Seat {
 }
 
 /// Whether the seat is stopping, and the subscription to end when it does.
+/// No lock is held while the hub subscribes or hydrates, so stopping never
+/// waits on the hub.
 #[derive(Default)]
 struct Stop {
-    state: Mutex<StopState>,
+    stopped: AtomicBool,
+    current: Mutex<Option<Arc<DogfoodEventSubscription>>>,
+    /// Held only while waiting for subscriber room.
+    pause: Mutex<()>,
     changed: Condvar,
-}
-
-#[derive(Default)]
-struct StopState {
-    stopped: bool,
-    current: Option<Arc<DogfoodEventSubscription>>,
 }
 
 impl Stop {
     fn stop(&self) {
-        let mut state = self.lock();
-        state.stopped = true;
-        if let Some(subscription) = state.current.take() {
+        self.stopped.store(true, Ordering::SeqCst);
+        if let Some(subscription) = self.current().take() {
             subscription.cancel();
         }
+        let _paused = self.pause.lock().unwrap_or_else(PoisonError::into_inner);
         self.changed.notify_all();
     }
 
-    fn lock(&self) -> MutexGuard<'_, StopState> {
-        self.state.lock().unwrap_or_else(PoisonError::into_inner)
+    fn stopped(&self) -> bool {
+        self.stopped.load(Ordering::SeqCst)
+    }
+
+    fn current(&self) -> MutexGuard<'_, Option<Arc<DogfoodEventSubscription>>> {
+        self.current.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
     /// A new subscription, or `None` once the seat is stopping. A hub with
     /// no subscriber room is asked again, later each time.
     fn subscribe(&self, hub: &DogfoodEventHub) -> Option<Arc<DogfoodEventSubscription>> {
         let mut wait = FIRST_RESUBSCRIBE;
-        let mut state = self.lock();
-        loop {
-            if state.stopped {
-                return None;
-            }
+        while !self.stopped() {
             match hub.subscribe_host() {
                 Ok(subscription) => {
                     let subscription = Arc::new(subscription);
-                    state.current = Some(Arc::clone(&subscription));
+                    let mut current = self.current();
+                    // Checked under the lock `stop` takes after setting it.
+                    if self.stopped() {
+                        subscription.cancel();
+                        return None;
+                    }
+                    *current = Some(Arc::clone(&subscription));
                     return Some(subscription);
                 }
                 Err(SseError::SubscriberBound) => {
@@ -154,10 +160,7 @@ impl Stop {
                             "the event hub has no subscriber room yet",
                         );
                     }
-                    state = match self.changed.wait_timeout(state, wait) {
-                        Ok((state, _)) => state,
-                        Err(poisoned) => poisoned.into_inner().0,
-                    };
+                    self.pause(wait);
                     wait = (wait * 2).min(LAST_RESUBSCRIBE);
                 }
                 Err(error) => {
@@ -165,6 +168,15 @@ impl Stop {
                     return None;
                 }
             }
+        }
+        None
+    }
+
+    /// Wait up to `wait`, or until the seat stops.
+    fn pause(&self, wait: Duration) {
+        let paused = self.pause.lock().unwrap_or_else(PoisonError::into_inner);
+        if !self.stopped() {
+            let _woken = self.changed.wait_timeout(paused, wait);
         }
     }
 }

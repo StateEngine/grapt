@@ -294,6 +294,46 @@ fn the_observer_restates_before_deciding_waits_for_room_and_stops_idle() -> Test
 }
 
 #[test]
+fn every_busy_session_is_restated_so_the_seat_stays_busy_past_the_idle_cap() -> TestResult {
+    use crate::dogfood::session_status::SessionStatusEmitter;
+    let hub = crate::dogfood::event_hub()?;
+    let ids = Arc::new(grapt_store::OsRandomIds::seed()?);
+    let emitter = Arc::new(SessionStatusEmitter::new(
+        ids,
+        Arc::new(grapt_store::SystemClock),
+        Arc::clone(&hub),
+    ));
+    let sessions = (0..40)
+        .map(|index| format!("ses_busy_{index:02}").parse())
+        .collect::<Result<Vec<grapt_types::SessionId>, _>>()?;
+    let (hydrating, listed) = (Arc::clone(&emitter), sessions.clone());
+    hub.install_status_hydrator(Box::new(move || hydrating.hydrate(&listed)));
+    let subscription = hub.subscribe_host()?;
+    assert_eq!(subscription.hydration_frames(), 40);
+    let mut tracker = Tracker::default();
+    let read = |tracker: &mut Tracker, count: usize| -> Result<(), Box<dyn std::error::Error>> {
+        for _ in 0..count {
+            let frame = subscription.next_frame()?.ok_or("the feed ended")?;
+            tracker.observe(&frame);
+        }
+        Ok(())
+    };
+    read(&mut tracker, 41)?;
+    // The first 32 finish while eight are still running.
+    for session in &sessions[..32] {
+        emitter.publish_idle(session);
+    }
+    read(&mut tracker, 32)?;
+    assert_eq!(tracker.activity(), Activity::Busy);
+    for session in &sessions[32..] {
+        emitter.publish_idle(session);
+    }
+    read(&mut tracker, 8)?;
+    assert_eq!(tracker.activity(), Activity::Idle);
+    Ok(())
+}
+
+#[test]
 fn a_seat_whose_thread_will_not_end_stops_within_its_bound() -> TestResult {
     let (ending, ended) = std::sync::mpsc::channel::<()>();
     let (release, stuck) = std::sync::mpsc::channel::<()>();
@@ -332,8 +372,8 @@ fn subscribed(
     after: Option<&Arc<DogfoodEventSubscription>>,
 ) -> Result<Arc<DogfoodEventSubscription>, String> {
     for _ in 0..10_000_000 {
-        let state = stop.lock();
-        if let Some(current) = &state.current {
+        let state = stop.current();
+        if let Some(current) = &*state {
             if after.is_none_or(|old| !Arc::ptr_eq(old, current)) {
                 return Ok(Arc::clone(current));
             }

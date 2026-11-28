@@ -14,7 +14,7 @@ impl LiveActiveExecutions {
             let phase = entry
                 .filter(|entry| entry.compacting)
                 .map(|_| grapt_api::u3a::SessionStatusPhase::Compacting);
-            let offered = match entry.and_then(|entry| entry.retry.as_ref()) {
+            match entry.and_then(|entry| entry.retry.as_ref()) {
                 Some(status) => emitter.offer_active_phase(session, status.clone(), phase, frames),
                 None if phase.is_some() => emitter.offer_active_phase(
                     session,
@@ -23,9 +23,6 @@ impl LiveActiveExecutions {
                     frames,
                 ),
                 None => emitter.offer_active(session, frames),
-            };
-            if !offered {
-                break;
             }
         }
         sessions

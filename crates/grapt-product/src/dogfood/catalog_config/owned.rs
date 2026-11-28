@@ -46,19 +46,27 @@ fn read_bound(
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
         Err(error) => return Err(kind(error)),
     };
-    let path = directory.join(name);
-    let Some(file) = open_entry(&path).map_err(|error| error.to_string())? else {
+    let resolved = directory.join(name);
+    let Some(file) = open_entry(&directory, name).map_err(|error| error.to_string())? else {
         return Ok(None);
     };
     let opened = same_file::Handle::from_file(file.try_clone().map_err(kind)?).map_err(kind)?;
-    let origin = crate::dogfood::catalog_origin::source_origin_below(
-        &path,
-        PluginOrigin::UserGlobal,
-        &environment.service_root,
-        &environment.service_root,
-        environment.fixture_root(),
-    )?;
-    if same_file::Handle::from_path(&path).map_err(kind)? != opened {
+    // Both the spelling the user wrote and the resolved entry must be theirs:
+    // either one inside a repository makes the document the repository's.
+    let mut origin = PluginOrigin::UserGlobal;
+    for spelling in [path, resolved.as_path()] {
+        let found = crate::dogfood::catalog_origin::source_origin_below(
+            spelling,
+            PluginOrigin::UserGlobal,
+            &environment.service_root,
+            &environment.service_root,
+            environment.fixture_root(),
+        )?;
+        if !super::user_owned(found) {
+            origin = found;
+        }
+    }
+    if same_file::Handle::from_path(&resolved).map_err(kind)? != opened {
         return Err("configuration was replaced while it was read".to_owned());
     }
     let mut bytes = Vec::new();
@@ -70,34 +78,36 @@ fn read_bound(
     }
     Ok(Some(CatalogDocument {
         directory,
-        source: path.to_string_lossy().into_owned(),
+        source: resolved.to_string_lossy().into_owned(),
         origin,
         value: decode(&bytes, super::bounds()?)?,
     }))
 }
 
-/// The directory entry at `path` itself, refusing a link to anywhere else.
+/// The entry `name` of the opened `directory` itself, never through a link,
+/// and without waiting on a pipe or device before it is refused.
 #[cfg(unix)]
-fn open_entry(path: &Path) -> std::io::Result<Option<std::fs::File>> {
-    use std::os::unix::fs::MetadataExt;
-    let entry = match std::fs::symlink_metadata(path) {
-        Ok(entry) => entry,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-        Err(error) => return Err(error),
+fn open_entry(directory: &Path, name: &std::ffi::OsStr) -> std::io::Result<Option<std::fs::File>> {
+    use nix::errno::Errno;
+    use nix::fcntl::{open, openat, OFlag};
+    use nix::sys::stat::Mode;
+    let flags = OFlag::O_RDONLY | OFlag::O_CLOEXEC;
+    let parent = open(directory, flags | OFlag::O_DIRECTORY, Mode::empty())?;
+    let entry = OFlag::O_NOFOLLOW | OFlag::O_NONBLOCK;
+    let file = match openat(&parent, name, flags | entry, Mode::empty()) {
+        Ok(file) => std::fs::File::from(file),
+        Err(Errno::ENOENT) => return Ok(None),
+        Err(Errno::ELOOP) => return Err(linked()),
+        Err(error) => return Err(error.into()),
     };
-    let file = std::fs::File::open(path)?;
     let opened = file.metadata()?;
-    // Same device and inode: the open did not pass through a link.
-    if entry.file_type().is_symlink() || (opened.dev(), opened.ino()) != (entry.dev(), entry.ino())
-    {
-        return Err(linked());
-    }
     regular(file, &opened)
 }
 
-/// The directory entry at `path` itself, refusing a link to anywhere else.
+/// The entry `name` of `directory` itself, refusing a link to anywhere else.
 #[cfg(windows)]
-fn open_entry(path: &Path) -> std::io::Result<Option<std::fs::File>> {
+fn open_entry(directory: &Path, name: &std::ffi::OsStr) -> std::io::Result<Option<std::fs::File>> {
+    let path = directory.join(name);
     use std::os::windows::fs::{MetadataExt, OpenOptionsExt};
     const FILE_FLAG_OPEN_REPARSE_POINT: u32 = 0x0020_0000;
     const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x400;
@@ -105,7 +115,7 @@ fn open_entry(path: &Path) -> std::io::Result<Option<std::fs::File>> {
     let file = match std::fs::OpenOptions::new()
         .read(true)
         .custom_flags(FILE_FLAG_OPEN_REPARSE_POINT)
-        .open(path)
+        .open(&path)
     {
         Ok(file) => file,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
