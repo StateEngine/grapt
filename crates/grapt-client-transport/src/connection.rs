@@ -56,6 +56,12 @@ pub trait Connection: Transport {
     /// subscription. Every shipped connection implements it; the default
     /// serves test peers that own no stream.
     fn retire_stream(&mut self) {}
+    /// End the current stream because its service is too old for this
+    /// client. Unlike a retirement, nothing reconnects: every later subscribe
+    /// would be refused the same way. The default retires the stream.
+    fn refuse_stream(&mut self, _missing: &'static str) {
+        self.retire_stream();
+    }
     /// Name the Session this window is watching, so the service can tell when
     /// its last window is gone. A transport with no live attachment ignores
     /// this, and a later `resubscribe` re-sends the current name.

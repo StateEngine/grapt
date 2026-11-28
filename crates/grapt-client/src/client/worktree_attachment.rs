@@ -62,6 +62,9 @@ pub(super) struct Attachment {
     permissions: Vec<u8>,
     permission_revision: Option<u64>,
     history: Vec<u8>,
+    /// The permission revision when the snapshot was read: a later accepted
+    /// refresh is newer than the snapshot's asks.
+    history_revision: Option<u64>,
     subagents: Option<ModelRow>,
     forms: Vec<crate::wire::FormRow>,
     preset: Option<crate::wire::PresetSnapshot>,
@@ -90,6 +93,7 @@ impl Attachment {
             permissions: Vec::new(),
             permission_revision: None,
             history: Vec::new(),
+            history_revision: None,
             subagents: None,
             forms: Vec::new(),
             preset: None,
@@ -261,8 +265,14 @@ impl<C: Connection> Client<C> {
             .take()
             .ok_or(ClientError::NoSelection)?;
         let operation = attachment.phase.operation();
-        if matches!(attachment.phase, Phase::Permissions) && !attachment.waiting {
-            attachment.permission_revision = Some(self.permission_revision);
+        if !attachment.waiting {
+            match attachment.phase {
+                Phase::Permissions => {
+                    attachment.permission_revision = Some(self.permission_revision)
+                }
+                Phase::History => attachment.history_revision = Some(self.permission_revision),
+                _ => {}
+            }
         }
         let response = if attachment.waiting {
             self.connection.poll_operator()?
@@ -304,7 +314,9 @@ impl<C: Connection> Client<C> {
             "Attachment preset was not acquired.",
         ))?;
         // Global asks remain interactive while later attachment reads wait.
-        // A newer accepted refresh wins over this earlier staged snapshot.
+        // A newer accepted refresh wins over this earlier staged list, and over
+        // the snapshot's asks when it was accepted after the snapshot's read.
+        let snapshot_permissions = attachment.history_revision == Some(self.permission_revision);
         if attachment.permission_revision == Some(self.permission_revision) {
             self.accept_permissions(attachment.permissions)?;
         }
@@ -335,6 +347,17 @@ impl<C: Connection> Client<C> {
                 .cloned()
         });
         self.subagent_model = Some(attachment.subagents);
+        // Installed at the snapshot's committed position, never at zero. Its
+        // forms are older than the form list read after it, which installs
+        // next, and its asks only count when no refresh came after it.
+        self.install_snapshot_sections(
+            &id,
+            &attachment.history,
+            super::snapshot::Sections {
+                permissions: snapshot_permissions,
+                forms: false,
+            },
+        )?;
         self.forms = attachment
             .forms
             .into_iter()
@@ -355,8 +378,6 @@ impl<C: Connection> Client<C> {
         if self.preset.launch.is_none() {
             self.preset.job = None;
         }
-        // Installed at the snapshot's committed position, never at zero.
-        self.install_snapshot(&id, &attachment.history)?;
         self.request_queued_inputs(&id);
         self.draft_creation = creation::Draft::Inactive;
         self.sessions.retain(|row| row.id != id);

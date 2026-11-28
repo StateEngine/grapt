@@ -13,6 +13,11 @@ struct WorktreePeer {
     release_create: bool,
     /// The status and body the attachment's snapshot read is refused with.
     history_refusal: Option<(u16, &'static [u8])>,
+    /// Raise a form and an ask on the target Session right after its snapshot
+    /// is served, so both are newer than the snapshot.
+    raise_after_snapshot: bool,
+    /// The target Session, once its snapshot was served.
+    snapshot_served: Option<grapt_client::wire::SessionWireId>,
     held: Option<WireRequest>,
     release_reads: bool,
     nonblocking_only: bool,
@@ -119,7 +124,22 @@ impl Connection for WorktreePeer {
                 body: body.to_vec(),
             }));
         }
-        self.inner.call(&request).map(Some)
+        let response = self.inner.call(&request)?;
+        if operation == Operation::SessionSnapshot {
+            let session = request
+                .path()
+                .split('/')
+                .find(|segment| segment.starts_with("ses_"))
+                .and_then(|segment| grapt_client::wire::session_id(segment).ok())
+                .ok_or(TransportError::NotConnected)?;
+            if self.raise_after_snapshot {
+                self.inner.raise_form(&session, "raised after the snapshot");
+                self.inner
+                    .ask_permission(&session, "asked after the snapshot");
+            }
+            self.snapshot_served = Some(session);
+        }
+        Ok(Some(response))
     }
     fn cancel_operator(&mut self) {
         self.reply = None;
@@ -160,6 +180,8 @@ fn prepared() -> TestResult<Client<WorktreePeer>> {
             lost: false,
             release_create: false,
             history_refusal: None,
+            raise_after_snapshot: false,
+            snapshot_served: None,
             held: None,
             release_reads: false,
             nonblocking_only: false,
@@ -905,5 +927,59 @@ fn worktree_open_creates_a_new_session_and_keeps_its_completion() -> TestResult 
             .consume
     );
     assert_eq!(client.peer_mut().mutations(), 1);
+    Ok(())
+}
+
+#[test]
+fn a_staged_snapshot_never_overwrites_newer_forms_or_target_asks() -> TestResult {
+    let mut client = prepared()?;
+    let source_directory = client.project().ok_or("project")?.worktree.clone();
+    client.offer_directory(&source_directory)?;
+    let directory = client
+        .projects()
+        .iter()
+        .find(|project| project.worktree != source_directory)
+        .ok_or("other offered directory")?
+        .worktree
+        .clone();
+    let mut submissions = Submissions::default();
+    let text = format!("/worktree open {}", serde_json::to_string(&directory)?);
+    submissions.submit(&mut client, text, false, CommandId::TEST);
+    client.peer_mut().raise_after_snapshot = true;
+    client.peer_mut().nonblocking_only = true;
+    client.peer_mut().release_create = true;
+    client.peer_mut().release_reads = true;
+    for _ in 0..32 {
+        if client.peer_mut().snapshot_served.is_some() {
+            break;
+        }
+        client.pump()?;
+        assert!(submissions.advance(&mut client).is_none());
+    }
+    let target = client
+        .peer_mut()
+        .snapshot_served
+        .clone()
+        .ok_or("snapshot never served")?;
+    // A refresh accepted after the snapshot's read holds the newer ask.
+    client.peer_mut().nonblocking_only = false;
+    client.refresh_permissions()?;
+    client.peer_mut().nonblocking_only = true;
+    finish_attachment(&mut submissions, &mut client)?;
+    assert_eq!(client.selected(), Some(&target));
+    assert!(
+        client
+            .forms()
+            .iter()
+            .any(|form| form.title == "raised after the snapshot"),
+        "the earlier snapshot overwrote the newer form list"
+    );
+    assert!(
+        client
+            .permissions()
+            .iter()
+            .any(|ask| ask.session_id == target),
+        "the earlier snapshot overwrote a newer permission refresh"
+    );
     Ok(())
 }

@@ -20,17 +20,40 @@ pub(crate) struct Positions {
     /// across stream ends and selection changes.
     pub(super) handshake_since: Option<std::time::Duration>,
     /// The session whose snapshot installed last. It outlives the stream:
-    /// what the snapshot told about that session stays known.
+    /// what the snapshot told about that session stays known until a
+    /// selection clears what it installed.
     installed: Option<SessionWireId>,
 }
 
 impl Positions {
+    /// A selection cleared the session-scoped state a snapshot installed, so
+    /// no session is ready until its own snapshot installs again.
+    pub(super) fn forget_installed(&mut self) {
+        self.installed = None;
+    }
+
     /// A stream ended: its proof and baseline go. The handshake deadline
     /// survives until the next stream's first frame.
     pub(super) fn reset(&mut self) {
         self.proven = false;
         self.baseline = None;
     }
+}
+
+/// Which of a snapshot's open-state sections an install takes. A staged
+/// attachment reads its forms after its snapshot, and may accept a newer
+/// permission refresh meanwhile; it leaves those sections to the newer reads.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) struct Sections {
+    pub(super) permissions: bool,
+    pub(super) forms: bool,
+}
+
+impl Sections {
+    pub(super) const ALL: Self = Self {
+        permissions: true,
+        forms: true,
+    };
 }
 
 /// A decoded snapshot: the page the tail path installs, its position, and
@@ -120,7 +143,10 @@ impl<C: Connection> Client<C> {
         if !positioned {
             // Retired before the refusal, so nothing this stream sends later
             // can prove it.
-            self.connection.retire_stream();
+            // Refused terminally: no later stream from this service can prove
+            // positions, so recovery never opens one.
+            self.connection.refuse_stream("stream positions");
+            self.recovery.too_old = Some("stream positions");
             self.positions.reset();
             self.cursor.stream_closed();
             return Err(too_old("stream positions"));
@@ -161,6 +187,17 @@ impl<C: Connection> Client<C> {
         session: &SessionWireId,
         bytes: &[u8],
     ) -> Result<(), ClientError> {
+        self.install_snapshot_sections(session, bytes, Sections::ALL)
+    }
+
+    /// Install a snapshot, leaving out the sections the caller already holds
+    /// newer than it.
+    pub(super) fn install_snapshot_sections(
+        &mut self,
+        session: &SessionWireId,
+        bytes: &[u8],
+        sections: Sections,
+    ) -> Result<(), ClientError> {
         let snapshot = decode(bytes)?;
         // The durable tail, and the live blocks opened on it; durable truth wins.
         let mut tail = self.prepare_tail(session, &snapshot.page, snapshot.page_bytes)?;
@@ -176,7 +213,11 @@ impl<C: Connection> Client<C> {
             .filter(|ask| &ask.session_id != session)
             .cloned()
             .collect();
-        let permissions = self.permission_candidate(snapshot.permissions, kept)?;
+        let permissions = if sections.permissions {
+            Some(self.permission_candidate(snapshot.permissions, kept)?)
+        } else {
+            None
+        };
         // The execution state at P, unless this client already holds a newer
         // presentation fact; what the install shows is derived from it alone.
         let presented = self.observed_at(session, snapshot.seq, snapshot.execution);
@@ -197,8 +238,10 @@ impl<C: Connection> Client<C> {
         self.positions.baseline = None;
         self.positions.installed = Some(session.clone());
         self.commit_presented(session, presented);
-        self.commit_permissions(permissions);
-        if self.selected.as_ref() == Some(session) {
+        if let Some(permissions) = permissions {
+            self.commit_permissions(permissions);
+        }
+        if sections.forms && self.selected.as_ref() == Some(session) {
             self.forms = snapshot
                 .forms
                 .into_iter()
@@ -321,10 +364,10 @@ pub(super) fn is_stream_resync(payload: &str) -> bool {
 }
 
 /// What a snapshot 404 says, read within `bound`. An unregistered route
-/// answers without a typed body: a service too old for snapshots. A missing
-/// session answers its typed not-found, which stays a plain 404 (`None`). Any
-/// other typed refusal keeps its own message rather than collapsing to a
-/// status. A body past the bound is not read and keeps the plain status.
+/// answers without a typed body: a service too old for snapshots. A typed
+/// refusal, a missing session's `SessionNotFoundError` included, keeps its
+/// own message rather than collapsing to a status. A body past the bound is
+/// not read and keeps the plain status.
 pub(super) fn missing(body: &[u8], bound: usize) -> Option<ClientError> {
     if body.len() > bound {
         return None;
@@ -338,7 +381,6 @@ pub(super) fn missing(body: &[u8], bound: usize) -> Option<ClientError> {
     };
     match field("_tag") {
         None => Some(too_old("session snapshots")),
-        Some("SessionNotFoundError") => None,
         Some(tag) => Some(ClientError::Refused {
             operation: Operation::SessionSnapshot.operation_id(),
             status: 404,

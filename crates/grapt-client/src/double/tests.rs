@@ -413,10 +413,12 @@ fn each_session_and_kind_places_its_own_blocks_from_zero() {
 }
 
 #[test]
-fn a_page_keeps_every_row_the_product_byte_bound_keeps() -> Result<(), crate::wire::WireError> {
-    // Rows sized so a page of `count` fills the bound but for about a
-    // kilobyte, counted exactly: a flat framing reserve would push the last
-    // row to the next page, where the product keeps it.
+fn a_page_is_cut_exactly_where_the_products_two_anchor_page_bytes_cut_it(
+) -> Result<(), crate::wire::WireError> {
+    // The product frames the page it measures with both cursor anchors, each
+    // the unpadded URL-safe base64 of {"id","order","direction"} on the first
+    // and last kept rows. Rows here fill the bound exactly under that framing,
+    // so one byte more must move the last row to the next page.
     let bound = grapt_api::u3a::U3A_PRODUCTION_LIMITS.page_bytes;
     let limits = crate::wire::limits()?;
     let row = |index: usize, len: usize| {
@@ -428,17 +430,38 @@ fn a_page_keeps_every_row_the_product_byte_bound_keeps() -> Result<(), crate::wi
             None,
         )
     };
+    let base64 = |bytes: usize| (bytes * 4).div_ceil(3);
+    let previous = r#"{"id":"msg_000000000000","order":"desc","direction":"previous"}"#.len();
+    let next = r#"{"id":"msg_000000000000","order":"desc","direction":"next"}"#.len();
+    let framing =
+        r#"{"data":[],"cursor":{"previous":"","next":""}}"#.len() + base64(previous) + base64(next);
     let overhead = grapt_api::u3a::encode_page(&row(0, 0)?, limits)?.len();
     let count = 100usize;
-    let framing = crate::wire::encode_messages(Vec::new(), Some("h-desc-0"))?.len() + 8;
-    let len = (bound - framing - count - 1_000) / count - overhead;
-    let rows = (0..=count)
-        .map(|index| row(index, len))
-        .collect::<Result<Vec<_>, _>>()?;
-    let indices: Vec<usize> = (0..=count).rev().collect();
-    let kept = history_pages::rows_within_page_bytes(&rows, &indices, false)?;
-    assert_eq!(kept, count, "every row that fits stays on the page");
-    let page = crate::wire::encode_messages(rows[..kept].to_vec(), Some("h-desc-1"))?;
-    assert!(page.len() <= bound, "and the page is within the bound");
+    // count rows and their count - 1 commas fill exactly bound - framing.
+    let rows_total = bound - framing - (count - 1);
+    let (each, extra) = (rows_total / count - overhead, rows_total % count);
+    let sized = |grow_last: usize| {
+        (0..count)
+            .map(|index| {
+                row(
+                    index,
+                    each + usize::from(index < extra)
+                        + if index == count - 1 { grow_last } else { 0 },
+                )
+            })
+            .collect::<Result<Vec<_>, _>>()
+    };
+    let rows = sized(0)?;
+    assert_eq!(
+        history_pages::rows_within_page_bytes(&rows, false)?,
+        count,
+        "every row that fits exactly stays on the page"
+    );
+    let rows = sized(1)?;
+    assert_eq!(
+        history_pages::rows_within_page_bytes(&rows, false)?,
+        count - 1,
+        "one byte over the two-anchor bound moves the last row on"
+    );
     Ok(())
 }

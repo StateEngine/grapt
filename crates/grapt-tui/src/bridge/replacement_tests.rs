@@ -257,7 +257,7 @@ fn a_pending_reconnect_holds_multi_step_work_but_not_one_shot_calls() -> Result 
 
 #[test]
 fn a_service_too_old_keeps_its_typed_refusal_and_is_not_retried_as_an_outage() -> Result {
-    let (events, _retry, mut bridge) = live()?;
+    let (events, retry, mut bridge) = live()?;
     events.send(Delivery::Replacement(
         Err(TransportError::ServerTooOld {
             missing: "stream positions",
@@ -269,6 +269,44 @@ fn a_service_too_old_keeps_its_typed_refusal_and_is_not_retried_as_an_outage() -
         Err(TransportError::ServerTooOld { .. })
     ));
     assert!(matches!(bridge.connection().state, State::Refused { .. }));
+    // The one replacement that found the service too old was requested;
+    // every later pump keeps the refusal and asks for no other.
+    retry.try_recv()?;
+    for _ in 0..3 {
+        assert!(matches!(
+            bridge.begin_reconnect(),
+            Err(TransportError::ServerTooOld { .. })
+        ));
+        assert!(matches!(
+            bridge.poll_reconnect(),
+            Err(TransportError::ServerTooOld { .. })
+        ));
+        bridge.resubscribe();
+    }
+    assert!(
+        retry.try_recv().is_err(),
+        "a too-old service was asked again"
+    );
+    Ok(())
+}
+
+#[test]
+fn an_unpositioned_first_frame_refuses_the_service_without_a_replacement() -> Result {
+    let (events, retry, mut bridge) = live()?;
+    events.send(Delivery::Frame(FramePoll::Frame("unpositioned".into())))?;
+    bridge.refuse_stream("stream positions");
+    assert!(!bridge.subscribed());
+    for _ in 0..3 {
+        assert!(matches!(
+            bridge.begin_reconnect(),
+            Err(TransportError::ServerTooOld { .. })
+        ));
+        bridge.resubscribe();
+    }
+    assert!(
+        retry.try_recv().is_err(),
+        "refusing a too-old stream started a replacement"
+    );
     Ok(())
 }
 

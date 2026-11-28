@@ -285,6 +285,13 @@ fn readiness_waits_for_the_selected_sessions_own_snapshot() -> Result {
         client.pump()?;
     }
     assert_eq!(readiness(&client), Readiness::Ready);
+    // Reselecting the first Session clears what its old snapshot installed,
+    // so it waits for a fresh one even though it was installed before.
+    client.select(&session)?;
+    client.peer_mut().defer_snapshot = true;
+    client.select(&other)?;
+    client.select(&session)?;
+    assert_eq!(readiness(&client), Readiness::Loading);
     Ok(())
 }
 

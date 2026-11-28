@@ -969,7 +969,7 @@ impl ContractDouble {
                         body: serde_json::json!({
                             "_tag": "SessionNotFoundError",
                             "sessionID": session.as_ref().map(|session| session.spelled()),
-                            "message": "session not found",
+                            "message": "Session was not found",
                         })
                         .to_string()
                         .into_bytes(),

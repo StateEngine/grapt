@@ -9,7 +9,7 @@ impl<C: Connection> Client<C> {
     ) -> Result<Vec<u8>, ClientError> {
         if !response.is_success() {
             // A snapshot route the service never registered answers a bare
-            // 404; a session it cannot find answers a typed one.
+            // 404; a session it cannot find answers a typed one, kept as is.
             if operation == Operation::SessionSnapshot && response.status == 404 {
                 if let Some(refusal) =
                     super::snapshot::missing(&response.body, self.bounds.max_response_bytes)

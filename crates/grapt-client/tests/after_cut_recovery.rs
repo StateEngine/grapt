@@ -360,7 +360,11 @@ fn an_unpositioned_first_frame_after_a_cut_refuses_the_server_as_too_old() -> Te
         retired + 1,
         "the stream is retired"
     );
-    client.pump_at(at(1_600))?;
+    // The refusal is terminal: later pumps keep it and open nothing.
+    for later in [1_600, 1_700, 60_000] {
+        assert!(too_old(client.pump_at(at(later))));
+    }
+    assert_eq!(client.peer_mut().retired, retired + 1, "retired once");
     assert_eq!(client.peer_mut().page_reads, 0);
     assert_eq!(client.peer_mut().snapshots, 1, "no snapshot on its word");
     Ok(())
@@ -405,14 +409,16 @@ fn a_session_the_service_cannot_find_is_not_a_server_too_old() -> TestResult {
     let (mut client, session) = streaming()?;
     client.peer_mut().snapshot = WireResponse {
         status: 404,
+        // The product's own not-found body, byte for byte in shape.
         body: serde_json::to_vec(&json!({"_tag":"SessionNotFoundError",
-            "sessionID":session.spelled(),"message":"missing"}))?,
+            "sessionID":session.spelled(),"message":"Session was not found"}))?,
     };
     let refusal = client.reconcile(&session);
     assert!(
         matches!(
-            refusal,
-            Err(grapt_client::ClientError::Status { status: 404, .. })
+            &refusal,
+            Err(grapt_client::ClientError::Refused { status: 404, message, .. })
+                if message == "Session was not found"
         ),
         "{refusal:?}"
     );

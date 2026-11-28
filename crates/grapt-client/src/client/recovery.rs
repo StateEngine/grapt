@@ -33,6 +33,9 @@ pub(super) struct Recovery {
     /// Counts tail reads. A backfill reply carries the generation it was
     /// started under, so a restarted read of the same session fences it out.
     pub(super) generation: u64,
+    /// The service is too old for this client: what it lacks. Terminal, so
+    /// recovery never opens another stream against it.
+    pub(super) too_old: Option<&'static str>,
 }
 
 impl Default for Recovery {
@@ -48,6 +51,7 @@ impl Default for Recovery {
             backfill: None,
             older: super::history::OlderHistory::default(),
             generation: 0,
+            too_old: None,
         }
     }
 }
@@ -145,6 +149,9 @@ impl<C: Connection> Client<C> {
     }
 
     pub(super) fn recover(&mut self, now: Duration) -> Result<bool, ClientError> {
+        if let Some(missing) = self.recovery.too_old {
+            return Err(super::snapshot::too_old(missing));
+        }
         let mut changed = false;
         if !self.connection.subscribed() {
             let result = if self.recovery.subscription_pending {
@@ -166,6 +173,10 @@ impl<C: Connection> Client<C> {
                     }
                     Ok(Some(false)) => self.defer_subscription(now),
                     Err(error) if error.is_transient() => self.defer_subscription(now),
+                    Err(TransportError::ServerTooOld { missing }) => {
+                        self.recovery.too_old = Some(missing);
+                        return Err(super::snapshot::too_old(missing));
+                    }
                     Err(error) => return Err(error.into()),
                 }
             }

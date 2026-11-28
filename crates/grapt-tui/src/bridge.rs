@@ -56,6 +56,9 @@ pub struct Bridge {
     /// replacement of the current generation installs, `poll_frame` delivers
     /// nothing and `poll_reconnect` alone drains the retired stream's frames.
     retired: bool,
+    /// The service is too old for this client. Terminal: no replacement is
+    /// ever requested again, and every reconnect returns this refusal.
+    too_old: Option<&'static str>,
     /// The Session this window watches, shared with the reader thread so every
     /// (re)subscription it opens names the same Session. `None` until a Session
     /// is selected: an unnamed subscription is not a window on anything.
@@ -262,6 +265,7 @@ impl Bridge {
             reconnect,
             replacement_requested: false,
             retired: false,
+            too_old: None,
             session: Arc::new(std::sync::Mutex::new(WatchedSessions::default())),
             generation: Arc::new(AtomicU64::new(0)),
             stream_cancel: None,
@@ -412,6 +416,9 @@ impl Connection for Bridge {
     }
 
     fn begin_reconnect(&mut self) -> Result<Option<bool>, TransportError> {
+        if let Some(missing) = self.too_old {
+            return Err(TransportError::ServerTooOld { missing });
+        }
         self.observe_fence();
         if !self.replacement_requested {
             // The current attachment keeps serving commands until a verified
@@ -429,6 +436,9 @@ impl Connection for Bridge {
         self.poll_reconnect()
     }
     fn poll_reconnect(&mut self) -> Result<Option<bool>, TransportError> {
+        if let Some(missing) = self.too_old {
+            return Err(TransportError::ServerTooOld { missing });
+        }
         if !self.replacement_requested {
             return Ok(Some(self.subscribed()));
         }
@@ -482,6 +492,9 @@ impl Connection for Bridge {
                 // same way, so it is refused like another product, never
                 // retried as an outage, and keeps its typed refusal.
                 let too_old = matches!(refusal, TransportError::ServerTooOld { .. });
+                if let TransportError::ServerTooOld { missing } = refusal {
+                    self.too_old = Some(missing);
+                }
                 self.observe(if too_old || unverified(&reason) {
                     Event::Unverified {
                         reason: reason.clone(),
@@ -674,6 +687,18 @@ impl Connection for Bridge {
             self.fence.store(false, Ordering::Release);
             self.observe_fence();
         }
+    }
+    fn refuse_stream(&mut self, missing: &'static str) {
+        // Retired like a contract break, but terminally: no replacement is
+        // requested now or later, because the same service refuses each one.
+        self.too_old = Some(missing);
+        self.retired = true;
+        self.generation.fetch_add(1, Ordering::AcqRel);
+        self.stream_cancel = None;
+        self.fence.store(false, Ordering::Release);
+        self.observe_fence();
+        let reason = TransportError::ServerTooOld { missing }.to_string();
+        self.observe(Event::Unverified { reason });
     }
     fn subscribed(&self) -> bool {
         // A replacement counts only once poll_reconnect installs it, and a
