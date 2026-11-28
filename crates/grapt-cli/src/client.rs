@@ -106,6 +106,8 @@ pub struct ApiClient {
 
 struct EmbeddedChild {
     child: tokio::sync::Mutex<Option<tokio::process::Child>>,
+    /// The child's stderr on its way to a log this command forwards.
+    stderr: std::sync::Mutex<Option<crate::startup_stderr::Forward>>,
 }
 
 impl core::fmt::Debug for ApiClient {
@@ -267,6 +269,7 @@ impl ApiClient {
         client.endpoint.mode = ClientMode::Embedded;
         client.embedded = Some(Arc::new(EmbeddedChild {
             child: tokio::sync::Mutex::new(Some(child)),
+            stderr: std::sync::Mutex::new(None),
         }));
         Ok(client)
     }
@@ -282,6 +285,28 @@ impl ApiClient {
     pub(crate) async fn take_embedded_child(&self) -> Option<tokio::process::Child> {
         let embedded = self.embedded.as_ref()?;
         embedded.child.lock().await.take()
+    }
+
+    /// Keep the owned child's stderr forwarding until shutdown finishes it.
+    pub(crate) fn keep_stderr(&self, forward: crate::startup_stderr::Forward) {
+        if let Some(embedded) = &self.embedded {
+            *embedded
+                .stderr
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(forward);
+        }
+    }
+
+    /// The owned child's stderr forwarding, for shutdown to finish once the
+    /// child has exited.
+    pub(crate) fn take_stderr(&self) -> Option<crate::startup_stderr::Forward> {
+        self.embedded.as_ref().and_then(|embedded| {
+            embedded
+                .stderr
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .take()
+        })
     }
 
     #[cfg(feature = "loopback-testkit")]

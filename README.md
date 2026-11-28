@@ -56,9 +56,11 @@ return text:
 
 Use `--base-url` for another address, and `--model <id>` to connect one model by
 name. A local server needs no API key. Grapt reads each model's context window
-from the server. Serve the model with a window of at least 64K tokens, because a
-smaller window cannot hold Grapt's first request. For Ollama, start the server
-with `OLLAMA_CONTEXT_LENGTH=65536 ollama serve`.
+from the server. A window of 32K tokens can hold a typical first request, though
+large project instructions or a long prompt may not fit, and each request also
+reserves 16K tokens for the reply, so a small window compacts the conversation
+often. Serve the model with 64K tokens or more for longer sessions.
+For Ollama, start the server with `OLLAMA_CONTEXT_LENGTH=65536 ollama serve`.
 
 ## Run a task
 

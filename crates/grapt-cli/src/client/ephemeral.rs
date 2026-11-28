@@ -55,6 +55,7 @@ impl ApiClient {
             Ok(mut client) => {
                 client.embedded = Some(Arc::new(EmbeddedChild {
                     child: tokio::sync::Mutex::new(Some(child)),
+                    stderr: std::sync::Mutex::new(None),
                 }));
                 Ok(client)
             }
