@@ -9,10 +9,10 @@ description = "The Session's durable history read model: a pure deterministic fo
 grapt-types = { path = "../grapt-types" }
 grapt-event = { path = "../grapt-event" }
 grapt-store = { path = "../grapt-store" }
-rusqlite = { version = "0.41", features = ["bundled", "functions"] }
-serde_json = "1"
-serde = { version = "1", features = ["derive"] }
-thiserror = "2"
+rusqlite = { workspace = true, features = ["bundled", "functions"] }
+serde_json = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+thiserror = { workspace = true }
 
 [lints]
 workspace = true

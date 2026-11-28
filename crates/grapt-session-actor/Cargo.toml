@@ -8,14 +8,14 @@ description = "Per-session runtime state actor persisted in a Grapt run store"
 [dependencies]
 grapt-run-store = { path = "../grapt-run-store" }
 grapt-types = { path = "../grapt-types" }
-sha2 = "0.10"
-thiserror = "2"
-tokio = { version = "1", features = ["rt", "sync", "time"] }
+sha2 = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true, default-features = true, features = ["rt", "sync", "time"] }
 
 [dev-dependencies]
-rusqlite = "=0.41.1"
-tempfile = "3.27.0"
-tokio = { version = "1", features = ["macros", "rt", "test-util"] }
+rusqlite = { workspace = true }
+tempfile = { workspace = true }
+tokio = { workspace = true, default-features = true, features = ["macros", "rt", "test-util"] }
 
 [lints]
 workspace = true

@@ -6,8 +6,8 @@ license.workspace = true
 description = "Console ownership for the native terminal interface: control events, signal state and close hygiene."
 
 [dependencies]
-crossterm = { version = "=0.29.0", default-features = false, features = ["events", "bracketed-paste", "windows"] }
-tokio = { version = "=1.53.3", default-features = false, features = ["rt", "sync", "signal", "macros", "time"] }
+crossterm = { workspace = true, features = ["events", "bracketed-paste", "windows"] }
+tokio = { workspace = true, features = ["rt", "sync", "signal", "macros", "time"] }
 
 [lints]
 workspace = true

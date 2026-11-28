@@ -14,24 +14,24 @@ name = "integration"
 path = "tests/integration/main.rs"
 
 [dependencies]
-base64 = "0.22"
-sha2 = "0.10"
-subtle = "2"
-url = "2"
-serde = { version = "1", features = ["derive"] }
+base64 = { workspace = true }
+sha2 = { workspace = true }
+subtle = { workspace = true }
+url = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
 grapt-types = { path = "../grapt-types" }
-bytes = "1"
-reqwest = { version = "0.13.4", default-features = false, features = ["rustls-no-provider", "http2"] }
-rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
-rustls-platform-verifier = "0.7"
+bytes = { workspace = true }
+reqwest = { workspace = true, features = ["rustls-no-provider", "http2"] }
+rustls = { workspace = true, features = ["ring", "std", "tls12"] }
+rustls-platform-verifier = { workspace = true }
 grapt-mcp = { path = "../grapt-mcp" }
 grapt-web = { path = "../grapt-web" }
-serde_json = "1"
-thiserror = "2"
-tokio = { version = "1", default-features = false, features = ["time", "io-util", "rt", "sync", "macros", "net"] }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true, features = ["time", "io-util", "rt", "sync", "macros", "net"] }
 
 [dev-dependencies]
-tokio = { version = "1", default-features = false, features = ["time", "rt", "macros", "net", "io-util", "process", "test-util"] }
+tokio = { workspace = true, features = ["time", "rt", "macros", "net", "io-util", "process", "test-util"] }
 
 [lints]
 workspace = true

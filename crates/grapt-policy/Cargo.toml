@@ -17,16 +17,16 @@ path = "tests/compile_fail.rs"
 
 [dependencies]
 grapt-types = { path = "../grapt-types" }
-sha2 = "0.10"
-thiserror = "2"
+sha2 = { workspace = true }
+thiserror = { workspace = true }
 
 [dev-dependencies]
 # Used by the secret-material witness, which hashes candidate material to prove
 # no digest of it reaches the receipt or any Debug. The pending-witness
 # integrity gate that this comment used to name was retired with the pending
 # manifest when L2 restored the twelve witnesses through the real path.
-sha2 = "0.10"
-trybuild = "1.0.120"
+sha2 = { workspace = true }
+trybuild = { workspace = true }
 
 [lints]
 workspace = true

@@ -15,4 +15,4 @@ workspace = true
 
 [dev-dependencies]
 # The monotonic scheduling clock the workspace admits; never a durable fact.
-tokio = { version = "1", default-features = false, features = ["time"] }
+tokio = { workspace = true, features = ["time"] }

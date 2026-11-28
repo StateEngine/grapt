@@ -7,8 +7,8 @@ description = "Shell vocabulary the live terminal reports in, plus the shell tab
 
 [dependencies]
 grapt-store = { path = "../grapt-store" }
-rusqlite = { version = "0.41", features = ["bundled"] }
-thiserror = "2"
+rusqlite = { workspace = true, features = ["bundled"] }
+thiserror = { workspace = true }
 
 [lints]
 workspace = true

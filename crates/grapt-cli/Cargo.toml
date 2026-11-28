@@ -14,7 +14,7 @@ default = []
 loopback-testkit = []
 
 [dependencies]
-globset = "=0.4.20"
+globset = { workspace = true }
 grapt-image = { path = "../grapt-image" }
 grapt-connections = { path = "../grapt-connections" }
 grapt-login = { path = "../grapt-login" }
@@ -23,47 +23,43 @@ grapt-api = { path = "../grapt-api" }
 grapt-schema = { path = "../grapt-schema" }
 grapt-service = { path = "../grapt-service" }
 grapt-types = { path = "../grapt-types" }
-reqwest = { version = "0.13.4", default-features = false, features = ["rustls-no-provider"] }
-rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
-rustls-platform-verifier = "0.7"
-sha2 = "0.10"
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
-thiserror = "2"
-toml = "0.8"
-yaml-rust2 = { version = "=0.11.0", default-features = false }
-tokio = { version = "1", default-features = false, features = ["io-std", "io-util", "macros", "process", "rt-multi-thread", "signal", "sync", "time"] }
+reqwest = { workspace = true, features = ["rustls-no-provider"] }
+rustls = { workspace = true, features = ["ring", "std", "tls12"] }
+rustls-platform-verifier = { workspace = true }
+sha2 = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+toml = { workspace = true }
+yaml-rust2 = { workspace = true }
+tokio = { workspace = true, features = ["io-std", "io-util", "macros", "process", "rt-multi-thread", "signal", "sync", "time"] }
 # Raw mode for no-echo API-key entry, confined to client/terminal/secret_input.rs. The
 # same pinned version and features grapt-tui already admits, so the lockfile gains no
 # entry.
-crossterm = { version = "=0.29.0", default-features = false, features = [
-    "bracketed-paste",
-    "events",
-    "windows",
-] }
+crossterm = { workspace = true, features = ["bracketed-paste", "events", "windows"] }
 
 [target.'cfg(unix)'.dependencies]
-rustix = { version = "=1.1.6", features = ["fs"] }
+rustix = { workspace = true, default-features = true, features = ["fs"] }
 # O_NONBLOCK, so refusing a FIFO in place of a sign-in file cannot block.
-libc = "0.2"
+libc = { workspace = true }
 
 # Admitted by CLI-COMPATIBILITY-MATRIX-01 r2: the service owner is spawned with an
 # explicit handle list, so it never holds a pipe its caller reads.
 [target.'cfg(windows)'.dependencies]
-windows-spawn = "=0.1.0"
+windows-spawn = { workspace = true, default-features = true }
 # Retained physical installer identities.
-same-file = "1.0"
+same-file = { workspace = true }
 # Read-only prune identity/link counts.
-winapi-util = "0.1"
+winapi-util = { workspace = true }
 # C10: safe, exact-pinned USER Path access and bounded-child notification.
-winreg = "=0.56.0"
+winreg = { workspace = true }
 windows-env = "=0.3.1"
 
 [dev-dependencies]
 # Tests never touch the production credential keystore entry or pointer.
 grapt-login = { path = "../grapt-login", features = ["loopback-testkit"] }
 # `test-util` lets launch-window tests advance the 30 s bound on a paused clock.
-tokio = { version = "1", default-features = false, features = ["io-std", "io-util", "macros", "net", "process", "rt-multi-thread", "signal", "sync", "test-util", "time"] }
+tokio = { workspace = true, features = ["io-std", "io-util", "macros", "net", "process", "rt-multi-thread", "signal", "sync", "test-util", "time"] }
 
 [lints]
 workspace = true

@@ -33,13 +33,7 @@ grapt-api = { path = "../grapt-api" }
 grapt-location = { path = "../grapt-location" }
 grapt-service = { path = "../grapt-service" }
 grapt-types = { path = "../grapt-types" }
-tokio = { version = "1", default-features = false, features = [
-    "rt-multi-thread",
-    "signal",
-    "macros",
-    "net",
-    "time",
-] }
+tokio = { workspace = true, features = ["rt-multi-thread", "signal", "macros", "net", "time"] }
 
 [dev-dependencies]
 # Integration tests do not inherit normal dependencies, and every E1a witness is
@@ -52,17 +46,12 @@ tokio = { version = "1", default-features = false, features = [
 # validator compares PARSED values rather than text so a reordered key or an
 # insignificant space cannot masquerade as a receipt difference. Sibling corpus
 # owners take the same edge for the same reason.
-serde_json = "1"
+serde_json = { workspace = true }
 grapt-api = { path = "../grapt-api" }
 grapt-location = { path = "../grapt-location" }
 grapt-service = { path = "../grapt-service" }
 grapt-types = { path = "../grapt-types" }
-tokio = { version = "1", default-features = false, features = [
-    "rt-multi-thread",
-    "macros",
-    "net",
-    "time",
-] }
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "net", "time"] }
 
 [lints]
 workspace = true

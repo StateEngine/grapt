@@ -7,12 +7,12 @@ description = "Canonical event encoding and hashing for the Grapt Rust reconstru
 
 [dependencies]
 grapt-types = { path = "../grapt-types" }
-serde_json = "1"
-sha2 = "0.10"
+serde_json = { workspace = true }
+sha2 = { workspace = true }
 
 [dev-dependencies]
-rusqlite = { version = "0.41", features = ["bundled"] }
-trybuild = "1.0.120"
+rusqlite = { workspace = true, features = ["bundled"] }
+trybuild = { workspace = true }
 
 [lints]
 workspace = true

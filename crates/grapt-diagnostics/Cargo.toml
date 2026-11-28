@@ -9,4 +9,4 @@ description = "Bounded best-effort diagnostics that cannot retain service or exe
 workspace = true
 
 [dev-dependencies]
-tokio = { version = "1", default-features = false, features = ["sync", "rt", "macros", "time"] }
+tokio = { workspace = true, features = ["sync", "rt", "macros", "time"] }

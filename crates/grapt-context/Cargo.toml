@@ -10,8 +10,8 @@ grapt-event = { path = "../grapt-event" }
 grapt-provider = { path = "../grapt-provider" }
 grapt-session = { path = "../grapt-session" }
 grapt-types = { path = "../grapt-types" }
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
 
 [lints]
 workspace = true

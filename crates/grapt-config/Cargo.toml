@@ -17,10 +17,10 @@ path = "tests/compile_fail.rs"
 
 [dependencies]
 grapt-policy = { path = "../grapt-policy" }
-thiserror = "2"
+thiserror = { workspace = true }
 
 [dev-dependencies]
-trybuild = "1.0.120"
+trybuild = { workspace = true }
 
 [lints]
 workspace = true

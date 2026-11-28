@@ -8,26 +8,26 @@ description = "The TUI's conversation rendering: transcript rows, markdown, high
 [dependencies]
 grapt-api = { path = "../grapt-api" }
 grapt-client = { path = "../grapt-client" }
-ratatui = { version = "=0.30.2", default-features = false, features = ["crossterm"] }
-crossterm = { version = "=0.29.0", default-features = false, features = ["events", "bracketed-paste", "windows"] }
+ratatui = { workspace = true, features = ["crossterm"] }
+crossterm = { workspace = true, features = ["events", "bracketed-paste", "windows"] }
 pulldown-cmark = { version = "=0.10.3", default-features = false }
-syntect = { version = "=5.3.0", default-features = false, features = ["parsing", "default-themes", "regex-onig"] }
+syntect = { workspace = true, features = ["parsing", "default-themes", "regex-onig"] }
 # The pinned dependencies own the native regex implementation and its FFI.
 onig = { version = "=6.5.3", default-features = false }
 onig_sys = { version = "=69.9.3", default-features = false }
-unicode-segmentation = "=1.13.3"
-unicode-width = "=0.2.1"
-tokio = { version = "=1.53.3", default-features = false, features = ["time"] }
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
+unicode-segmentation = { workspace = true }
+unicode-width = { workspace = true }
+tokio = { workspace = true, features = ["time"] }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
 
 [build-dependencies]
-serde_json = "1"
-syntect = { version = "=5.3.0", default-features = false, features = ["dump-create", "default-themes", "parsing", "regex-onig"] }
-two-face = { version = "=0.5.2", default-features = false, features = ["syntect-onig"] }
+serde_json = { workspace = true }
+syntect = { workspace = true, features = ["dump-create", "default-themes", "parsing", "regex-onig"] }
+two-face = { workspace = true, features = ["syntect-onig"] }
 
 [dev-dependencies]
-two-face = { version = "=0.5.2", default-features = false, features = ["syntect-onig"] }
+two-face = { workspace = true, features = ["syntect-onig"] }
 
 [features]
 # Test-only views (visible rows, painted cells, scroll to top, markdown render)
