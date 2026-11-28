@@ -215,8 +215,6 @@ pub(super) struct EffectiveInstructions {
 
 pub(super) struct PreparedInstructions {
     pub(super) frozen_tools: Option<Vec<grapt_provider::ToolDefinition>>,
-    /// Which built-in tools this Session advertises.
-    pub(super) builtin_epoch: BuiltinEpoch,
     pub(super) current: Vec<CodexInputItem>,
     pub(super) initial: Vec<CodexInputItem>,
     pub(super) updates: Vec<grapt_instruction::InstructionUpdate>,
@@ -245,6 +243,15 @@ impl EffectiveInstructions {
         tools: Option<(&[grapt_provider::ToolDefinition], bool)>,
     ) -> Result<PreparedInstructions, RefreshError> {
         self.refresh_with_catalog(tools, None)
+    }
+
+    /// Which built-in tools this Session advertises.
+    pub(super) fn builtin_epoch(&self) -> Result<BuiltinEpoch, String> {
+        let inbox = self
+            .inbox
+            .lock()
+            .map_err(|_| "instruction owner lock poisoned")?;
+        BuiltinEpoch::of(inbox.store(), &self.session)
     }
 
     #[expect(clippy::too_many_lines, reason = "legacy")]
@@ -330,6 +337,7 @@ impl EffectiveInstructions {
             std::env::consts::OS
         );
         let session_line = format!("Session ID: {}", self.session.as_str());
+        let builtin_epoch = BuiltinEpoch::of(inbox.store(), &self.session)?;
         InstructionService::refresh(
             inbox.store_mut(),
             RefreshInput {
@@ -349,10 +357,7 @@ impl EffectiveInstructions {
                 ],
                 observations: {
                     let mut observations = vec![
-                        SourceObservation::Available {
-                            key: key("core/base")?,
-                            value: InstructionValue::Text(BASE.to_owned()),
-                        },
+                        builtin_epoch.base()?,
                         SourceObservation::Available {
                             key: key("core/environment")?,
                             value: InstructionValue::Text(environment),
@@ -375,7 +380,7 @@ impl EffectiveInstructions {
                             value: InstructionValue::Text(entry_text),
                         },
                         skill_guidance,
-                        BuiltinEpoch::observation()?,
+                        builtin_epoch.marker()?,
                     ];
                     if let Some((tools, failed)) = tools {
                         observations.extend(tool_epoch::observations(tools, failed)?);

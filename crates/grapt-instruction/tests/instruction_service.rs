@@ -1,6 +1,7 @@
 use grapt_instruction::{
     EntryOutcome, InstructionBoundary, InstructionChange, InstructionError, InstructionProjector,
-    InstructionService, InstructionValue, RefreshInput, RefreshOutcome, SourceObservation,
+    InstructionService, InstructionValue, RecordedValue, RefreshInput, RefreshOutcome,
+    SourceObservation,
 };
 use grapt_store::{AggregateId, AppendInput, Appended, EventStore};
 use grapt_types::{EventId, EventSeq, EventVersion, InstructionKey, SessionId};
@@ -907,44 +908,47 @@ fn a_first_value_source_survives_compaction_rebuild_and_failed_refresh() -> Test
 }
 
 #[test]
-fn a_baseline_value_is_recorded_only_with_the_first_history() -> TestResult {
+fn a_recorded_value_outlives_a_rewind_a_move_and_a_fork() -> TestResult {
     let mut store = EventStore::open_in_memory()?;
     let marker = key("core/marker")?;
-    let rule = key("core/rule")?;
-    let at_baseline = || SourceObservation::AtBaseline {
-        key: marker.clone(),
-        value: InstructionValue::Text("2".into()),
+    let recorded = |store: &EventStore, session: &SessionId| {
+        InstructionService::recorded(store, session, &marker)
     };
-    let fresh: SessionId = "ses_baseline_fresh".parse()?;
-    elect(&mut store, &fresh)?;
-    refresh(
-        &mut store,
-        "evt_baseline_a",
-        &fresh,
-        vec![],
-        vec![at_baseline()],
-    )?;
-    let older: SessionId = "ses_baseline_older".parse()?;
+    let current: SessionId = "ses_recorded_current".parse()?;
+    elect(&mut store, &current)?;
+    assert_eq!(recorded(&store, &current)?, RecordedValue::Never);
+    let observed = vec![available(&marker, "2")];
+    refresh(&mut store, "evt_recorded_a", &current, vec![], observed)?;
+    let older: SessionId = "ses_recorded_older".parse()?;
     elect(&mut store, &older)?;
-    let rule_text = available(&rule, "rule");
-    refresh(
+    let base = vec![available(&key("core/base")?, "base")];
+    refresh(&mut store, "evt_recorded_b", &older, vec![], base)?;
+    append(
         &mut store,
-        "evt_baseline_b",
-        &older,
-        vec![],
-        vec![rule_text],
+        "evt_recorded_c",
+        &current,
+        "session.moved",
+        &current,
     )?;
-    refresh(
+    let rewind = "session.revert.committed";
+    append(&mut store, "evt_recorded_d", &older, rewind, &older)?;
+    assert_eq!(
+        recorded(&store, &current)?,
+        RecordedValue::Present("2".into())
+    );
+    assert_eq!(recorded(&store, &older)?, RecordedValue::Absent);
+    // A fork inherits its parent's record up to the fork point.
+    let child: SessionId = "ses_recorded_child".parse()?;
+    let forked = json!({"sessionID": child.as_str(), "parentID": older.as_str(),
+        "parentSeq": 1, "from": "msg_fork_boundary"});
+    append_versioned(
         &mut store,
-        "evt_baseline_c",
-        &older,
-        vec![],
-        vec![at_baseline()],
+        "evt_recorded_e",
+        &child,
+        "session.forked",
+        2,
+        &forked,
     )?;
-    let fresh = InstructionService::history(&store, &fresh)?.ok_or("history")?;
-    assert_eq!(fresh.initial[0].key, marker);
-    let older = InstructionService::history(&store, &older)?.ok_or("history")?;
-    assert!(older.initial.iter().all(|value| value.key != marker));
-    assert!(older.updates.is_empty());
+    assert_eq!(recorded(&store, &child)?, RecordedValue::Absent);
     Ok(())
 }

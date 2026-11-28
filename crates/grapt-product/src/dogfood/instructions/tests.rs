@@ -525,6 +525,80 @@ fn skd_no_offered_skills_withdraws_the_guidance() -> Result<(), Box<dyn std::err
 }
 
 #[test]
+fn a_session_keeps_its_epochs_base_bytes_and_tools_across_a_rewind(
+) -> Result<(), Box<dyn std::error::Error>> {
+    let shown = |request: &grapt_provider::ChatGptCodexRequest| {
+        let names: Vec<_> = request.tools.iter().map(|tool| tool.name.clone()).collect();
+        let input = format!("{:?}", request.input);
+        let base = input.contains("read_lines reads source with line numbers.");
+        (
+            names.contains(&"read_lines".to_owned()),
+            names.contains(&"subagent".to_owned()),
+            base,
+        )
+    };
+    let current = Fixture::new()?;
+    assert_eq!(
+        shown(&planned_catalog_request(&current, Vec::new(), false)?),
+        (false, false, false)
+    );
+    // A Session that began before the record holds the base it began with.
+    let legacy = Fixture::new()?;
+    let observations = vec![SourceObservation::Available {
+        key: key("core/base")?,
+        value: InstructionValue::Text(builtin_epoch::legacy_base()),
+    }];
+    {
+        let mut inbox = legacy.effective.inbox.lock().map_err(|_| "poisoned")?;
+        let input = RefreshInput {
+            event: "evt_legacy_baseline".parse()?,
+            session: legacy.effective.session.clone(),
+            created_ms: 1,
+            required: Vec::new(),
+            observations,
+        };
+        InstructionService::refresh(inbox.store_mut(), input)?;
+    }
+    rewind(&current)?;
+    rewind(&legacy)?;
+    // A rewind clears the instructions but not the epoch either began in.
+    assert_eq!(
+        shown(&planned_catalog_request(&current, Vec::new(), false)?),
+        (false, false, false)
+    );
+    for _ in 0..2 {
+        let request = planned_catalog_request(&legacy, Vec::new(), false)?;
+        assert_eq!(shown(&request), (true, true, true));
+    }
+    Ok(())
+}
+
+/// Commit a rewind, which clears the Session's instruction history.
+fn rewind(fixture: &Fixture) -> Result<(), Box<dyn std::error::Error>> {
+    let mut inbox = fixture.effective.inbox.lock().map_err(|_| "poisoned")?;
+    let session = &fixture.effective.session;
+    let data = serde_json::json!({"sessionID": session.as_str(), "to": "msg_boundary"});
+    let aggregate = AggregateId::Session(session.clone());
+    let writer = inbox.store_mut().fencing_token(&aggregate)?;
+    let input = grapt_store::AppendInput {
+        id: &"evt_rewind".parse()?,
+        aggregate,
+        writer,
+        kind_name: "session.revert.committed",
+        version: grapt_types::EventVersion::new(1).ok_or("version")?,
+        created_ms: 2,
+        data: &data,
+    };
+    let projector = &mut grapt_instruction::InstructionProjector;
+    inbox
+        .store_mut()
+        .append(input, &mut [projector])?
+        .1
+        .discard();
+    Ok(())
+}
+
+#[test]
 fn base_guidance_names_only_tools_the_catalog_offers() {
     for family in [
         grapt_provider::ProtocolFamily::OpenAiResponses,

@@ -21,10 +21,12 @@ mod storage;
 
 use history::{
     check_cache, decode_observations, decode_required, fold_history, resolve_delta, resolve_map,
-    write_folded_state, CacheStatus, Observed, Retention,
+    write_folded_state, CacheStatus, Observed,
 };
 pub use projection::InstructionProjector;
-use storage::{decode_entry, ensure_tables, insert_blob, instruction_event_data, load_entry};
+use storage::{
+    decode_entry, ensure_tables, insert_blob, instruction_event_data, load_blob, load_entry,
+};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum InstructionValue {
@@ -49,13 +51,6 @@ pub enum SourceObservation {
         key: InstructionKey,
         value: InstructionValue,
     },
-    /// Record this value only when the Session's baseline is created; a
-    /// Session that already has one never gains it. Marks a convention that
-    /// began after older Sessions started, so they keep the earlier one.
-    AtBaseline {
-        key: InstructionKey,
-        value: InstructionValue,
-    },
     Available {
         key: InstructionKey,
         value: InstructionValue,
@@ -73,7 +68,6 @@ impl SourceObservation {
         match self {
             Self::Available { key, .. }
             | Self::AvailableOnce { key, .. }
-            | Self::AtBaseline { key, .. }
             | Self::Unavailable { key }
             | Self::Removed { key } => key,
         }
@@ -189,6 +183,16 @@ pub struct CurrentInstructions {
     pub skipped: Vec<SkippedInstructionEvent>,
 }
 
+/// What a Session's instructions record for one key.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RecordedValue {
+    /// The Session has never had instructions: it is new.
+    Never,
+    /// Its instructions, or the last ones a move or rewind cleared, lack it.
+    Absent,
+    Present(String),
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum EntryOutcome {
     Applied,
@@ -291,17 +295,8 @@ impl InstructionService {
         let mut changed = BTreeMap::new();
         for (key, observation) in observations {
             match observation {
-                Observed::Available {
-                    hash,
-                    value,
-                    retention,
-                } => {
-                    let kept = match retention {
-                        Retention::Latest => next.get(&key) == Some(&hash),
-                        Retention::First => next.contains_key(&key),
-                        Retention::Baseline => truth.is_some(),
-                    };
-                    if kept {
+                Observed::Available { hash, value, once } => {
+                    if next.get(&key) == Some(&hash) || (once && next.contains_key(&key)) {
                         continue;
                     }
                     insert_blob(&tx, hash, &value)?;
@@ -401,6 +396,29 @@ impl InstructionService {
             values,
             skipped: fold.skipped,
         })
+    }
+
+    /// What the Session records for `key`. A move or rewind clears the
+    /// Session's instructions but not what it began with, so a cleared
+    /// Session answers from the values it last held.
+    pub fn recorded(
+        store: &EventStore,
+        session: &SessionId,
+        key: &InstructionKey,
+    ) -> Result<RecordedValue, InstructionError> {
+        let fold = fold_history(store.connection(), session)?;
+        let values = match (fold.history, fold.cleared) {
+            (Some(history), _) => history.state.current,
+            (None, Some(cleared)) => cleared,
+            (None, None) => return Ok(RecordedValue::Never),
+        };
+        match values.get(key) {
+            Some(hash) => Ok(RecordedValue::Present(load_blob(
+                store.connection(),
+                *hash,
+            )?)),
+            None => Ok(RecordedValue::Absent),
+        }
     }
 
     pub fn rebuild(
