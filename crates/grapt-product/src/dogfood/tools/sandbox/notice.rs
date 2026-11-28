@@ -74,6 +74,7 @@ mod tests {
             readable: vec![root.clone()],
             writable: vec![root.clone()],
             protected: vec![path.clone()],
+            denied: Vec::new(),
             network: true,
         };
         let warning = format!(

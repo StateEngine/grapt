@@ -3,6 +3,8 @@
 use super::*;
 use grapt_config::ConfigValue;
 
+const INSTRUCTION_FILES: [&str; 2] = ["AGENTS.md", "AGENTS.override.md"];
+
 #[expect(clippy::too_many_lines, reason = "legacy")]
 pub(super) fn read(root: &Path, sources: &CatalogSources) -> Result<Option<Plan>, String> {
     let mut enabled = false;
@@ -83,13 +85,25 @@ pub(super) fn read(root: &Path, sources: &CatalogSources) -> Result<Option<Plan>
             .iter()
             .map(|name| root.join(name)),
     );
-    protected.extend(git_control_paths(root, git_metadata_read_only)?);
+    let (git_protected, repo_root) = git_control_paths(root, git_metadata_read_only)?;
+    protected.extend(git_protected);
     protected = protected
         .iter()
         .map(|path| crate::dogfood::permission_preset::resolved_path(path).map(PathBuf::from))
         .collect::<Result<_, _>>()?;
+    // Protect both the literal workspace/repository instruction slots and their
+    // resolved targets so a symlinked instruction file cannot be unlinked or replaced.
+    push_instruction_paths(&mut protected, &canonical(root)?)?;
+    if let Some(repo_root) = repo_root {
+        push_instruction_paths(&mut protected, &repo_root)?;
+    }
     protected.sort();
     protected.dedup();
+    let mut denied = vec![PathBuf::from(
+        crate::dogfood::permission_preset::resolved_path(&sources.environment.home.join(".ssh"))?,
+    )];
+    denied.sort();
+    denied.dedup();
     // This write-only policy permits normal toolchains to read their installed
     // libraries. Read authority is explicit for every drive touched by the plan.
     let mut readable = writable
@@ -112,7 +126,7 @@ pub(super) fn read(root: &Path, sources: &CatalogSources) -> Result<Option<Plan>
     }
     readable.sort();
     readable.dedup();
-    if readable.len() + writable.len() + protected.len() > 128 {
+    if readable.len() + writable.len() + protected.len() + denied.len() > 128 {
         return Err("sandbox policy exceeds 128 paths".into());
     }
     Ok(Some(Plan {
@@ -120,6 +134,7 @@ pub(super) fn read(root: &Path, sources: &CatalogSources) -> Result<Option<Plan>
         readable,
         writable,
         protected,
+        denied,
         network,
     }))
 }
@@ -148,7 +163,20 @@ fn boolean(value: &ConfigValue, name: &str) -> Result<Option<bool>, String> {
         .transpose()
 }
 
-fn git_control_paths(root: &Path, metadata_read_only: bool) -> Result<Vec<PathBuf>, String> {
+fn push_instruction_paths(protected: &mut Vec<PathBuf>, directory: &Path) -> Result<(), String> {
+    for name in INSTRUCTION_FILES {
+        let slot = directory.join(name);
+        let resolved = PathBuf::from(crate::dogfood::permission_preset::resolved_path(&slot)?);
+        protected.push(slot);
+        protected.push(resolved);
+    }
+    Ok(())
+}
+
+fn git_control_paths(
+    root: &Path,
+    metadata_read_only: bool,
+) -> Result<(Vec<PathBuf>, Option<PathBuf>), String> {
     let root = canonical(root)?;
     let mut dot_git = root.join(".git");
     let mut entry = None;
@@ -179,6 +207,10 @@ fn git_control_paths(root: &Path, metadata_read_only: bool) -> Result<Vec<PathBu
         }
     };
     let mut protected = Vec::new();
+    let repo_root = dot_git
+        .parent()
+        .filter(|parent| *parent != root)
+        .map(Path::to_path_buf);
     // Reserve session-local metadata unless .git is already a pointer file.
     // Nested sessions still cannot create a repository to shadow this one.
     if dot_git != root.join(".git") || !entry.as_ref().is_some_and(|metadata| metadata.is_file()) {
@@ -219,7 +251,7 @@ fn git_control_paths(root: &Path, metadata_read_only: bool) -> Result<Vec<PathBu
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
         Err(error) => return Err(format!("sandbox Git common directory unavailable: {error}")),
     }
-    Ok(protected)
+    Ok((protected, repo_root))
 }
 fn git_directory(path: &Path, metadata_read_only: bool) -> Result<PathBuf, String> {
     let path = canonical(path)?;

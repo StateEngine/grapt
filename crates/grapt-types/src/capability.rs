@@ -104,13 +104,19 @@ pub struct FilesystemAuthority {
     read: Vec<PathIdentity>,
     write: Vec<PathIdentity>,
     deny: Vec<PathIdentity>,
+    read_deny: Vec<PathIdentity>,
 }
 
 impl FilesystemAuthority {
     /// Build filesystem authority. Each root list is sorted and deduplicated
     /// so ordering cannot produce two identities for one authority.
     pub fn new(read: Vec<PathIdentity>, write: Vec<PathIdentity>, deny: Vec<PathIdentity>) -> Self {
-        let mut this = Self { read, write, deny };
+        let mut this = Self {
+            read,
+            write,
+            deny,
+            read_deny: Vec::new(),
+        };
         this.read.sort();
         this.read.dedup();
         this.write.sort();
@@ -118,6 +124,14 @@ impl FilesystemAuthority {
         this.deny.sort();
         this.deny.dedup();
         this
+    }
+
+    /// Attach read-denied paths as a distinct authority domain from write-protected paths.
+    pub fn with_read_deny(mut self, mut read_deny: Vec<PathIdentity>) -> Self {
+        read_deny.sort();
+        read_deny.dedup();
+        self.read_deny = read_deny;
+        self
     }
 
     pub fn read(&self) -> &[PathIdentity] {
@@ -130,6 +144,10 @@ impl FilesystemAuthority {
 
     pub fn deny(&self) -> &[PathIdentity] {
         &self.deny
+    }
+
+    pub fn read_deny(&self) -> &[PathIdentity] {
+        &self.read_deny
     }
 }
 
@@ -300,6 +318,14 @@ impl ResolvedCapability {
             out.push_str(label);
             out.push('=');
             for root in roots {
+                push_path(&mut out, root);
+                out.push(',');
+            }
+            out.push(';');
+        }
+        if !self.filesystem.read_deny().is_empty() {
+            out.push_str("rd=");
+            for root in self.filesystem.read_deny() {
                 push_path(&mut out, root);
                 out.push(',');
             }

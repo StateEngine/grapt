@@ -38,6 +38,7 @@ pub(super) fn program(network: bool) -> Result<BpfProgram, String> {
             libc::SYS_accept,
             libc::SYS_accept4,
             libc::SYS_sendto,
+            libc::SYS_sendmsg,
             libc::SYS_sendmmsg,
             libc::SYS_socket,
         ] {
@@ -116,4 +117,58 @@ pub(super) fn install(network: bool) -> Result<(), String> {
     nix::sys::prctl::set_no_new_privs()
         .map_err(|e| format!("Linux sandbox no-new-privileges failed: {e}"))?;
     seccompiler::apply_filter(&program).map_err(|e| format!("Linux sandbox seccomp failed: {e}"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const PROBE_ENV: &str = "GRAPT_SECCOMP_SENDMSG_PROBE";
+
+    #[test]
+    fn sendmsg_probe_child() -> Result<(), Box<dyn std::error::Error>> {
+        let Some(mode) = std::env::var_os(PROBE_ENV) else {
+            return Ok(());
+        };
+        let mode = mode.to_string_lossy();
+        let network = mode == "on";
+        install(network)?;
+        let status = std::process::Command::new("python3")
+            .args([
+                "-c",
+                "import ctypes, errno, socket, sys\na, b = socket.socketpair(socket.AF_UNIX, socket.SOCK_DGRAM)\ntry:\n    a.sendmsg([b'probe'])\n    sendmsg_code = 0\nexcept OSError as exc:\n    sendmsg_code = 77 if exc.errno == errno.EPERM else 78\nlibc = ctypes.CDLL(None, use_errno=True)\nlibc.syscall.restype = ctypes.c_long\nres = libc.syscall(ctypes.c_long(int(sys.argv[1])), ctypes.c_int(a.fileno()), ctypes.c_void_p(0), ctypes.c_uint(0), ctypes.c_int(0))\nif res == -1:\n    err = ctypes.get_errno()\n    sendmmsg_code = 77 if err == errno.EPERM else 79\nelse:\n    sendmmsg_code = 0\nif sendmsg_code != sendmmsg_code:\n    sys.exit(80)\nsys.exit(sendmsg_code)\n",
+                &libc::SYS_sendmmsg.to_string(),
+            ])
+            .status()?;
+        let expected = if network { 0 } else { 77 };
+        assert_eq!(status.code(), Some(expected));
+        println!("GRAPT_SECCOMP_PROBE_RAN={mode}");
+        Ok(())
+    }
+
+    #[test]
+    fn network_off_seccomp_blocks_sendmsg_with_eperm() -> Result<(), Box<dyn std::error::Error>> {
+        let exe = std::env::current_exe()?;
+        for mode in ["off", "on"] {
+            let output = std::process::Command::new(&exe)
+                .env(PROBE_ENV, mode)
+                .args([
+                    "--exact",
+                    "linux::seccomp::tests::sendmsg_probe_child",
+                    "--nocapture",
+                ])
+                .output()?;
+            assert!(
+                output.status.success(),
+                "seccomp sendmsg probe ({mode}) failed: {}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            assert!(
+                stdout.contains(&format!("GRAPT_SECCOMP_PROBE_RAN={mode}")),
+                "seccomp sendmsg probe ({mode}) did not execute witness child: {stdout}"
+            );
+        }
+        Ok(())
+    }
 }

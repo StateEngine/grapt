@@ -92,6 +92,11 @@ fn policy_preflight_reads_effective_config_without_opening_service_state(
     let protected: Vec<PathBuf> =
         serde_json::from_value(report["policy"]["protected_paths"].clone())?;
     assert!(protected.contains(&fs::canonicalize(workspace.join(".git"))?));
+    let denied: Vec<PathBuf> = serde_json::from_value(report["policy"]["denied_paths"].clone())?;
+    assert!(
+        denied.iter().any(|path| path.ends_with(".ssh")),
+        "sandbox-policy omitted denied_paths .ssh: {denied:?}"
+    );
     for name in states {
         assert_eq!(
             fs::read(service.join(name))?,

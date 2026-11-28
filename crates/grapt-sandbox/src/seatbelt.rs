@@ -9,6 +9,8 @@ mod launch;
 #[cfg(target_os = "macos")]
 pub(super) mod native;
 mod profile;
+#[cfg(any(target_os = "macos", all(test, target_os = "linux")))]
+mod ready;
 
 #[cfg(target_os = "macos")]
 pub const INNER_ARGUMENT: &str = "--grapt-seatbelt-exec";

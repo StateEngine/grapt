@@ -22,6 +22,7 @@ pub(crate) fn run(arguments: &[String]) -> Result<String, String> {
                 "readable_roots": plan.readable,
                 "writable_roots": plan.writable,
                 "protected_paths": plan.protected,
+                "denied_paths": plan.denied,
                 "network": plan.network,
             })
         });

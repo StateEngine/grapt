@@ -45,6 +45,8 @@ pub(in crate::dogfood::tools) struct Plan {
     readable: Vec<PathBuf>,
     writable: Vec<PathBuf>,
     protected: Vec<PathBuf>,
+    #[serde(default)]
+    denied: Vec<PathBuf>,
     network: bool,
 }
 
@@ -58,7 +60,7 @@ impl Plan {
             readable_roots: self.readable.clone(),
             writable_roots: self.writable.clone(),
             protected_paths: self.protected.clone(),
-            denied_paths: Vec::new(),
+            denied_paths: self.denied.clone(),
             network: if self.network {
                 grapt_sandbox::NetworkAccess::On
             } else {
@@ -68,7 +70,7 @@ impl Plan {
     }
 
     pub(super) fn path_count(&self) -> usize {
-        self.readable.len() + self.writable.len() + self.protected.len()
+        self.readable.len() + self.writable.len() + self.protected.len() + self.denied.len()
     }
 
     pub(super) fn add_write_target(&mut self, path: &Path) {
@@ -82,7 +84,7 @@ impl Plan {
     }
 
     pub(super) fn filesystem(&self) -> grapt_types::FilesystemAuthority {
-        let identities = |paths: &[PathBuf]| {
+        let identities = |paths: &[PathBuf]| -> Vec<grapt_types::PathIdentity> {
             paths
                 .iter()
                 .map(|path| grapt_types::PathIdentity::canonical(super::path_text(path)))
@@ -93,6 +95,7 @@ impl Plan {
             identities(&self.writable),
             identities(&self.protected),
         )
+        .with_read_deny(identities(&self.denied))
     }
     pub(super) fn egress(&self) -> grapt_types::EgressAuthority {
         // Explicit all-protocol/all-host/all-port authority differs from the

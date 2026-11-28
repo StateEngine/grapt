@@ -138,6 +138,52 @@ fn isolation_defaults_off_and_repository_settings_cannot_widen_a_user_policy() -
 }
 
 #[test]
+fn default_policy_denies_ssh_and_protects_agents_md_and_git_controls() -> Result<(), String> {
+    let root = std::env::temp_dir().join(format!(
+        "grapt-sandbox-defaults-{}-{:?}",
+        std::process::id(),
+        std::thread::current().id()
+    ));
+    std::fs::create_dir(&root).map_err(|e| e.to_string())?;
+    let result = (|| {
+        let workspace = root.join("work");
+        let nested = workspace.join("sub");
+        for path in [
+            &workspace,
+            &nested,
+            &workspace.join(".git"),
+            &root.join("config"),
+        ] {
+            std::fs::create_dir(path).map_err(|e| e.to_string())?;
+        }
+        std::fs::write(
+            root.join("config/grapt.json"),
+            serde_json::json!({"sandbox":{"enabled":true}}).to_string(),
+        )
+        .map_err(|e| e.to_string())?;
+        let sources = CatalogSources::read(&nested, CatalogEnvironment::isolated(&root))?;
+        let plan = Plan::read(&nested, &sources)?.ok_or("sandbox plan absent")?;
+        let workspace_root = std::fs::canonicalize(&workspace).map_err(|e| e.to_string())?;
+        let nested_root = std::fs::canonicalize(&nested).map_err(|e| e.to_string())?;
+        let expected_ssh = PathBuf::from(crate::dogfood::permission_preset::resolved_path(
+            &root.join("home").join(".ssh"),
+        )?);
+        assert!(plan.denied.contains(&expected_ssh));
+        assert!(plan.policy().denied_paths.contains(&expected_ssh));
+        assert!(plan.protected.contains(&workspace_root.join("AGENTS.md")));
+        assert!(plan.protected.contains(&nested_root.join("AGENTS.md")));
+        for control in ["config", "config.worktree", "hooks"] {
+            assert!(plan
+                .protected
+                .contains(&workspace_root.join(".git").join(control)));
+        }
+        Ok(())
+    })();
+    std::fs::remove_dir_all(&root).map_err(|e| e.to_string())?;
+    result
+}
+
+#[test]
 fn callback_output_cannot_replace_native_receipts_or_change_interpolation_bytes(
 ) -> Result<(), String> {
     let actual = Receipt::started(RealizedEnforcement::PlatformSandbox {
@@ -188,4 +234,98 @@ fn callback_output_cannot_replace_native_receipts_or_change_interpolation_bytes(
     assert!(Receipt::parse(std::str::from_utf8(&bounded).map_err(|e| e.to_string())?).is_some());
     assert!(actual.output(oversized, true, true).is_err());
     Ok(())
+}
+
+#[test]
+fn instruction_slots_targets_and_denied_ssh_enter_policy_and_fingerprint() -> Result<(), String> {
+    let root = std::env::temp_dir().join(format!(
+        "grapt-sandbox-instructions-{}-{:?}",
+        std::process::id(),
+        std::thread::current().id()
+    ));
+    std::fs::create_dir(&root).map_err(|e| e.to_string())?;
+    let result = (|| {
+        let repo = root.join("repo");
+        let subdir = repo.join("sub");
+        let external = root.join("external-agents.md");
+        for dir in [&repo, &repo.join(".git"), &subdir, &root.join("config")] {
+            std::fs::create_dir(dir).map_err(|e| e.to_string())?;
+        }
+        std::fs::write(&external, "rules").map_err(|e| e.to_string())?;
+        std::fs::write(
+            root.join("config/grapt.json"),
+            br#"{"sandbox":{"enabled":true}}"#,
+        )
+        .map_err(|e| e.to_string())?;
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(&external, subdir.join("AGENTS.md"))
+            .map_err(|e| e.to_string())?;
+        #[cfg(windows)]
+        std::fs::write(subdir.join("AGENTS.md"), "rules").map_err(|e| e.to_string())?;
+        let sources = CatalogSources::read(&subdir, CatalogEnvironment::isolated(&root))?;
+        let plan = Plan::read(&subdir, &sources)?.ok_or("sandbox plan absent")?;
+        let repo_root = std::fs::canonicalize(&repo).map_err(|e| e.to_string())?;
+        let subdir_root = std::fs::canonicalize(&subdir).map_err(|e| e.to_string())?;
+        for expected in [
+            subdir_root.join("AGENTS.md"),
+            subdir_root.join("AGENTS.override.md"),
+            repo_root.join("AGENTS.md"),
+            repo_root.join("AGENTS.override.md"),
+        ] {
+            assert!(
+                plan.protected.contains(&expected),
+                "missing protected instruction path: {}",
+                expected.display()
+            );
+        }
+        #[cfg(unix)]
+        {
+            let target = std::fs::canonicalize(&external).map_err(|e| e.to_string())?;
+            assert!(
+                plan.protected.contains(&target),
+                "missing resolved symlink target: {}",
+                target.display()
+            );
+        }
+        let ssh = PathBuf::from(crate::dogfood::permission_preset::resolved_path(
+            &sources.environment.home.join(".ssh"),
+        )?);
+        assert!(plan.denied.contains(&ssh), "missing denied .ssh path");
+        let ssh_id = grapt_types::PathIdentity::canonical(crate::dogfood::tools::path_text(&ssh));
+        assert!(
+            plan.filesystem().read_deny().contains(&ssh_id),
+            "denied .ssh path missing from capability read_deny domain"
+        );
+        let protected_only = grapt_types::ResolvedCapability::new(
+            grapt_types::EffectClass::ProcessSpawn,
+            None,
+            grapt_types::FilesystemAuthority::new(
+                plan.filesystem().read().to_vec(),
+                plan.filesystem().write().to_vec(),
+                vec![ssh_id.clone()],
+            ),
+            plan.egress(),
+            plan.intended(),
+        );
+        let protected_and_denied = grapt_types::ResolvedCapability::new(
+            grapt_types::EffectClass::ProcessSpawn,
+            None,
+            grapt_types::FilesystemAuthority::new(
+                plan.filesystem().read().to_vec(),
+                plan.filesystem().write().to_vec(),
+                vec![ssh_id.clone()],
+            )
+            .with_read_deny(vec![ssh_id]),
+            plan.egress(),
+            plan.intended(),
+        );
+        assert_ne!(
+            grapt_types::CapabilityId::derive(&protected_only),
+            grapt_types::CapabilityId::derive(&protected_and_denied),
+            "denied_paths must produce a distinct capability ID from protected_paths alone"
+        );
+        Ok(())
+    })();
+    let _ = std::fs::remove_dir_all(&root);
+    result
 }
