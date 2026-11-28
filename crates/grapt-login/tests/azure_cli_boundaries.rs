@@ -63,7 +63,11 @@ fn isolated(name: &str) -> TestResult {
     ))?;
     std::fs::set_permissions(&cli, std::fs::Permissions::from_mode(0o700))?;
     let status = Command::new(std::env::current_exe()?)
-        .args(["--exact", name, "--nocapture"])
+        .args([
+            "--exact",
+            &crate::exact(module_path!(), name),
+            "--nocapture",
+        ])
         .env_clear()
         .env(CHILD, name)
         .env("PATH", &fixture.0)

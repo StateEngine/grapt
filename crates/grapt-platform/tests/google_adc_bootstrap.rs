@@ -87,6 +87,10 @@ fn configured_adc_prepares_without_an_async_runtime_or_token_exchange() -> TestR
         .ok_or("catalog")?
         .vertex_listing(model)?;
     std::fs::write(root.0.join("adc-models.json"), listing)?;
+    let test = crate::exact(
+        module_path!(),
+        "configured_adc_prepares_without_an_async_runtime_or_token_exchange",
+    );
     let mut child = Command::new(std::env::current_exe()?);
     child.env_clear();
     for key in ["SystemRoot", "WINDIR", "TEMP", "TMP"] {
@@ -95,11 +99,7 @@ fn configured_adc_prepares_without_an_async_runtime_or_token_exchange() -> TestR
         }
     }
     let status = child
-        .args([
-            "--exact",
-            "configured_adc_prepares_without_an_async_runtime_or_token_exchange",
-            "--nocapture",
-        ])
+        .args(["--exact", &test, "--nocapture"])
         .current_dir(&root.0)
         .env(CHILD, "1")
         .env(

@@ -1,5 +1,6 @@
 [package]
 name = "grapt-login"
+autotests = false
 version = "0.1.0"
 edition.workspace = true
 license = "MIT OR Apache-2.0"
@@ -7,6 +8,10 @@ description = "Bounded provider sign-in and serialized credential renewal."
 
 [features]
 loopback-testkit = []
+
+[[test]]
+name = "integration"
+path = "tests/integration/main.rs"
 
 [dependencies]
 async-trait = "0.1"

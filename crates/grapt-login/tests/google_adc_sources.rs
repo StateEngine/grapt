@@ -45,7 +45,11 @@ fn run(name: &str) -> TestResult {
         }
     }
     let status = child
-        .args(["--exact", name, "--nocapture"])
+        .args([
+            "--exact",
+            &crate::exact(module_path!(), name),
+            "--nocapture",
+        ])
         .current_dir(&root.0)
         .env(CHILD, name)
         .env("HOME", &root.0)
