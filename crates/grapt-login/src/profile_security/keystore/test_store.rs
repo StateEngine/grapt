@@ -10,6 +10,29 @@ use zeroize::Zeroizing;
 
 thread_local! {
     static UNAVAILABLE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    #[cfg(test)]
+    static BUS: std::cell::Cell<Option<super::BusRefusal>> = const { std::cell::Cell::new(None) };
+}
+
+/// While held, this thread's test keystore refuses as the system keystore
+/// does when the session bus it was told to use is malformed or fails.
+#[cfg(test)]
+#[derive(Debug)]
+pub(crate) struct BusRefused(());
+
+#[cfg(test)]
+impl BusRefused {
+    pub(crate) fn now(refusal: super::BusRefusal) -> Self {
+        BUS.set(Some(refusal));
+        Self(())
+    }
+}
+
+#[cfg(test)]
+impl Drop for BusRefused {
+    fn drop(&mut self) {
+        BUS.set(None);
+    }
 }
 
 /// While held, this thread's test keystore is unavailable, as on a machine
@@ -32,6 +55,10 @@ impl Drop for Unavailable {
 }
 
 fn reachable() -> io::Result<()> {
+    #[cfg(test)]
+    if let Some(refusal) = BUS.get() {
+        return Err(super::bus_refused(refusal));
+    }
     if UNAVAILABLE.get() {
         return Err(super::unavailable(
             "the test keystore is unavailable on this thread".to_owned(),

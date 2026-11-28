@@ -721,24 +721,40 @@ fn a_reconnect_during_a_keystore_outage_keeps_the_sealed_key(
     Ok(())
 }
 
-/// The legacy OAuth state counts as much as the projection: when only the
-/// state is sealed, a reconnect during an outage still refuses.
+/// A legacy sign-in whose projection alone is sealed is still a sealed
+/// predecessor: a reconnect during an outage refuses as keystore unavailable.
 #[cfg(not(windows))]
 #[test]
-fn a_reconnect_during_an_outage_answers_for_sealed_oauth_state(
+fn a_reconnect_during_an_outage_answers_for_a_sealed_projection(
 ) -> Result<(), Box<dyn std::error::Error>> {
-    use grapt_login::vault::{ApiDestination, DestinationBinding};
-    let profile = Profile::new("reconnect-oauth-outage")?;
+    use grapt_login::vault::{ApiDestination, DestinationBinding, VaultError};
+    let profile = Profile::new("reconnect-projection-outage")?;
     let mut store = Store::open(&profile.0)?;
     let records = store.migrate(&legacy("chatgpt-codex", None))?;
-    let Some(state) = records.connections[0].oauth_file.clone() else {
+    let (Some(state), projection) = (
+        records.connections[0].oauth_file.clone(),
+        records.connections[0].credential_file.clone(),
+    ) else {
         return Err("a migrated sign-in keeps its OAuth state".into());
     };
-    std::fs::write(profile.0.join(&state), profile_security::seal(b"{}")?)?;
+    std::fs::write(profile.0.join(&state), b"{}")?;
+    std::fs::write(
+        profile.0.join(&projection),
+        profile_security::seal(b"access")?,
+    )?;
     let binding = DestinationBinding::key(ApiDestination::parse("https://api.example/v1")?);
     let headless = profile_security::TestKeystoreUnavailable::now();
-    assert!(reconnect(&mut store, &records, &binding, "outage").is_err());
+    let refused = reconnect(&mut store, &records, &binding, "outage").err();
     drop(headless);
+    let typed = refused
+        .as_deref()
+        .and_then(|error| error.downcast_ref::<std::io::Error>())
+        .and_then(std::io::Error::get_ref)
+        .and_then(|inner| inner.downcast_ref::<VaultError>());
+    assert!(
+        matches!(typed, Some(VaultError::KeystoreUnavailable)),
+        "{refused:?}"
+    );
     drop(store);
     let mut store = Store::open(&profile.0)?;
     assert_eq!(store.load()?, Some(records.clone()));

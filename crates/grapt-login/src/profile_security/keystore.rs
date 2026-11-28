@@ -92,32 +92,50 @@ fn unavailable(detail: String) -> io::Error {
     io::Error::other(Unavailable(detail))
 }
 
-/// Marks a session bus address that is set but not a valid D-Bus address.
-/// Its text is fixed: it names the variable and the step, never its value.
-#[derive(Debug)]
-struct BusAddressInvalid;
+/// Why the session bus that `DBUS_SESSION_BUS_ADDRESS` names was not used for
+/// the system keystore. Its text is fixed: it names the variable and the
+/// step, never its value or the bus's own error text.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BusRefusal {
+    /// The address is set but is not a valid D-Bus address.
+    Malformed,
+    /// The address is valid, but the keystore on that bus failed.
+    Unreachable,
+}
 
-impl std::fmt::Display for BusAddressInvalid {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        formatter.write_str(super::BUS_ADDRESS_INVALID)
+impl BusRefusal {
+    /// The reason and the step that fixes it.
+    #[must_use]
+    pub const fn guidance(self) -> &'static str {
+        match self {
+            Self::Malformed => super::BUS_ADDRESS_INVALID,
+            Self::Unreachable => super::BUS_UNREACHABLE,
+        }
     }
 }
 
-impl std::error::Error for BusAddressInvalid {}
+impl std::fmt::Display for BusRefusal {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(self.guidance())
+    }
+}
+
+impl std::error::Error for BusRefusal {}
 
 #[cfg_attr(
     all(not(target_os = "linux"), not(test)),
     expect(dead_code, reason = "only Linux reaches its keystore over D-Bus")
 )]
-pub(crate) fn bus_address_invalid() -> io::Error {
-    io::Error::new(io::ErrorKind::InvalidInput, BusAddressInvalid)
+pub(crate) fn bus_refused(refusal: BusRefusal) -> io::Error {
+    io::Error::new(io::ErrorKind::InvalidInput, refusal)
 }
 
-/// Whether an error says the configured session bus address is malformed.
-pub(super) fn is_bus_address_invalid(error: &io::Error) -> bool {
+/// The session bus refusal an error carries, if it carries one.
+pub(super) fn bus_refusal(error: &io::Error) -> Option<BusRefusal> {
     error
         .get_ref()
-        .is_some_and(|inner| inner.downcast_ref::<BusAddressInvalid>().is_some())
+        .and_then(|inner| inner.downcast_ref::<BusRefusal>())
+        .copied()
 }
 
 /// Whether an error says the keystore could not be reached at all.

@@ -41,6 +41,8 @@ pub use fallback::{keystore_fallback, KeystoreFallback, KEYSTORE_FALLBACK};
 #[cfg(test)]
 pub(crate) mod fixtures;
 mod keystore;
+#[cfg(all(not(windows), test))]
+pub(crate) use keystore::test_store::BusRefused as TestBusRefused;
 #[cfg(all(not(windows), any(test, feature = "loopback-testkit")))]
 pub use keystore::test_store::Unavailable as TestKeystoreUnavailable;
 #[cfg(any(test, feature = "loopback-testkit"))]
@@ -84,13 +86,20 @@ pub const BUS_ADDRESS_INVALID: &str =
     "DBUS_SESSION_BUS_ADDRESS is set but is not a valid D-Bus address, so the system keystore \
      was not used; correct or unset it, then try again";
 
-#[cfg(test)]
-pub(crate) use keystore::bus_address_invalid;
+/// Why a credential is not sealed or opened when the keystore on the bus
+/// `DBUS_SESSION_BUS_ADDRESS` names fails, and the step that fixes it.
+pub const BUS_UNREACHABLE: &str =
+    "the system keystore on the session bus DBUS_SESSION_BUS_ADDRESS names could not be used; \
+     check that address or unset it, then try again";
 
-/// Whether a refusal means `DBUS_SESSION_BUS_ADDRESS` is set but malformed.
+#[cfg(test)]
+pub(crate) use keystore::bus_refused;
+pub use keystore::BusRefusal;
+
+/// The session bus refusal behind a keystore error, if there is one.
 #[must_use]
-pub fn is_bus_address_invalid(error: &io::Error) -> bool {
-    keystore::is_bus_address_invalid(error)
+pub fn bus_refusal(error: &io::Error) -> Option<BusRefusal> {
+    keystore::bus_refusal(error)
 }
 
 /// Whether an [`open`] or [`seal`] refusal means the system keystore could not

@@ -44,8 +44,8 @@ impl std::fmt::Debug for SealedFileVault {
 
 pub(super) fn unavailable(operation: StorageOperation) -> impl FnOnce(io::Error) -> VaultError {
     move |error| {
-        if profile_security::is_bus_address_invalid(&error) {
-            VaultError::KeystoreAddressInvalid
+        if let Some(bus) = profile_security::bus_refusal(&error) {
+            VaultError::KeystoreBus(bus)
         } else if profile_security::failure_code(&error) == "io" {
             VaultError::Unavailable(StorageFailure::capture(operation, &error))
         } else {

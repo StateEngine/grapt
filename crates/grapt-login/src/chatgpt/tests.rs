@@ -762,6 +762,24 @@ fn a_projection_never_goes_unsealed_beside_sealed_state() -> Result<(), Box<dyn 
     Ok(())
 }
 
+/// A sealed sign-in read through a refused session bus keeps that bus's
+/// repair step rather than a bare error kind.
+#[cfg(not(windows))]
+#[test]
+fn a_sealed_sign_in_read_keeps_the_bus_repair_step() -> Result<(), Box<dyn std::error::Error>> {
+    use crate::profile_security::{BusRefusal, TestBusRefused};
+    let profile = Profile::new("sealed-read-bus");
+    save(&profile.0, &signed_in(NOW + HOUR))?;
+    for refusal in [BusRefusal::Malformed, BusRefusal::Unreachable] {
+        let refused = TestBusRefused::now(refusal);
+        let error = load(&profile.0).err().map(|error| error.to_string());
+        drop(refused);
+        let error = error.unwrap_or_default();
+        assert!(error.contains(refusal.guidance()), "{error}");
+    }
+    Ok(())
+}
+
 fn write_config(profile: &std::path::Path, credential_version: &str) {
     let config =
         serde_json::json!({"provider": {"id": "openai", "credential_version": credential_version}});

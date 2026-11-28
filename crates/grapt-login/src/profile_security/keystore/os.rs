@@ -39,7 +39,7 @@ fn check_bus(configured: Option<&std::ffi::OsStr>) -> io::Result<()> {
             .is_none_or(|text| text.parse::<zbus::Address>().is_err())
     });
     if malformed {
-        return Err(super::bus_address_invalid());
+        return Err(super::bus_refused(super::BusRefusal::Malformed));
     }
     Ok(())
 }
@@ -62,10 +62,7 @@ fn refused(error: keyring::Error) -> io::Error {
 #[cfg(target_os = "linux")]
 fn classify(error: keyring::Error, configured: Option<&std::ffi::OsStr>) -> io::Error {
     if configured.is_some() {
-        return io::Error::other(format!(
-            "the system keystore on the bus DBUS_SESSION_BUS_ADDRESS names failed: {error}; \
-             check that address or unset it, then try again"
-        ));
+        return super::bus_refused(super::BusRefusal::Unreachable);
     }
     unavailable_or_refused(error)
 }
@@ -158,17 +155,18 @@ mod tests {
     fn an_explicit_session_bus_address_never_falls_back() {
         for malformed in ["not-a-bus-address", "unix:path"] {
             let refused = check_bus(Some(malformed.as_ref())).err();
-            assert!(refused.is_some_and(|error| super::super::is_bus_address_invalid(&error)));
+            let refusal = refused.and_then(|error| super::super::bus_refusal(&error));
+            assert_eq!(refusal, Some(super::super::BusRefusal::Malformed));
         }
         assert!(check_bus(Some("unix:path=/nonexistent/grapt-bus".as_ref())).is_ok());
         assert!(check_bus(None).is_ok());
         let absent =
             || keyring::Error::PlatformFailure(Box::new(secret_service::Error::Unavailable));
         let configured = Some("tcp:host=localhost,port=1".as_ref());
-        assert!(!super::super::is_unavailable(&classify(
-            absent(),
-            configured
-        )));
+        assert_eq!(
+            super::super::bus_refusal(&classify(absent(), configured)),
+            Some(super::super::BusRefusal::Unreachable)
+        );
         assert!(super::super::is_unavailable(&classify(absent(), None)));
     }
 }
