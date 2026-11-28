@@ -100,28 +100,48 @@ fn stop() -> AttemptFragment {
 /// A reader that yields a fixed script as fast as the channel allows.
 struct ScriptedReader {
     fragments: std::vec::IntoIter<AttemptFragment>,
+    yielded: usize,
+    /// Notified once this many fragments have been read.
+    signal: Option<(usize, Arc<Notify>)>,
 }
 
 impl ScriptedReader {
     fn new(fragments: Vec<AttemptFragment>) -> Self {
         Self {
             fragments: fragments.into_iter(),
+            yielded: 0,
+            signal: None,
         }
+    }
+
+    fn signalling_after(mut self, count: usize, reached: Arc<Notify>) -> Self {
+        self.signal = Some((count, reached));
+        self
     }
 }
 
 impl ProviderReader for ScriptedReader {
     fn next(&mut self) -> impl std::future::Future<Output = Option<AttemptFragment>> + Send {
         let next = self.fragments.next();
+        self.yielded += 1;
+        if let Some((count, reached)) = &self.signal {
+            if self.yielded == *count {
+                reached.notify_one();
+            }
+        }
         async move { next }
     }
 }
 
 /// A reader that never yields anything and never completes — a hung provider.
-struct HungReader;
+/// It notifies `entered` once the attempt is waiting on it.
+struct HungReader {
+    entered: Arc<Notify>,
+}
 
 impl ProviderReader for HungReader {
     async fn next(&mut self) -> Option<AttemptFragment> {
+        self.entered.notify_one();
         // Never resolves. Only direct cancellation can end this.
         std::future::pending::<()>().await;
         None

@@ -37,24 +37,33 @@ async fn saturated_provider_plus_interrupt_settles_every_tool_before_step_failed
         stall: Duration::from_micros(400),
     };
     let residency = DrainResidency::new();
+    // Two tool calls, then more fragments than the provider channel holds.
+    let backed_up = Arc::new(Notify::new());
+    let read_past_capacity = 2 + PROVIDER_CHANNEL_CAPACITY + 1;
+    let reached = Arc::clone(&backed_up);
     let (interrupt, run) = prepare_admitted(
         attempt("att_saturated"),
-        move || ScriptedReader::new(script),
+        move || ScriptedReader::new(script).signalling_after(read_past_capacity, reached),
         tools,
         owner,
         residency.token(),
     );
     let handle = tokio::spawn(run);
 
-    // Interrupt only once both tools are actually running and the provider
-    // channel has had time to back up behind the slow owner.
+    // Interrupt only once both tools are actually running and the reader has
+    // read past what the provider channel holds behind the slow owner.
     for _ in 0..200 {
         if inside.load(Ordering::SeqCst) == 2 {
             break;
         }
         tokio::time::sleep(Duration::from_millis(5)).await;
     }
-    tokio::time::sleep(Duration::from_millis(40)).await;
+    if tokio::time::timeout(Duration::from_secs(5), backed_up.notified())
+        .await
+        .is_err()
+    {
+        panic!("the reader never read past the provider channel's capacity");
+    }
     interrupt.interrupt(AttemptCancelCause::Interrupted {
         by: InterruptionSource::User,
     });
@@ -134,16 +143,26 @@ async fn hung_provider_with_no_tool_running_cancels_promptly_and_never_succeeds(
     // prompt-settlement interrupt path runs through running local tools."
     //
     // Here cancellation reaches the reader directly, so no tool is needed.
+    let entered = Arc::new(Notify::new());
+    let reader_entered = Arc::clone(&entered);
     let (interrupt, run) = prepare_admitted(
         attempt("att_hung"),
-        || HungReader,
+        move || HungReader {
+            entered: reader_entered,
+        },
         Arc::new(InstantTools),
         RecordingOwner::new(),
         residency(),
     );
     let handle = tokio::spawn(run);
 
-    tokio::time::sleep(Duration::from_millis(30)).await;
+    // Interrupt once the attempt is waiting on the hung reader.
+    if tokio::time::timeout(Duration::from_secs(5), entered.notified())
+        .await
+        .is_err()
+    {
+        panic!("the attempt never waited on its provider reader");
+    }
     interrupt.interrupt(AttemptCancelCause::Interrupted {
         by: InterruptionSource::User,
     });
