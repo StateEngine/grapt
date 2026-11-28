@@ -66,6 +66,11 @@ tool_arguments! {
     }
 }
 
+/// The closed argument schema `execute` declares.
+pub(super) fn argument_schema() -> String {
+    ExecuteArguments::provider_schema()
+}
+
 // Copyright 2025 OpenAI. Apache-2.0.
 // Modified by Grapt: fixed CodeMode discovery shell instead of a native
 // Tool_search declaration.
