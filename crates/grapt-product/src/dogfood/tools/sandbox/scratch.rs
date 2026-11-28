@@ -52,9 +52,16 @@ impl PrivateScratch {
         let Some(dir) = self.dir.take() else {
             return Ok(());
         };
-        clean_tree_confined(dir.path())?;
-        dir.close()
-            .map_err(|error| format!("sandbox private temp cleanup failed: {error}"))
+        // Disarm TempDir's recursive remove_dir_all drop fallback: we empty the
+        // tree via strictly confined handle traversal and remove the empty root
+        // directory with a single non-recursive rmdir.
+        let root = dir.keep();
+        clean_tree_confined(&root)?;
+        match std::fs::remove_dir(&root) {
+            Ok(()) => Ok(()),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            Err(error) => Err(format!("sandbox private temp root rmdir failed: {error}")),
+        }
     }
 
     /// Disarm `TempDir::drop` when child termination could not be confirmed so
@@ -102,11 +109,17 @@ pub(super) fn combine_errors<const N: usize>(
 }
 
 #[cfg(unix)]
+fn is_directory_mode(mode: nix::sys::stat::mode_t) -> bool {
+    use nix::sys::stat::SFlag;
+    (SFlag::from_bits_truncate(mode) & SFlag::S_IFMT) == SFlag::S_IFDIR
+}
+
+#[cfg(unix)]
 fn clean_tree_confined(root: &Path) -> Result<(), String> {
     use nix::dir::Dir;
     use nix::errno::Errno;
     use nix::fcntl::AtFlags;
-    use nix::sys::stat::{fstatat, SFlag};
+    use nix::sys::stat::fstatat;
     use nix::unistd::{unlinkat, UnlinkatFlags};
     use std::ffi::CString;
     use std::os::fd::AsFd as _;
@@ -140,7 +153,7 @@ fn clean_tree_confined(root: &Path) -> Result<(), String> {
                     ));
                 }
             };
-            if SFlag::from_bits_truncate(st.st_mode).contains(SFlag::S_IFDIR) {
+            if is_directory_mode(st.st_mode) {
                 let (child_dir, child_entries) =
                     open_confined_child_dir(frame.dir.as_fd(), name.as_c_str())?;
                 stack.push(Frame {
@@ -149,8 +162,8 @@ fn clean_tree_confined(root: &Path) -> Result<(), String> {
                     parent_entry_name: Some(name),
                 });
             } else {
-                // Never chmod regular files, symlinks, or hardlinks: unlinkat
-                // only requires write+exec on the parent directory fd.
+                // Never chmod regular files, symlinks, hardlinks, or sockets:
+                // unlinkat only requires write+exec on the parent directory fd.
                 match unlinkat(
                     frame.dir.as_fd(),
                     name.as_c_str(),
@@ -200,38 +213,7 @@ fn open_confined_root(root: &Path) -> Result<(nix::dir::Dir, Vec<std::ffi::CStri
     let flags = OFlag::O_RDONLY | OFlag::O_DIRECTORY | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC;
     let fd = match open(root, flags, Mode::empty()) {
         Ok(fd) => fd,
-        Err(Errno::EACCES) => {
-            // Root itself is the owned TempDir created by this process; if the
-            // child stripped read bits from it, verify it is still a real
-            // directory before restoring owner rwx and reopening O_NOFOLLOW.
-            let meta = std::fs::symlink_metadata(root).map_err(|error| {
-                format!(
-                    "sandbox private temp metadata failed at {}: {error}",
-                    root.display()
-                )
-            })?;
-            if meta.file_type().is_symlink() || !meta.is_dir() {
-                return Err(format!(
-                    "sandbox private temp root is not a real directory: {}",
-                    root.display()
-                ));
-            }
-            use std::os::unix::fs::PermissionsExt as _;
-            std::fs::set_permissions(root, std::fs::Permissions::from_mode(0o700)).map_err(
-                |error| {
-                    format!(
-                        "sandbox private temp root permission relax failed at {}: {error}",
-                        root.display()
-                    )
-                },
-            )?;
-            open(root, flags, Mode::empty()).map_err(|error| {
-                format!(
-                    "sandbox private temp root open failed at {}: {error}",
-                    root.display()
-                )
-            })?
-        }
+        Err(Errno::EACCES) => reopen_unreadable_root(root, flags)?,
         Err(error) => {
             return Err(format!(
                 "sandbox private temp root open failed at {}: {error}",
@@ -242,6 +224,88 @@ fn open_confined_root(root: &Path) -> Result<(nix::dir::Dir, Vec<std::ffi::CStri
     relax_dir_fd_and_read(fd)
 }
 
+#[cfg(target_os = "linux")]
+fn relax_owned_opath_dir_and_reopen(
+    path_fd: std::os::fd::OwnedFd,
+    open_flags: nix::fcntl::OFlag,
+    label: &str,
+) -> Result<std::os::fd::OwnedFd, String> {
+    use nix::fcntl::open;
+    use nix::sys::stat::{fstat, Mode};
+    use nix::unistd::geteuid;
+    use std::os::fd::{AsFd as _, AsRawFd as _};
+
+    let st = fstat(path_fd.as_fd())
+        .map_err(|error| format!("sandbox private temp fstat failed for {label}: {error}"))?;
+    if !is_directory_mode(st.st_mode) {
+        return Err(format!(
+            "sandbox private temp target is not a real directory: {label}"
+        ));
+    }
+    if st.st_uid != geteuid().as_raw() {
+        return Err(format!(
+            "sandbox private temp directory is not owned by this user: {label}"
+        ));
+    }
+    // Pin chmod and reopen to the already-opened O_PATH directory descriptor via
+    // /proc/self/fd/<fd> rather than any child-controlled pathname. Strip
+    // O_NOFOLLOW because /proc/self/fd/<fd> is itself a kernel magic symlink.
+    let proc_fd = format!("/proc/self/fd/{}", path_fd.as_raw_fd());
+    use std::os::unix::fs::PermissionsExt as _;
+    std::fs::set_permissions(&proc_fd, std::fs::Permissions::from_mode(0o700))
+        .map_err(|error| format!("sandbox private temp fd chmod failed for {label}: {error}"))?;
+    open(
+        proc_fd.as_str(),
+        open_flags - nix::fcntl::OFlag::O_NOFOLLOW,
+        Mode::empty(),
+    )
+    .map_err(|error| format!("sandbox private temp fd reopen failed for {label}: {error}"))
+}
+
+#[cfg(target_os = "linux")]
+fn reopen_unreadable_root(
+    root: &Path,
+    open_flags: nix::fcntl::OFlag,
+) -> Result<std::os::fd::OwnedFd, String> {
+    use nix::fcntl::{open, OFlag};
+    use nix::sys::stat::Mode;
+    let path_flags = OFlag::O_PATH | OFlag::O_DIRECTORY | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC;
+    let path_fd = open(root, path_flags, Mode::empty()).map_err(|error| {
+        format!(
+            "sandbox private temp root O_PATH open failed at {}: {error}",
+            root.display()
+        )
+    })?;
+    relax_owned_opath_dir_and_reopen(path_fd, open_flags, &root.display().to_string())
+}
+
+#[cfg(all(unix, not(target_os = "linux")))]
+fn reopen_unreadable_root(
+    root: &Path,
+    open_flags: nix::fcntl::OFlag,
+) -> Result<std::os::fd::OwnedFd, String> {
+    use nix::fcntl::open;
+    use nix::sys::stat::{fchmodat, FchmodatFlags, Mode};
+    fchmodat(
+        nix::fcntl::AT_FDCWD,
+        root,
+        Mode::S_IRWXU,
+        FchmodatFlags::NoFollowSymlink,
+    )
+    .map_err(|error| {
+        format!(
+            "sandbox private temp root permission relax failed at {}: {error}",
+            root.display()
+        )
+    })?;
+    open(root, open_flags, Mode::empty()).map_err(|error| {
+        format!(
+            "sandbox private temp root open failed at {}: {error}",
+            root.display()
+        )
+    })
+}
+
 #[cfg(unix)]
 fn open_confined_child_dir(
     parent: std::os::fd::BorrowedFd<'_>,
@@ -249,29 +313,11 @@ fn open_confined_child_dir(
 ) -> Result<(nix::dir::Dir, Vec<std::ffi::CString>), String> {
     use nix::errno::Errno;
     use nix::fcntl::{openat, OFlag};
-    use nix::sys::stat::{fchmodat, FchmodatFlags, Mode};
+    use nix::sys::stat::Mode;
     let flags = OFlag::O_RDONLY | OFlag::O_DIRECTORY | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC;
     let fd = match openat(parent, name, flags, Mode::empty()) {
         Ok(fd) => fd,
-        Err(Errno::EACCES) => {
-            // Caller verified `S_IFDIR` with AT_SYMLINK_NOFOLLOW and confirmed
-            // child termination; restore owner rwx only for this unreadable
-            // directory, then reopen strictly with O_DIRECTORY | O_NOFOLLOW.
-            fchmodat(parent, name, Mode::S_IRWXU, FchmodatFlags::FollowSymlink).map_err(
-                |error| {
-                    format!(
-                        "sandbox private temp directory permission relax failed for {:?}: {error}",
-                        name.to_string_lossy()
-                    )
-                },
-            )?;
-            openat(parent, name, flags, Mode::empty()).map_err(|error| {
-                format!(
-                    "sandbox private temp directory open failed for {:?}: {error}",
-                    name.to_string_lossy()
-                )
-            })?
-        }
+        Err(Errno::EACCES) => reopen_unreadable_child_dir(parent, name, flags)?,
         Err(error) => {
             return Err(format!(
                 "sandbox private temp directory open failed for {:?}: {error}",
@@ -280,6 +326,46 @@ fn open_confined_child_dir(
         }
     };
     relax_dir_fd_and_read(fd)
+}
+
+#[cfg(target_os = "linux")]
+fn reopen_unreadable_child_dir(
+    parent: std::os::fd::BorrowedFd<'_>,
+    name: &std::ffi::CStr,
+    open_flags: nix::fcntl::OFlag,
+) -> Result<std::os::fd::OwnedFd, String> {
+    use nix::fcntl::{openat, OFlag};
+    use nix::sys::stat::Mode;
+    let path_flags = OFlag::O_PATH | OFlag::O_DIRECTORY | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC;
+    let path_fd = openat(parent, name, path_flags, Mode::empty()).map_err(|error| {
+        format!(
+            "sandbox private temp directory O_PATH open failed for {:?}: {error}",
+            name.to_string_lossy()
+        )
+    })?;
+    relax_owned_opath_dir_and_reopen(path_fd, open_flags, &name.to_string_lossy())
+}
+
+#[cfg(all(unix, not(target_os = "linux")))]
+fn reopen_unreadable_child_dir(
+    parent: std::os::fd::BorrowedFd<'_>,
+    name: &std::ffi::CStr,
+    open_flags: nix::fcntl::OFlag,
+) -> Result<std::os::fd::OwnedFd, String> {
+    use nix::fcntl::openat;
+    use nix::sys::stat::{fchmodat, FchmodatFlags, Mode};
+    fchmodat(parent, name, Mode::S_IRWXU, FchmodatFlags::NoFollowSymlink).map_err(|error| {
+        format!(
+            "sandbox private temp directory permission relax failed for {:?}: {error}",
+            name.to_string_lossy()
+        )
+    })?;
+    openat(parent, name, open_flags, Mode::empty()).map_err(|error| {
+        format!(
+            "sandbox private temp directory open failed for {:?}: {error}",
+            name.to_string_lossy()
+        )
+    })
 }
 
 #[cfg(unix)]
@@ -378,7 +464,7 @@ fn clean_tree_confined(root: &Path) -> Result<(), String> {
                     continue;
                 }
                 if meta.is_dir() {
-                    clear_readonly_if_set(&path, &meta)?;
+                    clear_readonly_on_dir_handle(&path)?;
                     stack.push(Work::RemoveDir(path.clone()));
                     let entries = std::fs::read_dir(&path).map_err(|error| {
                         format!(
@@ -396,7 +482,7 @@ fn clean_tree_confined(root: &Path) -> Result<(), String> {
                         stack.push(Work::Enter(entry.path()));
                     }
                 } else {
-                    remove_windows_file(&path, &meta)?;
+                    remove_windows_file(&path)?;
                 }
             }
         }
@@ -405,15 +491,128 @@ fn clean_tree_confined(root: &Path) -> Result<(), String> {
 }
 
 #[cfg(windows)]
-fn remove_windows_file(path: &Path, meta: &std::fs::Metadata) -> Result<(), String> {
+#[allow(clippy::permissions_set_readonly_false)]
+fn clear_readonly_on_dir_handle(path: &Path) -> Result<(), String> {
+    use std::os::windows::fs::OpenOptionsExt as _;
+    const FILE_READ_ATTRIBUTES: u32 = 0x0080;
+    const FILE_WRITE_ATTRIBUTES: u32 = 0x0100;
+    const FILE_FLAG_BACKUP_SEMANTICS: u32 = 0x0200_0000;
+    const FILE_FLAG_OPEN_REPARSE_POINT: u32 = 0x0020_0000;
+    const FILE_ATTRIBUTE_READONLY: u64 = 0x0001;
+    const FILE_ATTRIBUTE_DIRECTORY: u64 = 0x0010;
+    const FILE_ATTRIBUTE_REPARSE_POINT: u64 = 0x0400;
+
+    let file = std::fs::OpenOptions::new()
+        .access_mode(FILE_READ_ATTRIBUTES | FILE_WRITE_ATTRIBUTES)
+        .custom_flags(FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT)
+        .open(path)
+        .map_err(|error| {
+            format!(
+                "sandbox private temp directory handle open failed at {}: {error}",
+                path.display()
+            )
+        })?;
+    let info = winapi_util::file::information(&file).map_err(|error| {
+        format!(
+            "sandbox private temp directory handle info failed at {}: {error}",
+            path.display()
+        )
+    })?;
+    let attrs = info.file_attributes();
+    if (attrs & FILE_ATTRIBUTE_REPARSE_POINT) != 0 || (attrs & FILE_ATTRIBUTE_DIRECTORY) == 0 {
+        return Err(format!(
+            "sandbox private temp directory changed to non-directory or reparse point: {}",
+            path.display()
+        ));
+    }
+    if (attrs & FILE_ATTRIBUTE_READONLY) != 0 {
+        let mut perms = file
+            .metadata()
+            .map_err(|error| {
+                format!(
+                    "sandbox private temp directory metadata failed at {}: {error}",
+                    path.display()
+                )
+            })?
+            .permissions();
+        perms.set_readonly(false);
+        file.set_permissions(perms).map_err(|error| {
+            format!(
+                "sandbox private temp directory permission relax failed at {}: {error}",
+                path.display()
+            )
+        })?;
+    }
+    Ok(())
+}
+
+#[cfg(windows)]
+#[allow(clippy::permissions_set_readonly_false)]
+fn remove_windows_file(path: &Path) -> Result<(), String> {
+    use std::os::windows::fs::OpenOptionsExt as _;
+    const FILE_READ_ATTRIBUTES: u32 = 0x0080;
+    const FILE_WRITE_ATTRIBUTES: u32 = 0x0100;
+    const FILE_FLAG_OPEN_REPARSE_POINT: u32 = 0x0020_0000;
+    const FILE_ATTRIBUTE_READONLY: u64 = 0x0001;
+    const FILE_ATTRIBUTE_DIRECTORY: u64 = 0x0010;
+    const FILE_ATTRIBUTE_REPARSE_POINT: u64 = 0x0400;
+
     match std::fs::remove_file(path) {
         Ok(()) => Ok(()),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
-        Err(error)
-            if error.kind() == std::io::ErrorKind::PermissionDenied
-                && meta.permissions().readonly() =>
-        {
-            clear_readonly_if_set(path, meta)?;
+        Err(error) if error.kind() == std::io::ErrorKind::PermissionDenied => {
+            // Open without following reparse points and mutate FILE_ATTRIBUTE_READONLY
+            // strictly on the open handle ONLY when nNumberOfLinks == 1.
+            let file = std::fs::OpenOptions::new()
+                .access_mode(FILE_READ_ATTRIBUTES | FILE_WRITE_ATTRIBUTES)
+                .custom_flags(FILE_FLAG_OPEN_REPARSE_POINT)
+                .open(path)
+                .map_err(|open_err| {
+                    format!(
+                        "sandbox private temp file handle open failed at {}: {open_err}",
+                        path.display()
+                    )
+                })?;
+            let info = winapi_util::file::information(&file).map_err(|info_err| {
+                format!(
+                    "sandbox private temp file handle info failed at {}: {info_err}",
+                    path.display()
+                )
+            })?;
+            let attrs = info.file_attributes();
+            if (attrs & FILE_ATTRIBUTE_REPARSE_POINT) != 0
+                || (attrs & FILE_ATTRIBUTE_DIRECTORY) != 0
+            {
+                return Err(format!(
+                    "sandbox private temp file changed to reparse point or directory: {}",
+                    path.display()
+                ));
+            }
+            if info.number_of_links() != 1 {
+                return Err(format!(
+                    "sandbox private temp refused to clear readonly on hard-linked file at {}",
+                    path.display()
+                ));
+            }
+            if (attrs & FILE_ATTRIBUTE_READONLY) != 0 {
+                let mut perms = file
+                    .metadata()
+                    .map_err(|meta_err| {
+                        format!(
+                            "sandbox private temp file metadata failed at {}: {meta_err}",
+                            path.display()
+                        )
+                    })?
+                    .permissions();
+                perms.set_readonly(false);
+                file.set_permissions(perms).map_err(|perm_err| {
+                    format!(
+                        "sandbox private temp permission relax failed at {}: {perm_err}",
+                        path.display()
+                    )
+                })?;
+            }
+            drop(file);
             std::fs::remove_file(path).map_err(|retry| {
                 format!(
                     "sandbox private temp unlink failed at {}: {retry}",
@@ -426,22 +625,6 @@ fn remove_windows_file(path: &Path, meta: &std::fs::Metadata) -> Result<(), Stri
             path.display()
         )),
     }
-}
-
-#[cfg(windows)]
-#[allow(clippy::permissions_set_readonly_false)]
-fn clear_readonly_if_set(path: &Path, meta: &std::fs::Metadata) -> Result<(), String> {
-    let mut perms = meta.permissions();
-    if perms.readonly() {
-        perms.set_readonly(false);
-        std::fs::set_permissions(path, perms).map_err(|error| {
-            format!(
-                "sandbox private temp permission relax failed at {}: {error}",
-                path.display()
-            )
-        })?;
-    }
-    Ok(())
 }
 
 #[cfg(not(any(unix, windows)))]
@@ -525,13 +708,12 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn confined_cleanup_unlinks_symlinks_and_hardlinks_without_modifying_outside_targets(
-    ) -> Result<(), String> {
+    fn confined_cleanup_unlinks_symlinks_hardlinks_and_unix_sockets_safely() -> Result<(), String> {
         use std::os::unix::fs::PermissionsExt as _;
 
         let parent = tempfile::Builder::new()
-            .prefix("grapt-scratch-confined-")
-            .tempdir()
+            .prefix("gs-")
+            .tempdir_in("/tmp")
             .map_err(|e| e.to_string())?;
         let outside = parent.path().join("outside");
         std::fs::create_dir(&outside).map_err(|e| e.to_string())?;
@@ -547,6 +729,13 @@ mod tests {
             .map_err(|e| e.to_string())?;
         std::fs::hard_link(&outside_file, scratch_path.join("hard-file"))
             .map_err(|e| e.to_string())?;
+        // Bind a Unix-domain socket (S_IFSOCK = 0o140000, which shares bit
+        // S_IFDIR = 0o040000) and verify S_IFMT masking unlinks it instead of
+        // attempting to open it as a directory.
+        let sock_path = scratch_path.join("s.sock");
+        let listener = std::os::unix::net::UnixListener::bind(&sock_path)
+            .map_err(|e| format!("bind unix socket: {e}"))?;
+        drop(listener);
 
         scratch.cleanup()?;
         assert!(!scratch_path.exists());

@@ -272,11 +272,18 @@ fn run(mut channel: std::fs::File) -> Result<i32, String> {
     let mut environment = request.environment;
     let scratch =
         super::scratch::PrivateScratch::attach(&request.plan, &mut policy, &mut environment)?;
-    let targets = request
+    let targets = match request
         .write_targets
         .iter()
         .map(|path| grapt_sandbox::WriteTarget::resolve(&policy, path))
-        .collect::<Result<Vec<_>, _>>()?;
+        .collect::<Result<Vec<_>, _>>()
+    {
+        Ok(targets) => targets,
+        Err(reason) => {
+            let cleanup_err = super::scratch::cleanup_after_stop(scratch, true);
+            return Err(super::scratch::combine_errors(reason, [cleanup_err]));
+        }
+    };
     let request = ShellRequest {
         command_line: request.command_line,
         working_directory: request.directory,
@@ -302,7 +309,7 @@ fn run(mut channel: std::fs::File) -> Result<i32, String> {
         }
     };
     if let Err(reason) = send(&mut channel, &child.enforcement(), Some(true)) {
-        let (kill_err, reap_err, stopped) = stop_and_reap_child(&mut child);
+        let (kill_err, reap_err, stopped) = stop_and_reap_child(child);
         let cleanup_err = super::scratch::cleanup_after_stop(scratch, stopped);
         return Err(super::scratch::combine_errors(
             reason,
@@ -315,13 +322,16 @@ fn run(mut channel: std::fs::File) -> Result<i32, String> {
         .map_err(|error| format!("sandbox process observation failed: {error}"));
     match status {
         Ok(code) => {
+            // Drop the contained process handle so job/container teardown
+            // completes before walking scratch.
+            drop(child);
             if let Some(scratch) = scratch {
                 scratch.cleanup()?;
             }
             Ok(code)
         }
         Err(wait_reason) => {
-            let (kill_err, reap_err, stopped) = stop_and_reap_child(&mut child);
+            let (kill_err, reap_err, stopped) = stop_and_reap_child(child);
             let cleanup_err = super::scratch::cleanup_after_stop(scratch, stopped);
             Err(super::scratch::combine_errors(
                 wait_reason,
@@ -332,11 +342,11 @@ fn run(mut channel: std::fs::File) -> Result<i32, String> {
 }
 
 fn stop_and_reap_child(
-    child: &mut grapt_sandbox::ContainedShell,
+    mut child: grapt_sandbox::ContainedShell,
 ) -> (Option<String>, Option<String>, bool) {
-    if matches!(child.try_wait(), Ok(Some(_))) {
-        return (None, None, true);
-    }
+    // Always terminate and wait() the full contained process tree, then drop
+    // the handle: MXC try_wait() only observes foreground exit and leaves
+    // descendant teardown to wait() / Drop.
     let kill_err = child
         .kill()
         .err()
@@ -346,6 +356,7 @@ fn stop_and_reap_child(
         .err()
         .map(|error| format!("sandbox reap failed: {error}"));
     let stopped = reap_err.is_none();
+    drop(child);
     (kill_err, reap_err, stopped)
 }
 

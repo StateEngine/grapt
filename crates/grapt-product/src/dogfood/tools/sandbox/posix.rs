@@ -235,9 +235,16 @@ fn run(path: &str) -> Result<i32, String> {
         serde_json::from_slice(&bytes).map_err(|_| "sandbox policy is malformed")?;
     let mut policy = request.plan.policy();
     let mut environment = request.environment;
+    let helper_exe = std::env::current_exe().map_err(|_| "sandbox helper image unavailable")?;
     let scratch =
         super::scratch::PrivateScratch::attach(&request.plan, &mut policy, &mut environment)?;
-    let targets = grants::receive(&channel, &policy, &request.write_targets)?;
+    let targets = match grants::receive(&channel, &policy, &request.write_targets) {
+        Ok(targets) => targets,
+        Err(reason) => {
+            let cleanup_err = super::scratch::cleanup_after_stop(scratch, true);
+            return Err(super::scratch::combine_errors(reason, [cleanup_err]));
+        }
+    };
     let request = ShellRequest {
         command_line: request.command_line,
         working_directory: request.directory,
@@ -245,8 +252,7 @@ fn run(path: &str) -> Result<i32, String> {
         timeout_ms: request.timeout_ms,
         policy,
     };
-    let backend =
-        Bwrap::new(std::env::current_exe().map_err(|_| "sandbox helper image unavailable")?);
+    let backend = Bwrap::new(helper_exe);
     let mut child = match backend.spawn_with_write_targets(&request, &targets) {
         Ok(child) => child,
         Err(error) => {
@@ -264,7 +270,7 @@ fn run(path: &str) -> Result<i32, String> {
         }
     };
     if let Err(reason) = send(&mut channel, &child.enforcement(), Some(true)) {
-        let (kill_err, reap_err, stopped) = stop_and_reap_child(&mut child);
+        let (kill_err, reap_err, stopped) = stop_and_reap_child(child);
         let cleanup_err = super::scratch::cleanup_after_stop(scratch, stopped);
         return Err(super::scratch::combine_errors(
             reason,
@@ -277,13 +283,14 @@ fn run(path: &str) -> Result<i32, String> {
         .map_err(|error| format!("sandbox process observation failed: {error}"));
     match status {
         Ok(code) => {
+            drop(child);
             if let Some(scratch) = scratch {
                 scratch.cleanup()?;
             }
             Ok(code)
         }
         Err(wait_reason) => {
-            let (kill_err, reap_err, stopped) = stop_and_reap_child(&mut child);
+            let (kill_err, reap_err, stopped) = stop_and_reap_child(child);
             let cleanup_err = super::scratch::cleanup_after_stop(scratch, stopped);
             Err(super::scratch::combine_errors(
                 wait_reason,
@@ -294,9 +301,10 @@ fn run(path: &str) -> Result<i32, String> {
 }
 
 fn stop_and_reap_child(
-    child: &mut grapt_sandbox::ContainedShell,
+    mut child: grapt_sandbox::ContainedShell,
 ) -> (Option<String>, Option<String>, bool) {
     if matches!(child.try_wait(), Ok(Some(_))) {
+        drop(child);
         return (None, None, true);
     }
     let kill_err = child
@@ -308,6 +316,7 @@ fn stop_and_reap_child(
         .err()
         .map(|error| format!("sandbox reap failed: {error}"));
     let stopped = reap_err.is_none();
+    drop(child);
     (kill_err, reap_err, stopped)
 }
 
