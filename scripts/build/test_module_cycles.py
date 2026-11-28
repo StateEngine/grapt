@@ -129,6 +129,24 @@ class ModuleCycleTests(unittest.TestCase):
         self.assertEqual(found_cycles, {'c[feature:both]': [['c::a', 'c::b']]})
         self.assertEqual(found_edges, {'c[feature:both]': [['c::a', 'c::b'], ['c::b', 'c::a']]})
 
+    def test_baseline_key_for_inherits_only_for_live_unqualified_feature_variants(self):
+        base = {'pkg', 'pkg[feature:existing]', 'pkg:cli', 'other[all-features]'}
+        cases = [
+            ('pkg[all-features]', base, {'pkg[all-features]'}, 'pkg'),
+            ('pkg[feature:frozen]', base, {'pkg[feature:frozen]'}, 'pkg'),
+            ('pkg:cli[feature:extra]', base, {'pkg:cli[feature:extra]'}, 'pkg:cli'),
+            ('pkg[feature:existing]', base, {'pkg[feature:existing]'}, 'pkg[feature:existing]'),
+            ('new[all-features]', base, {'new[all-features]'}, 'new[all-features]'),
+            ('other[all-features][feature:x]', base, {'other[all-features][feature:x]'},
+             'other[all-features][feature:x]'),
+            ('pkg[all-features]\n', base, {'pkg[all-features]\n'}, 'pkg[all-features]\n'),
+            ('pkg[feature:ghost]', base, set(), 'pkg[feature:ghost]'),
+            ('pkg[all-features]', None, {'pkg[all-features]'}, 'pkg[all-features]'),
+        ]
+        for target, base_cfgs, live_cfgs, want in cases:
+            with self.subTest(target=target, has_base=base_cfgs is not None):
+                self.assertEqual(module_cycles.baseline_key_for(target, base_cfgs, live_cfgs), want)
+
 
 if __name__ == '__main__':
     unittest.main()
