@@ -163,8 +163,9 @@ impl PreparedStoreOpen {
     /// observation and this open, and a rolled-back hot journal may reveal a
     /// pending migration. The store refuses to act on a stale observation; it
     /// is observed once more and opened as it is now, but only if it moved
-    /// forward. A store that vanished or turned older refuses, so an existing
-    /// store is never replaced by a new empty one. A second change refuses.
+    /// forward, and never by creating it. A store that vanished or turned
+    /// older refuses, so an existing store is never replaced by a new empty
+    /// one. A second change refuses.
     fn open_with_authorities(
         self,
         engine_version: &str,
@@ -181,28 +182,41 @@ impl PreparedStoreOpen {
             )
         };
         let found = self.found;
-        match open(self.authority) {
-            Err(
-                OwnedOpenError::InitializationConflict(_)
-                | OwnedOpenError::StaleMigrationPlan { .. }
-                | OwnedOpenError::AuthorityMismatch { .. }
-                | OwnedOpenError::PostActionNotReady(_),
-            ) => {
-                let now = preflight_metadata_read_only(&self.database);
-                let now_kind = kind(&now);
-                // An obstructed store refuses as itself.
-                let granted = authority(now)?;
-                if progress(now_kind) < progress(found) {
-                    return Err(PlatformStoreRefusal::Receded {
-                        database: self.database.clone(),
-                        found,
-                        now: now_kind,
-                    });
-                }
-                open(granted).map_err(PlatformStoreRefusal::OwnedOpen)
-            }
-            result => result.map_err(PlatformStoreRefusal::OwnedOpen),
+        let error = match open(self.authority) {
+            Err(error) => error,
+            opened => return opened.map_err(PlatformStoreRefusal::OwnedOpen),
+        };
+        let Some(reported) = changed_to(&error) else {
+            return Err(PlatformStoreRefusal::OwnedOpen(error));
+        };
+        // The furthest the store was seen to come, before and during the open.
+        let high = progress(found).max(progress(reported));
+        let now = preflight_metadata_read_only(&self.database);
+        let now_kind = kind(&now);
+        // An obstructed store refuses as itself.
+        let granted = authority(now)?;
+        // A retry never creates a store: one that is absent now was seen a
+        // moment ago, and an empty store must not take its place.
+        if matches!(granted, OwnedOpenAuthority::Initialize) || progress(now_kind) < high {
+            return Err(PlatformStoreRefusal::Receded {
+                database: self.database.clone(),
+                found,
+                now: now_kind,
+            });
         }
+        open(granted).map_err(PlatformStoreRefusal::OwnedOpen)
+    }
+}
+
+/// The state an owned-open refusal saw when the store changed under it, or
+/// `None` for a refusal that a second look would not change.
+fn changed_to(error: &OwnedOpenError) -> Option<FirstContactKind> {
+    match error {
+        OwnedOpenError::AuthorityMismatch { observed, .. }
+        | OwnedOpenError::StaleMigrationPlan { observed, .. }
+        | OwnedOpenError::InitializationConflict(observed)
+        | OwnedOpenError::PostActionNotReady(observed) => Some(kind(observed)),
+        _ => None,
     }
 }
 

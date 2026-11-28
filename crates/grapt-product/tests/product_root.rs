@@ -374,6 +374,13 @@ fn damaged_store_refuses_before_registration_authority() {
         !output.status.success(),
         "a damaged store launched the product"
     );
+    // Refused at first contact by the platform, not later by the store's own
+    // open after authority was already taken.
+    let text = String::from_utf8_lossy(&output.stdout) + String::from_utf8_lossy(&output.stderr);
+    assert!(
+        text.contains("first-contact store classification"),
+        "the damaged store was not refused at first contact: {text}"
+    );
     assert!(
         fs::read(root.join("database.sqlite3")).is_ok_and(|bytes| bytes == damaged),
         "the damaged store was changed"

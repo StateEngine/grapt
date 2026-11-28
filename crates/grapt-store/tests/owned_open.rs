@@ -329,7 +329,7 @@ fn unreadable_corrupt_and_quarantined_paths_remain_distinct_refusals() -> TestRe
 }
 
 /// A database reached through a file link is backed up beside the real file,
-/// on its filesystem, never beside the link.
+/// on its filesystem, never beside the link, and only its owner can read it.
 #[cfg(unix)]
 #[test]
 fn a_linked_database_is_backed_up_beside_the_file_it_names() -> TestResult {
@@ -346,6 +346,13 @@ fn a_linked_database_is_backed_up_beside_the_file_it_names() -> TestResult {
     drop(opened);
     assert_eq!(backup_count(&real)?, 1);
     assert_eq!(backup_count(&link)?, 0);
+    for entry in std::fs::read_dir(&real)? {
+        let entry = entry?;
+        if entry.file_name().to_string_lossy().ends_with(".bak") {
+            use std::os::unix::fs::PermissionsExt;
+            assert_eq!(entry.metadata()?.permissions().mode() & 0o777, 0o600);
+        }
+    }
     std::fs::remove_dir_all(root)?;
     Ok(())
 }

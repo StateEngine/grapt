@@ -161,6 +161,11 @@ impl Validation {
 }
 
 pub(crate) fn preflight_unfenced(path: &Path, validation: Validation) -> StoreReadiness {
+    let real = match super::authority::real_database_path(path) {
+        Ok(real) => real,
+        Err(error) => return StoreReadiness::Unreadable(Unreadable::Metadata(error)),
+    };
+    let path = real.as_path();
     let metadata = match path.metadata() {
         Ok(metadata) if metadata.is_file() => metadata,
         Ok(_) => return StoreReadiness::Unreadable(Unreadable::NotAFile),

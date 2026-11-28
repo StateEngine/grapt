@@ -220,6 +220,9 @@ impl EventStore {
         ids: &dyn IdAuthority,
         driver: &dyn MigrationDriver,
     ) -> Result<OwnedEventStore, OwnedOpenError> {
+        let real = crate::migration::authority::real_database_path(path)
+            .map_err(OwnedOpenError::FileIdentity)?;
+        let path = real.as_path();
         // Ready opens verify ownership, schema and compatibility without walking
         // every historical page. Explicit first contact still audits the DB.
         let observation = match &authority {

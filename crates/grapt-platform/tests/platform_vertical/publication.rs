@@ -79,7 +79,7 @@ fn a_store_pending_migration_is_migrated_when_opened() -> TestResult {
             &opened,
             Ok(owner) if matches!(owner.receipt(), grapt_store::OwnedOpenReceipt::Migrated { .. })
         ),
-        "a store pending migration was not migrated: {opened:?}"
+        "a migration-needed store was opened without migrating: {opened:?}"
     );
     drop(opened);
     assert_eq!(
