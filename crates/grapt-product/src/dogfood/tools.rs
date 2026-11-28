@@ -94,8 +94,6 @@ pub(super) const SUBAGENT_TOOL: &str = "subagent";
 pub(super) const HISTORY_TOOL: &str = "history";
 pub(super) const PLAN_TOOL: &str = "update_plan";
 pub(super) const EXECUTE_TOOL: &str = "execute";
-/// The start of every refusal of a tool name nothing serves.
-const UNKNOWN_TOOL: &str = "provider requested an unknown tool";
 
 pub(super) fn composition_definition(
     published: &super::mcp::PublishedTools,
@@ -836,10 +834,7 @@ fn prepare_effect_inner(
         SHELL_TOOL => {
             shell_environment::prepare_shell(root, service, input, credential_environment)
         }
-        _ => Err(format!(
-            "{UNKNOWN_TOOL}{}",
-            call_repair::unknown_tool_hint(tool)
-        )),
+        _ => Err("provider requested an unknown tool".to_owned()),
     }
 }
 

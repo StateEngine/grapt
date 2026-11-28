@@ -7,11 +7,14 @@
 //! from a fixed alias to a declared parameter the call did not supply, and only
 //! a string holding exactly an unsigned integer or `true`/`false` becomes that
 //! integer or boolean where the schema asks for one. String values (paths,
-//! commands, edit anchors) are never changed, and published MCP or plugin tools
-//! are never touched.
+//! commands, edit anchors) are never changed, published MCP or plugin tools
+//! are never touched, and a call that repeats a JSON key is left whole for its
+//! decoder to refuse. Hints name only schema-owned parameters and builtin
+//! tools, never a key or value the model chose.
 use grapt_runtime::BoundedToolInput;
+use serde::de::{self, DeserializeSeed, Deserializer, MapAccess, SeqAccess, Visitor};
 use serde_json::{Map, Value};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::OnceLock;
 
 /// Parameter names models often send in place of a declared one.
@@ -25,9 +28,9 @@ const ALIASES: &[(&str, &str)] = &[
     ("newText", "new_text"),
     ("replaceAll", "replace_all"),
 ];
-/// The most unknown parameters or suggested tools one hint names.
+/// The most suggestions one hint names.
 const MAX_LISTED: usize = 4;
-/// Characters of a model-chosen name a hint repeats.
+/// The longest name a suggestion is computed for.
 const MAX_NAME_CHARS: usize = 64;
 /// The furthest edit distance a suggestion may be from what was asked.
 const MAX_DISTANCE: usize = 2;
@@ -138,7 +141,7 @@ pub(super) fn repair(tool: &str, input: BoundedToolInput) -> (BoundedToolInput, 
     let Some(fields) = builtin(tool) else {
         return (input, None);
     };
-    let Ok(Value::Object(mut object)) = serde_json::from_slice::<Value>(input.as_bytes()) else {
+    let Some(Value::Object(mut object)) = unique_object(input.as_bytes()) else {
         return (input, None);
     };
     let repair = match (rename(&mut object, fields), coerce(&mut object, fields)) {
@@ -198,11 +201,41 @@ fn coerce(object: &mut Map<String, Value>, fields: &Fields) -> bool {
     coerced
 }
 
-/// Why a builtin call does not fit its parameters, naming the fix; `None` when
-/// it fits or is not a builtin JSON object. No parameter value is repeated.
-pub(super) fn parameter_hint(tool: &str, input: &BoundedToolInput) -> Option<(Hint, String)> {
+/// A call refused before preparation, and the hint its refusal shows.
+#[derive(Debug)]
+pub(super) struct Refusal {
+    pub(super) hint: Hint,
+    pub(super) detail: String,
+}
+
+/// Refuse, before preparation, a call that does not fit: a tool nothing
+/// serves, when a builtin name is close enough to suggest, or a builtin call
+/// whose parameters are unknown or missing. `None` leaves the call to the
+/// ordinary path, which refuses any other unknown tool without a hint.
+pub(super) fn screen(
+    tool: &str,
+    input: &BoundedToolInput,
+    served: impl FnOnce() -> bool,
+) -> Option<Refusal> {
+    if !served() {
+        let names = close_tools(tool);
+        return (!names.is_empty()).then(|| Refusal {
+            hint: Hint::UnknownTool,
+            detail: format!(
+                "provider requested an unknown tool (did you mean `{}`?)",
+                names.join("`, `")
+            ),
+        });
+    }
+    parameter_refusal(tool, input)
+}
+
+/// Why a builtin call does not fit its parameters, naming the fix with
+/// schema-owned names and counts only; `None` when it fits, is not a builtin
+/// JSON object, or repeats a key (its decoder refuses that).
+fn parameter_refusal(tool: &str, input: &BoundedToolInput) -> Option<Refusal> {
     let fields = builtin(tool)?;
-    let Value::Object(object) = serde_json::from_slice::<Value>(input.as_bytes()).ok()? else {
+    let Value::Object(object) = unique_object(input.as_bytes())? else {
         return None;
     };
     let unknown: Vec<&String> = object
@@ -220,18 +253,21 @@ pub(super) fn parameter_hint(tool: &str, input: &BoundedToolInput) -> Option<(Hi
     let mut expected: Vec<&str> = fields.kinds.keys().map(String::as_str).collect();
     expected.sort_unstable();
     let mut parts = Vec::new();
-    for key in unknown.iter().take(MAX_LISTED) {
-        let mut part = format!("unknown parameter `{}`", bounded(key));
-        if let Some(declared) = suggest_parameter(key, &expected) {
-            part.push_str(&format!(" (did you mean `{declared}`?)"));
+    if !unknown.is_empty() {
+        let mut suggested: Vec<&str> = unknown
+            .iter()
+            .filter_map(|key| suggest_parameter(key, &expected))
+            .filter(|name| !object.contains_key(*name))
+            .collect();
+        suggested.sort_unstable();
+        suggested.dedup();
+        suggested.truncate(MAX_LISTED);
+        let plural = if unknown.len() == 1 { "" } else { "s" };
+        let mut part = format!("{} unknown parameter{plural}", unknown.len());
+        if !suggested.is_empty() {
+            part.push_str(&format!(" (did you mean `{}`?)", suggested.join("`, `")));
         }
         parts.push(part);
-    }
-    if unknown.len() > MAX_LISTED {
-        parts.push(format!(
-            "{} more unknown parameters",
-            unknown.len() - MAX_LISTED
-        ));
     }
     parts.extend(
         missing
@@ -243,18 +279,18 @@ pub(super) fn parameter_hint(tool: &str, input: &BoundedToolInput) -> Option<(Hi
     } else {
         Hint::UnknownParameter
     };
-    Some((
+    Some(Refusal {
         hint,
-        format!(
-            "{}; {tool} takes: {}",
+        detail: format!(
+            "tool input is invalid: {}; {tool} takes: {}",
             parts.join("; "),
             expected.join(", ")
         ),
-    ))
+    })
 }
 
-/// A suffix naming the builtins closest to an unknown tool name, or nothing.
-pub(super) fn unknown_tool_hint(tool: &str) -> String {
+/// The builtin names closest to an unknown tool name.
+fn close_tools(tool: &str) -> Vec<&'static str> {
     let wanted = tool.to_ascii_lowercase();
     let mut close: Vec<&str> = super::catalog::BUILTIN_TOOL_NAMES
         .iter()
@@ -263,10 +299,7 @@ pub(super) fn unknown_tool_hint(tool: &str) -> String {
         .take(MAX_LISTED)
         .collect();
     close.sort_unstable();
-    if close.is_empty() {
-        return String::new();
-    }
-    format!(" (did you mean `{}`?)", close.join("`, `"))
+    close
 }
 
 fn suggest_parameter<'a>(key: &str, expected: &[&'a str]) -> Option<&'a str> {
@@ -302,12 +335,72 @@ fn distance(left: &str, right: &str) -> Option<usize> {
     previous.last().copied()
 }
 
-/// A model-chosen name as a hint repeats it: printable and bounded.
-fn bounded(name: &str) -> String {
-    name.chars()
-        .filter(|c| !c.is_control())
-        .take(MAX_NAME_CHARS)
-        .collect()
+/// The JSON value of `bytes`, or `None` when it is not JSON or any object in
+/// it repeats a key: a repaired copy would keep only one of the repeats.
+fn unique_object(bytes: &[u8]) -> Option<Value> {
+    let mut deserializer = serde_json::Deserializer::from_slice(bytes);
+    UniqueKeys.deserialize(&mut deserializer).ok()?;
+    deserializer.end().ok()?;
+    serde_json::from_slice(bytes).ok()
+}
+
+/// Walks a JSON document and refuses the first object that repeats a key.
+struct UniqueKeys;
+
+impl<'de> DeserializeSeed<'de> for UniqueKeys {
+    type Value = ();
+
+    fn deserialize<D: Deserializer<'de>>(self, deserializer: D) -> Result<(), D::Error> {
+        deserializer.deserialize_any(self)
+    }
+}
+
+impl<'de> Visitor<'de> for UniqueKeys {
+    type Value = ();
+
+    fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("JSON without repeated object keys")
+    }
+
+    fn visit_bool<E>(self, _: bool) -> Result<(), E> {
+        Ok(())
+    }
+
+    fn visit_i64<E>(self, _: i64) -> Result<(), E> {
+        Ok(())
+    }
+
+    fn visit_u64<E>(self, _: u64) -> Result<(), E> {
+        Ok(())
+    }
+
+    fn visit_f64<E>(self, _: f64) -> Result<(), E> {
+        Ok(())
+    }
+
+    fn visit_str<E>(self, _: &str) -> Result<(), E> {
+        Ok(())
+    }
+
+    fn visit_unit<E>(self) -> Result<(), E> {
+        Ok(())
+    }
+
+    fn visit_seq<A: SeqAccess<'de>>(self, mut seq: A) -> Result<(), A::Error> {
+        while seq.next_element_seed(UniqueKeys)?.is_some() {}
+        Ok(())
+    }
+
+    fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> Result<(), A::Error> {
+        let mut seen = HashSet::new();
+        while let Some(key) = map.next_key::<String>()? {
+            if !seen.insert(key) {
+                return Err(de::Error::custom("an object repeats a key"));
+            }
+            map.next_value_seed(UniqueKeys)?;
+        }
+        Ok(())
+    }
 }
 
 #[cfg(test)]

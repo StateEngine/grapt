@@ -7,6 +7,11 @@ fn call(value: &serde_json::Value) -> Result<BoundedToolInput, Box<dyn std::erro
     Ok(BoundedToolInput::new(serde_json::to_vec(value)?)?)
 }
 
+/// A model call to a served tool, screened before preparation.
+fn refused(tool: &str, input: &BoundedToolInput) -> Option<Refusal> {
+    screen(tool, input, || true)
+}
+
 fn object(input: &BoundedToolInput) -> Result<Value, serde_json::Error> {
     serde_json::from_slice(input.as_bytes())
 }
@@ -25,16 +30,19 @@ fn aliases_rename_keys_and_never_touch_their_values() -> TestResult {
         object(&repaired)?,
         serde_json::json!({"path": "src/../lib.rs", "old_text": anchor, "new_text": "new"})
     );
-    // With the declared name present the alias stays, and the hint names it.
+    // With the declared name present the alias stays and the call refuses,
+    // without repeating the model's key.
     let both = call(&serde_json::json!({"path": "a", "file_path": "b"}))?;
     let (kept, change) = repair(READ_TOOL, both);
     assert_eq!(change, None);
-    let (hint, detail) = parameter_hint(READ_TOOL, &kept).ok_or("no hint")?;
-    assert_eq!(hint, Hint::UnknownParameter);
+    let refusal = refused(READ_TOOL, &kept).ok_or("no refusal")?;
+    assert_eq!(refusal.hint, Hint::UnknownParameter);
     assert!(
-        detail.contains("`file_path` (did you mean `path`?)"),
-        "{detail}"
+        refusal.detail.contains("1 unknown parameter;"),
+        "{}",
+        refusal.detail
     );
+    assert!(!refusal.detail.contains("file_path"), "{}", refusal.detail);
     Ok(())
 }
 
@@ -89,7 +97,7 @@ fn shell_text_and_published_tools_are_never_rewritten() -> TestResult {
     let bytes = foreign.as_bytes().to_vec();
     let (kept, change) = repair("mcp_example", foreign);
     assert_eq!((change, kept.as_bytes()), (None, bytes.as_slice()));
-    assert!(parameter_hint("mcp_example", &kept).is_none());
+    assert!(refused("mcp_example", &kept).is_none());
     Ok(())
 }
 
@@ -117,22 +125,49 @@ fn preparation_sees_the_repaired_call() -> TestResult {
 }
 
 #[test]
-fn hints_name_missing_parameters_and_close_tools_without_values() -> TestResult {
-    let (hint, detail) = parameter_hint(
-        READ_TOOL,
-        &call(&serde_json::json!({"secret": "token-value"}))?,
-    )
-    .ok_or("no hint")?;
-    assert_eq!(hint, Hint::UnknownParameter);
+fn hints_name_only_schema_parameters_and_close_tools() -> TestResult {
+    let secret = call(&serde_json::json!({"secret_token_value": "value"}))?;
+    let refusal = refused(READ_TOOL, &secret).ok_or("no refusal")?;
+    assert_eq!(refusal.hint, Hint::UnknownParameter);
+    assert!(refusal.detail.contains("missing required parameter `path`"));
+    assert!(!refusal.detail.contains("secret") && !refusal.detail.contains("value"));
+    let aliased = call(&serde_json::json!({"file_path": "a"}))?;
+    let refusal = refused(READ_TOOL, &aliased).ok_or("no refusal")?;
     assert!(
-        detail.contains("missing required parameter `path`"),
-        "{detail}"
+        refusal.detail.contains("(did you mean `path`?)"),
+        "{}",
+        refusal.detail
     );
-    assert!(!detail.contains("token-value"), "{detail}");
-    let (hint, _) = parameter_hint(READ_TOOL, &call(&serde_json::json!({}))?).ok_or("no hint")?;
-    assert_eq!(hint, Hint::MissingParameter);
-    assert!(parameter_hint(READ_TOOL, &call(&serde_json::json!({"path": "a"}))?).is_none());
-    assert_eq!(unknown_tool_hint("raed"), " (did you mean `read`?)");
-    assert_eq!(unknown_tool_hint("completely_unrelated"), "");
+    let empty = call(&serde_json::json!({}))?;
+    assert_eq!(
+        refused(READ_TOOL, &empty).map(|r| r.hint),
+        Some(Hint::MissingParameter)
+    );
+    assert!(refused(READ_TOOL, &call(&serde_json::json!({"path": "a"}))?).is_none());
+    let unknown = screen("raed", &empty, || false).ok_or("no refusal")?;
+    assert_eq!(unknown.hint, Hint::UnknownTool);
+    assert!(
+        unknown.detail.ends_with("(did you mean `read`?)"),
+        "{}",
+        unknown.detail
+    );
+    // No suggestion, no early refusal: the ordinary path refuses it.
+    assert!(screen("completely_unrelated", &empty, || false).is_none());
+    Ok(())
+}
+
+/// A repaired copy would keep only one of two repeated keys, so a call with
+/// a repeat is neither repaired nor screened: its decoder refuses it whole.
+#[test]
+fn a_repeated_key_leaves_the_call_unrepaired() -> TestResult {
+    for raw in [
+        r#"{"path":"a","path":"b","limit":"5"}"#,
+        r#"{"path":"a","limit":"5","nested":{"x":1,"x":2}}"#,
+    ] {
+        let input = BoundedToolInput::new(raw.as_bytes().to_vec())?;
+        let (kept, change) = repair(READ_TOOL, input);
+        assert_eq!((change, kept.as_bytes()), (None, raw.as_bytes()));
+        assert!(refused(READ_TOOL, &kept).is_none());
+    }
     Ok(())
 }

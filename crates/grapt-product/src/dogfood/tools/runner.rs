@@ -351,18 +351,6 @@ impl PermissionToolRunner {
                 return self.early_failure(&tool, ToolFailureReason::EffectFailed, detail.into());
             }
         }
-        // A builtin call that still does not fit its parameters is refused
-        // here, naming the fix, before preparation or any permission work.
-        if options.hook.input.is_none() {
-            if let Some((hint, detail)) = call_repair::parameter_hint(&tool, &input) {
-                options.hinted(hint);
-                return self.early_failure(
-                    &tool,
-                    ToolFailureReason::EffectFailed,
-                    format!("tool input is invalid: {detail}"),
-                );
-            }
-        }
         // Every published MCP or plugin tool keeps its original schema on
         // ordinary model calls as well as CodeMode/machine-output calls.
         if let Err(error) = schema::validate_published(&self.published, &tool, input.as_bytes()) {
@@ -419,9 +407,6 @@ impl PermissionToolRunner {
             Err(error) => {
                 if options.hook.input.is_some() {
                     return self.rejected_hook_input(&tool, &error);
-                }
-                if error.starts_with(UNKNOWN_TOOL) {
-                    options.hinted(call_repair::Hint::UnknownTool);
                 }
                 return self.early_failure(
                     &tool,
@@ -723,11 +708,35 @@ pub(super) fn refusal_detail(receipt: Option<&sandbox::Receipt>, detail: &str) -
     )
 }
 
-impl ToolRunOptions {
-    /// Record a recovery hint on this call's dispatch observation.
-    fn hinted(&self, hint: call_repair::Hint) {
-        if let Some(observation) = &self.observation {
-            observation.hinted(hint);
+impl PermissionToolRunner {
+    /// Refuse a model's call that does not fit, before preparation or any
+    /// permission work, recording the hint its refusal shows.
+    pub(super) fn screened(
+        &self,
+        tool: &str,
+        input: &BoundedToolInput,
+        options: &ToolRunOptions,
+    ) -> Option<BoxFuture<'static, ToolTerminalOutcome>> {
+        if options.hook.input.is_some() {
+            return None;
         }
+        let refusal = call_repair::screen(tool, input, || self.serves(tool))?;
+        if let Some(observation) = &options.observation {
+            observation.hinted(refusal.hint);
+        }
+        Some(self.early_failure(tool, ToolFailureReason::EffectFailed, refusal.detail))
+    }
+
+    /// Whether any builtin, internal effect, published MCP route or plugin
+    /// route answers for `tool` in this execution.
+    fn serves(&self, tool: &str) -> bool {
+        catalog::BUILTIN_TOOL_NAMES.contains(&tool)
+            || tool == EXECUTE_TOOL
+            || tool == INTEGRATION_COMMAND_TOOL
+            || self.published.routes.contains_key(tool)
+            || self.plugin_generation.as_deref().is_some_and(|generation| {
+                super::super::plugins::PluginRuntime::route(generation, &self.published, tool)
+                    .is_some()
+            })
     }
 }
