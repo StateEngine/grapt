@@ -5,6 +5,90 @@ mod owned;
 impl DogfoodApplication {
     #[allow(
         clippy::too_many_arguments,
+        reason = "typed auto-resume admission coordinates"
+    )]
+    pub(in crate::dogfood) async fn submit_auto_resume(
+        &self,
+        principal: SealedPrincipal,
+        session: SessionId,
+        input: MessageId,
+        turn_origin_seq: u64,
+        text: String,
+        description: Option<String>,
+        metadata: Option<Value>,
+    ) -> Result<super::startup_recovery::auto_resume::AutoResumeAdmission, String> {
+        let record = self.get_record(&session)?;
+        let agent = grapt_types::AgentId::new(record.agent.unwrap_or_else(|| "default".to_owned()))
+            .ok_or_else(|| "session agent identity is invalid".to_owned())?;
+        self.ensure_session_writer(&session)?;
+        subagent::claim_single_prompt(self, &session)?;
+        let reservation = self.prompt_mailbox.reserve()?;
+        let wake = self
+            .wake_slots
+            .reserve_for_workspace(&session, Path::new(record.placement.directory()))?;
+        let event = self.mint_event()?;
+        let created_ms = self.clock.now().as_millis();
+        let (admission, seq) = {
+            let mut inbox = self.lock_inbox();
+            if let Some(reason) = super::startup_recovery::auto_resume::verify_before_admission(
+                inbox.store().connection(),
+                &session,
+                turn_origin_seq,
+            )? {
+                return Ok(
+                    super::startup_recovery::auto_resume::AutoResumeAdmission::Superseded(reason),
+                );
+            }
+            let admission = inbox
+                .admit_synthetic(grapt_inbox::SyntheticAdmitRequest {
+                    event_id: &event,
+                    session: &session,
+                    input: &input,
+                    text: &text,
+                    description: description.as_deref(),
+                    metadata: metadata.as_ref(),
+                    delivery: DeliveryMode::Queue,
+                    resume: true,
+                    created_ms,
+                })
+                .map_err(|error| error.to_string())?;
+            let seq = match &admission {
+                AdmitOutcome::Admitted { seq, .. } => *seq,
+                AdmitOutcome::Reconciled { .. } => {
+                    inbox
+                        .admission_coordinates(&input)
+                        .map_err(|error| error.to_string())?
+                        .seq
+                }
+            };
+            if matches!(admission, AdmitOutcome::Admitted { .. }) {
+                input_events::publish(&inbox, &self.hub, &session, seq);
+                self.agent_activity.send_replace(());
+            }
+            (admission, seq)
+        };
+        if !should_execute(&admission) {
+            return Ok(super::startup_recovery::auto_resume::AutoResumeAdmission::Submitted);
+        }
+        let accepted = self.schedule_admitted(
+            principal,
+            session,
+            input,
+            seq,
+            agent,
+            reservation,
+            Some(wake),
+            None,
+            None,
+        )?;
+        accepted
+            .await
+            .map_err(|_| "execution owner closed before accepting custody".to_owned())??;
+        Ok(super::startup_recovery::auto_resume::AutoResumeAdmission::Submitted)
+    }
+
+    #[allow(
+        clippy::too_many_arguments,
         reason = "typed synthetic admission coordinates"
     )]
     pub(crate) async fn submit_synthetic(

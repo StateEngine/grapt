@@ -28,7 +28,7 @@ pub(super) fn recover(
     clock: &Arc<SystemClock>,
     receipt_bytes: NonZeroU32,
 ) -> Result<(), DogfoodRefusal> {
-    auto_resume::ensure_schema(store).map_err(DogfoodRefusal::Compose)?;
+    auto_resume::ensure_schema_if_missing(store).map_err(DogfoodRefusal::Compose)?;
     let runtime_ids = execution::RuntimeEventIds(Arc::clone(ids));
     let runtime_clock = execution::RuntimeClock(Arc::clone(clock));
     let mut attempt_first = |store: &mut grapt_store::EventStore, session: &SessionId| {
@@ -52,6 +52,8 @@ pub(super) fn recover(
             attempts.warnings_omitted
         ));
     }
+    let pre_recovery_forms = auto_resume::collect_pre_recovery_form_sessions(store.connection())
+        .map_err(DogfoodRefusal::Compose)?;
     let forms = elicitation::recover(store, ids.as_ref(), clock.as_ref())
         .map_err(DogfoodRefusal::Compose)?;
     for warning in &forms {
@@ -61,7 +63,13 @@ pub(super) fn recover(
     }
     let mut status_first = |store: &mut grapt_store::EventStore, session: &SessionId| {
         settle_lost_tool_runs(store, session, &runtime_ids, &runtime_clock)?;
-        auto_resume::enqueue_if_eligible(store, session, clock.as_ref(), ids.as_ref())
+        auto_resume::enqueue_if_eligible(
+            store,
+            session,
+            &pre_recovery_forms,
+            clock.as_ref(),
+            ids.as_ref(),
+        )
     };
     session_status::SessionStatusEmitter::recover(store, clock, ids, &mut status_first);
     Ok(())

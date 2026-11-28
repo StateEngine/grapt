@@ -328,14 +328,15 @@ impl PromptDriver {
                 build_scan_indexes(&inbox)
             }));
         }
-        if let (Some(application), Some(principal)) = (
+        let auto_resume_task = match (
             self.auto_resume_app.take(),
             self.auto_resume_principal.take(),
         ) {
-            drop(tokio::task::spawn(async move {
+            (Some(application), Some(principal)) => Some(tokio::task::spawn(async move {
                 super::startup_recovery::auto_resume::drive(application, principal).await;
-            }));
-        }
+            })),
+            _ => None,
+        };
         let mut stopping = super::lifecycle::StopReason::ServiceStopped;
         let native = self.native_mail.clone();
         let mut mail_drive = native
@@ -412,6 +413,11 @@ impl PromptDriver {
                 },
             }
         };
+        // Stop the startup auto-resume driver before closing admission.
+        if let Some(task) = auto_resume_task {
+            task.abort();
+            let _ = task.await;
+        }
         // Drop each session coordinator before joining native transport cleanup.
         drop(mail_drive);
         self.capacity.close();
