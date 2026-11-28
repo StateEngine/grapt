@@ -1261,3 +1261,149 @@ fn empty_promotion_retirement_reports_retired_only_for_stream_refresh() -> Resul
     assert_eq!(second, grapt_inbox::PromoteOutcome::Empty);
     Ok(())
 }
+
+#[test]
+fn promoted_and_retired_resume_retry_returns_settled_not_wake_advised() -> Result<(), String> {
+    let (mut store, ids, clock) = test_store()?;
+    let session: SessionId = "ses_auto_proj_retired"
+        .parse()
+        .map_err(|e| format!("{e}"))?;
+    let origin = seed_active_turn(&mut store, &ids, &clock, &session, None, "exec_pr1")?;
+    let resume_id = synthetic_message_id(&session, origin, 1)?;
+    upsert_row_with_input(
+        &mut store,
+        &session,
+        origin,
+        "exec_pr1",
+        1,
+        ResumeState::Running,
+        None,
+        clock.now().as_millis(),
+        Some(&resume_id),
+    )?;
+    let mut inbox = grapt_inbox::Inbox::new(store).map_err(|e| e.to_string())?;
+    let _ = admit_resume_in_inbox(&mut inbox, &ids, &clock, &session, &resume_id)?;
+    let ev: EventId = format!("evt_{}", ids.mint().as_str())
+        .parse()
+        .map_err(|e| format!("{e}"))?;
+    let mut mint = || ev.clone();
+    let promoted = inbox
+        .promote_next(
+            &session,
+            grapt_inbox::PromoteScope::InputAtIdle,
+            &mut mint,
+            clock.now().as_millis(),
+        )
+        .map_err(|e| e.to_string())?;
+    assert!(promoted.is_some());
+    // Retire the already-promoted resume input (creating a projected row with active=0).
+    upsert_row(
+        inbox.store_mut(),
+        &session,
+        origin,
+        "exec_pr1",
+        1,
+        ResumeState::Completed,
+        Some("execution_succeeded"),
+        clock.now().as_millis(),
+    )?;
+    let retried = admit_resume_in_inbox(&mut inbox, &ids, &clock, &session, &resume_id)?;
+    assert_eq!(
+        retried,
+        grapt_inbox::AdmitOutcome::Reconciled {
+            wake: grapt_inbox::WakeDisposition::Settled
+        }
+    );
+    assert!(!crate::dogfood::support::should_execute(&retried));
+    Ok(())
+}
+
+#[test]
+fn custody_tied_terminal_settlement_ignores_unrelated_input_and_commits_atomically(
+) -> Result<(), String> {
+    let (mut store, ids, clock) = test_store()?;
+    let session: SessionId = "ses_auto_custody_settle"
+        .parse()
+        .map_err(|e| format!("{e}"))?;
+    let origin = seed_active_turn(&mut store, &ids, &clock, &session, None, "exec_cs1")?;
+    let resume_id = synthetic_message_id(&session, origin, 1)?;
+    let unrelated_id: grapt_types::MessageId =
+        "msg_unrelated_wake".parse().map_err(|e| format!("{e}"))?;
+    upsert_row_with_input(
+        &mut store,
+        &session,
+        origin,
+        "exec_cs1",
+        1,
+        ResumeState::Running,
+        None,
+        clock.now().as_millis(),
+        Some(&resume_id),
+    )?;
+    let aggregate = AggregateId::Session(session.clone());
+    let writer = store.fencing_token(&aggregate).map_err(|e| e.to_string())?;
+    // Unowned or unrelated input must NOT settle the running resume claim.
+    {
+        let tx = store.governed_transaction().map_err(|e| e.to_string())?;
+        assert_eq!(
+            settle_for_execution_within(
+                &tx,
+                writer,
+                &session,
+                None,
+                grapt_session::execution::Outcome::Interrupted,
+                clock.now().as_millis(),
+            )?,
+            0
+        );
+        assert_eq!(
+            settle_for_execution_within(
+                &tx,
+                writer,
+                &session,
+                Some(&unrelated_id),
+                grapt_session::execution::Outcome::Interrupted,
+                clock.now().as_millis(),
+            )?,
+            0
+        );
+        tx.commit().map_err(|e| e.to_string())?.discard();
+    }
+    let still_running = load_row(store.connection(), &session)?.ok_or("missing row")?;
+    assert_eq!(still_running.state, ResumeState::Running);
+
+    // Matching resume input settles atomically with the execution terminal commit.
+    let authorities = DeterministicAuthorities::new(&clock, &ids);
+    let exec_2 = ExecutionId::new("exec_cs2").ok_or("exec_cs2")?;
+    grapt_service_state::lifecycle::begin(&mut store, &authorities, &session, &exec_2)?;
+    grapt_service_state::lifecycle::record_with(
+        &mut store,
+        &authorities,
+        &session,
+        &exec_2,
+        grapt_session::execution::Change::Succeeded,
+        |tx, w| {
+            let _ = settle_for_execution_within(
+                tx,
+                w,
+                &session,
+                Some(&resume_id),
+                grapt_session::execution::Outcome::Succeeded,
+                clock.now().as_millis(),
+            )?;
+            Ok(())
+        },
+    )?;
+    let settled = load_row(store.connection(), &session)?.ok_or("missing settled row")?;
+    assert_eq!(settled.state, ResumeState::Completed);
+    let active: i64 = store
+        .connection()
+        .query_row(
+            "SELECT active FROM session_resume_input WHERE session_id = ?1 AND input_id = ?2",
+            rusqlite::params![session.as_str(), resume_id.as_str()],
+            |row| row.get(0),
+        )
+        .map_err(|e| e.to_string())?;
+    assert_eq!(active, 0);
+    Ok(())
+}

@@ -846,21 +846,23 @@ fn g24_real_process_auto_resume_settles_lifecycle_for_offline_session_cleanup() 
     write(&journey.workspace.join(".nested-release1"), "release");
     child.stop_after_witness(&journey.service);
 
-    // Inspect durable state: interrupted execution terminated, resume claim & binding settled.
+    // Inspect durable state: ProcessLoss disconnection recorded, resume claim & binding settled.
     let conn = rusqlite::Connection::open(journey.service.join("database.sqlite3"))
         .unwrap_or_else(|error| panic!("open database: {error}"));
-    let interrupted_count: i64 = conn
+    let disconnected_count: i64 = conn
         .query_row(
             "SELECT COUNT(*) FROM event
              WHERE aggregate_family = 'session' AND aggregate_id = ?1
-               AND type = 'session.execution.interrupted.1'",
+               AND type = 'session.status.changed.1'
+               AND json_extract(data, '$.state.type') = 'disconnected'
+               AND json_extract(data, '$.state.reason') = 'process-loss'",
             [session.as_str()],
             |row| row.get(0),
         )
-        .unwrap_or_else(|error| panic!("query interrupted events: {error}"));
+        .unwrap_or_else(|error| panic!("query disconnected events: {error}"));
     assert_eq!(
-        interrupted_count, 1,
-        "interrupted execution must record a terminal event on recovery"
+        disconnected_count, 1,
+        "interrupted execution must record a ProcessLoss disconnection on recovery"
     );
     let resume_state: String = conn
         .query_row(

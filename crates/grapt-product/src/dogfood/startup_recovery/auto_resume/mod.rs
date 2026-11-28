@@ -526,65 +526,84 @@ fn claim_row(
     }
 }
 
-/// Settle any open automatic-resume claim and active synthetic resume binding
-/// once a session execution finishes, so completed resumes never leave stale
-/// `running` claims or `active = 1` bindings behind.
-pub(in crate::dogfood) fn settle_after_execution(
-    inbox: &Mutex<Inbox>,
-    clock: &SystemClock,
-    hub: &DogfoodEventHub,
+/// Atomically settle an open automatic-resume claim and its active synthetic
+/// resume binding inside the execution terminal's governed transaction.
+///
+/// Custody-tied: only settles when the completing execution's owned `input`
+/// matches the active resume attempt (or a newer human input that superseded
+/// `turn_origin_seq`), never for an unrelated or unowned wake.
+pub(in crate::dogfood) fn settle_for_execution_within(
+    tx: &GovernedTransaction<'_>,
+    writer: grapt_store::FencedWriter,
     session: &SessionId,
+    input: Option<&grapt_types::MessageId>,
     outcome: grapt_session::execution::Outcome,
-) {
-    let (next_state, reason) = match outcome {
-        grapt_session::execution::Outcome::Succeeded => {
-            (ResumeState::Completed, "execution_succeeded")
-        }
-        grapt_session::execution::Outcome::Failed => (ResumeState::Stopped, "execution_failed"),
-        grapt_session::execution::Outcome::Interrupted => {
-            (ResumeState::Stopped, "execution_interrupted")
-        }
+    now_ms: i64,
+) -> Result<usize, String> {
+    let Some(input) = input else {
+        return Ok(0);
     };
-    let mut inbox = match inbox.lock() {
-        Ok(held) => held,
-        Err(poisoned) => poisoned.into_inner(),
-    };
-    if !store::table_exists(inbox.store().connection(), "pending_resume").unwrap_or(false) {
-        return;
+    if !store::table_exists(tx, "pending_resume")? {
+        return Ok(0);
     }
-    let current = match load_row(inbox.store().connection(), session) {
-        Ok(Some(row)) if matches!(row.state, ResumeState::Pending | ResumeState::Running) => row,
-        Ok(_) => return,
-        Err(error) => {
-            crate::server_log::warn(format_args!(
-                "session {session}: automatic resume post-execution read failed: {error}"
-            ));
-            return;
+    let Some(current) = load_row(tx, session)? else {
+        return Ok(0);
+    };
+    if !matches!(current.state, ResumeState::Pending | ResumeState::Running) {
+        return Ok(0);
+    }
+    let expected_resume_id =
+        synthetic_message_id(session, current.turn_origin_seq, current.attempts)?;
+    let matches_resume = *input == expected_resume_id;
+    let superseded_by_newer_human = !matches_resume
+        && latest_human_input_seq(tx, session)?
+            .is_some_and(|latest| latest > current.turn_origin_seq);
+    if !matches_resume && !superseded_by_newer_human {
+        return Ok(0);
+    }
+    let (next_state, reason) = if superseded_by_newer_human {
+        (ResumeState::Completed, "superseded_by_completed_execution")
+    } else {
+        match outcome {
+            grapt_session::execution::Outcome::Succeeded => {
+                (ResumeState::Completed, "execution_succeeded")
+            }
+            grapt_session::execution::Outcome::Failed => (ResumeState::Stopped, "execution_failed"),
+            grapt_session::execution::Outcome::Interrupted => {
+                (ResumeState::Stopped, "execution_interrupted")
+            }
         }
     };
-    match upsert_row(
-        inbox.store_mut(),
-        session,
-        current.turn_origin_seq,
-        &current.interrupted_execution_id,
-        current.attempts,
-        next_state,
-        Some(reason),
-        clock.now().as_millis(),
-    ) {
-        Ok(retired) if retired > 0 => {
-            hub.invalidate_session_because(
-                session,
-                &format!("session {session}: retired settled automatic resume input"),
-            );
-        }
-        Ok(_) => {}
-        Err(error) => {
-            crate::server_log::warn(format_args!(
-                "session {session}: automatic resume post-execution settle failed: {error}"
-            ));
-        }
-    }
+    let seq = i64::try_from(current.turn_origin_seq)
+        .map_err(|_| "turn_origin_seq overflows SQLite INTEGER".to_owned())?;
+    let aggregate = grapt_store::AggregateId::Session(session.clone());
+    EventStore::verify_writer_within(tx, &aggregate, writer)
+        .map_err(|error| format!("pending_resume writer fence failed: {error}"))?;
+    tx.execute(
+        "INSERT INTO pending_resume (
+             session_id, turn_origin_seq, interrupted_execution_id,
+             attempts, state, reason, updated_at
+         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+         ON CONFLICT(session_id) DO UPDATE SET
+             turn_origin_seq = excluded.turn_origin_seq,
+             interrupted_execution_id = excluded.interrupted_execution_id,
+             attempts = excluded.attempts,
+             state = excluded.state,
+             reason = excluded.reason,
+             updated_at = excluded.updated_at",
+        rusqlite::params![
+            session.as_str(),
+            seq,
+            current.interrupted_execution_id,
+            i64::from(current.attempts),
+            next_state.as_str(),
+            reason,
+            now_ms
+        ],
+    )
+    .map_err(|error| format!("pending_resume settle failed: {error}"))?;
+    grapt_inbox::Inbox::retire_resume_inputs_within(tx, writer, session)
+        .map_err(|error| format!("resume input retirement failed: {error}"))
 }
 
 /// Record a durable `Disconnected` status notice explaining that automatic

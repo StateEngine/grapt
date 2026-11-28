@@ -1,7 +1,7 @@
 //! Commit execution facts and their service state in one governed unit of work.
 use crate::{journal, Change as StatusChange, State};
 use grapt_session::execution::{self, Change, Failure, InterruptionReason, Observation, Outcome};
-use grapt_store::{AggregateId, EventStore};
+use grapt_store::{AggregateId, EventStore, FencedWriter, GovernedTransaction};
 use grapt_types::{DeterministicAuthorities, ExecutionId, SessionId};
 
 pub fn begin(
@@ -67,6 +67,29 @@ fn record(
     execution: &ExecutionId,
     change: Change,
 ) -> Result<Observation, String> {
+    record_with(
+        store,
+        authorities,
+        session,
+        execution,
+        change,
+        |_, _| Ok(()),
+    )
+}
+
+/// Commit an execution lifecycle fact and its service state together with a
+/// caller-owned transactional hook in the same governed transaction.
+pub fn record_with<F>(
+    store: &mut EventStore,
+    authorities: &DeterministicAuthorities<'_>,
+    session: &SessionId,
+    execution: &ExecutionId,
+    change: Change,
+    on_commit: F,
+) -> Result<Observation, String>
+where
+    F: FnOnce(&GovernedTransaction<'_>, FencedWriter) -> Result<(), String>,
+{
     let state = match &change {
         Change::Start => State::observed(None, None),
         Change::Succeeded => State::observed(Some(&(Outcome::Succeeded, Failure::Generic)), None),
@@ -95,6 +118,7 @@ fn record(
             StatusChange::Finish,
         )?;
     }
+    on_commit(&tx, writer)?;
     tx.commit().map_err(|error| error.to_string())?.discard();
     Ok(observation)
 }
