@@ -223,6 +223,39 @@ impl ServerApplication {
         Ok(delivery)
     }
 
+    fn capture_and_reserve_prompt(
+        &self,
+        session: &SessionId,
+        request: &Value,
+        directory: &str,
+        child_execution: Option<&ExecutionId>,
+    ) -> Result<
+        (
+            Vec<grapt_types::ArtifactRef>,
+            prompt_driver::Reservation,
+            super::execution::WakeReservation,
+        ),
+        SessionPromptApplicationError,
+    > {
+        let images = prompt_images::capture(self, request)
+            .map_err(|error| SessionPromptApplicationError::InvalidRequest(invalid(error)))?;
+        let claim = if child_execution.is_some() {
+            subagent::claim_single_prompt(self, session)
+        } else {
+            subagent::allow_human_prompt(self, session)
+        };
+        claim.map_err(|error| SessionPromptApplicationError::Conflict(conflict(error)))?;
+        let reservation = self
+            .prompt_mailbox
+            .reserve()
+            .map_err(|error| SessionPromptApplicationError::Conflict(conflict(error)))?;
+        let wake = self
+            .wake_slots
+            .reserve_for_workspace(session, Path::new(directory))
+            .map_err(|error| SessionPromptApplicationError::Conflict(conflict(error)))?;
+        Ok((images, reservation, wake))
+    }
+
     #[allow(clippy::too_many_arguments, reason = "prompt admission parameters")]
     fn admit_prompt_entry(
         &self,
@@ -233,18 +266,10 @@ impl ServerApplication {
         delivery: DeliveryMode,
         resume: bool,
         seat_startup: bool,
-        child_execution: Option<&ExecutionId>,
+        images: &[grapt_types::ArtifactRef],
     ) -> Result<(u64, Value, bool), SessionPromptApplicationError> {
         let max_steps = grapt_inbox::admission::options::max_steps(request.get("metadata"))
             .map_err(|error| SessionPromptApplicationError::InvalidRequest(invalid(error)))?;
-        let images = prompt_images::capture(self, request)
-            .map_err(|error| SessionPromptApplicationError::InvalidRequest(invalid(error)))?;
-        let claim = if child_execution.is_some() {
-            subagent::claim_single_prompt(self, session)
-        } else {
-            subagent::allow_human_prompt(self, session)
-        };
-        claim.map_err(|error| SessionPromptApplicationError::Conflict(conflict(error)))?;
         let authorities = DeterministicAuthorities::new(&*self.clock, &*self.ids);
         let origin = if seat_startup {
             grapt_inbox::UserInputOrigin::SeatStartup
@@ -259,7 +284,7 @@ impl ServerApplication {
                 delivery,
                 resume,
                 grapt_inbox::UserInputOptions {
-                    images: &images,
+                    images,
                     origin,
                     max_steps,
                 },
@@ -296,6 +321,8 @@ impl ServerApplication {
         let request = serde_json::to_value(request).map_err(|error| {
             SessionPromptApplicationError::InvalidRequest(invalid(error.to_string()))
         })?;
+        let _ = grapt_inbox::admission::options::max_steps(request.get("metadata"))
+            .map_err(|error| SessionPromptApplicationError::InvalidRequest(invalid(error)))?;
         let record = self
             .get_record(session)
             .map_err(|_| SessionPromptApplicationError::SessionNotFound(not_found(session)))?;
@@ -339,24 +366,14 @@ impl ServerApplication {
             Ok(delivery) => delivery,
             Err(error) => return ready(Err(error)),
         };
-        let reservation = match self.prompt_mailbox.reserve() {
-            Ok(reservation) => reservation,
-            Err(error) => {
-                return ready(Err(SessionPromptApplicationError::Conflict(conflict(
-                    error,
-                ))));
-            }
-        };
-        let wake = match self
-            .wake_slots
-            .reserve_for_workspace(&session, Path::new(&directory))
-        {
-            Ok(wake) => Some(wake),
-            Err(error) => {
-                return ready(Err(SessionPromptApplicationError::Conflict(conflict(
-                    error,
-                ))));
-            }
+        let (images, reservation, wake) = match self.capture_and_reserve_prompt(
+            &session,
+            &request,
+            &directory,
+            child_execution.as_ref(),
+        ) {
+            Ok(reserved) => reserved,
+            Err(error) => return ready(Err(error)),
         };
         let (seq, body, should_exec) = match self.admit_prompt_entry(
             &session,
@@ -366,7 +383,7 @@ impl ServerApplication {
             delivery,
             resume,
             seat_startup,
-            child_execution.as_ref(),
+            &images,
         ) {
             Ok(admitted) => admitted,
             Err(error) => return ready(Err(error)),
@@ -385,7 +402,7 @@ impl ServerApplication {
             seq,
             agent,
             reservation,
-            wake,
+            Some(wake),
             child_execution,
             None,
         ) {
