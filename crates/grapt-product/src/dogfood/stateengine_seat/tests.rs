@@ -354,6 +354,27 @@ fn a_seat_whose_thread_will_not_end_stops_within_its_bound() -> TestResult {
 
 #[cfg(unix)]
 #[test]
+fn a_directory_linked_out_of_a_repository_still_belongs_to_it() -> TestResult {
+    let root = tempfile::tempdir()?;
+    let mut environment = CatalogEnvironment::isolated(root.path());
+    let (repo, outside) = (root.path().join("repo"), root.path().join("outside"));
+    std::fs::create_dir_all(repo.join(".git"))?;
+    std::fs::create_dir_all(&outside)?;
+    std::fs::create_dir_all(root.path().join("service"))?;
+    let declared = json!({"stateengine_seat": {"home": outside, "binary": outside.join("se"),
+        "project": "prj_fixture", "agent": "agent-fixture"}});
+    std::fs::write(outside.join("grapt.json"), declared.to_string())?;
+    std::os::unix::fs::symlink(&outside, repo.join("link"))?;
+    // Resolved, the file lies outside the checkout; as written, inside it.
+    environment.config = repo.join("link");
+    assert!(from_documents(&documents_in(&environment)?).is_err());
+    environment.config = outside;
+    assert!(from_documents(&documents_in(&environment)?)?.is_some());
+    Ok(())
+}
+
+#[cfg(unix)]
+#[test]
 fn a_linked_user_document_is_refused() -> TestResult {
     let root = tempfile::tempdir()?;
     let environment = CatalogEnvironment::isolated(root.path());

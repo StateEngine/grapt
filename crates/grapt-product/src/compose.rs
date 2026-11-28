@@ -356,12 +356,13 @@ async fn run_ready_on_listener_inner(
     } else {
         None
     };
-    if let Some(hub) = &shutdown_hub {
-        hub.shutdown();
-    }
-    // The seat's last idle report waits briefly, and never on this runtime.
+    // The seat stops first, so it never subscribes to a hub that is ending;
+    // its last idle report waits briefly, and never on this runtime.
     if let Some(seat) = seat {
         let _stopped = tokio::task::spawn_blocking(move || drop(seat)).await;
+    }
+    if let Some(hub) = &shutdown_hub {
+        hub.shutdown();
     }
     let exit = drain_host(host).await;
     crate::diagnostics::report(format!("service listener stopped outcome={exit:?}"));

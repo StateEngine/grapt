@@ -190,8 +190,16 @@ struct HostEventQueue {
 #[derive(Debug)]
 struct HostEventQueueState {
     frames: VecDeque<Bytes>,
+    /// Live frames held back while hydration runs, so they follow it.
+    held: Option<VecDeque<Bytes>>,
     overflowed: bool,
     closed: bool,
+}
+
+impl HostEventQueueState {
+    fn len(&self) -> usize {
+        self.frames.len() + self.held.as_ref().map_or(0, VecDeque::len)
+    }
 }
 
 impl HostEventQueue {
@@ -202,6 +210,7 @@ impl HostEventQueue {
             maximum,
             state: Mutex::new(HostEventQueueState {
                 frames,
+                held: Some(VecDeque::new()),
                 overflowed: false,
                 closed: false,
             }),
@@ -217,15 +226,30 @@ impl HostEventQueue {
         if state.closed {
             return OfferOutcome::Disconnected;
         }
-        if state.frames.len() >= self.maximum {
+        if state.len() >= self.maximum {
             state.overflowed = true;
             state.closed = true;
             self.changed.notify_all();
             return OfferOutcome::Overflowed;
         }
-        state.frames.push_back(frame);
-        self.changed.notify_one();
+        match &mut state.held {
+            Some(held) => held.push_back(frame),
+            None => {
+                state.frames.push_back(frame);
+                self.changed.notify_one();
+            }
+        }
         OfferOutcome::Delivered
+    }
+
+    /// Hydration is done: the live frames held meanwhile follow it.
+    fn release_held(&self) {
+        if let Ok(mut state) = self.state.lock() {
+            if let Some(held) = state.held.take() {
+                state.frames.extend(held);
+                self.changed.notify_all();
+            }
+        }
     }
 
     /// Best-effort queueing for hydration frames: a full or closed queue
@@ -238,7 +262,7 @@ impl HostEventQueue {
         if state.closed {
             return OfferOutcome::Disconnected;
         }
-        if state.frames.len() >= self.maximum {
+        if state.len() >= self.maximum {
             return OfferOutcome::Overflowed;
         }
         state.frames.push_back(frame);
@@ -756,18 +780,23 @@ impl DogfoodEventHub {
             self.limits.pending_events(),
             self.connected.clone(),
         ));
-        let mut hydration_frames = 0;
-        self.queue_hydration(&query::EventLocationQuery::Absent, &mut |frame| {
-            let delivered = queue.offer_soft(frame) == OfferOutcome::Delivered;
-            hydration_frames += usize::from(delivered);
-            delivered
-        });
         subscribers.push(SubscriberSender {
             approver: None,
             sink: SubscriberSink::Host(Arc::clone(&queue)),
             interest: SubscriberInterest::V2(query::EventLocationQuery::Absent),
             positions: false,
         });
+        // Registered first, so no live frame is missed; hydrated without the
+        // registry lock, so a shutdown or publish never waits on it. Live
+        // frames are held until the hydration they follow is queued.
+        drop(subscribers);
+        let mut hydration_frames = 0;
+        self.queue_hydration(&query::EventLocationQuery::Absent, &mut |frame| {
+            let delivered = queue.offer_soft(frame) == OfferOutcome::Delivered;
+            hydration_frames += usize::from(delivered);
+            delivered
+        });
+        queue.release_held();
         Ok(DogfoodEventSubscription {
             queue,
             hydration_frames,

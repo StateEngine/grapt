@@ -945,3 +945,54 @@ async fn a_session_invalidation_ends_a_window_bound_to_another_session() -> Resu
     );
     Ok(())
 }
+
+#[test]
+fn a_host_subscription_hydrates_without_holding_the_hub() -> Result<(), Box<dyn std::error::Error>>
+{
+    let limits = limits(2, 16, MAX_SSE_EVENT_BYTES, MAX_SSE_FRAME_BYTES)?;
+    let hub = Arc::new(DogfoodEventHub::try_new(limits, connected("hold"))?);
+    let (entered, entering) = std::sync::mpsc::channel();
+    let (release, released) = std::sync::mpsc::channel::<()>();
+    let released = std::sync::Mutex::new(released);
+    let busy = status_event("hold_busy", SessionStatusInfo::busy());
+    assert!(hub.install_status_hydrator(Box::new(move || {
+        let _ = entered.send(());
+        let _ = released.lock().map(|released| released.recv());
+        vec![busy.clone()]
+    })));
+    // A live frame published while hydration runs follows it.
+    let subscribing = std::thread::spawn({
+        let hub = Arc::clone(&hub);
+        move || hub.subscribe_host()
+    });
+    entering.recv()?;
+    let live = status_event("hold_live", SessionStatusInfo::idle());
+    assert_eq!(hub.publish(&live)?.delivered, 1);
+    release.send(())?;
+    let first = subscribing.join().map_err(|_| "subscriber panicked")??;
+    let order = host_frames(&first, 3);
+    assert!(order[1].contains("evt_hold_busy") && order[2].contains("evt_hold_live"));
+    // A shutdown during hydration returns at once and ends the stream.
+    let subscribing = std::thread::spawn({
+        let hub = Arc::clone(&hub);
+        move || hub.subscribe_host()
+    });
+    entering.recv()?;
+    hub.shutdown();
+    release.send(())?;
+    let second = subscribing.join().map_err(|_| "subscriber panicked")??;
+    assert_eq!(
+        host_frames(&second, 3).len(),
+        1,
+        "only server.connected precedes the end"
+    );
+    Ok(())
+}
+
+/// Up to `limit` frames, fewer when the stream ends first.
+fn host_frames(subscription: &DogfoodEventSubscription, limit: usize) -> Vec<String> {
+    std::iter::from_fn(|| subscription.next_frame().ok().flatten())
+        .take(limit)
+        .map(|frame| String::from_utf8_lossy(&frame).into_owned())
+        .collect()
+}

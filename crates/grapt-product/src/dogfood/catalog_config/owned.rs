@@ -66,6 +66,10 @@ fn read_bound(
             origin = found;
         }
     }
+    let ceiling = environment.fixture_root();
+    if crate::dogfood::catalog_origin::written_inside_repository(path, ceiling)? {
+        origin = PluginOrigin::Project;
+    }
     if same_file::Handle::from_path(&resolved).map_err(kind)? != opened {
         return Err("configuration was replaced while it was read".to_owned());
     }
