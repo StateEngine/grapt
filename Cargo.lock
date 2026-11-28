@@ -2605,6 +2605,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "grapt-stateengine-ipc"
+version = "0.1.0"
+dependencies = [
+ "grapt-stateengine-api",
+ "ring",
+ "rustix",
+ "serde",
+ "serde_json",
+ "subtle",
+ "tempfile",
+ "thiserror 2.0.20",
+ "tokio",
+ "zeroize",
+]
+
+[[package]]
 name = "grapt-store"
 version = "0.1.0"
 dependencies = [

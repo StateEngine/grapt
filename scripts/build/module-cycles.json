@@ -37317,6 +37317,7 @@
   "grapt-session-history",
   "grapt-shell",
   "grapt-stateengine-api",
+  "grapt-stateengine-ipc",
   "grapt-store",
   "grapt-stream",
   "grapt-subagent",
