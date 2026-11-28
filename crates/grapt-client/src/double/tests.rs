@@ -363,3 +363,51 @@ fn interrupting_produces_a_started_and_an_interrupted_terminal() {
     assert!(members.contains(&EventMember::ExecutionStarted));
     assert!(members.contains(&EventMember::ExecutionInterrupted));
 }
+
+#[test]
+fn each_session_and_kind_places_its_own_blocks_from_zero() {
+    // Two fresh sessions reuse the same assistant message id, and each turn
+    // streams a reasoning block and a text block, each its kind's first.
+    let mut double = ContractDouble::new();
+    let first = seed(&mut double, "first");
+    let second = seed(&mut double, "second");
+    double.run_turn(&first, "one", "red green");
+    double.run_turn(&second, "two", "blue cyan magenta");
+    let mut sent: BTreeMap<(String, String, String, u64), u64> = BTreeMap::new();
+    let mut messages = BTreeMap::new();
+    let mut deltas = 0;
+    for _ in 0..256 {
+        let data = match double.poll_frame() {
+            Ok(FramePoll::Positioned { data, .. }) => data,
+            Ok(FramePoll::Idle) => break,
+            other => panic!("a positioned frame: {other:?}"),
+        };
+        let frame: serde_json::Value =
+            serde_json::from_str(&data).unwrap_or_else(|error| panic!("frame: {error}"));
+        let kind = frame["type"].as_str().unwrap_or_default().to_owned();
+        if !kind.ends_with(".delta") {
+            continue;
+        }
+        let body = &frame["data"];
+        let field = |name: &str| body[name].as_str().unwrap_or_default().to_owned();
+        messages.insert(field("sessionID"), field("assistantMessageID"));
+        let key = (
+            field("sessionID"),
+            field("assistantMessageID"),
+            kind,
+            body["ordinal"].as_u64().unwrap_or(u64::MAX),
+        );
+        let offset = sent.entry(key.clone()).or_insert(0);
+        assert_eq!(body["from"].as_u64(), Some(*offset), "{key:?}");
+        assert_eq!(key.3, 0, "each kind numbers its own blocks: {key:?}");
+        *offset += body["delta"].as_str().map_or(0, str::len) as u64;
+        deltas += 1;
+    }
+    assert!(deltas > 4, "both turns streamed");
+    assert_eq!(sent.len(), 4, "two kinds in each of two sessions");
+    assert_eq!(
+        messages.get(first.spelled()),
+        messages.get(second.spelled()),
+        "the witness needs the reused message id"
+    );
+}

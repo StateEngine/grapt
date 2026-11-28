@@ -606,6 +606,7 @@ impl ContractDouble {
                 self.record(&session, DoubleMessage::Interrupted);
                 self.append(&session, EventMember::ExecutionStarted, data.clone());
                 self.append(&session, EventMember::ExecutionInterrupted, data);
+                self.observe_state(&session, "interrupted", Some(execution));
                 // As the product does: interrupting cancels the tool that was
                 // asking, so its ask leaves the open-request list.
                 self.withdraw_permissions(&session);
@@ -954,7 +955,27 @@ impl ContractDouble {
                 status: 200,
                 body: Vec::new(),
             }),
-            // An older service: the client keeps its legacy reads.
+            // A legacy double is an older service: the client keeps its
+            // legacy reads. A positioned one answers the coherent snapshot.
+            Operation::SessionSnapshot if self.positions_enabled() => {
+                let Some(session) = Self::session_of(&path) else {
+                    return Ok(WireResponse {
+                        status: 404,
+                        body: Vec::new(),
+                    });
+                };
+                match self.coherent_snapshot(&session) {
+                    Ok(Some(body)) => Ok(WireResponse { status: 200, body }),
+                    Ok(None) => Ok(WireResponse {
+                        status: 404,
+                        body: Vec::new(),
+                    }),
+                    Err(_) => Ok(WireResponse {
+                        status: 500,
+                        body: Vec::new(),
+                    }),
+                }
+            }
             Operation::SessionSnapshot => Ok(WireResponse {
                 status: 404,
                 body: Vec::new(),

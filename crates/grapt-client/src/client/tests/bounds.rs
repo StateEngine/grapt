@@ -35,9 +35,9 @@ fn one_pump_does_bounded_work_rather_than_draining_an_unbounded_stream() {
         };
     }
 
-    let before = client.diagnostics().frames_applied;
+    let before = client.diagnostics().frames_decoded;
     let Ok(_) = client.pump() else { panic!("pump") };
-    let first_pump = client.diagnostics().frames_applied - before;
+    let first_pump = client.diagnostics().frames_decoded - before;
     assert!(
         first_pump <= bounds.max_pending_events,
         "one pump applied {first_pump} frames, above the {} bound",
@@ -50,7 +50,7 @@ fn one_pump_does_bounded_work_rather_than_draining_an_unbounded_stream() {
         panic!("second pump")
     };
     assert!(
-        client.diagnostics().frames_applied > before + first_pump,
+        client.diagnostics().frames_decoded > before + first_pump,
         "the next pump continued from where the bound stopped it"
     );
 }
@@ -93,13 +93,11 @@ fn a_pump_at_its_budget_leaves_the_boundary_frame_queued_rather_than_dropping_it
 
     let mut observed = 0usize;
     for _ in 0..(queued * 4) {
-        let before = client.diagnostics().frames_applied
-            + client.diagnostics().duplicates_ignored
-            + client.diagnostics().frames_deferred;
+        // Every taken frame is decoded, whether it applies, repeats what the
+        // snapshot holds, or is superseded by it.
+        let before = client.diagnostics().frames_decoded;
         let Ok(_) = client.pump() else { panic!("pump") };
-        let after = client.diagnostics().frames_applied
-            + client.diagnostics().duplicates_ignored
-            + client.diagnostics().frames_deferred;
+        let after = client.diagnostics().frames_decoded;
         observed += after - before;
         if client.peer_mut().queued_frames() == 0 {
             break;

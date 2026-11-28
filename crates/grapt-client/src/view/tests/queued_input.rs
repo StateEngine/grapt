@@ -83,7 +83,7 @@ impl Transport for Peer {
 impl Connection for Peer {
     fn poll_frame(&mut self) -> Result<FramePoll, TransportError> {
         if let Some(frame) = self.frames.pop_front() {
-            Ok(FramePoll::Frame(frame))
+            Ok(self.inner.serve(FramePoll::Frame(frame)))
         } else {
             self.inner.poll_frame()
         }
@@ -172,9 +172,9 @@ fn a_saved_question_stays_visible_until_it_enters_the_transcript(
     for frame in [
         serde_json::json!({"id":"evt_answer_start","type":"session.text.started","created":2,
             "durable":{"aggregateID":session.spelled(),"seq":200,"version":1},
-            "data":{"assistantMessageID":"msg_fixture_answer","ordinal":0,"sessionID":session.spelled()}}),
+            "data":{"assistantMessageID":"msg_fixture_answer","ordinal":1,"sessionID":session.spelled()}}),
         serde_json::json!({"id":"evt_answer_delta","type":"session.text.delta","created":2,
-            "data":{"assistantMessageID":"msg_fixture_answer","ordinal":0,"sessionID":session.spelled(),"delta":"answer still arriving"}}),
+            "data":{"assistantMessageID":"msg_fixture_answer","ordinal":1,"sessionID":session.spelled(),"delta":"answer still arriving"}}),
         serde_json::json!({"id":"evt_question_promoted","type":"session.input.promoted","created":2,
             "durable":{"aggregateID":session.spelled(),"seq":201,"version":1},
             "data":{"sessionID":session.spelled(),"inputID":"msg_saved_question"}}),

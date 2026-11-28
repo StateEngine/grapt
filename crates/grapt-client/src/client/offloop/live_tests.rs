@@ -17,10 +17,10 @@ impl Transport for Peer {
 }
 impl Connection for Peer {
     fn poll_frame(&mut self) -> std::result::Result<FramePoll, TransportError> {
-        self.frames.pop_front().map_or_else(
-            || self.inner.poll_frame(),
-            |frame| Ok(FramePoll::Frame(frame)),
-        )
+        match self.frames.pop_front() {
+            Some(frame) => Ok(self.inner.serve(FramePoll::Frame(frame))),
+            None => self.inner.poll_frame(),
+        }
     }
     fn resubscribe(&mut self) {
         self.inner.resubscribe();

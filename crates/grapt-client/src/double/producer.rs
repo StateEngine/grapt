@@ -133,10 +133,15 @@ impl ContractDouble {
                 model: None,
                 variant: None,
                 parent: None,
+                state: None,
             },
         );
         let data = serde_json::json!({"sessionID": spelled, "title": title});
         self.append(&id, EventMember::SessionCreated, data);
+        if let Some(entry) = self.sessions.get_mut(&id) {
+            // A new session reads idle at its creation, as the product's does.
+            entry.state = Some(positions::ExecutionState::idle(entry.next_seq));
+        }
         Some(id)
     }
 
@@ -285,9 +290,11 @@ impl ContractDouble {
         let execution = self.mint("exe");
         let data = serde_json::json!({"sessionID": spelled, "executionID": execution});
         self.append(session, EventMember::ExecutionStarted, data);
+        self.observe_state(session, "running", Some(execution.clone()));
 
         // Every live block names its assistant row and ordinal, as the real
-        // wire does: the row just recorded, reasoning first, then text.
+        // wire does: the row just recorded, reasoning first, then text. Each
+        // kind numbers its own blocks, as the durable row does.
         let message = format!(
             "msg_{:012x}",
             self.sessions
@@ -301,14 +308,24 @@ impl ContractDouble {
             data
         };
         self.append(session, EventMember::ReasoningStarted, block(0));
-        self.live(EventMember::ReasoningDelta, chunk(0, "considering"));
-        self.append(session, EventMember::ReasoningEnded, block(0));
+        self.delta(EventMember::ReasoningDelta, chunk(0, "considering"));
+        // Every end carries its block's whole text, as the product's does.
+        let ended = |ordinal: u64, text: &str| {
+            let mut data = block(ordinal);
+            data["text"] = serde_json::json!(text);
+            data
+        };
+        self.end_block(
+            session,
+            EventMember::ReasoningEnded,
+            ended(0, "considering"),
+        );
 
-        self.append(session, EventMember::TextStarted, block(1));
+        self.append(session, EventMember::TextStarted, block(0));
         for piece in reply.split_inclusive(' ') {
-            self.live(EventMember::TextDelta, chunk(1, piece));
+            self.delta(EventMember::TextDelta, chunk(0, piece));
         }
-        self.append(session, EventMember::TextEnded, block(1));
+        self.end_block(session, EventMember::TextEnded, ended(0, reply));
 
         self.live(
             EventMember::UsageUpdated,
@@ -352,6 +369,8 @@ impl ContractDouble {
         }
         let data = serde_json::json!({"sessionID": spelled, "executionID": execution});
         self.append(session, EventMember::ExecutionSucceeded, data);
+        // A positioned double reports the settled state with its revision on
+        // the status frame; a legacy one keeps the bare idle status.
         // The quiescence edge the engine reports at settle, in the order the
         // engine emits it: the status frame first, then the retained
         // vocabulary frame. AFTER the terminal on purpose — a pump that
@@ -359,10 +378,14 @@ impl ContractDouble {
         // so a quiescence edge before the terminal would reach the view in the
         // same pump and the terminal-hydration witnesses would see quiescence
         // they are written to prove is absent.
-        self.live(
-            EventMember::SessionStatus,
-            serde_json::json!({"sessionID": spelled, "status": {"type": "idle"}}),
-        );
+        if self.positions_enabled() {
+            self.observe_state(session, "completed", Some(execution));
+        } else {
+            self.live(
+                EventMember::SessionStatus,
+                serde_json::json!({"sessionID": spelled, "status": {"type": "idle"}}),
+            );
+        }
         self.live(
             EventMember::SessionIdle,
             serde_json::json!({"sessionID": spelled}),

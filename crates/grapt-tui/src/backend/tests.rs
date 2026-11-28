@@ -47,7 +47,9 @@ impl Connection for Peer {
             return Ok(FramePoll::Idle);
         }
         let frame = self.inner.poll_frame()?;
-        if matches!(&frame, FramePoll::Frame(text) if text.contains("session.execution.started")) {
+        if matches!(&frame, FramePoll::Frame(text) | FramePoll::Positioned { data: text, .. }
+            if text.contains("session.execution.started"))
+        {
             self.hold = true;
         }
         Ok(frame)
@@ -94,6 +96,8 @@ fn selected_activity_derivation_routes_escape_without_touching_a_hidden_session_
         !selected_running(&client),
         "absent idle falls back to idle execution"
     );
+    // The stream proves its mode and the session is read before the turn.
+    client.pump()?;
 
     client.submit_prompt("hold this execution")?;
     client.pump()?;
@@ -114,19 +118,37 @@ fn selected_activity_derivation_routes_escape_without_touching_a_hidden_session_
     let mut ui = crate::ui::Ui::new(false);
     ui.composer.insert_str("KEEP pending edit");
     ui.pending = Some("uncertain original".into());
+    let grapt_client::ExecutionState::Running { execution_id } =
+        client.view().ok_or("view")?.execution.clone()
+    else {
+        return Err("running execution".into());
+    };
     // A known idle fact must override the still-running transcript, and a
     // later busy fact must restore interrupt routing, from the same Client.
-    for (created, kind, idle) in [
-        (1_791_695_003_000_u64, "idle", true),
-        (1_791_695_004_000, "busy", false),
+    // Each carries the newer typed state the server reports beside it.
+    for (created, kind, idle, state) in [
+        (
+            1_791_695_003_000_u64,
+            "idle",
+            true,
+            serde_json::json!({"type": "idle", "revision": 1000}),
+        ),
+        (
+            1_791_695_004_000,
+            "busy",
+            false,
+            serde_json::json!({"type": "running", "revision": 1001, "executionID": execution_id.spelled()}),
+        ),
     ] {
-        client.peer_mut().frame = Some(FramePoll::Frame(
+        let frame = FramePoll::Frame(
             serde_json::json!({
                 "id": format!("evt_status_{created}"), "type": "session.status", "created": created,
-                "data": { "sessionID": session.spelled(), "status": { "type": kind } }
+                "data": { "sessionID": session.spelled(), "status": { "type": kind }, "state": state }
             })
             .to_string(),
-        ));
+        );
+        let frame = client.peer_mut().inner.serve(frame);
+        client.peer_mut().frame = Some(frame);
         client.pump()?;
         assert_eq!(client.view().ok_or("view")?.idle, Some(idle));
         assert_eq!(selected_running(&client), !idle);

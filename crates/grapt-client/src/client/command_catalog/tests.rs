@@ -75,7 +75,7 @@ impl Connection for Peer {
     }
     fn poll_frame(&mut self) -> Result<FramePoll, TransportError> {
         match self.frame.take() {
-            Some(frame) => Ok(FramePoll::Frame(frame)),
+            Some(frame) => Ok(self.inner.serve(FramePoll::Frame(frame))),
             None => self.inner.poll_frame(),
         }
     }

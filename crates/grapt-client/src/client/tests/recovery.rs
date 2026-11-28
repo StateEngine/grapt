@@ -110,7 +110,10 @@ struct QuietPeer {
 
 impl Transport for QuietPeer {
     fn call(&mut self, request: &WireRequest) -> Result<WireResponse, TransportError> {
-        if request.operation() == Operation::MessageList {
+        if matches!(
+            request.operation(),
+            Operation::MessageList | Operation::SessionSnapshot
+        ) {
             self.attempts += 1;
             if std::mem::take(&mut self.fail_history) {
                 if self.after_send {

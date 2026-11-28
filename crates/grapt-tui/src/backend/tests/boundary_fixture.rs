@@ -102,22 +102,51 @@ fn request(
         let page: grapt_api::u3a::SessionMessagesResponseDto =
             serde_json::from_slice(&response.body)?;
         let mut rows = page.data().get().as_slice().to_vec();
-        if !rows.is_empty() {
-            let tool = grapt_client::wire::assistant_tool_message_in(
-                "msg_boundary_tool",
-                "shell",
-                "call_boundary_tool",
-                grapt_client::wire::ToolStateDouble::Completed {
-                    input: "{}".into(),
-                    output: "fixture tool result".into(),
-                },
-            )?;
-            rows.insert(1, tool);
-        }
+        with_tool(&mut rows)?;
         response.body = grapt_client::wire::encode_messages(rows, None)?;
+    }
+    if wire.operation() == Operation::SessionSnapshot && response.status == 200 {
+        response.body = snapshot_with_tool(&response.body)?;
     }
     let allow_expired = gate.answer(wire.operation())?;
     reply(socket, response, allow_expired)
+}
+
+/// One mixed tool row beside the newest durable rows, as both reads serve it.
+fn with_tool(rows: &mut Vec<grapt_api::u3a::SessionMessageInfoDto>) -> Result {
+    if !rows.is_empty() {
+        let tool = grapt_client::wire::assistant_tool_message_in(
+            "msg_boundary_tool",
+            "shell",
+            "call_boundary_tool",
+            grapt_client::wire::ToolStateDouble::Completed {
+                input: "{}".into(),
+                output: "fixture tool result".into(),
+            },
+        )?;
+        rows.insert(1, tool);
+    }
+    Ok(())
+}
+
+fn snapshot_with_tool(body: &[u8]) -> Result<Vec<u8>> {
+    use grapt_api::u3a::{decode_page, encode_page, BoundedVec, SessionSnapshotResponseDto};
+    use grapt_schema::Required;
+    let limits = grapt_client::wire::limits()?;
+    let snapshot: SessionSnapshotResponseDto = decode_page(body, limits)?;
+    let mut rows = snapshot.rows().get().as_slice().to_vec();
+    with_tool(&mut rows)?;
+    let rows = BoundedVec::try_new(rows).map_err(|error| error.to_string())?;
+    let snapshot = SessionSnapshotResponseDto::new(
+        Required::new(snapshot.revision().get().clone()),
+        Required::new(rows),
+        Required::new(snapshot.cursor().get().clone()),
+        Required::new(snapshot.permissions().get().clone()),
+        Required::new(snapshot.forms().get().clone()),
+        Required::new(snapshot.execution().get().clone()),
+        Required::new(snapshot.provisional().get().clone()),
+    );
+    Ok(encode_page(&snapshot, limits)?)
 }
 
 fn reply(
@@ -216,6 +245,8 @@ impl Fixture {
         client.select_model(&model)?;
         let session = client.create_session()?;
         let mut double = std::mem::replace(client.peer_mut(), ContractDouble::new());
+        // The subscription's own mode-negotiating connected frame.
+        let connected = double.poll_frame()?;
         while !matches!(double.poll_frame()?, FramePoll::Idle) {}
         let source = Arc::new(Mutex::new(double));
         let listener = TcpListener::bind("127.0.0.1:0")?;
@@ -237,14 +268,9 @@ impl Fixture {
         let authority = bridge.authority_dirty.clone();
         let catalog = bridge.sessions_dirty.clone();
         let worker_wake = wake.clone();
-        // A real subscription opens with its mode-negotiating connected frame.
-        // Settle that frame before attaching and before the test produces a turn.
-        feed(FramePoll::Frame(
-            serde_json::json!({
-                "id":"evt_boundary_connected", "type":"server.connected", "data":{}
-            })
-            .to_string(),
-        ))?;
+        // Settle the connected frame before attaching and before the test
+        // produces a turn.
+        feed(connected)?;
         let mut client = Client::new(bridge, Bounds::PRODUCTION);
         client.pump()?;
         let mut config = profile.config()?;
@@ -293,6 +319,8 @@ impl Fixture {
         Ok(fixture)
     }
     pub fn frame(&self, frame: FramePoll) -> Result {
+        // An injected frame is served as the double serves its own.
+        let frame = self.source.lock().map_err(|_| "source lock")?.serve(frame);
         (self.feed)(frame)?;
         Ok(())
     }

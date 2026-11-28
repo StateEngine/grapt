@@ -180,7 +180,7 @@ impl Transport for Peer {
 impl Connection for Peer {
     fn poll_frame(&mut self) -> std::result::Result<FramePoll, TransportError> {
         if let Some(frame) = self.frames.pop_front() {
-            return Ok(FramePoll::Frame(frame));
+            return Ok(self.inner.serve(FramePoll::Frame(frame)));
         }
         self.inner.poll_frame()
     }

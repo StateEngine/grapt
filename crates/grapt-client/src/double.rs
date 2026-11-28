@@ -85,6 +85,8 @@ struct DoubleSession {
     variant: Option<grapt_api::u3a::WireId<grapt_types::ModelVariantId>>,
     /// The session that spawned this one. A subagent's session has one.
     parent: Option<crate::wire::SessionWireId>,
+    /// The execution state last reported, at its committed position.
+    state: Option<positions::ExecutionState>,
 }
 
 /// One durable message the double will serve from `v2.message.list`.
@@ -106,6 +108,9 @@ pub enum Fault {
     None,
     /// End the subscription at the next poll.
     CloseStream,
+    /// End the subscription at a reconcile boundary: the frames already
+    /// queued drain, a positions stream is told `stream.resync`, then it ends.
+    Resync,
     /// Silently withhold the next `n` durable frames, so the client observes a
     /// sequence gap exactly as a lossy transport would produce.
     SkipDurable(usize),
@@ -245,6 +250,8 @@ pub struct ContractDouble {
     fault: Fault,
     closed: bool,
     connected_sent: bool,
+    /// The positions class, when this double serves it.
+    positions: positions::Positions,
     /// The SAME bound set the client uses, applied at the producer's own
     /// ownership points.
     bounds: crate::bounds::Bounds,
@@ -356,6 +363,7 @@ impl ContractDouble {
             fault: Fault::None,
             closed: false,
             connected_sent: false,
+            positions: positions::Positions::served(),
             bounds: crate::bounds::Bounds::PRODUCTION,
             dropped_frames: 0,
             dropped_sessions: 0,
@@ -710,6 +718,7 @@ impl ContractDouble {
     /// truth survives. This is the restart law's whole setup.
     pub fn restart(&mut self) {
         self.pending.clear();
+        self.positions.restart();
         self.closed = true;
         self.connected_sent = false;
     }
@@ -808,6 +817,14 @@ impl ContractDouble {
                 self.closed = true;
                 return Ok(FramePoll::Closed);
             }
+            Fault::Resync if self.connected_sent && self.pending.is_empty() => {
+                self.fault = Fault::CloseStream;
+                if let Some(frame) = self.positions.resync() {
+                    return Ok(frame);
+                }
+                self.closed = true;
+                return Ok(FramePoll::Closed);
+            }
             Fault::SkipDurable(count) if count > 0 => {
                 // Withhold durable frames the way a lossy transport does: the
                 // client never sees them and must notice the sequence gap.
@@ -830,12 +847,13 @@ impl ContractDouble {
                 None,
                 self.next_id,
             );
-            return Ok(FramePoll::Frame(frame));
+            return Ok(self.positions.stamp(frame));
         }
         if self.pending.is_empty() {
             return Ok(FramePoll::Idle);
         }
-        Ok(FramePoll::Frame(self.pending.remove(0)))
+        let frame = self.pending.remove(0);
+        Ok(self.positions.stamp(frame))
     }
 }
 
@@ -885,6 +903,7 @@ mod tests;
 mod catalogs;
 mod routes;
 
+mod positions;
 mod producer;
 mod session_management;
 mod session_snapshot;

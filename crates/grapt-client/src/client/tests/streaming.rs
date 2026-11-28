@@ -43,8 +43,9 @@ fn a_prompt_turn_renders_reasoning_text_usage_and_a_terminal() {
         view.execution
     );
     assert_eq!(
-        view.idle, None,
-        "terminal hydration does not invent quiescence"
+        view.idle,
+        Some(true),
+        "the snapshot's committed completed state is the server's quiescence"
     );
 }
 
@@ -103,6 +104,10 @@ fn a_closed_stream_reconciles_without_duplicating_the_transcript() {
     let Ok(_) = client.pump() else {
         panic!("pump after close")
     };
+    // The new stream proves its mode before the snapshot is read again.
+    let Ok(_) = client.pump() else {
+        panic!("pump after reconnect")
+    };
 
     let after = match client.view() {
         Some(view) => view.clone(),
@@ -123,6 +128,49 @@ fn a_closed_stream_reconciles_without_duplicating_the_transcript() {
     assert!(
         client.stream_state().is_live(),
         "the client is live again after reconciling"
+    );
+}
+
+#[test]
+fn a_stream_resync_rereads_the_session_without_duplicating_it() {
+    // A reconcile boundary: the queued frames drain, the positions stream is
+    // told to re-read, and it ends. The re-read must not repeat the turn.
+    let mut client = client();
+    let Ok(id) = client.create_session() else {
+        panic!("create");
+    };
+    let Ok(()) = client.submit_prompt("hello") else {
+        panic!("prompt");
+    };
+    let Ok(_) = client.pump() else { panic!("pump") };
+    let Ok(()) = client.reconcile(&id) else {
+        panic!("baseline reconcile")
+    };
+    let before = client.view().map(|view| view.slices.clone());
+    let reconciliations = client.diagnostics().reconciliations;
+    let gaps = client.diagnostics().gaps_observed;
+
+    client.peer_mut().set_fault(Fault::Resync);
+    for _ in 0..4 {
+        let Ok(_) = client.pump() else {
+            panic!("pump through the resync")
+        };
+    }
+
+    assert!(
+        client.diagnostics().reconciliations > reconciliations,
+        "the resync re-read the session"
+    );
+    assert_eq!(
+        client.diagnostics().gaps_observed,
+        gaps + 1,
+        "the resync, not only the end, was read"
+    );
+    assert_eq!(client.view().map(|view| view.slices.clone()), before);
+    assert!(
+        client.stream_state().is_live(),
+        "{:?}",
+        client.stream_state()
     );
 }
 

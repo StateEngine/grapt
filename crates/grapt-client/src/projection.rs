@@ -631,7 +631,16 @@ impl SessionView {
             .ok_or(ProjectionError::DeltaPayloadMissing { kind })?
             .to_owned();
         // The slice the delta names, by identity; then its offset, if any.
-        let index = self.claim_open(kind, envelope, ProjectionError::DeltaWithoutOpen { kind })?;
+        let index =
+            match self.claim_open(kind, envelope, ProjectionError::DeltaWithoutOpen { kind }) {
+                Ok(index) => index,
+                Err(_)
+                    if mode == StreamMode::Positions && self.superseded_delta(envelope, kind) =>
+                {
+                    return Ok(Applied::Ignored);
+                }
+                Err(error) => return Err(error),
+            };
         let Some(text) = self.admit_delta(kind, index, envelope, text, mode)? else {
             return Ok(Applied::Ignored);
         };

@@ -179,6 +179,9 @@ fn prepared() -> TestResult<Client<WorktreePeer>> {
         .ok_or("model")?;
     client.select_model(&model)?;
     client.create_session()?;
+    // The subscription proves its mode and the session is read before a test
+    // raises anything, as on a connected terminal.
+    client.pump()?;
     Ok(client)
 }
 
