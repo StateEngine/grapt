@@ -215,6 +215,45 @@ impl RequestBoundary {
             new_prefix
         };
     }
+
+    /// How many items compaction could remove: the unprotected history, and
+    /// every model exchange outside it.
+    fn compactable(&self, input: &[grapt_provider::CodexInputItem]) -> usize {
+        let history = self.history_start..self.protected_from;
+        let outside = input
+            .iter()
+            .enumerate()
+            .filter(|(index, item)| !history.contains(index) && exchange(item))
+            .count();
+        history.len() + outside
+    }
+}
+
+/// Whether `item` is part of a model exchange: output, replayed reasoning, a
+/// tool call or its result. Instructions, user input and effort updates are
+/// not; compaction can only remove exchanges.
+fn exchange(item: &grapt_provider::CodexInputItem) -> bool {
+    use grapt_provider::{CodexInputItem, InputMessage, MessageRole};
+    match item {
+        CodexInputItem::Message(InputMessage {
+            role: MessageRole::System | MessageRole::User,
+            ..
+        })
+        | CodexInputItem::ImageUser { .. }
+        | CodexInputItem::EffortUpdate(_) => false,
+        CodexInputItem::Message(InputMessage {
+            role: MessageRole::Assistant,
+            ..
+        })
+        | CodexInputItem::AssistantResponseStart
+        | CodexInputItem::ProviderReplay(_)
+        | CodexInputItem::CompatibleReasoning(_)
+        | CodexInputItem::ToolCall { .. }
+        | CodexInputItem::TextToolCall { .. }
+        | CodexInputItem::ToolOutput { .. }
+        | CodexInputItem::ImageToolOutput { .. }
+        | CodexInputItem::CompactionTrigger => true,
+    }
 }
 
 impl ProductPlan {

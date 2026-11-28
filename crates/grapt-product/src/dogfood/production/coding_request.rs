@@ -360,8 +360,7 @@ impl ProductPlan {
             output_continuation::append(&mut input);
         }
         self.prepare_context_hook(target, &mut input, &mut tools, &mut boundary)?;
-        self.compactable_items = (boundary.protected_from - boundary.history_start)
-            + input.iter().filter(|item| exchange(item)).count();
+        self.compactable_items = boundary.compactable(&input);
         // Judge the definitions that will actually be sent, again: a callback
         // can replace a description or a schema the request would have kept,
         // and the authority and the notice must describe the same set the
@@ -630,32 +629,5 @@ impl ProductPlan {
             request,
             context,
         })
-    }
-}
-
-/// Whether `item` is part of a model exchange: output, replayed reasoning, a
-/// tool call or its result. Instructions, user input and effort updates are
-/// not; compaction can only remove exchanges.
-fn exchange(item: &grapt_provider::CodexInputItem) -> bool {
-    use grapt_provider::{CodexInputItem, InputMessage, MessageRole};
-    match item {
-        CodexInputItem::Message(InputMessage {
-            role: MessageRole::System | MessageRole::User,
-            ..
-        })
-        | CodexInputItem::ImageUser { .. }
-        | CodexInputItem::EffortUpdate(_) => false,
-        CodexInputItem::Message(InputMessage {
-            role: MessageRole::Assistant,
-            ..
-        })
-        | CodexInputItem::AssistantResponseStart
-        | CodexInputItem::ProviderReplay(_)
-        | CodexInputItem::CompatibleReasoning(_)
-        | CodexInputItem::ToolCall { .. }
-        | CodexInputItem::TextToolCall { .. }
-        | CodexInputItem::ToolOutput { .. }
-        | CodexInputItem::ImageToolOutput { .. }
-        | CodexInputItem::CompactionTrigger => true,
     }
 }
