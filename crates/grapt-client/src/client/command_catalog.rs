@@ -89,6 +89,7 @@ impl<C: Connection> Client<C> {
     }
     pub fn commands_status(&self) -> Option<&str> {
         if self.command_catalog.enabled
+            && self.refused().is_ok()
             && (self.command_catalog.location != self.form_location()
                 || self.command_catalog.session != self.selected)
         {
