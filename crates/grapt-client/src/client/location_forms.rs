@@ -116,6 +116,11 @@ impl<C: Connection> Client<C> {
         };
     }
 
+    /// A settled location form leaves the retained list before it is re-read.
+    pub(super) fn settled_location_form(&mut self, form: &FormWireId) {
+        self.location_forms.rows.retain(|row| row.id != *form);
+    }
+
     pub fn location_form(
         &mut self,
         location: &FormLocation,
@@ -169,7 +174,7 @@ impl<C: Connection> Client<C> {
             Some(&location.directory),
             None,
         )?;
-        self.location_forms.rows.retain(|row| row.id != *form);
+        self.settled_location_form(form);
         self.refresh_location_forms()
     }
     pub fn cancel_location_form(
@@ -185,7 +190,7 @@ impl<C: Connection> Client<C> {
             Some(&location.directory),
             None,
         )?;
-        self.location_forms.rows.retain(|row| row.id != *form);
+        self.settled_location_form(form);
         self.refresh_location_forms()
     }
 }

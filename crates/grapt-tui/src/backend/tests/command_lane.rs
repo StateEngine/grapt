@@ -4,7 +4,7 @@ use crate::backend::{Command, Outcome, Selection};
 use grapt_client::{
     client::HistoryMove,
     wire::{PermissionReplyChoice, SessionWireId},
-    Bounds, Client, ContractDouble, FramePoll, Operation,
+    Bounds, Client, ContractDouble, FramePoll, Operation, Transport, WireRequest,
 };
 use std::time::Duration;
 use tokio::time::Instant;
@@ -146,6 +146,124 @@ fn a_prompt_refused_behind_a_pending_stop_settles_its_page_request() -> Result {
     fixture.gate.release();
     let browse = fixture.command(Command::Browse(HistoryMove::Latest))?;
     fixture.take_until(|update| update.navigation.iter().any(|(id, ..)| *id == browse))?;
+    Ok(())
+}
+
+/// A command that reaches the service, built against a ready fixture, and
+/// the operation its first request uses.
+type LaneCommand = fn(&Fixture) -> Result<(Operation, Command)>;
+
+#[test]
+fn every_lane_command_held_at_the_service_never_holds_the_protocol_loop() -> Result {
+    let commands: [LaneCommand; 7] = [
+        |_| {
+            Ok((
+                Operation::MessageList,
+                Command::Browse(HistoryMove::Beginning),
+            ))
+        },
+        |fixture| {
+            fixture.command(Command::Roster)?;
+            let roster = fixture.take_until(|update| update.roster.is_some())?.roster;
+            let agent = roster
+                .and_then(|rows| rows.first().cloned())
+                .ok_or("agent")?;
+            Ok((
+                Operation::SessionAgentSelect,
+                Command::ChooseAgent(agent.id),
+            ))
+        },
+        |fixture| {
+            fixture.command(Command::Models)?;
+            let models = fixture.take_until(|update| update.models.is_some())?.models;
+            let model = models.and_then(|rows| rows.into_iter().find(|row| row.enabled));
+            Ok((
+                Operation::SessionModelSelect,
+                Command::Model(model.ok_or("model")?),
+            ))
+        },
+        |_| {
+            Ok((
+                Operation::SessionList,
+                Command::SessionSearch("held".into()),
+            ))
+        },
+        |fixture| {
+            let request = crate::sessions::Request::Rename {
+                id: fixture.session.clone(),
+                title: "held rename".into(),
+            };
+            Ok((Operation::SessionRename, Command::ManageSession(request)))
+        },
+        |fixture| {
+            let mut source = fixture.source.lock().map_err(|_| "source lock")?;
+            source.raise_form(&fixture.session, "Held").ok_or("form")?;
+            let list = WireRequest::new(Operation::SessionFormList, Some(&fixture.session), None)?;
+            let rows = grapt_client::wire::decode_session_forms(&source.call(&list)?.body)?;
+            let request = grapt_tui_forms::Request {
+                target: grapt_tui_forms::Target::Session(fixture.session.clone()),
+                form: rows.into_iter().next().ok_or("form row")?,
+                decision: Some(grapt_tui_forms::Decision::Cancel),
+            };
+            Ok((Operation::SessionFormState, Command::Form(request)))
+        },
+        |fixture| {
+            let grant = serde_json::from_value(
+                serde_json::json!({"scope": "session", "resource": "/workspace/held.txt"}),
+            )?;
+            let request = crate::grants::Request {
+                session: fixture.session.clone(),
+                grant,
+            };
+            Ok((Operation::SandboxGrantRevoke, Command::RevokeGrant(request)))
+        },
+    ];
+    for build in commands {
+        let fixture = Fixture::ready()?;
+        let (operation, command) = build(&fixture)?;
+        fixture.gate.hold(operation)?;
+        let id = fixture.command(command)?;
+        until(|| fixture.gate.blocked())?;
+        let held = Instant::now();
+        for frame in fixture.turn("streamed while the command is held")? {
+            fixture.frame(frame)?;
+        }
+        fixture.take_until(|update| update.completion.is_some())?;
+        assert!(held.elapsed() < Duration::from_secs(3), "{operation:?}");
+        assert!(fixture.gate.blocked(), "{operation:?} was still held");
+        fixture.gate.release();
+        fixture.take_until(|update| {
+            update.outcomes.iter().any(|settled| settled.id == id)
+                || update.navigation.iter().any(|(moved, ..)| *moved == id)
+                || update.models.is_some()
+        })?;
+    }
+    Ok(())
+}
+
+#[test]
+fn a_page_move_in_flight_settles_after_a_quit_and_publications() -> Result {
+    let fixture = Fixture::ready()?;
+    fixture.gate.hold(Operation::MessageList)?;
+    let browse = fixture.command(Command::Browse(HistoryMove::Beginning))?;
+    until(|| fixture.gate.blocked())?;
+    // Held behind the page move, then discarded by the quit.
+    let submit = fixture.command(Command::Submit("discarded behind the page move".into()))?;
+    fixture.barrier()?;
+    let mut dropped = Vec::new();
+    fixture.take_until(|update| {
+        dropped.extend(update.navigation_dropped.iter().copied());
+        dropped.contains(&submit)
+    })?;
+    fixture.gate.release();
+    fixture.take_until(|update| {
+        dropped.extend(update.navigation_dropped.iter().copied());
+        update.navigation.iter().any(|(moved, ..)| *moved == browse)
+    })?;
+    assert!(
+        !dropped.contains(&browse),
+        "the page move in flight was dropped"
+    );
     Ok(())
 }
 

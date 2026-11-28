@@ -1522,9 +1522,6 @@
       "fn uncertain_image_retry_settles_only_the_original_images_after_an_edited_enter :: clippy::too_many_lines": 1,
       "struct Peer :: clippy::struct_excessive_bools": 1
     },
-    "crates/grapt-tui/src/backend/forms.rs": {
-      "fn transact :: clippy::too_many_lines": 1
-    },
     "crates/grapt-tui/src/backend/forms/tests.rs": {
       "impl Transport for Peer::fn call :: clippy::too_many_lines": 1,
       "struct Peer :: clippy::struct_excessive_bools": 1

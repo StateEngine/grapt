@@ -218,8 +218,6 @@ fn serve(
     };
     let mut roster = setup::roster(&client);
     let mut form_poll = forms::Poll::new(tokio::time::Instant::now());
-    let mut form_results = Vec::new();
-    let mut session_messages = Vec::new();
     let mut ledger = Ledger::default();
     let mut previous = None;
     let mut selection = None;
@@ -248,13 +246,7 @@ fn serve(
     let mut backlog = false;
     loop {
         publish |= followups.reconcile(&client);
-        ledger.collect(
-            &mut submissions,
-            &mut followups,
-            &mut model_result,
-            &mut form_results,
-            &mut session_messages,
-        );
+        ledger.collect(&mut submissions, &mut followups, &mut model_result);
         // Token/child events still pass the common validator. A protocol wake
         // alone does not request a UI frame when its projection did not change.
         // A view is built only into a vacant slot, so none is ever dropped;
@@ -355,7 +347,7 @@ fn serve(
                 &client.peer_mut().connection().state,
             );
             grapt_tui_transcript::profile::update();
-            let (navigation, navigation_dropped) = pages.take();
+            let (navigation, navigation_dropped) = pages.take(lane.paging());
             updates.put(Update {
                 selection: selection.take(),
                 previews: family.take_previews(),
@@ -475,22 +467,18 @@ fn serve(
             selection: &mut selection,
             pages: &mut pages,
             roster: &mut roster,
+            models: &mut models,
+            startup: &mut startup,
+            status: &mut status,
         };
         let mut batch = lane.next(&commands, updates, (&client, holders));
         if !lane.quitting() && updates.refresh_requested() {
             batch.insert(0, updates.envelope(Command::RefreshModels));
         }
-        let mark = ledger.len();
         for (id, command) in batch {
             // Each command's results leave their holders before the next
             // command runs, so none can replace another's.
-            ledger.collect(
-                &mut submissions,
-                &mut followups,
-                &mut model_result,
-                &mut form_results,
-                &mut session_messages,
-            );
+            ledger.collect(&mut submissions, &mut followups, &mut model_result);
             publish = true;
             submissions.cancel_for(&command);
             pages.asked(id, &command);
@@ -503,21 +491,6 @@ fn serve(
                 Command::Followup(request) => {
                     let ready = first_prompt::ready(&client, startup) && !submissions.preparing();
                     followups.submit(&mut client, request, ready, id)
-                }
-                Command::SessionSearch(query) => {
-                    session_messages.push((id, sessions::search(&mut client, query)));
-                    Ok(())
-                }
-                Command::ManageSession(request) => {
-                    session_messages.push((id, sessions::manage(&mut client, request)));
-                    if client.selected().is_none() {
-                        startup = crate::launch::Readiness::Manual;
-                    }
-                    Ok(())
-                }
-                Command::Form(request) => {
-                    form_results.push((id, forms::execute(&mut client, request)));
-                    Ok(())
                 }
                 Command::StartupRead => setup::retry(
                     &mut client,
@@ -613,20 +586,9 @@ fn serve(
                     pages.clear();
                     startup = crate::launch::Readiness::Manual;
                     roster = None;
-                    let lanes = (&mut client, &mut reads);
-                    let result = lane.open(lanes, &mut directory, id, &request.id);
-                    if result.is_err() {
-                        selection = selection.max(Some(id));
-                    }
-                    result
-                }
-                Command::RevokeGrant(request) => {
-                    let done = commands::revoke_grant(&mut client, request);
-                    status = done.notice.clone();
-                    submissions.command = Some((id, done));
+                    lane.open((&mut client, &mut reads), &mut directory, id, &request.id);
                     continue;
                 }
-                Command::Reply(ask, choice) => lane.reply(&mut client, &mut reads, &ask, choice),
                 command @ (Command::Interrupt(_)
                 | Command::InterruptAndResume(_)
                 | Command::InterruptSession(_)) => {
@@ -684,29 +646,20 @@ fn serve(
                     roster = Some(client.agents().to_vec());
                     Ok(())
                 }
-                Command::ChooseAgent(agent) => match client.select_agent(&agent) {
-                    Ok(()) => {
-                        models = Some(client.models().to_vec());
-                        Ok(())
-                    }
-                    Err(error) => {
-                        roster = setup::roster(&client);
-                        Err(error)
-                    }
-                },
-                Command::Model(model) => {
-                    let result = if startup.attached() {
-                        client.select_model(&model)
-                    } else {
-                        Err(grapt_client::ClientError::SelectionIncomplete)
-                    };
-                    model_result = Some((id, result.is_ok()));
-                    result
+                Command::Model(_) if !startup.attached() => {
+                    model_result = Some((id, false));
+                    Err(grapt_client::ClientError::SelectionIncomplete)
                 }
-                Command::Browse(movement) => {
-                    let result = client.browse_history(movement);
-                    pages.moved(id, movement, matches!(result, Ok(true)));
-                    result.map(|_| ())
+                command @ (Command::Reply(..)
+                | Command::Browse(_)
+                | Command::ChooseAgent(_)
+                | Command::Model(_)
+                | Command::SessionSearch(_)
+                | Command::ManageSession(_)
+                | Command::Form(_)
+                | Command::RevokeGrant(_)) => {
+                    lane.start((&mut client, &mut reads), id, command);
+                    continue;
                 }
             };
             status = match result {
@@ -721,16 +674,7 @@ fn serve(
                 Err(e) => e.to_string(),
             };
         }
-        ledger.collect(
-            &mut submissions,
-            &mut followups,
-            &mut model_result,
-            &mut form_results,
-            &mut session_messages,
-        );
-        if let Some(note) = ledger.form_note_after(mark) {
-            status = note;
-        }
+        ledger.collect(&mut submissions, &mut followups, &mut model_result);
         if let Some(notice) = stops.advance() {
             status = notice;
             publish = true;
@@ -823,8 +767,16 @@ fn serve(
             reads.settle(&mut client, polls, tokio::time::Instant::now(), &wake);
         publish |= settled;
         status = notice.unwrap_or(status);
-        let answered = lane.settle(&mut client, &mut reads);
-        publish |= answered.apply(&mut session_messages, &mut selection, &mut status);
+        lane.settle(&mut client, &mut reads);
+        publish |= lane.apply(closing::Holders {
+            ledger: &mut ledger,
+            selection: &mut selection,
+            pages: &mut pages,
+            roster: &mut roster,
+            models: &mut models,
+            startup: &mut startup,
+            status: &mut status,
+        });
         if !client.catalog_pending() {
             if models_requested {
                 models = Some(client.models().to_vec());

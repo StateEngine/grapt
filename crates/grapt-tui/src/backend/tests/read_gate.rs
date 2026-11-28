@@ -8,7 +8,7 @@ struct State {
     held: Option<Operation>,
     blocked: bool,
     allow_expired: bool,
-    calls: [usize; 7],
+    calls: [usize; 13],
 }
 #[derive(Default)]
 pub(super) struct Gate {
@@ -24,6 +24,12 @@ fn index(operation: Operation) -> Option<usize> {
         Operation::SessionPermissionReply => Some(4),
         Operation::SessionGet => Some(5),
         Operation::SessionInterrupt => Some(6),
+        Operation::MessageList => Some(7),
+        Operation::SessionAgentSelect => Some(8),
+        Operation::SessionModelSelect => Some(9),
+        Operation::SessionRename => Some(10),
+        Operation::SessionFormState => Some(11),
+        Operation::SandboxGrantRevoke => Some(12),
         _ => None,
     }
 }

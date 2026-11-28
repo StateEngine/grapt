@@ -1,5 +1,6 @@
 //! One bounded page request,
 //! cursor ownership in the protocol client, and a reading view separate from live state.
+use super::prepared::{Accepted, Done, Route, Step};
 use super::*;
 use crate::wire::MessagePage;
 
@@ -26,6 +27,15 @@ pub(super) struct Window {
     // None: no movement to undo; Some(None): restore the live tail.
     // At most one prior bounded page is retained, moved rather than cloned.
     previous: Option<Option<Reading>>,
+}
+
+/// A page move waiting for its read.
+#[derive(Debug)]
+pub(super) struct Browse {
+    session: SessionWireId,
+    cursor: Option<String>,
+    descending: bool,
+    movement: HistoryMove,
 }
 
 #[derive(Debug)]
@@ -86,28 +96,72 @@ impl<C: Connection> Client<C> {
 
     /// Load one page only. A repeated/refused cursor leaves the current reading intact.
     pub fn browse_history(&mut self, movement: HistoryMove) -> Result<bool, ClientError> {
+        let browse = match self.plan_browse(movement)? {
+            Ok(browse) => browse,
+            Err(changed) => return Ok(changed),
+        };
+        let page =
+            self.read_window_page(&browse.session, browse.cursor.as_deref(), browse.descending)?;
+        self.install_page(browse, page)
+    }
+
+    /// Build a page move off the loop: settled at once when it needs no read.
+    pub fn prepare_browse(&mut self, movement: HistoryMove) -> Result<Accepted, ClientError> {
+        let browse = match self.plan_browse(movement)? {
+            Ok(browse) => browse,
+            Err(changed) => return Ok(Accepted::Done(Done::Browsed(changed))),
+        };
+        let (session, cursor) = (browse.session.clone(), browse.cursor.clone());
+        let route = Route {
+            page: Some(Page::Window {
+                cursor: cursor.as_deref(),
+                descending: browse.descending,
+            }),
+            ..Route::new(Operation::MessageList, Some(&session))
+        };
+        self.prepare_call(Step::Browse(browse), route)
+            .map(Accepted::Next)
+    }
+
+    /// A page read for a Session no longer selected moves nothing.
+    pub(super) fn accept_browse(
+        &mut self,
+        browse: Browse,
+        answer: Result<Vec<u8>, ClientError>,
+    ) -> Result<Accepted, ClientError> {
+        let bytes = answer?;
+        if self.selected.as_ref() != Some(&browse.session) {
+            return Ok(Accepted::Done(Done::Browsed(false)));
+        }
+        let page = crate::wire::decode_messages(&bytes)?;
+        self.install_page(browse, page)
+            .map(|changed| Accepted::Done(Done::Browsed(changed)))
+    }
+
+    /// The read a move needs, or whether it changed the page without one.
+    fn plan_browse(&mut self, movement: HistoryMove) -> Result<Result<Browse, bool>, ClientError> {
         if movement == HistoryMove::Cancel {
             let Some(window) = &mut self.history_window else {
-                return Ok(false);
+                return Ok(Err(false));
             };
             let Some(previous) = window.previous.take() else {
-                return Ok(false);
+                return Ok(Err(false));
             };
             window.reading = previous;
             window.revision = window.revision.saturating_add(1);
-            return Ok(true);
+            return Ok(Err(true));
         }
         if let Some(window) = &mut self.history_window {
             window.previous = None;
         }
         let session = self.selected.clone().ok_or(ClientError::NoSelection)?;
         let Some(window) = &self.history_window else {
-            return Ok(false);
+            return Ok(Err(false));
         };
         if movement == HistoryMove::Latest {
             let changed = window.reading.is_some();
             self.reset_history_window_reading();
-            return Ok(changed);
+            return Ok(Err(changed));
         }
         let (cursor, descending) = match movement {
             HistoryMove::Beginning => (None, false),
@@ -119,16 +173,30 @@ impl<C: Connection> Client<C> {
                     None => None,
                 };
                 let Some(cursor) = cursor else {
-                    return Ok(false);
+                    return Ok(Err(false));
                 };
                 (
                     Some(cursor),
                     window.reading.as_ref().is_none_or(|r| r.descending),
                 )
             }
-            HistoryMove::Latest | HistoryMove::Cancel => return Ok(false),
+            HistoryMove::Latest | HistoryMove::Cancel => return Ok(Err(false)),
         };
-        let page = self.read_window_page(&session, cursor.as_deref(), descending)?;
+        Ok(Ok(Browse {
+            session,
+            cursor,
+            descending,
+            movement,
+        }))
+    }
+
+    fn install_page(&mut self, browse: Browse, page: MessagePage) -> Result<bool, ClientError> {
+        let Browse {
+            session,
+            cursor,
+            descending,
+            movement,
+        } = browse;
         let (older, newer) = edges(&page, descending);
         if cursor.is_some() && (page.next == cursor || page.previous == cursor) {
             return Err(crate::wire::WireError::Invalid {

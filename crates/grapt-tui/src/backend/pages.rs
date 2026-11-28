@@ -48,15 +48,21 @@ impl Pages {
     }
 
     /// The moves made since the last publication, and every command that
-    /// could have moved the page but did not.
-    pub(super) fn take(&mut self) -> (Vec<(CommandId, HistoryMove, bool)>, Vec<CommandId>) {
+    /// could have moved the page but did not. A move still in flight
+    /// (`paging`) is neither: it settles in a later publication.
+    pub(super) fn take(
+        &mut self,
+        paging: Option<CommandId>,
+    ) -> (Vec<(CommandId, HistoryMove, bool)>, Vec<CommandId>) {
         let moves = std::mem::take(&mut self.moves);
         let mut dropped = std::mem::take(&mut self.dropped);
-        dropped.extend(
-            self.asked
-                .drain(..)
-                .filter(|id| !moves.iter().any(|(moved, ..)| moved == id)),
-        );
+        let (waiting, ended) = self
+            .asked
+            .drain(..)
+            .filter(|id| !moves.iter().any(|(moved, ..)| moved == id))
+            .partition(|id| Some(*id) == paging);
+        self.asked = waiting;
+        dropped.extend::<Vec<_>>(ended);
         (moves, dropped)
     }
 }

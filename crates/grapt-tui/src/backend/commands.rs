@@ -106,24 +106,76 @@ impl Completion {
 }
 
 /// Operator effects stay on the protocol worker and bind the selected Session.
-pub(crate) fn revoke_grant<C: Connection>(
+/// A grant withdrawal on the command lane: the revocation rounds, then a
+/// re-read of the grant list the withdrawal is shown against.
+#[derive(Debug)]
+pub(super) struct Withdrawal {
+    /// The revocation's outcome, once it is known.
+    notice: Option<String>,
+}
+
+pub(super) fn revoke_grant<C: Connection>(
+    client: &mut Client<C>,
+    request: crate::grants::Request,
+) -> super::command_lane::Turn<Withdrawal, Completion> {
+    if client.selected() != Some(&request.session) {
+        let mut done = Completion::new("");
+        done.session = client.selected().cloned();
+        done.notice = "Session changed; no consent was withdrawn.".into();
+        return super::command_lane::Turn::Settle(done);
+    }
+    let call = client
+        .prepare_grant_revoke(&request.grant)
+        .map(grapt_client::Accepted::Next);
+    super::command_lane::Turn::Step(Withdrawal { notice: None }, call)
+}
+
+/// Withdraw a grant to the end on the client's own connection.
+#[cfg(test)]
+pub(crate) fn revoke_grant_now<C: Connection>(
     client: &mut Client<C>,
     request: crate::grants::Request,
 ) -> Completion {
-    let mut done = Completion::new("");
-    done.session = client.selected().cloned();
-    if client.selected() != Some(&request.session) {
-        done.notice = "Session changed; no consent was withdrawn.".into();
-        return done;
+    let turn = revoke_grant(client, request);
+    super::command_lane::run(client, turn, Withdrawal::advance)
+}
+
+impl Withdrawal {
+    pub(super) fn advance<C: Connection>(
+        self,
+        client: &mut Client<C>,
+        done: Result<grapt_client::Done, grapt_client::ClientError>,
+    ) -> super::command_lane::Turn<Self, Completion> {
+        let Some(notice) = self.notice else {
+            let notice = match done {
+                Ok(grapt_client::Done::Revoked(message)) => message,
+                Ok(_) => "Revocation unconfirmed. Retry before relying on withdrawal.".into(),
+                Err(error) => {
+                    format!("Revocation unconfirmed: {error}. Retry before relying on withdrawal.")
+                }
+            };
+            let call = client
+                .prepare_grants_refresh()
+                .map(grapt_client::Accepted::Next);
+            return super::command_lane::Turn::Step(
+                Self {
+                    notice: Some(notice),
+                },
+                call,
+            );
+        };
+        // A read the service answered is recorded with the inventory and shown
+        // in the pane's rows; one it never answered is named here.
+        let notice = match done {
+            Ok(_) => notice,
+            Err(error) => format!("{notice} Grant list refresh failed: {error}"),
+        };
+        let mut completion = Completion::new("");
+        completion.session = client.selected().cloned();
+        completion.view = crate::grants::Snapshot::of(client, notice.clone()).map(View::Grants);
+        completion.notice = notice;
+        super::command_lane::Turn::Settle(completion)
     }
-    done.notice = match client.revoke_sandbox_grant(&request.grant) {
-        Ok(message) => message,
-        Err(error) => {
-            format!("Revocation unconfirmed: {error}. Retry before relying on withdrawal.")
-        }
-    };
-    done.view = crate::grants::Snapshot::read(client, done.notice.clone()).map(View::Grants);
-    done
 }
 
 #[derive(Clone, Copy)]

@@ -3,7 +3,10 @@
 //! terminal stays open.
 use super::{commands::Completion, view::Ledger, Command, CommandId, Outcome};
 use crate::bridge::Bridge;
-use grapt_client::{wire::AgentRow, Client};
+use grapt_client::{
+    wire::{AgentRow, ModelRow},
+    Client,
+};
 
 const NOT_SENT: &str = "Closing; not sent";
 
@@ -12,9 +15,12 @@ pub(super) struct Holders<'a> {
     pub(super) ledger: &'a mut Ledger,
     /// The newest Select a view answers.
     pub(super) selection: &'a mut Option<CommandId>,
-    /// Commands that could have moved the page, discarded.
+    /// The page moves made, and the commands that made none.
     pub(super) pages: &'a mut super::pages::Pages,
     pub(super) roster: &'a mut Option<Vec<AgentRow>>,
+    pub(super) models: &'a mut Option<Vec<ModelRow>>,
+    pub(super) startup: &'a mut crate::launch::Readiness,
+    pub(super) status: &'a mut String,
 }
 
 /// Settle every discarded command. A Select is answered as the view's
@@ -31,6 +37,7 @@ pub(super) fn refuse(
         selection,
         pages,
         roster,
+        ..
     } = holders;
     for (id, command) in discarded {
         if super::pages::Pages::navigates(&command) {

@@ -1,6 +1,7 @@
 //! The lane's bound and its attachment fence.
 use super::super::pages::Pages;
 use super::*;
+use crate::launch::Readiness;
 use std::sync::mpsc;
 
 type Result = std::result::Result<(), Box<dyn std::error::Error>>;
@@ -50,21 +51,26 @@ fn a_not_found_open_from_a_revoked_attachment_forgets_nothing() -> Result {
     let mut reads = Reads::start(wake)?;
     let session = grapt_client::wire::session_id("ses_000000000009")?;
     let id = Handoff::default().envelope(Command::Commands).0;
+    let call = client.prepare_open(&session)?;
     let mut lane = Lane {
-        in_flight: Some((
-            InFlight::Open(id, Box::new(client.prepare_open(&session)?)),
-            Arc::new(AtomicBool::new(false)),
-        )),
+        in_flight: Some(InFlight {
+            job: Job::Open { id, session },
+            call,
+            attachment: Arc::new(AtomicBool::new(false)),
+        }),
         ..Lane::default()
     };
     let not_found = WireResponse {
         status: 404,
         body: Vec::new(),
     };
-    let answered = lane.answer(&mut client, &mut reads, Ok(not_found));
-    assert!(answered.unavailable.is_none());
-    assert_eq!(answered.selection, Some(id));
+    lane.answer((&mut client, &mut reads), Ok(not_found));
     assert!(!lane.busy());
+    assert!(
+        lane.settled.outcomes.is_empty(),
+        "the Session was forgotten"
+    );
+    assert_eq!(lane.settled.selection, Some(id));
     Ok(())
 }
 
@@ -90,19 +96,29 @@ fn an_older_open_settling_after_a_quit_never_replaces_the_newer_selection() -> R
     let newer_id = newer.0;
     let (mut ledger, mut selection) = (Default::default(), None);
     let (mut pages, mut roster) = (Pages::default(), None);
+    let (mut models, mut startup, mut status) = (None, Readiness::Ready, String::new());
     let holders = super::super::closing::Holders {
         ledger: &mut ledger,
         selection: &mut selection,
         pages: &mut pages,
         roster: &mut roster,
+        models: &mut models,
+        startup: &mut startup,
+        status: &mut status,
     };
     super::super::closing::refuse(vec![newer], &client, holders);
     // The open that was in flight settles before the UI takes the view.
-    let answered = Answered {
-        selection: Some(older),
-        ..Answered::default()
-    };
-    answered.apply(&mut Vec::new(), &mut selection, &mut String::new());
+    let mut lane = Lane::default();
+    lane.select(older);
+    lane.apply(super::super::closing::Holders {
+        ledger: &mut ledger,
+        selection: &mut selection,
+        pages: &mut pages,
+        roster: &mut roster,
+        models: &mut models,
+        startup: &mut startup,
+        status: &mut status,
+    });
     assert_eq!(selection, Some(newer_id));
     Ok(())
 }
@@ -118,15 +134,19 @@ fn a_discarded_history_move_and_agent_choice_are_settled() -> Result {
     let choose = updates.envelope(Command::ChooseAgent(agent));
     let (mut ledger, mut selection) = (Default::default(), None);
     let (mut pages, mut roster) = (Pages::default(), None);
+    let (mut models, mut startup, mut status) = (None, Readiness::Ready, String::new());
     let holders = super::super::closing::Holders {
         ledger: &mut ledger,
         selection: &mut selection,
         pages: &mut pages,
         roster: &mut roster,
+        models: &mut models,
+        startup: &mut startup,
+        status: &mut status,
     };
     super::super::closing::refuse(vec![browse, choose], &client, holders);
     assert_eq!(
-        pages.take().1,
+        pages.take(None).1,
         vec![browse_id],
         "the history move would stay pending"
     );

@@ -1,16 +1,20 @@
-//! Permission replies and Session opens run off the protocol loop, on the
-//! read worker's command slot, one at a time. Commands that arrive behind
-//! one wait for it in order, so none acts on a Session an open is leaving.
-//! A Quit arrives apart from them and is never held; every command still
-//! waiting when it arrives is discarded, so none takes effect after it. Each
-//! command is fenced to the attachment it was sent on: an answer from a
-//! revoked attachment is never applied.
-use super::{reads::Reads, setup, Command, CommandId, Handoff};
+//! Commands that reach the service run off the protocol loop, on the read
+//! worker's command slot, one at a time and a step at a time. Commands that
+//! arrive behind one wait for it in order, so none acts on state an earlier
+//! one is still changing. A Quit arrives apart from them and is never held;
+//! every command still waiting when it arrives is discarded, so none takes
+//! effect after it. Each command is fenced to the attachment its first step
+//! was sent on: an answer from a revoked attachment is never applied.
+use super::{
+    closing::Holders, commands, forms, reads::Reads, sessions, setup, Command, CommandId, Handoff,
+    Outcome,
+};
 use crate::bridge::Bridge;
 use grapt_client::{
+    client::HistoryMove,
     contract::Operation,
-    wire::{PermissionReplyChoice, SessionWireId},
-    Client, ClientError, PermissionAsk, PreparedOpen, PreparedReply, TransportError, WireResponse,
+    wire::{AgentRow, ModelRow, SessionWireId},
+    Accepted, Client, ClientError, Done, PreparedCall, TransportError, WireResponse,
 };
 use std::collections::VecDeque;
 use std::sync::{atomic::AtomicBool, mpsc::Receiver, Arc};
@@ -19,11 +23,52 @@ use std::sync::{atomic::AtomicBool, mpsc::Receiver, Arc};
 /// read in one pass.
 const HELD: usize = 16;
 
+/// What a command's step leaves: its next step, or what it settled.
+pub(super) enum Turn<J, O> {
+    Step(J, Result<Accepted, ClientError>),
+    Settle(O),
+}
+
+/// Whether `command` runs on the lane.
+fn runs_on_lane(command: &Command) -> bool {
+    matches!(
+        command,
+        Command::Reply(..)
+            | Command::Select(_)
+            | Command::Browse(_)
+            | Command::ChooseAgent(_)
+            | Command::Model(_)
+            | Command::SessionSearch(_)
+            | Command::ManageSession(_)
+            | Command::Form(_)
+            | Command::RevokeGrant(_)
+    )
+}
+
+/// A command on the lane, and where its steps settle.
 #[derive(Debug)]
-enum InFlight {
-    Reply(PreparedReply),
-    /// Boxed: an open carries the Session read across its steps.
-    Open(CommandId, Box<PreparedOpen>),
+enum Job {
+    Reply,
+    Open {
+        id: CommandId,
+        session: SessionWireId,
+    },
+    Browse(CommandId, HistoryMove),
+    Agent,
+    Model(CommandId),
+    Search(CommandId, String),
+    Manage(CommandId, sessions::Manage),
+    Form(CommandId, Box<forms::Flow>),
+    Grant(CommandId, commands::Withdrawal),
+}
+
+/// The step in flight and the attachment its command is fenced to: the
+/// first step pins it for every later step.
+#[derive(Debug)]
+struct InFlight {
+    job: Job,
+    call: PreparedCall,
+    attachment: Arc<AtomicBool>,
 }
 
 /// Commands read from the intake and not yet run, oldest first. They still
@@ -62,7 +107,7 @@ impl Held {
         let end = self
             .0
             .iter()
-            .position(|(_, command)| matches!(command, Command::Reply(..) | Command::Select(_)))
+            .position(|(_, command)| runs_on_lane(command))
             .map_or(self.0.len(), |first| first + 1);
         let ready: Vec<_> = self.0.drain(..end).collect();
         for _ in &ready {
@@ -88,47 +133,40 @@ impl Held {
 
 #[derive(Debug, Default)]
 pub(super) struct Lane {
-    /// The command in flight and the attachment it is fenced to: an open's
-    /// first step pins it for every later step.
-    in_flight: Option<(InFlight, Arc<AtomicBool>)>,
+    in_flight: Option<InFlight>,
     held: Held,
+    settled: Settled,
     /// What a quit discarded, told with the next settlement.
     notice: Option<String>,
     /// Whether the last commands handed out were quits.
     quitting: bool,
 }
 
-/// What a settled command leaves for the loop.
+/// What settled commands leave for the loop, handed over once a pass.
 #[derive(Debug, Default)]
-pub(super) struct Answered {
-    /// The Select a view now answers, opened or refused.
-    pub(super) selection: Option<CommandId>,
-    pub(super) status: Option<String>,
-    pub(super) unavailable: Option<(CommandId, crate::sessions::Message)>,
-}
-
-impl Answered {
-    /// Hand the outcome to the loop's holders; whether to publish.
-    pub(super) fn apply(
-        self,
-        messages: &mut Vec<(CommandId, crate::sessions::Message)>,
-        selection: &mut Option<CommandId>,
-        status: &mut String,
-    ) -> bool {
-        messages.extend(self.unavailable);
-        // An older open settling never replaces a newer acknowledgement.
-        *selection = selection.take().max(self.selection);
-        let Some(notice) = self.status else {
-            return false;
-        };
-        *status = notice;
-        true
-    }
+struct Settled {
+    outcomes: Vec<(CommandId, Outcome)>,
+    moves: Vec<(CommandId, HistoryMove, bool)>,
+    /// The newest Select a view now answers, opened or refused.
+    selection: Option<CommandId>,
+    roster: Option<Vec<AgentRow>>,
+    models: Option<Vec<ModelRow>>,
+    /// A managed Session left none selected.
+    unselected: bool,
+    status: Option<String>,
 }
 
 impl Lane {
     pub(super) fn busy(&self) -> bool {
         self.in_flight.is_some()
+    }
+
+    /// The page move in flight, which settles when its answer arrives.
+    pub(super) fn paging(&self) -> Option<CommandId> {
+        match self.in_flight.as_ref().map(|in_flight| &in_flight.job) {
+            Some(Job::Browse(id, _)) => Some(*id),
+            _ => None,
+        }
     }
 
     /// Whether held commands can run now.
@@ -157,7 +195,7 @@ impl Lane {
         &mut self,
         commands: &Receiver<(CommandId, Command)>,
         updates: &Handoff,
-        (client, holders): (&Client<Bridge>, super::closing::Holders<'_>),
+        (client, holders): (&Client<Bridge>, Holders<'_>),
     ) -> Vec<(CommandId, Command)> {
         let quits = updates.take_quits();
         self.quitting = !quits.is_empty();
@@ -176,103 +214,309 @@ impl Lane {
             .collect()
     }
 
-    pub(super) fn reply(
+    /// Start a command that runs on the lane.
+    pub(super) fn start(
         &mut self,
-        client: &mut Client<Bridge>,
-        reads: &mut Reads,
-        ask: &PermissionAsk,
-        choice: PermissionReplyChoice,
-    ) -> Result<(), ClientError> {
-        let prepared = client.prepare_permission_reply(&ask.session_id, &ask.request_id, choice)?;
-        let attachment = reads.command(client, prepared.request.clone())?;
-        self.in_flight = Some((InFlight::Reply(prepared), attachment));
-        Ok(())
+        (client, reads): (&mut Client<Bridge>, &mut Reads),
+        id: CommandId,
+        command: Command,
+    ) {
+        let (job, first) = match command {
+            Command::Reply(ask, choice) => {
+                let call =
+                    client.prepare_permission_reply(&ask.session_id, &ask.request_id, choice);
+                (Job::Reply, call.map(Accepted::Next))
+            }
+            Command::Browse(movement) => {
+                (Job::Browse(id, movement), client.prepare_browse(movement))
+            }
+            Command::ChooseAgent(agent) => (Job::Agent, client.prepare_agent(&agent)),
+            Command::Model(model) => (Job::Model(id), client.prepare_model(&model)),
+            Command::SessionSearch(query) => {
+                let call = client.prepare_session_search(&query).map(Accepted::Next);
+                (Job::Search(id, query), call)
+            }
+            Command::ManageSession(request) => match sessions::manage(client, request) {
+                Turn::Step(manage, call) => (Job::Manage(id, manage), call),
+                Turn::Settle(message) => return self.outcome(id, Outcome::Session(message)),
+            },
+            Command::Form(request) => match forms::begin(client, request) {
+                Turn::Step(flow, call) => (Job::Form(id, Box::new(flow)), call),
+                Turn::Settle(reply) => return self.form(id, reply),
+            },
+            Command::RevokeGrant(request) => match commands::revoke_grant(client, request) {
+                Turn::Step(withdrawal, call) => (Job::Grant(id, withdrawal), call),
+                Turn::Settle(done) => return self.completion(id, done),
+            },
+            // The protocol loop hands the lane only the commands above.
+            _ => return,
+        };
+        self.drive((client, reads), job, first, None);
     }
 
     pub(super) fn open(
         &mut self,
         (client, reads): (&mut Client<Bridge>, &mut Reads),
-        directory: &mut Option<setup::Directory>,
+        directory: &mut Option<super::setup::Directory>,
         id: CommandId,
         session: &SessionWireId,
-    ) -> Result<(), ClientError> {
+    ) {
         setup::leave_directory(client, directory);
-        let prepared = client.prepare_open(session)?;
-        let attachment = reads.command(client, prepared.request.clone())?;
-        self.in_flight = Some((InFlight::Open(id, Box::new(prepared)), attachment));
-        Ok(())
+        let first = client.prepare_open(session).map(Accepted::Next);
+        let job = Job::Open {
+            id,
+            session: session.clone(),
+        };
+        self.drive((client, reads), job, first, None);
     }
 
-    /// Apply the command's answer once it arrives.
-    pub(super) fn settle(&mut self, client: &mut Client<Bridge>, reads: &mut Reads) -> Answered {
-        let mut answered = reads
-            .commanded()
-            .map(|response| self.answer(client, reads, response))
-            .unwrap_or_default();
-        answered.status = answered.status.or_else(|| self.notice.take());
-        answered
+    /// Apply the step's answer once it arrives. An answer whose attachment
+    /// was revoked is never applied; a later step is sent only while the
+    /// command's pinned attachment holds.
+    pub(super) fn settle(&mut self, client: &mut Client<Bridge>, reads: &mut Reads) {
+        if let Some(response) = reads.commanded() {
+            self.answer((client, reads), response);
+        }
     }
 
-    /// An answer whose attachment was revoked is dropped whole; an open's
-    /// next step is sent only while its pinned attachment holds.
     fn answer(
         &mut self,
-        client: &mut Client<Bridge>,
-        reads: &mut Reads,
+        (client, reads): (&mut Client<Bridge>, &mut Reads),
         response: Result<WireResponse, TransportError>,
-    ) -> Answered {
-        let Some((in_flight, attachment)) = self.in_flight.take() else {
-            return Answered::default();
+    ) {
+        let Some(InFlight {
+            job,
+            call,
+            attachment,
+        }) = self.in_flight.take()
+        else {
+            return;
         };
-        let current = client.peer_mut().attachment_current(&attachment);
-        match in_flight {
-            InFlight::Reply(_) if !current => Answered {
-                status: Some(
-                    "Reply not confirmed: the service reconnected; answer the request again".into(),
-                ),
-                ..Answered::default()
-            },
-            InFlight::Reply(prepared) => Answered {
-                status: client
-                    .accept_permission_reply(prepared, response)
-                    .err()
-                    .map(|error| format!("Reply not confirmed: {error}")),
-                ..Answered::default()
-            },
-            InFlight::Open(id, _) if !current => Answered {
-                selection: Some(id),
-                status: Some("Session not opened: the service reconnected; open it again".into()),
-                unavailable: None,
-            },
-            InFlight::Open(id, prepared) => {
-                let session = prepared.session().clone();
-                let next = client.accept_open(*prepared, response).and_then(|next| {
-                    next.map(|next| {
-                        reads.command(client, next.request.clone())?;
-                        let step = InFlight::Open(id, Box::new(next));
-                        self.in_flight = Some((step, attachment));
-                        Ok(())
-                    })
-                    .transpose()
-                });
-                match next {
-                    Ok(Some(())) => Answered::default(),
-                    Ok(None) => Answered {
-                        selection: Some(id),
-                        status: Some("Connected".into()),
-                        unavailable: None,
-                    },
-                    Err(error) => Answered {
-                        selection: Some(id),
-                        unavailable:
-                            matches!(&error, ClientError::Status { operation, status: 404 }
-                            if *operation == Operation::SessionGet.operation_id())
-                            .then(|| (id, crate::sessions::Message::Unavailable { id: session })),
-                        status: Some(error.to_string()),
-                    },
-                }
+        if client.peer_mut().attachment_current(&attachment) {
+            let next = client.accept(call, response);
+            self.drive((client, reads), job, next, Some(attachment));
+        } else {
+            self.revoked((client, reads), job);
+        }
+    }
+
+    /// Hand what settled to the loop's holders; whether to publish.
+    pub(super) fn apply(&mut self, holders: Holders<'_>) -> bool {
+        let settled = std::mem::take(&mut self.settled);
+        let Holders {
+            ledger,
+            selection,
+            pages,
+            roster,
+            models,
+            startup,
+            status,
+        } = holders;
+        let mut publish = !settled.outcomes.is_empty()
+            || !settled.moves.is_empty()
+            || settled.selection.is_some();
+        for (id, outcome) in settled.outcomes {
+            ledger.settle(id, outcome);
+        }
+        for (id, movement, changed) in settled.moves {
+            pages.moved(id, movement, changed);
+        }
+        // An older open settling never replaces a newer acknowledgement.
+        *selection = selection.take().max(settled.selection);
+        if settled.roster.is_some() {
+            *roster = settled.roster;
+            publish = true;
+        }
+        if settled.models.is_some() {
+            *models = settled.models;
+            publish = true;
+        }
+        if settled.unselected {
+            *startup = crate::launch::Readiness::Manual;
+        }
+        if let Some(notice) = settled.status.or_else(|| self.notice.take()) {
+            *status = notice;
+            publish = true;
+        }
+        publish
+    }
+
+    /// Run a command's steps until one is in flight or it has settled.
+    fn drive(
+        &mut self,
+        (client, reads): (&mut Client<Bridge>, &mut Reads),
+        mut job: Job,
+        mut next: Result<Accepted, ClientError>,
+        pinned: Option<Arc<AtomicBool>>,
+    ) {
+        loop {
+            let done = match next {
+                Ok(Accepted::Next(call)) => match reads.command(client, call.request.clone()) {
+                    Ok(sent_on) => {
+                        let attachment = pinned.unwrap_or(sent_on);
+                        self.in_flight = Some(InFlight {
+                            job,
+                            call,
+                            attachment,
+                        });
+                        return;
+                    }
+                    Err(error) => Err(error),
+                },
+                Ok(Accepted::Done(done)) => Ok(done),
+                Err(error) => Err(error),
+            };
+            match self.advance(client, job, done) {
+                Some((step, after)) => (job, next) = (step, after),
+                None => return,
             }
         }
+    }
+
+    /// A step's answer arrived on a revoked attachment. A reply or an open is
+    /// asked for again; any other command settles, or goes on, as failed.
+    fn revoked(&mut self, lanes: (&mut Client<Bridge>, &mut Reads), job: Job) {
+        match job {
+            Job::Reply => {
+                self.settled.status = Some(
+                    "Reply not confirmed: the service reconnected; answer the request again".into(),
+                );
+            }
+            Job::Open { id, .. } => {
+                self.select(id);
+                self.settled.status =
+                    Some("Session not opened: the service reconnected; open it again".into());
+            }
+            job => {
+                let reconnected = TransportError::Unavailable {
+                    reason: "the service reconnected before it answered".into(),
+                };
+                self.drive(lanes, job, Err(reconnected.into()), None);
+            }
+        }
+    }
+
+    /// Settle a step's result into the command's holder, or return its next
+    /// step.
+    fn advance(
+        &mut self,
+        client: &mut Client<Bridge>,
+        job: Job,
+        done: Result<Done, ClientError>,
+    ) -> Option<(Job, Result<Accepted, ClientError>)> {
+        match job {
+            Job::Reply => {
+                if let Err(error) = done {
+                    self.settled.status = Some(format!("Reply not confirmed: {error}"));
+                }
+            }
+            Job::Open { id, session } => {
+                self.select(id);
+                let not_found = matches!(&done, Err(ClientError::Status { operation, status: 404 })
+                    if *operation == Operation::SessionGet.operation_id());
+                if not_found {
+                    let message = crate::sessions::Message::Unavailable { id: session };
+                    self.settled.outcomes.push((id, Outcome::Session(message)));
+                }
+                self.settled.status = Some(match done {
+                    Ok(_) => "Connected".into(),
+                    Err(error) => error.to_string(),
+                });
+            }
+            Job::Browse(id, movement) => {
+                let changed = matches!(done, Ok(Done::Browsed(true)));
+                self.settled.moves.push((id, movement, changed));
+                self.status(client, &done);
+            }
+            Job::Agent => {
+                match &done {
+                    Ok(_) => self.settled.models = Some(client.models().to_vec()),
+                    Err(_) => self.settled.roster = setup::roster(client),
+                }
+                self.status(client, &done);
+            }
+            Job::Model(id) => {
+                self.status(client, &done);
+                self.outcome(id, Outcome::Model(done.is_ok()));
+            }
+            Job::Search(id, query) => {
+                self.settled.status = Some("Connected".into());
+                let message = sessions::searched(client, query, done);
+                self.outcome(id, Outcome::Session(message));
+            }
+            Job::Manage(id, manage) => match manage.advance(client, done) {
+                Turn::Step(manage, next) => return Some((Job::Manage(id, manage), next)),
+                Turn::Settle(message) => {
+                    self.settled.unselected |= client.selected().is_none();
+                    self.settled.status = Some("Connected".into());
+                    self.outcome(id, Outcome::Session(message));
+                }
+            },
+            Job::Form(id, flow) => match flow.advance(client, done) {
+                Turn::Step(flow, next) => return Some((Job::Form(id, Box::new(flow)), next)),
+                Turn::Settle(reply) => self.form(id, reply),
+            },
+            Job::Grant(id, withdrawal) => match withdrawal.advance(client, done) {
+                Turn::Step(withdrawal, next) => return Some((Job::Grant(id, withdrawal), next)),
+                Turn::Settle(done) => self.completion(id, done),
+            },
+        }
+        None
+    }
+
+    fn select(&mut self, id: CommandId) {
+        self.settled.selection = self.settled.selection.max(Some(id));
+    }
+
+    /// The status a settled command leaves: a transient failure is the read
+    /// health's to report.
+    fn status(&mut self, client: &mut Client<Bridge>, done: &Result<Done, ClientError>) {
+        self.settled.status = Some(match done {
+            Ok(_) => "Connected".into(),
+            Err(error) if client.peer_mut().read_health.transient(error) => "Connected".into(),
+            Err(error) => error.to_string(),
+        });
+    }
+
+    fn outcome(&mut self, id: CommandId, outcome: Outcome) {
+        self.settled.outcomes.push((id, outcome));
+    }
+
+    fn form(&mut self, id: CommandId, reply: grapt_tui_forms::Reply) {
+        self.settled.status = Some(reply.note.clone());
+        self.outcome(id, Outcome::Form(reply));
+    }
+
+    fn completion(&mut self, id: CommandId, done: commands::Completion) {
+        self.settled.status = Some(done.notice.clone());
+        self.outcome(id, Outcome::Command(done));
+    }
+}
+
+/// Run a command's steps to the end on the client's own connection, as a
+/// test exercises one without the lane.
+#[cfg(test)]
+pub(super) fn run<J, O, C: grapt_client::Connection>(
+    client: &mut Client<C>,
+    mut turn: Turn<J, O>,
+    advance: impl Fn(J, &mut Client<C>, Result<Done, ClientError>) -> Turn<J, O>,
+) -> O {
+    loop {
+        let (job, mut next) = match turn {
+            Turn::Settle(settled) => return settled,
+            Turn::Step(job, next) => (job, next),
+        };
+        let done = loop {
+            match next {
+                Ok(Accepted::Next(call)) => {
+                    let response = client.peer_mut().call(&call.request);
+                    next = client.accept(call, response);
+                }
+                Ok(Accepted::Done(done)) => break Ok(done),
+                Err(error) => break Err(error),
+            }
+        };
+        turn = advance(job, client, done);
     }
 }
 

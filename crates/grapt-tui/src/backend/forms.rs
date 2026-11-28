@@ -1,8 +1,9 @@
 //! Only canonical Client form reads/writes; no inferred settlement or automatic replay.
-use grapt_client::{wire::FormState, Client, ClientError, Connection, PeriodicRead};
-use grapt_tui_forms::{Decision, Reply, Request, Target};
+use grapt_client::{Client, ClientError, Connection, PeriodicRead};
+mod transaction;
 use std::time::Duration;
 use tokio::time::Instant;
+pub(super) use transaction::{begin, Flow};
 const INTERVAL: Duration = Duration::from_secs(2);
 
 /// Each form read's due time, and a hint that arrived while that read was
@@ -110,146 +111,5 @@ impl Poll {
     }
 }
 
-pub fn execute<C: Connection>(client: &mut Client<C>, request: Request) -> Reply {
-    let mut reply = Reply {
-        target: request.target.clone(),
-        form: request.form.id.clone(),
-        state: None,
-        note: String::new(),
-        validation_refused: false,
-    };
-    match transact(client, &request) {
-        Ok((state, note, validation_refused)) => {
-            reply.state = state;
-            reply.validation_refused = validation_refused;
-            reply.note = note;
-        }
-        Err(note) => reply.note = note,
-    }
-    reply
-}
-fn state<C: Connection>(
-    client: &mut Client<C>,
-    request: &Request,
-) -> Result<FormState, ClientError> {
-    match &request.target {
-        Target::Session(session) => client.form_state(session, &request.form.id),
-        Target::Location(location) => client.location_form_state(location, &request.form.id),
-    }
-}
-fn refresh<C: Connection>(client: &mut Client<C>, target: &Target) -> Result<(), ClientError> {
-    match target {
-        Target::Session(_) => client.refresh_forms(),
-        Target::Location(_) => client.refresh_location_forms(),
-    }
-}
-#[expect(clippy::too_many_lines, reason = "legacy")]
-fn transact<C: Connection>(
-    client: &mut Client<C>,
-    request: &Request,
-) -> Result<(Option<FormState>, String, bool), String> {
-    if !request
-        .target
-        .active(client.selected(), client.form_location().as_ref())
-    {
-        return Err(match request.target {
-            Target::Session(_) => "Session changed; no form response sent",
-            Target::Location(_) => "Location changed; no form response sent",
-        }
-        .into());
-    }
-    if !request.target.owner_matches(&request.form) {
-        return Err("Question owner does not match its address; no response sent".into());
-    }
-    let before = state(client, request)
-        .map_err(|error| format!("State unreadable; no new response sent: {error}"))?;
-    if !before.is_open() {
-        return Ok((
-            Some(before),
-            "Question already settled; no response sent".into(),
-            false,
-        ));
-    }
-    let Some(decision) = &request.decision else {
-        return Ok((
-            Some(before),
-            "Question is open. Draft kept; only an explicit decision sends a reply".into(),
-            false,
-        ));
-    };
-    let unchanged = match &request.target {
-        Target::Session(_) => {
-            client
-                .refresh_forms()
-                .map_err(|error| format!("Question list unreadable; no response sent: {error}"))?;
-            client.forms().contains(&request.form)
-        }
-        Target::Location(location) => {
-            client
-                .location_form(location, &request.form.id)
-                .map_err(|error| format!("Question unreadable; no response sent: {error}"))?
-                == request.form
-        }
-    };
-    if !unchanged {
-        return Err(
-            "Question changed or left the list; no response sent. Ctrl+O checks state".into(),
-        );
-    }
-    if let Decision::Answer(answer) = decision {
-        grapt_tui_forms::validate(&request.form, answer)?;
-    }
-    let result = match (&request.target, decision) {
-        (Target::Session(session), Decision::Answer(answer)) => {
-            client.answer_form(session, &request.form.id, answer)
-        }
-        (Target::Session(session), Decision::Cancel) => {
-            client.cancel_form(session, &request.form.id)
-        }
-        (Target::Location(location), Decision::Answer(answer)) => {
-            client.answer_location_form(location, &request.form.id, answer)
-        }
-        (Target::Location(location), Decision::Cancel) => {
-            client.cancel_location_form(location, &request.form.id)
-        }
-    };
-    let invalid = match &result {
-        Err(ClientError::FormInvalidAnswer {
-            operation,
-            form,
-            message,
-        }) if *form == request.form.id
-            && *operation
-                == match request.target {
-                    Target::Session(_) => "v2.session.form.reply",
-                    Target::Location(_) => "grapt.form.reply",
-                } =>
-        {
-            Some(message)
-        }
-        _ => None,
-    };
-    // A failed POST or refresh may follow a committed write. Never replay it.
-    match (state(client, request), invalid) {
-        (Ok(state), _) if !state.is_open() => {
-            let same = match (&state, decision) {
-                (FormState::Answered(actual), Decision::Answer(expected)) => actual == expected,
-                (FormState::Cancelled, Decision::Cancel) => true,
-                _ => false,
-            };
-            let note = if !same { "Question settled elsewhere; inspect the reported state" }
-            else if matches!(request.target, Target::Location(_)) {
-                if matches!(before, FormState::Suspended(_)) { "Decision recorded; suspended MCP wait was not resumed" }
-                else { "Decision recorded; live MCP waiter delivery is unconfirmed" }
-            } else if matches!(decision, Decision::Answer(_)) { "Answer confirmed" } else { "Cancellation confirmed" };
-            let note = match refresh(client, &request.target) { Ok(()) => note.into(), Err(error) => format!("{note}; question list unavailable: {error}") };
-            Ok((Some(state), note, false))
-        }
-        (Ok(state), Some(message)) => Ok((Some(state), format!("Answer refused: {message}. Edit the draft, then Ctrl+S answers"), true)),
-        (Ok(state), None) => Ok((Some(state), format!("Decision not confirmed; draft kept. Ctrl+O reads; explicit retry sends the same decision. {}", result.err().map(|error| error.to_string()).unwrap_or_default()), false)),
-        (Err(error), Some(message)) => Ok((None, format!("Answer refused: {message}. Draft editable; state unreadable: {error}"), true)),
-        (Err(error), None) => Err(format!("Decision unconfirmed; draft kept. Ctrl+O reads; no automatic retry: {error}")),
-    }
-}
 #[cfg(test)]
 mod tests;
