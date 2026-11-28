@@ -9,6 +9,8 @@ use std::path::Path;
 mod unix;
 #[cfg(unix)]
 use unix::PinnedScratch;
+#[cfg(unix)]
+pub(super) use unix::{ensure_unix_scratch_anchor, unix_scratch_anchor_path};
 
 #[cfg(windows)]
 mod windows;
@@ -38,6 +40,10 @@ impl PinnedScratch {
     fn cleanup(self) -> Result<(), String> {
         std::fs::remove_dir(&self.path)
             .map_err(|error| format!("sandbox private temp root rmdir failed: {error}"))
+    }
+
+    fn verify_canonical_path(&self, _canonical: &Path) -> Result<(), String> {
+        Ok(())
     }
 }
 
@@ -70,6 +76,10 @@ impl PrivateScratch {
                 ));
             }
         };
+        if let Err(reason) = pinned.verify_canonical_path(&canonical_private) {
+            let cleanup_err = pinned.cleanup().err();
+            return Err(combine_errors(reason, [cleanup_err]));
+        }
         let Some(text) = canonical_private.to_str() else {
             let cleanup_err = pinned.cleanup().err();
             return Err(combine_errors(

@@ -25,12 +25,21 @@ fn test_plan_and_scratch(
     Ok((scratch, scratch_path, policy, env))
 }
 
+#[cfg(unix)]
+fn chmod_0700(path: &Path) -> Result<(), String> {
+    use std::os::unix::fs::PermissionsExt as _;
+    std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o700))
+        .map_err(|e| e.to_string())
+}
+
 #[test]
 fn private_scratch_honors_planner_parent_and_cleans_readonly_subdir() -> Result<(), String> {
     let configured_temp = tempfile::Builder::new()
         .prefix("grapt-configured-tmpdir-")
         .tempdir()
         .map_err(|e| e.to_string())?;
+    #[cfg(unix)]
+    chmod_0700(configured_temp.path())?;
     let canonical_parent =
         std::fs::canonicalize(configured_temp.path()).map_err(|e| e.to_string())?;
     let (scratch, scratch_path, policy, env) = test_plan_and_scratch(configured_temp.path())?;
@@ -129,6 +138,7 @@ fn unix_uid_anchor_refuses_loose_mode_and_symlinks() -> Result<(), String> {
         .prefix("grapt-anchor-loose-")
         .tempdir()
         .map_err(|e| e.to_string())?;
+    chmod_0700(parent_loose.path())?;
     let loose_anchor = parent_loose.path().join(&anchor_name);
     std::fs::create_dir(&loose_anchor).map_err(|e| e.to_string())?;
     std::fs::set_permissions(&loose_anchor, std::fs::Permissions::from_mode(0o755))
@@ -146,6 +156,7 @@ fn unix_uid_anchor_refuses_loose_mode_and_symlinks() -> Result<(), String> {
         .prefix("grapt-anchor-link-")
         .tempdir()
         .map_err(|e| e.to_string())?;
+    chmod_0700(parent_link.path())?;
     let decoy = parent_link.path().join("decoy");
     std::fs::create_dir(&decoy).map_err(|e| e.to_string())?;
     std::os::unix::fs::symlink(&decoy, parent_link.path().join(&anchor_name))
@@ -158,6 +169,34 @@ fn unix_uid_anchor_refuses_loose_mode_and_symlinks() -> Result<(), String> {
         link_err.contains("anchor openat failed"),
         "unexpected error for symlinked anchor: {link_err}"
     );
+
+    // Non-sticky group-writable (0775) and world-writable (0777) outer parents
+    // must both be refused.
+    for bad_mode in [0o775, 0o777] {
+        let parent_mutable = tempfile::Builder::new()
+            .prefix("grapt-anchor-mutable-")
+            .tempdir()
+            .map_err(|e| e.to_string())?;
+        std::fs::set_permissions(
+            parent_mutable.path(),
+            std::fs::Permissions::from_mode(bad_mode),
+        )
+        .map_err(|e| e.to_string())?;
+        let mutable_res = test_plan_and_scratch(parent_mutable.path());
+        let _ = chmod_0700(parent_mutable.path());
+        let mutable_err = match mutable_res {
+            Ok(_) => {
+                return Err(format!(
+                    "non-sticky {bad_mode:04o} outer parent must be refused"
+                ));
+            }
+            Err(err) => err,
+        };
+        assert!(
+            mutable_err.contains("must be root/euid-owned and sticky or non-group/world-writable"),
+            "unexpected error for {bad_mode:04o} outer parent: {mutable_err}"
+        );
+    }
     Ok(())
 }
 
@@ -170,6 +209,7 @@ fn confined_cleanup_unlinks_symlinks_hardlinks_and_unix_sockets_safely() -> Resu
         .prefix("gs-")
         .tempdir_in("/tmp")
         .map_err(|e| e.to_string())?;
+    chmod_0700(parent.path())?;
     let outside = parent.path().join("outside");
     std::fs::create_dir(&outside).map_err(|e| e.to_string())?;
     let outside_file = outside.join("keep.txt");
@@ -213,6 +253,8 @@ fn cleanup_after_stop_and_exit_code_preservation() -> Result<(), String> {
         .prefix("grapt-scratch-unreaped-")
         .tempdir()
         .map_err(|e| e.to_string())?;
+    #[cfg(unix)]
+    chmod_0700(parent.path())?;
     let (scratch, scratch_path, _, _) = test_plan_and_scratch(parent.path())?;
     let skipped = cleanup_after_stop(Some(scratch), false);
     assert!(
@@ -245,5 +287,76 @@ fn cleanup_after_stop_and_exit_code_preservation() -> Result<(), String> {
     );
 
     let _ = std::fs::remove_dir_all(&scratch_path);
+    Ok(())
+}
+
+#[cfg(windows)]
+#[test]
+fn windows_scratch_cleans_readonly_preserves_hardlink_readonly_and_leaf_reparse(
+) -> Result<(), String> {
+    let parent = tempfile::Builder::new()
+        .prefix("grapt-win-scratch-")
+        .tempdir()
+        .map_err(|e| e.to_string())?;
+    let outside = parent.path().join("outside");
+    std::fs::create_dir(&outside).map_err(|e| e.to_string())?;
+    let outside_ro = outside.join("shared-readonly.txt");
+    std::fs::write(&outside_ro, "immutable").map_err(|e| e.to_string())?;
+    let mut ro_perms = std::fs::metadata(&outside_ro)
+        .map_err(|e| e.to_string())?
+        .permissions();
+    ro_perms.set_readonly(true);
+    std::fs::set_permissions(&outside_ro, ro_perms).map_err(|e| e.to_string())?;
+    let outside_target = outside.join("target-dir");
+    std::fs::create_dir(&outside_target).map_err(|e| e.to_string())?;
+    let target_marker = outside_target.join("keep.txt");
+    std::fs::write(&target_marker, "untouched").map_err(|e| e.to_string())?;
+
+    let (scratch, scratch_path, _, _) = test_plan_and_scratch(parent.path())?;
+    // (a) Nested directory + single-link read-only file inside scratch.
+    let nested = scratch_path.join("a").join("b");
+    std::fs::create_dir_all(&nested).map_err(|e| e.to_string())?;
+    let single_ro = nested.join("single-ro.txt");
+    std::fs::write(&single_ro, "temp").map_err(|e| e.to_string())?;
+    let mut single_perms = std::fs::metadata(&single_ro)
+        .map_err(|e| e.to_string())?
+        .permissions();
+    single_perms.set_readonly(true);
+    std::fs::set_permissions(&single_ro, single_perms).map_err(|e| e.to_string())?;
+
+    // (b) Multiply-linked read-only hard link inside scratch.
+    std::fs::hard_link(&outside_ro, scratch_path.join("hard-ro.txt")).map_err(|e| e.to_string())?;
+
+    // (c) Reparse point / directory symlink leaf inside scratch (when host allows symlink creation).
+    let link_path = scratch_path.join("link-dir");
+    let _ = std::os::windows::fs::symlink_dir(&outside_target, &link_path);
+
+    scratch.cleanup()?;
+    assert!(
+        !scratch_path.exists(),
+        "Windows scratch survived cleanup: {}",
+        scratch_path.display()
+    );
+    assert!(
+        std::fs::metadata(&outside_ro)
+            .map_err(|e| e.to_string())?
+            .permissions()
+            .readonly(),
+        "hardlink cleanup must never clear readonly on the outside link"
+    );
+    assert_eq!(
+        std::fs::read_to_string(&target_marker).map_err(|e| e.to_string())?,
+        "untouched",
+        "reparse leaf deletion must never delete target directory contents"
+    );
+    // Clear readonly on outside_ro so TempDir drops cleanly.
+    #[allow(clippy::permissions_set_readonly_false)]
+    {
+        let mut perms = std::fs::metadata(&outside_ro)
+            .map_err(|e| e.to_string())?
+            .permissions();
+        perms.set_readonly(false);
+        let _ = std::fs::set_permissions(&outside_ro, perms);
+    }
     Ok(())
 }

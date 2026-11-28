@@ -318,7 +318,7 @@ impl Environment {
         if plan.path_count() >= 128 || !self.3.is_empty() {
             return Err("Sandbox retry exceeds its path bound".into());
         }
-        plan.add_write_target(target.path());
+        plan.add_write_target(target.path())?;
         self.3.push(target);
         Ok(self)
     }

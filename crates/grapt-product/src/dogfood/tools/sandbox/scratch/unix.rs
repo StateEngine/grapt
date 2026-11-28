@@ -50,6 +50,17 @@ fn parent_dir_search_flag() -> OFlag {
     }
 }
 
+pub(in crate::dogfood::tools::sandbox) fn unix_scratch_anchor_path(parent: &Path) -> PathBuf {
+    parent.join(format!("grapt-scratch-{}", geteuid().as_raw()))
+}
+
+pub(in crate::dogfood::tools::sandbox) fn ensure_unix_scratch_anchor(
+    parent: &Path,
+) -> Result<PathBuf, String> {
+    let (_anchor_fd, anchor_path) = open_verified_uid_anchor(parent)?;
+    Ok(anchor_path)
+}
+
 fn open_verified_uid_anchor(parent: &Path) -> Result<(OwnedFd, PathBuf), String> {
     let euid = geteuid().as_raw();
     let anchor_str = format!("grapt-scratch-{euid}");
@@ -66,6 +77,22 @@ fn open_verified_uid_anchor(parent: &Path) -> Result<(OwnedFd, PathBuf), String>
             parent.display()
         )
     })?;
+    let outer_st = fstat(outer_fd.as_fd()).map_err(|error| {
+        format!(
+            "sandbox private temp parent fstat failed at {}: {error}",
+            parent.display()
+        )
+    })?;
+    let outer_perms = outer_st.st_mode & 0o7777;
+    let trusted_owner = outer_st.st_uid == 0 || outer_st.st_uid == euid;
+    let safe_mode = (outer_perms & 0o1000) != 0 || (outer_perms & 0o022) == 0;
+    if !is_directory_mode(outer_st.st_mode) || !trusted_owner || !safe_mode {
+        return Err(format!(
+            "sandbox private temp parent must be root/euid-owned and sticky or non-group/world-writable (uid={}, mode={outer_perms:04o}) at {}",
+            outer_st.st_uid,
+            parent.display()
+        ));
+    }
 
     match mkdirat(outer_fd.as_fd(), anchor_name.as_c_str(), Mode::S_IRWXU) {
         Ok(()) | Err(Errno::EEXIST) => {}
@@ -230,6 +257,25 @@ impl PinnedScratch {
 
     pub(super) fn path(&self) -> &Path {
         &self.path
+    }
+
+    pub(super) fn verify_canonical_path(&self, canonical: &Path) -> Result<(), String> {
+        let st = nix::sys::stat::lstat(canonical).map_err(|error| {
+            format!(
+                "sandbox private temp canonical lstat failed at {}: {error}",
+                canonical.display()
+            )
+        })?;
+        if !is_directory_mode(st.st_mode)
+            || st.st_dev != self.root_id.dev
+            || st.st_ino != self.root_id.ino
+        {
+            return Err(format!(
+                "sandbox private temp canonical path does not match pinned scratch identity: {}",
+                canonical.display()
+            ));
+        }
+        Ok(())
     }
 
     pub(super) fn cleanup(self) -> Result<(), String> {

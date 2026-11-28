@@ -17,7 +17,7 @@ pub(in crate::dogfood) use receipt::project as project_receipt;
 pub(super) use receipt::Receipt;
 #[cfg(target_os = "linux")]
 pub(in crate::dogfood) mod posix;
-#[cfg(any(target_os = "linux", windows, test))]
+#[cfg(any(unix, windows, test))]
 mod scratch;
 #[cfg(windows)]
 pub(super) mod windows;
@@ -107,10 +107,22 @@ impl Plan {
             + usize::from(self.private_temp_parent.is_some())
     }
 
-    pub(super) fn add_write_target(&mut self, path: &Path) {
+    pub(super) fn add_write_target(&mut self, path: &Path) -> Result<(), String> {
+        let canonical_target = std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
         if !self.writable.iter().any(|held| held == path) {
             self.writable.push(path.to_path_buf());
         }
+        let temp_parent = match self.private_temp_parent.clone() {
+            Some(parent) => parent,
+            None => config::canonical_temp_dir()?,
+        };
+        if config::path_overlaps_scratch(path, &temp_parent)
+            || config::path_overlaps_scratch(&canonical_target, &temp_parent)
+        {
+            self.private_temp_parent = None;
+            config::protect_unix_scratch_anchor(&mut self.protected, &temp_parent)?;
+        }
+        config::check_path_budget(self.path_count(), false)
     }
 
     pub(super) fn read(root: &Path, sources: &CatalogSources) -> Result<Option<Self>, String> {
@@ -124,10 +136,27 @@ impl Plan {
                 .map(|path| grapt_types::PathIdentity::canonical(super::path_text(path)))
                 .collect()
         };
+        #[cfg(unix)]
+        let protected = {
+            let mut protected = self.protected.clone();
+            let temp_parent = self
+                .private_temp_parent
+                .clone()
+                .or_else(|| config::canonical_temp_dir().ok());
+            if let Some(parent) = temp_parent {
+                let anchor = scratch::unix_scratch_anchor_path(&parent);
+                if !protected.iter().any(|existing| existing == &anchor) {
+                    protected.push(anchor);
+                }
+            }
+            protected
+        };
+        #[cfg(not(unix))]
+        let protected = &self.protected;
         grapt_types::FilesystemAuthority::new(
             identities(&self.readable),
             identities(&self.writable),
-            identities(&self.protected),
+            identities(protected.as_slice()),
         )
         .with_read_deny(identities(&self.denied))
     }

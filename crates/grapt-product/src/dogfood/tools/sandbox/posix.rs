@@ -238,6 +238,18 @@ fn run(path: &str) -> Result<i32, String> {
     let helper_exe = std::env::current_exe().map_err(|_| "sandbox helper image unavailable")?;
     let scratch =
         super::scratch::PrivateScratch::attach(&request.plan, &mut policy, &mut environment)?;
+    // When private_temp_parent is disabled because a write target overlaps the
+    // host temp directory, ensure the protected Unix 0700 scratch anchor exists
+    // at launch time (never during Plan::read) before Linux synthetic mount
+    // targets (`targets.rs`) could otherwise create it with default umask 0755.
+    if scratch.is_none() {
+        if let Ok(temp_parent) = super::config::canonical_temp_dir() {
+            let anchor = super::scratch::unix_scratch_anchor_path(&temp_parent);
+            if policy.protected_paths.iter().any(|path| path == &anchor) {
+                super::scratch::ensure_unix_scratch_anchor(&temp_parent)?;
+            }
+        }
+    }
     let targets = match grants::receive(&channel, &policy, &request.write_targets) {
         Ok(targets) => targets,
         Err(reason) => {

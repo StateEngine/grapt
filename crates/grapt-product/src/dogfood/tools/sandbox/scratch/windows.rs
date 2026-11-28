@@ -1,4 +1,4 @@
-//! Windows confined scratch allocation and iterative handle-only cleanup.
+//! Windows confined scratch allocation and iterative minimal-rights cleanup.
 //!
 //! At allocation, the scratch root is opened with `FILE_LIST_DIRECTORY |
 //! FILE_READ_ATTRIBUTES | FILE_WRITE_ATTRIBUTES | DELETE | SYNCHRONIZE`,
@@ -9,17 +9,25 @@
 //!
 //! At cleanup (only after child exit is confirmed), an explicit iterative
 //! `Vec` stack walks the tree strictly via `fs_at` relative to pinned parent
-//! directory handles:
-//! - Every reparse point (`FILE_ATTRIBUTE_REPARSE_POINT`) is treated as a leaf
-//!   and deleted via `delete_by_handle()` without descending.
-//! - Real subdirectories are pushed onto the iterative stack (zero recursion),
-//!   emptied, have `FILE_ATTRIBUTE_READONLY` cleared on that same handle if
-//!   set, and are deleted via `delete_by_handle()`.
+//! directory handles with minimal initial access (`DELETE |
+//! FILE_READ_ATTRIBUTES | SYNCHRONIZE` — never `FILE_LIST_DIRECTORY` or
+//! `FILE_WRITE_ATTRIBUTES` before inspecting the opened handle):
+//! - Reparse points (`FILE_ATTRIBUTE_REPARSE_POINT`) are deleted directly on
+//!   that minimal handle without descending.
+//! - Real subdirectories are reopened relative to the parent with
+//!   `FILE_LIST_DIRECTORY | FILE_READ_ATTRIBUTES | DELETE | SYNCHRONIZE` (plus
+//!   `FILE_WRITE_ATTRIBUTES` only if readonly), verified by `(volume, index)`,
+//!   enumerated, and pushed onto the iterative stack.
 //! - Regular files with `FILE_ATTRIBUTE_READONLY` set and `nNumberOfLinks == 1`
-//!   have readonly cleared on that same handle before `delete_by_handle()`.
+//!   are reopened relative to the parent with `FILE_WRITE_ATTRIBUTES | DELETE |
+//!   FILE_READ_ATTRIBUTES | SYNCHRONIZE`, re-verified by `(volume, index)` and
+//!   `nNumberOfLinks == 1`, have readonly cleared on that verified handle, and
+//!   are deleted via `delete_by_handle()`. Ordinary files and multiply-linked
+//!   files (`nNumberOfLinks > 1`) are deleted directly on the minimal
+//!   `DELETE | FILE_READ_ATTRIBUTES` handle so `fs_at` cannot clear attributes
+//!   on a hard-linked file.
 //! - Finally, the verified root handle itself is deleted via
-//!   `delete_by_handle()`, with zero `FILE_FLAG_DELETE_ON_CLOSE` and zero
-//!   handle-drop-and-reopen-by-name.
+//!   `delete_by_handle()`.
 
 use super::combine_errors;
 use fs_at::os::windows::{FileExt as _, OpenOptionsExt as FsAtWindowsExt};
@@ -36,6 +44,8 @@ const FILE_SHARE_READ: u32 = 0x0001;
 const FILE_SHARE_WRITE: u32 = 0x0002;
 const FILE_FLAG_BACKUP_SEMANTICS: u32 = 0x0200_0000;
 const FILE_FLAG_OPEN_REPARSE_POINT: u32 = 0x0020_0000;
+const FILE_DIRECTORY_FILE: u32 = 0x0000_0001;
+const FILE_OPEN_REPARSE_POINT: u32 = 0x0020_0000;
 const FILE_ATTRIBUTE_READONLY: u64 = 0x0001;
 const FILE_ATTRIBUTE_DIRECTORY: u64 = 0x0010;
 const FILE_ATTRIBUTE_REPARSE_POINT: u64 = 0x0400;
@@ -83,6 +93,21 @@ impl PinnedScratch {
 
     pub(super) fn path(&self) -> &Path {
         &self.path
+    }
+
+    pub(super) fn verify_canonical_path(&self, canonical: &Path) -> Result<(), String> {
+        let probe = std::fs::OpenOptions::new()
+            .access_mode(FILE_READ_ATTRIBUTES)
+            .share_mode(FILE_SHARE_READ | FILE_SHARE_WRITE)
+            .custom_flags(FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT)
+            .open(canonical)
+            .map_err(|error| {
+                format!(
+                    "sandbox private temp canonical verify open failed at {}: {error}",
+                    canonical.display()
+                )
+            })?;
+        verify_handle_identity(&probe, self.root_id, canonical)
     }
 
     pub(super) fn cleanup(self) -> Result<(), String> {
@@ -152,7 +177,7 @@ fn verify_handle_identity(
         || actual != expected
     {
         return Err(format!(
-            "sandbox private temp root handle identity changed before cleanup: {}",
+            "sandbox private temp handle identity mismatch at {}",
             path.display()
         ));
     }
@@ -203,14 +228,13 @@ fn clear_readonly_on_handle(handle: &std::fs::File, label: &Path) -> Result<(), 
     })
 }
 
-fn open_child_handle(
+fn open_child_with_access(
     parent: &std::fs::File,
     name: &OsString,
+    access: u32,
 ) -> Result<Option<std::fs::File>, String> {
     let mut opts = fs_at::OpenOptions::default();
-    opts.desired_access(
-        FILE_LIST_DIRECTORY | FILE_READ_ATTRIBUTES | FILE_WRITE_ATTRIBUTES | DELETE | SYNCHRONIZE,
-    );
+    opts.desired_access(access);
     opts.follow(false);
     match opts.open_path_at(parent, name) {
         Ok(file) => Ok(Some(file)),
@@ -220,6 +244,76 @@ fn open_child_handle(
             Path::new(name).display()
         )),
     }
+}
+
+fn open_child_dir_with_access(
+    parent: &std::fs::File,
+    name: &OsString,
+    access: u32,
+) -> Result<Option<std::fs::File>, String> {
+    let mut opts = fs_at::OpenOptions::default();
+    opts.desired_access(access);
+    // Pass FILE_DIRECTORY_FILE | FILE_OPEN_REPARSE_POINT to NtCreateFile so a
+    // non-directory or symlink replacement is rejected atomically before
+    // FILE_LIST_DIRECTORY (= FILE_READ_DATA) is ever granted.
+    opts.create_options(FILE_DIRECTORY_FILE | FILE_OPEN_REPARSE_POINT);
+    match opts.open_path_at(parent, name) {
+        Ok(file) => Ok(Some(file)),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(error) => Err(format!(
+            "sandbox private temp child directory handle open failed for {}: {error}",
+            Path::new(name).display()
+        )),
+    }
+}
+
+fn delete_readonly_single_link_file(
+    parent: &std::fs::File,
+    name: &OsString,
+    expected_id: WinFileId,
+    child_label: &Path,
+) -> Result<(), String> {
+    // Cleanup runs only after child exit is confirmed on a child-owned scratch
+    // directory; we keep the verified (volume, index) + nlink == 1 guard before
+    // clearing readonly rather than adding workspace unsafe for share_access.
+    let Some(writable) = open_child_with_access(
+        parent,
+        name,
+        FILE_WRITE_ATTRIBUTES | DELETE | FILE_READ_ATTRIBUTES | SYNCHRONIZE,
+    )?
+    else {
+        return Ok(());
+    };
+    let info = winapi_util::file::information(&writable).map_err(|error| {
+        format!(
+            "sandbox private temp file re-verify info failed at {}: {error}",
+            child_label.display()
+        )
+    })?;
+    let attrs = info.file_attributes();
+    let actual = WinFileId {
+        volume: info.volume_serial_number(),
+        index: info.file_index(),
+    };
+    if actual != expected_id
+        || (attrs & FILE_ATTRIBUTE_REPARSE_POINT) != 0
+        || (attrs & FILE_ATTRIBUTE_DIRECTORY) != 0
+        || info.number_of_links() != 1
+    {
+        return Err(format!(
+            "sandbox private temp file identity or link count changed before readonly clear at {}",
+            child_label.display()
+        ));
+    }
+    if (attrs & FILE_ATTRIBUTE_READONLY) != 0 {
+        clear_readonly_on_handle(&writable, child_label)?;
+    }
+    writable.delete_by_handle().map_err(|(_handle, error)| {
+        format!(
+            "sandbox private temp file handle delete failed at {}: {error}",
+            child_label.display()
+        )
+    })
 }
 
 fn clean_tree_iterative(mut root_handle: std::fs::File, root_path: &Path) -> Result<(), String> {
@@ -239,7 +333,14 @@ fn clean_tree_iterative(mut root_handle: std::fs::File, root_path: &Path) -> Res
     while let Some(frame) = stack.last_mut() {
         if let Some(name) = frame.pending.pop() {
             let child_label = frame.label.join(&name);
-            let Some(mut child) = open_child_handle(&frame.handle, &name)? else {
+            // Open initially with minimal rights only (no FILE_LIST_DIRECTORY,
+            // no FILE_WRITE_ATTRIBUTES) before inspecting entry type and link count.
+            let Some(child) = open_child_with_access(
+                &frame.handle,
+                &name,
+                DELETE | FILE_READ_ATTRIBUTES | SYNCHRONIZE,
+            )?
+            else {
                 continue;
             };
             let info = winapi_util::file::information(&child).map_err(|error| {
@@ -249,9 +350,13 @@ fn clean_tree_iterative(mut root_handle: std::fs::File, root_path: &Path) -> Res
                 )
             })?;
             let attrs = info.file_attributes();
+            let id = WinFileId {
+                volume: info.volume_serial_number(),
+                index: info.file_index(),
+            };
             if (attrs & FILE_ATTRIBUTE_REPARSE_POINT) != 0 {
-                // Treat every reparse point (symlink, junction, mount point) as
-                // a leaf and delete it on its verified handle without descending.
+                // Treat every reparse point as a leaf and delete on the minimal
+                // handle without descending.
                 child.delete_by_handle().map_err(|(_handle, error)| {
                     format!(
                         "sandbox private temp reparse handle delete failed at {}: {error}",
@@ -259,16 +364,36 @@ fn clean_tree_iterative(mut root_handle: std::fs::File, root_path: &Path) -> Res
                     )
                 })?;
             } else if (attrs & FILE_ATTRIBUTE_DIRECTORY) != 0 {
-                let child_entries = read_dir_names(&mut child, &child_label)?;
+                let mut dir_access =
+                    FILE_LIST_DIRECTORY | FILE_READ_ATTRIBUTES | DELETE | SYNCHRONIZE;
+                if (attrs & FILE_ATTRIBUTE_READONLY) != 0 {
+                    dir_access |= FILE_WRITE_ATTRIBUTES;
+                }
+                let Some(mut dir_handle) =
+                    open_child_dir_with_access(&frame.handle, &name, dir_access)?
+                else {
+                    drop(child);
+                    continue;
+                };
+                verify_handle_identity(&dir_handle, id, &child_label)?;
+                drop(child);
+                let child_entries = read_dir_names(&mut dir_handle, &child_label)?;
                 stack.push(Frame {
-                    handle: child,
+                    handle: dir_handle,
                     label: child_label,
                     pending: child_entries,
                 });
+            } else if (attrs & FILE_ATTRIBUTE_READONLY) != 0 && info.number_of_links() == 1 {
+                // Keep `child` open across reopen to pin file index, then drop
+                // before delete_by_handle on the verified writable handle.
+                let parent_ref = &frame.handle;
+                let res = delete_readonly_single_link_file(parent_ref, &name, id, &child_label);
+                drop(child);
+                res?;
             } else {
-                if (attrs & FILE_ATTRIBUTE_READONLY) != 0 && info.number_of_links() == 1 {
-                    clear_readonly_on_handle(&child, &child_label)?;
-                }
+                // Ordinary file or multiply-linked file (nlink > 1): delete
+                // directly on the minimal handle without FILE_WRITE_ATTRIBUTES
+                // so fs_at cannot clear attributes on a hard-linked file.
                 child.delete_by_handle().map_err(|(_handle, error)| {
                     format!(
                         "sandbox private temp file handle delete failed at {}: {error}",

@@ -5,9 +5,13 @@ use grapt_config::ConfigValue;
 
 const INSTRUCTION_FILES: [&str; 2] = ["AGENTS.md", "AGENTS.override.md"];
 
+pub(super) fn canonical_temp_dir() -> Result<PathBuf, String> {
+    canonical(&std::env::temp_dir())
+}
+
 fn initial_writable_roots(root: &Path) -> Result<(Vec<PathBuf>, PathBuf), String> {
     let canonical_root = canonical(root)?;
-    let canonical_temp = canonical(&std::env::temp_dir())?;
+    let canonical_temp = canonical_temp_dir()?;
     // Never grant the shared host temp directory as a writable root: every
     // sandboxed command gets its own per-command private scratch directory
     // under `canonical_temp` (same 1-slot path budget, uniform isolation for
@@ -15,28 +19,52 @@ fn initial_writable_roots(root: &Path) -> Result<(Vec<PathBuf>, PathBuf), String
     Ok((vec![canonical_root], canonical_temp))
 }
 
-#[cfg(unix)]
-fn maybe_protect_unix_scratch_anchor(
-    protected: &mut Vec<PathBuf>,
-    canonical_temp: &Path,
-    writable_overlaps_temp: bool,
-) {
-    if writable_overlaps_temp {
-        // Protect the UID-exclusive 0700 scratch anchor whenever an explicit
-        // user writable_roots grant overlaps the host temp directory so no
-        // sandboxed command under the same UID can tamper with scratch entries.
-        protected.push(
-            canonical_temp.join(format!("grapt-scratch-{}", nix::unistd::geteuid().as_raw())),
-        );
+/// True when `grant` overlaps the per-UID scratch anchor (at or below the
+/// anchor, or at an ancestor such as `temp_parent` itself).
+pub(super) fn path_overlaps_scratch(grant: &Path, temp_parent: &Path) -> bool {
+    #[cfg(unix)]
+    {
+        let anchor = scratch::unix_scratch_anchor_path(temp_parent);
+        grant.starts_with(&anchor) || anchor.starts_with(grant)
+    }
+    #[cfg(not(unix))]
+    {
+        temp_parent.starts_with(grant)
     }
 }
 
+#[cfg(unix)]
+pub(super) fn protect_unix_scratch_anchor(
+    protected: &mut Vec<PathBuf>,
+    canonical_temp: &Path,
+) -> Result<(), String> {
+    // Purely record the anchor path during read-only planning; the 0700
+    // directory is created only at actual command launch time (never during
+    // Plan::read or preflight) before Linux synthetic mount targets run.
+    let anchor = scratch::unix_scratch_anchor_path(canonical_temp);
+    if !protected.iter().any(|existing| existing == &anchor) {
+        protected.push(anchor);
+    }
+    Ok(())
+}
+
 #[cfg(not(unix))]
-fn maybe_protect_unix_scratch_anchor(
+pub(super) fn protect_unix_scratch_anchor(
     _protected: &mut Vec<PathBuf>,
     _canonical_temp: &Path,
-    _writable_overlaps_temp: bool,
-) {
+) -> Result<(), String> {
+    Ok(())
+}
+
+fn maybe_protect_unix_scratch_anchor(
+    protected: &mut Vec<PathBuf>,
+    canonical_temp: &Path,
+    writable_overlaps_scratch: bool,
+) -> Result<(), String> {
+    if writable_overlaps_scratch {
+        protect_unix_scratch_anchor(protected, canonical_temp)?;
+    }
+    Ok(())
 }
 
 pub(super) fn check_path_budget(count: usize, reserves_private_temp: bool) -> Result<(), String> {
@@ -106,7 +134,9 @@ pub(super) fn read(root: &Path, sources: &CatalogSources) -> Result<Option<Plan>
     writable.extend(declared);
     writable.sort();
     writable.dedup();
-    let writable_overlaps_temp = writable.iter().any(|root| canonical_temp.starts_with(root));
+    let writable_overlaps_temp = writable
+        .iter()
+        .any(|grant| path_overlaps_scratch(grant, &canonical_temp));
     let private_temp_parent = (!writable_overlaps_temp).then_some(canonical_temp.clone());
     if writable.iter().any(|path| path.parent().is_none()) {
         return Err("sandbox cannot make a filesystem root writable".into());
@@ -123,7 +153,7 @@ pub(super) fn read(root: &Path, sources: &CatalogSources) -> Result<Option<Plan>
         binaries,
         root.join(".stateengine"),
     ]);
-    maybe_protect_unix_scratch_anchor(&mut protected, &canonical_temp, writable_overlaps_temp);
+    maybe_protect_unix_scratch_anchor(&mut protected, &canonical_temp, writable_overlaps_temp)?;
     protected.extend(
         crate::dogfood::legacy_names::PROJECT_DIRECTORIES
             .iter()
