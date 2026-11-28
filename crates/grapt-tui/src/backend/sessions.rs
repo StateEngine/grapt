@@ -1,4 +1,5 @@
 //! Picker requests use the existing client; a successful acknowledgement owns removal.
+use super::step::Turn;
 use super::*;
 use crate::sessions::{Message, Request, Search};
 
@@ -28,16 +29,17 @@ pub(super) fn status<C: grapt_client::Connection>(
         .or_else(|| client.observed_activity(id).map(|s| s.label().into_owned()))
         .unwrap_or_else(|| "unreported".into())
 }
-pub(super) fn search<C: grapt_client::Connection>(
-    client: &mut Client<C>,
+/// The picker's message for a search's answer.
+pub(super) fn searched<C: grapt_client::Connection>(
+    client: &Client<C>,
     query: String,
+    found: Result<grapt_client::Done, grapt_client::ClientError>,
 ) -> Message {
     let mut reach = grapt_client::CatalogReach::Read;
-    let result = client
-        .search_sessions(&query)
-        .map(|found| {
+    let result = match found {
+        Ok(grapt_client::Done::Found(found)) => {
             reach = found.reach;
-            found
+            Ok(found
                 .rows
                 .into_iter()
                 .map(|row| Agent {
@@ -47,32 +49,71 @@ pub(super) fn search<C: grapt_client::Connection>(
                     row,
                     context: Default::default(),
                 })
-                .collect()
-        })
-        .map_err(|e| e.to_string());
+                .collect())
+        }
+        Ok(_) => Err("Session search answered without rows".into()),
+        Err(error) => Err(error.to_string()),
+    };
     Message::Search(Search {
         query,
         result,
         reach,
     })
 }
+
+/// A rename or delete on the command lane, then the catalog re-read that
+/// follows an acknowledged one.
+#[derive(Debug)]
+pub(super) struct Manage {
+    request: Request,
+    acknowledged: bool,
+}
+
 pub(super) fn manage<C: grapt_client::Connection>(
     client: &mut Client<C>,
     request: Request,
-) -> Message {
-    let result = match &request {
-        Request::Rename { id, title } => client.rename_session(id, title),
-        Request::Delete { id } => client.delete_session(id),
-    }
-    .map_err(|e| e.to_string());
-    let refresh_error = if result.is_ok() {
-        client.refresh_sessions().err().map(|e| e.to_string())
-    } else {
-        None
+) -> Turn<Manage, Message> {
+    let call = match &request {
+        Request::Rename { id, title } => client.prepare_rename(id, title),
+        Request::Delete { id } => client.prepare_delete(id),
     };
-    Message::Managed {
+    let manage = Manage {
         request,
-        result,
-        refresh_error,
+        acknowledged: false,
+    };
+    Turn::Step(manage, call.map(grapt_client::Accepted::Next))
+}
+
+impl Manage {
+    /// Only an acknowledged request re-reads the catalog; its outcome and the
+    /// re-read's are reported apart.
+    pub(super) fn advance<C: grapt_client::Connection>(
+        self,
+        client: &mut Client<C>,
+        done: Result<grapt_client::Done, grapt_client::ClientError>,
+    ) -> Turn<Self, Message> {
+        let request = self.request;
+        match (self.acknowledged, done) {
+            (false, Ok(_)) => {
+                let next = client
+                    .prepare_sessions_refresh()
+                    .map(grapt_client::Accepted::Next);
+                let manage = Self {
+                    request,
+                    acknowledged: true,
+                };
+                Turn::Step(manage, next)
+            }
+            (false, Err(error)) => Turn::Settle(Message::Managed {
+                request,
+                result: Err(error.to_string()),
+                refresh_error: None,
+            }),
+            (true, refreshed) => Turn::Settle(Message::Managed {
+                request,
+                result: Ok(()),
+                refresh_error: refreshed.err().map(|error| error.to_string()),
+            }),
+        }
     }
 }

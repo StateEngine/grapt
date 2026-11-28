@@ -66,8 +66,8 @@ pub mod vt;
 
 pub use bounds::{Bounds, BoundsError};
 pub use client::{
-    CatalogReach, Client, ClientError, Connection, Diagnostics, PeriodicRead, PermissionAsk,
-    PreparedOpen, PreparedRead, PreparedReply, SessionSearch, SessionSummary,
+    Accepted, CatalogReach, Client, ClientError, Connection, Diagnostics, Done, FormAt, FormCall,
+    PeriodicRead, PermissionAsk, PreparedCall, PreparedRead, SessionSearch, SessionSummary,
 };
 // `EVENT_ID_PREFIX` and `SESSION_ID_PREFIX` are DELETED rather than deprecated.
 //

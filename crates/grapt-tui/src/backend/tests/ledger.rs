@@ -15,18 +15,11 @@ struct Results {
     submissions: first_prompt::Submissions,
     followups: followups::Submissions,
     model: Option<(CommandId, bool)>,
-    forms: Vec<(CommandId, grapt_tui_forms::Reply)>,
-    messages: Vec<(CommandId, crate::sessions::Message)>,
 }
 impl Results {
     fn collect(&mut self) {
-        self.ledger.collect(
-            &mut self.submissions,
-            &mut self.followups,
-            &mut self.model,
-            &mut self.forms,
-            &mut self.messages,
-        );
+        self.ledger
+            .collect(&mut self.submissions, &mut self.followups, &mut self.model);
     }
 }
 fn client() -> Result<Client<ContractDouble>> {

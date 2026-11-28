@@ -110,8 +110,6 @@ impl Ledger {
         submissions: &mut first_prompt::Submissions,
         followups: &mut followups::Submissions,
         model_result: &mut Option<(CommandId, bool)>,
-        replies: &mut Vec<(CommandId, grapt_tui_forms::Reply)>,
-        messages: &mut Vec<(CommandId, crate::sessions::Message)>,
     ) {
         if let Some((id, custody)) = followups.result.take() {
             self.push(id, Outcome::Followup(custody));
@@ -128,37 +126,15 @@ impl Ledger {
         if let Some((id, accepted)) = model_result.take() {
             self.push(id, Outcome::Model(accepted));
         }
-        for (id, reply) in replies.drain(..) {
-            self.push(id, Outcome::Form(reply));
-        }
-        for (id, message) in messages.drain(..) {
-            self.push(id, Outcome::Session(message));
-        }
     }
 
     fn push(&mut self, id: CommandId, outcome: Outcome) {
         self.settled.push(Settled { id, outcome });
     }
 
-    /// Settle a command that never ran.
+    /// Settle a command whose result did not pass through a holder.
     pub(super) fn settle(&mut self, id: CommandId, outcome: Outcome) {
         self.push(id, outcome);
-    }
-
-    pub(super) fn len(&self) -> usize {
-        self.settled.len()
-    }
-
-    /// The note of the newest form reply settled after `mark`.
-    pub(super) fn form_note_after(&self, mark: usize) -> Option<String> {
-        self.settled
-            .get(mark..)?
-            .iter()
-            .rev()
-            .find_map(|settled| match &settled.outcome {
-                Outcome::Form(reply) => Some(reply.note.clone()),
-                _ => None,
-            })
     }
 
     /// Completions waiting for the next view, which a later selection may

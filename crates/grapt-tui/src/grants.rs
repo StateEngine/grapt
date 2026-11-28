@@ -18,13 +18,19 @@ pub struct Snapshot {
 }
 impl Snapshot {
     pub fn read<C: Connection>(client: &mut Client<C>, notice: String) -> Option<Self> {
+        client.selected()?;
+        // A failed read is recorded, and read back, as the inventory's rows.
+        let _ = client.refresh_sandbox_grants();
+        Self::of(client, notice)
+    }
+
+    /// The grants last read for the selected Session, without a request.
+    pub fn of<C: Connection>(client: &Client<C>, notice: String) -> Option<Self> {
         let session = client.selected()?.clone();
-        let rows = client.refresh_sandbox_grants().and_then(|()| {
-            client
-                .sandbox_grants()
-                .map(|rows| rows.unwrap_or_default().to_vec())
-                .map_err(str::to_owned)
-        });
+        let rows = client
+            .sandbox_grants()
+            .map(|rows| rows.unwrap_or_default().to_vec())
+            .map_err(str::to_owned);
         Some(Self {
             session,
             rows,

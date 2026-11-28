@@ -138,14 +138,14 @@ fn native_permissions_keys_revoke_the_exact_resource_and_refuse_a_stale_session(
         session: request.session.clone(),
         grant: request.grant.clone(),
     };
-    ui.command_update(commands::revoke_grant(&mut client, request));
+    ui.command_update(commands::revoke_grant_now(&mut client, request));
     assert!(client.sandbox_grants()?.is_some_and(|rows| rows.is_empty()));
     assert_eq!(
         client.peer_mut().revoked,
         vec![json!({"scope":"session","resource":resource}); 2]
     );
     client.create_session()?;
-    let refused = commands::revoke_grant(&mut client, stale);
+    let refused = commands::revoke_grant_now(&mut client, stale);
     assert!(refused.notice.contains("Session changed"));
     assert_eq!(client.peer_mut().revoked.len(), 2);
     assert_eq!(

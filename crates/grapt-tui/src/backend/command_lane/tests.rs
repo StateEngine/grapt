@@ -50,21 +50,29 @@ fn a_not_found_open_from_a_revoked_attachment_forgets_nothing() -> Result {
     let mut reads = Reads::start(wake)?;
     let session = grapt_client::wire::session_id("ses_000000000009")?;
     let id = Handoff::default().envelope(Command::Commands).0;
+    let call = client.prepare_open(&session)?;
     let mut lane = Lane {
-        in_flight: Some((
-            InFlight::Open(id, Box::new(client.prepare_open(&session)?)),
-            Arc::new(AtomicBool::new(false)),
-        )),
+        in_flight: Some(InFlight {
+            job: Job::Open { id, session },
+            call,
+            fence: Fence {
+                attachment: Some(Arc::new(AtomicBool::new(false))),
+                ..Fence::default()
+            },
+        }),
         ..Lane::default()
     };
     let not_found = WireResponse {
         status: 404,
         body: Vec::new(),
     };
-    let answered = lane.answer(&mut client, &mut reads, Ok(not_found));
-    assert!(answered.unavailable.is_none());
-    assert_eq!(answered.selection, Some(id));
+    lane.answer((&mut client, &mut reads), Ok(not_found));
     assert!(!lane.busy());
+    assert!(
+        lane.settled.outcomes.is_empty(),
+        "the Session was forgotten"
+    );
+    assert_eq!(lane.settled.selection, Some(id));
     Ok(())
 }
 
@@ -90,19 +98,27 @@ fn an_older_open_settling_after_a_quit_never_replaces_the_newer_selection() -> R
     let newer_id = newer.0;
     let (mut ledger, mut selection) = (Default::default(), None);
     let (mut pages, mut roster) = (Pages::default(), None);
+    let (mut models, mut status) = (None, String::new());
     let holders = super::super::closing::Holders {
         ledger: &mut ledger,
         selection: &mut selection,
         pages: &mut pages,
         roster: &mut roster,
+        models: &mut models,
+        status: &mut status,
     };
     super::super::closing::refuse(vec![newer], &client, holders);
     // The open that was in flight settles before the UI takes the view.
-    let answered = Answered {
-        selection: Some(older),
-        ..Answered::default()
-    };
-    answered.apply(&mut Vec::new(), &mut selection, &mut String::new());
+    let mut lane = Lane::default();
+    lane.select(older);
+    lane.apply(super::super::closing::Holders {
+        ledger: &mut ledger,
+        selection: &mut selection,
+        pages: &mut pages,
+        roster: &mut roster,
+        models: &mut models,
+        status: &mut status,
+    });
     assert_eq!(selection, Some(newer_id));
     Ok(())
 }
@@ -118,18 +134,102 @@ fn a_discarded_history_move_and_agent_choice_are_settled() -> Result {
     let choose = updates.envelope(Command::ChooseAgent(agent));
     let (mut ledger, mut selection) = (Default::default(), None);
     let (mut pages, mut roster) = (Pages::default(), None);
+    let (mut models, mut status) = (None, String::new());
     let holders = super::super::closing::Holders {
         ledger: &mut ledger,
         selection: &mut selection,
         pages: &mut pages,
         roster: &mut roster,
+        models: &mut models,
+        status: &mut status,
     };
     super::super::closing::refuse(vec![browse, choose], &client, holders);
     assert_eq!(
-        pages.take().1,
+        pages.take(None).1,
         vec![browse_id],
         "the history move would stay pending"
     );
     assert!(roster.is_some(), "the agent picker would stay pending");
+    Ok(())
+}
+
+/// A Session search in flight, fenced to `attachment`.
+fn search_on(
+    client: &mut Client<Bridge>,
+    id: CommandId,
+    attachment: Arc<AtomicBool>,
+) -> std::result::Result<InFlight, Box<dyn std::error::Error>> {
+    Ok(InFlight {
+        job: Job::Search(id, "held".into()),
+        call: client.prepare_session_search("held")?,
+        fence: Fence {
+            attachment: Some(attachment),
+            ..Fence::default()
+        },
+    })
+}
+
+#[test]
+fn only_answers_on_the_live_attachment_raise_or_clear_its_read_notice() -> Result {
+    let mut client = quiet_client()?;
+    let (wake, _ready) = mpsc::sync_channel(1);
+    let mut reads = Reads::start(wake)?;
+    let id = Handoff::default().envelope(Command::Commands).0;
+    let live = client.peer_mut().attachment();
+    let revoked = Arc::new(AtomicBool::new(false));
+    let mut lane = Lane::default();
+    // (attachment, status, whether a notice shows afterwards)
+    let answers = [
+        (&live, 503, true),
+        (&live, 200, false),
+        (&revoked, 503, false),
+        (&live, 503, true),
+        (&revoked, 200, true),
+        (&live, 200, false),
+    ];
+    for (attachment, status, notice) in answers {
+        lane.in_flight = Some(search_on(&mut client, id, attachment.clone())?);
+        let response = WireResponse {
+            status,
+            body: Vec::new(),
+        };
+        lane.answer((&mut client, &mut reads), Ok(response));
+        let shown = client.peer_mut().read_health.message().is_some();
+        assert_eq!(
+            shown,
+            notice,
+            "after {status} on the live attachment: {}",
+            Arc::ptr_eq(attachment, &live)
+        );
+    }
+    Ok(())
+}
+
+#[test]
+fn a_command_on_a_revoked_attachment_sends_no_later_step() -> Result {
+    let mut client = quiet_client()?;
+    let (wake, _ready) = mpsc::sync_channel(1);
+    let mut reads = Reads::start(wake)?;
+    let id = Handoff::default().envelope(Command::Commands).0;
+    let mut lane = Lane::default();
+    let next = Ok(Accepted::Next(client.prepare_session_search("later")?));
+    let fence = Fence {
+        revoked: true,
+        ..Fence::default()
+    };
+    lane.drive(
+        (&mut client, &mut reads),
+        Job::Search(id, "later".into()),
+        next,
+        fence,
+    );
+    assert!(!lane.busy());
+    let Some((_, Outcome::Session(crate::sessions::Message::Search(search)))) =
+        lane.settled.outcomes.first()
+    else {
+        return Err("the search did not settle".into());
+    };
+    let error = search.result.as_ref().err().ok_or("the search succeeded")?;
+    assert!(error.contains("reconnected before it answered"), "{error}");
     Ok(())
 }

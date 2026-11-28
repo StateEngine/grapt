@@ -3,6 +3,7 @@
 //! Split from `client.rs` by SUBJECT when that file passed this workspace's
 //! module ceiling. Every route, bound and refusal is unchanged.
 
+use super::prepared::{Accepted, Done, Route, Step};
 use super::*;
 use std::collections::BTreeSet;
 
@@ -486,9 +487,34 @@ impl<C: Connection> Client<C> {
                 None,
             )?;
         }
-        self.agent = Some(agent.clone());
-        self.persist_catalog_choice();
+        self.chose_agent(agent.clone());
         Ok(())
+    }
+
+    /// Choose the agent off the loop: settled at once when no Session is
+    /// open, otherwise once the service acknowledges the switch.
+    pub fn prepare_agent(
+        &mut self,
+        agent: &crate::wire::AgentWireId,
+    ) -> Result<Accepted, ClientError> {
+        if !self.agents.iter().any(|row| &row.id == agent) {
+            return Err(ClientError::NotOffered { what: "agent" });
+        }
+        let Some(session) = self.selected.clone() else {
+            return Ok(self.chose_agent(agent.clone()));
+        };
+        let route = Route {
+            body: Some(crate::wire::encode_agent_select(agent)?),
+            ..Route::new(Operation::SessionAgentSelect, Some(&session))
+        };
+        self.prepare_call(Step::Agent(agent.clone()), route)
+            .map(Accepted::Next)
+    }
+
+    pub(super) fn chose_agent(&mut self, agent: crate::wire::AgentWireId) -> Accepted {
+        self.agent = Some(agent);
+        self.persist_catalog_choice();
+        Accepted::Done(Done::Applied)
     }
 
     /// Choose the model for subsequent work.
@@ -498,18 +524,7 @@ impl<C: Connection> Client<C> {
     /// empty list — but selecting one would produce a server refusal the user
     /// cannot act on, so the refusal is made local and legible instead.
     pub fn select_model(&mut self, model: &crate::wire::ModelRow) -> Result<(), ClientError> {
-        let model = self.effort_choice(model)?;
-        let offered = self.models.iter().any(|row| {
-            row.id == model.id
-                && row.provider_id == model.provider_id
-                && row.variant == model.variant
-        });
-        if !offered {
-            return Err(ClientError::NotOffered { what: "model" });
-        }
-        if !model.enabled {
-            return Err(ClientError::NotEnabled);
-        }
+        let model = self.offered_model(model)?;
         if let Some(session) = self.selected.clone() {
             let body = crate::wire::encode_model_choice(
                 &model.id,
@@ -525,10 +540,58 @@ impl<C: Connection> Client<C> {
                 None,
             )?;
         }
-        self.model = Some(model.clone());
+        self.chose_model(model);
+        Ok(())
+    }
+
+    /// Choose the model off the loop: settled at once when no Session is
+    /// open, otherwise once the service acknowledges the switch.
+    pub fn prepare_model(
+        &mut self,
+        model: &crate::wire::ModelRow,
+    ) -> Result<Accepted, ClientError> {
+        let model = self.offered_model(model)?;
+        let Some(session) = self.selected.clone() else {
+            return Ok(self.chose_model(model));
+        };
+        let body = crate::wire::encode_model_choice(
+            &model.id,
+            &model.provider_id,
+            model.variant.as_ref(),
+        )?;
+        let route = Route {
+            body: Some(body),
+            ..Route::new(Operation::SessionModelSelect, Some(&session))
+        };
+        self.prepare_call(Step::Model(Box::new(model)), route)
+            .map(Accepted::Next)
+    }
+
+    /// The choice `model` makes, refused unless it is offered and enabled.
+    fn offered_model(
+        &self,
+        model: &crate::wire::ModelRow,
+    ) -> Result<crate::wire::ModelRow, ClientError> {
+        let model = self.effort_choice(model)?;
+        let offered = self.models.iter().any(|row| {
+            row.id == model.id
+                && row.provider_id == model.provider_id
+                && row.variant == model.variant
+        });
+        if !offered {
+            return Err(ClientError::NotOffered { what: "model" });
+        }
+        if !model.enabled {
+            return Err(ClientError::NotEnabled);
+        }
+        Ok(model)
+    }
+
+    pub(super) fn chose_model(&mut self, model: crate::wire::ModelRow) -> Accepted {
+        self.model = Some(model);
         self.launch_effort = None;
         self.persist_catalog_choice();
-        Ok(())
+        Accepted::Done(Done::Applied)
     }
 
     /// Make the selection a witness needs before it can reach a session.

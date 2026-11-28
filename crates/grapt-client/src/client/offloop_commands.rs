@@ -1,60 +1,10 @@
 //! Commands a host may send off its state loop: a permission reply and a
-//! Session open. The client builds each request from its state, the host
-//! sends it on another connection, and the client applies the answer here.
-//! An open takes several requests; the current Session stays selected until
+//! Session open. Each runs as prepared steps (see [`super::prepared`]). An
+//! open takes several requests; the current Session stays selected until
 //! all of them have validated, and installing the new one starts no request.
+use super::prepared::{Accepted, Done, Open, OpenStep, Opened, PreparedCall, Reply, Route, Step};
 use super::*;
-use crate::wire::{ModelRow, PermissionReplyChoice, SessionAttachment};
-
-/// A permission reply built from the client's state.
-#[derive(Debug)]
-pub struct PreparedReply {
-    pub request: WireRequest,
-    session: SessionWireId,
-    ask: PermissionWireId,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Step {
-    Session,
-    Project,
-    Subagents,
-}
-
-impl Step {
-    fn operation(self) -> Operation {
-        match self {
-            Self::Session => Operation::SessionGet,
-            Self::Project => Operation::ProjectCurrent,
-            Self::Subagents => Operation::SessionSubagentModelGet,
-        }
-    }
-}
-
-/// The Session read, validated: its saved choices, its row and the working
-/// directory its catalog is bound to.
-#[derive(Debug)]
-struct Opened {
-    saved: SessionAttachment,
-    row: Vec<u8>,
-    directory: String,
-}
-
-/// One step of a Session open. Send its request, then hand the answer to
-/// [`Client::accept_open`].
-#[derive(Debug)]
-pub struct PreparedOpen {
-    pub request: WireRequest,
-    step: Step,
-    session: SessionWireId,
-    opened: Option<Opened>,
-}
-
-impl PreparedOpen {
-    pub fn session(&self) -> &SessionWireId {
-        &self.session
-    }
-}
+use crate::wire::{ModelRow, PermissionReplyChoice};
 
 impl<C: Connection> Client<C> {
     /// Build a permission reply. Nothing changes until its answer is accepted.
@@ -63,76 +13,56 @@ impl<C: Connection> Client<C> {
         session: &SessionWireId,
         ask: &PermissionWireId,
         choice: PermissionReplyChoice,
-    ) -> Result<PreparedReply, ClientError> {
-        self.refused()?;
+    ) -> Result<PreparedCall, ClientError> {
         let body = crate::wire::encode_permission_reply(ask, choice)?;
-        let request = self.wire(
-            Operation::SessionPermissionReply,
-            Some(session),
-            Some(ask),
-            Some(body),
-            None,
-            None,
-        )?;
-        // Host-started I/O never coexists with a pending resume.
-        self.abandon_resume();
-        Ok(PreparedReply {
-            request,
+        let step = Step::Reply(Reply {
             session: session.clone(),
             ask: ask.clone(),
-        })
+        });
+        let route = Route {
+            request: Some(ask),
+            body: Some(body),
+            ..Route::new(Operation::SessionPermissionReply, Some(session))
+        };
+        self.prepare_call(step, route)
     }
 
-    /// Apply a reply's answer. An accepted reply settles its ask, fences
-    /// older permission reads, and asks the host to re-read the open asks.
-    pub fn accept_permission_reply(
+    /// An accepted reply settles its ask, fences older permission reads, and
+    /// asks the host to re-read the open asks.
+    pub(super) fn accept_reply(
         &mut self,
-        prepared: PreparedReply,
-        response: Result<WireResponse, TransportError>,
-    ) -> Result<(), ClientError> {
-        self.accept_response(Operation::SessionPermissionReply, response?)?;
-        self.acknowledged = self.acknowledged.wrapping_add(1);
+        reply: Reply,
+        answer: Result<Vec<u8>, ClientError>,
+    ) -> Result<Accepted, ClientError> {
+        answer?;
         self.permissions
-            .retain(|ask| !(ask.session_id == prepared.session && ask.request_id == prepared.ask));
+            .retain(|ask| !(ask.session_id == reply.session && ask.request_id == reply.ask));
         self.permissions_stale = true;
-        Ok(())
+        Ok(Accepted::Done(Done::Applied))
     }
 
     /// Build the first request of opening `session`.
-    pub fn prepare_open(&mut self, session: &SessionWireId) -> Result<PreparedOpen, ClientError> {
-        self.refused()?;
-        let request = self.wire(Operation::SessionGet, Some(session), None, None, None, None)?;
-        self.abandon_resume();
-        Ok(PreparedOpen {
-            request,
-            step: Step::Session,
-            session: session.clone(),
-            opened: None,
-        })
+    pub fn prepare_open(&mut self, session: &SessionWireId) -> Result<PreparedCall, ClientError> {
+        self.open_step(OpenStep::Session, session, None, None)
     }
 
-    /// Apply one step's answer: the next step, or `None` once the Session is
+    /// Apply one step's answer: the next step, or `Done` once the Session is
     /// installed. A Session the service does not have is forgotten; one whose
     /// saved project no longer matches is refused.
-    pub fn accept_open(
+    pub(super) fn accept_open(
         &mut self,
-        mut prepared: PreparedOpen,
-        response: Result<WireResponse, TransportError>,
-    ) -> Result<Option<PreparedOpen>, ClientError> {
-        self.refused()?;
-        let operation = prepared.step.operation();
-        let accepted = response
-            .map_err(ClientError::from)
-            .and_then(|response| self.accept_response(operation, response));
-        if prepared.step == Step::Session
-            && matches!(&accepted, Err(ClientError::Status { status: 404, .. }))
+        mut open: Open,
+        answer: Result<Vec<u8>, ClientError>,
+    ) -> Result<Accepted, ClientError> {
+        if open.step == OpenStep::Session
+            && matches!(&answer, Err(ClientError::Status { status: 404, .. }))
         {
-            self.forget_session(&prepared.session);
+            self.forget_session(&open.session);
         }
-        let bytes = accepted?;
-        let session = prepared.session.clone();
-        match (prepared.step, prepared.opened.take()) {
-            (Step::Session, _) => {
+        let bytes = answer?;
+        let session = open.session.clone();
+        let next = match (open.step, open.opened.take()) {
+            (OpenStep::Session, _) => {
                 let saved = crate::wire::decode_session_attachment(&bytes)?;
                 if saved.id != session {
                     return Err(ClientError::NotOffered {
@@ -150,18 +80,14 @@ impl<C: Connection> Client<C> {
                     project.id == opened.saved.project.id
                         && project.worktree == opened.saved.project.worktree
                 });
-                let next = if resolved {
-                    self.open_step(Step::Subagents, &session, None)?
+                if resolved {
+                    self.open_step(OpenStep::Subagents, &session, None, Some(opened))?
                 } else {
                     let worktree = opened.saved.project.worktree.clone();
-                    self.open_step(Step::Project, &session, Some(&worktree))?
-                };
-                Ok(Some(PreparedOpen {
-                    opened: Some(opened),
-                    ..next
-                }))
+                    self.open_step(OpenStep::Project, &session, Some(&worktree), Some(opened))?
+                }
             }
-            (Step::Project, Some(mut opened)) => {
+            (OpenStep::Project, Some(mut opened)) => {
                 let (id, worktree) = crate::wire::decode_project_current(&bytes)?;
                 if id != opened.saved.project.id {
                     return Err(ClientError::NotOffered {
@@ -169,13 +95,9 @@ impl<C: Connection> Client<C> {
                     });
                 }
                 opened.saved.project.worktree = worktree;
-                let next = self.open_step(Step::Subagents, &session, None)?;
-                Ok(Some(PreparedOpen {
-                    opened: Some(opened),
-                    ..next
-                }))
+                self.open_step(OpenStep::Subagents, &session, None, Some(opened))?
             }
-            (Step::Subagents, Some(opened)) => {
+            (OpenStep::Subagents, Some(opened)) => {
                 let subagents = crate::wire::decode_subagent_model(&bytes)?;
                 // As in an interactive resume, a launch effort bound to a
                 // Session is not reapplied.
@@ -185,27 +107,34 @@ impl<C: Connection> Client<C> {
                     .filter(|effort| effort.session.is_none());
                 let installed = self.install_open(&session, opened, subagents);
                 self.launch_effort = effort;
-                installed.map(|()| None)
+                return installed.map(|()| Accepted::Done(Done::Applied));
             }
-            (Step::Project | Step::Subagents, None) => Err(ClientError::NotOffered {
-                what: "requested session",
-            }),
-        }
+            (OpenStep::Project | OpenStep::Subagents, None) => {
+                return Err(ClientError::NotOffered {
+                    what: "requested session",
+                })
+            }
+        };
+        Ok(Accepted::Next(next))
     }
 
     fn open_step(
-        &self,
-        step: Step,
+        &mut self,
+        step: OpenStep,
         session: &SessionWireId,
         location: Option<&str>,
-    ) -> Result<PreparedOpen, ClientError> {
-        let request = self.wire(step.operation(), Some(session), None, None, location, None)?;
-        Ok(PreparedOpen {
-            request,
+        opened: Option<Opened>,
+    ) -> Result<PreparedCall, ClientError> {
+        let open = Open {
             step,
             session: session.clone(),
-            opened: None,
-        })
+            opened,
+        };
+        let route = Route {
+            location,
+            ..Route::new(step.operation(), Some(session))
+        };
+        self.prepare_call(Step::Open(Box::new(open)), route)
     }
 
     /// Install a validated open without starting a request: the snapshot

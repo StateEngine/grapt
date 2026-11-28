@@ -1,4 +1,5 @@
 //! Session management uses the same authenticated ingress as the composer.
+use super::prepared::{Accepted, Done, PreparedCall, Route, Step};
 use super::*;
 
 // The existing engine SessionListLimits caps one page at 128 rows.
@@ -18,12 +19,7 @@ impl<C: Connection> Client<C> {
     /// catalog. A search the server stopped before it could list anything
     /// says so, rather than passing for one with no matches.
     pub fn search_sessions(&mut self, search: &str) -> Result<SessionSearch, ClientError> {
-        if search.len() > 256 || search.chars().any(char::is_control) {
-            return Err(ClientError::InvalidInput(
-                "Session search exceeds its bound",
-            ));
-        }
-        let limit = self.bounds.max_retained_sessions.min(SEARCH_PAGE_ROWS);
+        let limit = Self::search_limit(search, self.bounds.max_retained_sessions)?;
         let bytes = self.ingest(
             Operation::SessionList,
             None,
@@ -32,7 +28,38 @@ impl<C: Connection> Client<C> {
             None,
             Some(Page::Sessions { search, limit }),
         )?;
-        let (rows, next) = crate::wire::decode_sessions_page(&bytes)?;
+        self.found(&bytes)
+    }
+
+    /// Search off the loop; see [`Client::search_sessions`].
+    pub fn prepare_session_search(&mut self, search: &str) -> Result<PreparedCall, ClientError> {
+        let limit = Self::search_limit(search, self.bounds.max_retained_sessions)?;
+        let route = Route {
+            page: Some(Page::Sessions { search, limit }),
+            ..Route::new(Operation::SessionList, None)
+        };
+        self.prepare_call(Step::Search, route)
+    }
+
+    pub(super) fn accept_search(
+        &mut self,
+        answer: Result<Vec<u8>, ClientError>,
+    ) -> Result<Accepted, ClientError> {
+        self.found(&answer?)
+            .map(|found| Accepted::Done(Done::Found(found)))
+    }
+
+    fn search_limit(search: &str, retained: usize) -> Result<usize, ClientError> {
+        if search.len() > 256 || search.chars().any(char::is_control) {
+            return Err(ClientError::InvalidInput(
+                "Session search exceeds its bound",
+            ));
+        }
+        Ok(retained.min(SEARCH_PAGE_ROWS))
+    }
+
+    fn found(&self, bytes: &[u8]) -> Result<SessionSearch, ClientError> {
+        let (rows, next) = crate::wire::decode_sessions_page(bytes)?;
         let reach = CatalogReach::of(&rows, next.as_deref());
         let rows = rows
             .into_iter()
@@ -66,6 +93,19 @@ impl<C: Connection> Client<C> {
         Ok(())
     }
 
+    /// Rename off the loop; see [`Client::rename_session`].
+    pub fn prepare_rename(
+        &mut self,
+        session: &SessionWireId,
+        title: &str,
+    ) -> Result<PreparedCall, ClientError> {
+        let route = Route {
+            body: Some(crate::wire::encode_rename(title.trim())?),
+            ..Route::new(Operation::SessionRename, Some(session))
+        };
+        self.prepare_call(Step::Rename, route)
+    }
+
     /// Only an acknowledged deletion removes local state. Refusal and uncertain
     /// transport outcomes retain the row and its drafts for explicit recovery.
     pub fn delete_session(&mut self, session: &SessionWireId) -> Result<(), ClientError> {
@@ -79,6 +119,17 @@ impl<C: Connection> Client<C> {
         )?;
         self.forget_session(session);
         Ok(())
+    }
+
+    /// Delete off the loop; see [`Client::delete_session`].
+    pub fn prepare_delete(&mut self, session: &SessionWireId) -> Result<PreparedCall, ClientError> {
+        let route = Route::new(Operation::SessionDelete, Some(session));
+        self.prepare_call(Step::Delete(session.clone()), route)
+    }
+
+    /// Re-read the session catalog off the loop.
+    pub fn prepare_sessions_refresh(&mut self) -> Result<PreparedCall, ClientError> {
+        self.prepare_call(Step::Sessions, Route::new(Operation::SessionList, None))
     }
 
     /// A confirmed deletion or an explicit not-found read retires cached state.

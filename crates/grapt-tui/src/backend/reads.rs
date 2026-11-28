@@ -8,9 +8,9 @@
 //! arrives meanwhile is held by its poll and starts exactly one more read
 //! after this one settles.
 //!
-//! The worker also carries one command at a time, a permission reply or a
-//! step of a Session open, in its own slot. It is sent before any waiting
-//! read, and never waits behind the operator's long requests.
+//! The worker also carries one step of a command at a time (see
+//! `command_lane`) in its own slot. It is sent before any waiting read, and
+//! never waits behind the operator's long requests.
 use super::{catalog::CatalogRefresh, forms};
 use crate::bridge::{Bridge, ReadPeer};
 use grapt_client::{
@@ -106,7 +106,7 @@ impl Reads {
     ) -> Result<Arc<AtomicBool>, ClientError> {
         if self.commanding {
             return Err(ClientError::NotOffered {
-                what: "A reply or Session open is already in progress.",
+                what: "Another command is already in progress.",
             });
         }
         let peer = client.peer_mut().read_peer()?;

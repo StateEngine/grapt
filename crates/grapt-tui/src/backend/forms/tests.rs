@@ -1,9 +1,10 @@
 use super::*;
-use grapt_client::wire::{FormRow, SessionWireId};
+use grapt_client::wire::{FormRow, FormState, SessionWireId};
 use grapt_client::{
     Bounds, ContractDouble, FramePoll, Operation, Transport, TransportError, WireRequest,
     WireResponse,
 };
+use grapt_tui_forms::{Decision, Reply, Request, Target};
 type Result<T = ()> = std::result::Result<T, Box<dyn std::error::Error>>;
 /// The loop's form reads driven synchronously through the same pieces: the
 /// due reads, the client's prepared request and its accept.
@@ -194,6 +195,12 @@ impl Connection for Peer {
         self.inner.resubscribe();
     }
 }
+/// Run one form transaction to the end on the test connection.
+fn execute(client: &mut Client<Peer>, request: Request) -> Reply {
+    let turn = begin(client, request);
+    crate::backend::step::run(client, turn, Flow::advance)
+}
+
 fn fixture() -> Result<(Client<Peer>, SessionWireId, FormRow)> {
     let mut client = Client::new(
         Peer {
