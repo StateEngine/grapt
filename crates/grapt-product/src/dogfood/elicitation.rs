@@ -16,8 +16,6 @@ use grapt_types::{
 use serde_json::{json, Value};
 use std::sync::{Arc, Mutex, MutexGuard};
 
-use super::tools::ask::Unsettled;
-
 #[cfg(test)]
 #[path = "elicitation_tests.rs"]
 mod tests;
@@ -338,5 +336,30 @@ impl LiveForms {
         })?;
         self.pending = None;
         Ok(())
+    }
+}
+
+/// Why one lost form was not settled: the database failing ends recovery,
+/// anything about the form itself is a warning.
+pub(in crate::dogfood) enum Unsettled {
+    Storage(String),
+    Item(String),
+}
+
+impl Unsettled {
+    pub(in crate::dogfood) fn write(error: &grapt_store::WriteError) -> Self {
+        if error.is_storage_failure() {
+            Self::Storage(error.to_string())
+        } else {
+            Self::Item(error.to_string())
+        }
+    }
+
+    pub(in crate::dogfood) fn form(error: &grapt_form::FormError) -> Self {
+        if error.is_storage_failure() {
+            Self::Storage(error.to_string())
+        } else {
+            Self::Item(error.to_string())
+        }
     }
 }

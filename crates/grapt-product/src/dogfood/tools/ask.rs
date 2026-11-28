@@ -11,6 +11,8 @@ use grapt_types::FormId;
 use serde_json::{json, Value};
 use std::collections::BTreeSet;
 
+use crate::dogfood::elicitation::Unsettled;
+
 pub(super) const TOOL: &str = "request_user_input";
 pub(super) const DESCRIPTION: &str = "Ask a person 1–4 questions and wait for explicit answers. Each needs 2–4 labelled options; free-text Other is always available. multi_select permits several answers. Returns answered, declined, or no_user_available. In headless/run sessions no user is available: proceed with a reasonable assumption or explain what is blocked; do not repeat the question tool.";
 
@@ -372,31 +374,6 @@ pub(in crate::dogfood) fn recover(
         }
     }
     Ok(warnings)
-}
-
-/// Why one lost form was not settled: the database failing ends recovery,
-/// anything about the form itself is a warning.
-pub(in crate::dogfood) enum Unsettled {
-    Storage(String),
-    Item(String),
-}
-
-impl Unsettled {
-    pub(in crate::dogfood) fn write(error: &grapt_store::WriteError) -> Self {
-        if error.is_storage_failure() {
-            Self::Storage(error.to_string())
-        } else {
-            Self::Item(error.to_string())
-        }
-    }
-
-    pub(in crate::dogfood) fn form(error: &grapt_form::FormError) -> Self {
-        if error.is_storage_failure() {
-            Self::Storage(error.to_string())
-        } else {
-            Self::Item(error.to_string())
-        }
-    }
 }
 
 fn retire_lost(
