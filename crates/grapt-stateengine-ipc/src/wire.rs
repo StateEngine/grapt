@@ -282,7 +282,19 @@ pub struct IpcEnvelope {
     pub generation: u64,
     /// Always `null`: the request inherits the connection's owner authority.
     pub authority: Option<Value>,
+    /// Which project an owner request acts in; it never widens authority.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cli_selections: Option<CliSelections>,
     pub request: Request,
+}
+
+/// The routing an owner connection adds to a project-scoped request: owner
+/// authority starts at the registry, so the host needs the project first.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CliSelections {
+    #[serde(with = "crate::ids")]
+    pub project: grapt_stateengine_api::ProjectId,
 }
 
 /// What a request asks for.

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 //! Turn state for an external seat: `busy` while its runner works a turn,
 //! `idle` after. While a seat is busy the host holds its new mail.
+use grapt_stateengine_api::{AgentId, ProjectId, SessionId};
 use serde::{Deserialize, Serialize};
 
 /// The host capability that offers [`Activity`] reports.
@@ -20,8 +21,10 @@ pub enum Activity {
 pub enum ExternalRequest {
     /// An owner connection names the seat's agent; `project` narrows it.
     SessionActivity {
-        project: Option<String>,
-        agent: Option<String>,
+        #[serde(default, with = "crate::ids::option")]
+        project: Option<ProjectId>,
+        #[serde(default, with = "crate::ids::option")]
+        agent: Option<AgentId>,
         state: Activity,
     },
 }
@@ -30,9 +33,12 @@ pub enum ExternalRequest {
 /// part of the receipt and are not kept.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 pub struct ActivityReceipt {
-    pub project_id: String,
-    pub agent_id: String,
-    pub session_id: String,
+    #[serde(with = "crate::ids")]
+    pub project_id: ProjectId,
+    #[serde(with = "crate::ids")]
+    pub agent_id: AgentId,
+    #[serde(with = "crate::ids")]
+    pub session_id: SessionId,
     pub state: Activity,
     /// Whether this report ended a busy turn.
     pub turn_ended: bool,

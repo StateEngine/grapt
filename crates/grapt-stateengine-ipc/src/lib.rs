@@ -21,6 +21,7 @@ mod error;
 mod events;
 mod frame;
 mod handshake;
+mod ids;
 #[cfg(target_os = "linux")]
 mod linux_proc;
 mod peer;
@@ -42,7 +43,7 @@ pub use events::{
     MIN_BATCH_BYTES,
 };
 pub use frame::{read_frame, write_frame};
-pub use grapt_stateengine_api::IdempotencyKey;
+pub use grapt_stateengine_api::{AgentId, EventId, IdempotencyKey, ProjectId, SessionId};
 pub use handshake::{Capabilities, HandshakeOptions, Session};
 #[cfg(target_os = "linux")]
 pub use linux_proc::observe_self;

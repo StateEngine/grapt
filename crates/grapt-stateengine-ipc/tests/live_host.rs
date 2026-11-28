@@ -1,11 +1,12 @@
 //! Opt-in check against a running StateEngine host, never a default test:
 //! point `GRAPT_SE_LIVE_HOME` at an isolated host's state home and
-//! `GRAPT_SE_LIVE_BINARY` at the binary it runs, optionally name a registered
-//! project in `GRAPT_SE_LIVE_PROJECT`, then run with `--ignored`.
+//! `GRAPT_SE_LIVE_BINARY` at the binary it runs and `GRAPT_SE_LIVE_PROJECT`
+//! at a project registered there, then run with `--ignored`.
 #![cfg(target_os = "linux")]
 use grapt_stateengine_ipc::{
-    connect, discover, observe_self, verify_binary, Activity, Capabilities, Connection, EventKind,
-    HandshakeOptions, IpcError, StreamFrame, SubscribeRequest, DEFAULT_REPLY_BYTES,
+    connect, discover, observe_self, verify_binary, Activity, AgentId, Capabilities, Connection,
+    EventKind, HandshakeOptions, IdempotencyKey, IpcError, ProjectId, PublishTurn, SessionId,
+    Sha256Hex, StreamFrame, SubscribeRequest, TurnModel, TurnRole, DEFAULT_REPLY_BYTES,
 };
 use std::path::PathBuf;
 use std::time::Duration;
@@ -61,14 +62,46 @@ async fn a_live_host_offers_and_answers_the_live_methods() -> TestResult {
     );
     // A host without an active external seat for the agent refuses with its
     // own typed error: the request decoded, and nothing was recorded.
-    let project = std::env::var("GRAPT_SE_LIVE_PROJECT").ok();
+    let project = ProjectId(
+        required("GRAPT_SE_LIVE_PROJECT")?
+            .to_string_lossy()
+            .into_owned(),
+    );
     let activity = connection
-        .report_activity("main", project.as_deref(), Activity::Idle)
+        .report_activity(&AgentId("main".into()), Some(&project), Activity::Idle)
         .await;
     assert!(
         matches!(activity, Err(IpcError::Refused(_))),
         "{activity:?}"
     );
+    let turn = PublishTurn {
+        idempotency_key: IdempotencyKey("live-turn".into()),
+        target_agent_id: Some(AgentId("ag_00000000-0000-7000-8000-000000000000".into())),
+        session_id: Some(SessionId("ses_00000000-0000-7000-8000-000000000000".into())),
+        conversation_id: "conversation-fixture".into(),
+        harness: "harness-fixture".into(),
+        model: TurnModel {
+            provider: "provider-fixture".into(),
+            model: "model-fixture".into(),
+        },
+        vendor_turn_id: "turn-1".into(),
+        occurred_at_us: 1,
+        role: TurnRole::Assistant,
+        body_text: None,
+        body_omitted_bytes: 0,
+        content_sha256: Sha256Hex([0; 32]),
+        usage: None,
+        diff_summary: None,
+        decision: None,
+        nesting: None,
+    };
+    let published = connection.publish_turn(&project, &turn).await;
+    // Routed to the project, the host reaches the seat's session and finds
+    // none; without the selection it would refuse with `project-required`.
+    let Err(IpcError::Refused(refusal)) = published else {
+        return Err(format!("{published:?}").into());
+    };
+    assert_eq!(refusal.code, "target-unknown", "{refusal:?}");
     let stream = open(2).await?.subscribe(SubscribeRequest {
         project_id: None,
         agent_id: None,

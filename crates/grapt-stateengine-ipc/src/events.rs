@@ -3,12 +3,13 @@
 //! own. Every frame is checked against its request before it is trusted, and
 //! a lagged frame or a host error ends the stream; dropping the stream closes
 //! its connection, which cancels the subscription.
-use crate::frame::{decode, read_frame};
+use crate::frame::{announced_length, decode};
 use crate::wire::{IpcResponse, IpcResult};
 use crate::{IpcError, API_VERSION};
+use grapt_stateengine_api::{AgentId, EventId, ProjectId};
 use serde::{de, Deserialize, Deserializer, Serialize};
-use serde_json::Value;
-use tokio::io::AsyncRead;
+use serde_json::{Map, Value};
+use tokio::io::{AsyncRead, AsyncReadExt};
 
 /// The host capability that offers [`SubscribeRequest`].
 pub const EVENTS_CAPABILITY: &str = "events.subscribe";
@@ -17,6 +18,7 @@ pub const MIN_BATCH_BYTES: u32 = 4096;
 pub(crate) const STREAM_SCHEMA: &str = "se.event-stream/v1";
 const CURSOR_PREFIX: &str = "evcur_v1_";
 const MAX_CURSOR_BYTES: usize = 512;
+const READ_CHUNK_BYTES: usize = 8192;
 
 /// A position in the host's event stream. Opaque: only the host reads it.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize)]
@@ -68,8 +70,10 @@ pub enum EventKind {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct SubscribeRequest {
-    pub project_id: Option<String>,
-    pub agent_id: Option<String>,
+    #[serde(default, with = "crate::ids::option")]
+    pub project_id: Option<ProjectId>,
+    #[serde(default, with = "crate::ids::option")]
+    pub agent_id: Option<AgentId>,
     /// Resume after this position; `None` starts at the head.
     pub after_cursor: Option<EventCursor>,
     pub filter: Vec<EventKind>,
@@ -82,10 +86,12 @@ pub struct SubscribeRequest {
 #[serde(deny_unknown_fields)]
 pub struct Event {
     pub cursor: EventCursor,
-    pub event_id: String,
+    #[serde(with = "crate::ids")]
+    pub event_id: EventId,
     pub kind: EventKind,
     pub occurred_at_us: i64,
-    pub payload: Value,
+    /// Always an object; a scalar payload refuses the frame.
+    pub payload: Map<String, Value>,
 }
 
 /// One frame of the stream.
@@ -142,6 +148,8 @@ pub struct EventStream<S> {
     generation: u64,
     limit: u32,
     resume: Option<EventCursor>,
+    /// Bytes read toward the next frame, kept across a cancelled `next`.
+    pending: Vec<u8>,
     ended: bool,
 }
 
@@ -171,19 +179,53 @@ impl<S: AsyncRead + Unpin> EventStream<S> {
             generation,
             limit,
             resume,
+            pending: Vec::new(),
             ended: false,
         }
     }
 
     /// The next frame. A lagged frame, a host error or any failure ends the
-    /// stream; later calls refuse with [`IpcError::StreamEnded`].
+    /// stream; later calls refuse with [`IpcError::StreamEnded`]. Cancel-safe:
+    /// a `next` dropped while waiting loses no bytes of the frame it awaited.
     pub async fn next(&mut self) -> Result<StreamFrame, IpcError> {
         if self.ended {
             return Err(IpcError::StreamEnded);
         }
-        self.ended = true;
-        let bytes = read_frame(&mut self.stream, self.limit).await?;
-        let response: IpcResponse = decode(&bytes)?;
+        let frame = self
+            .read_frame()
+            .await
+            .and_then(|bytes| self.accept(&bytes));
+        self.ended = !matches!(
+            frame,
+            Ok(StreamFrame::Event(_) | StreamFrame::Heartbeat { .. })
+        );
+        frame
+    }
+
+    /// The next whole frame's payload. Its only await is a cancel-safe read
+    /// whose bytes land in `pending` before anything else happens.
+    async fn read_frame(&mut self) -> Result<Vec<u8>, IpcError> {
+        loop {
+            if let Some(prefix) = self.pending.first_chunk::<4>() {
+                let end = announced_length(*prefix, self.limit)?.saturating_add(4);
+                if self.pending.len() >= end {
+                    let frame = self.pending[4..end].to_vec();
+                    self.pending.drain(..end);
+                    return Ok(frame);
+                }
+            }
+            let mut chunk = [0; READ_CHUNK_BYTES];
+            let read = self.stream.read(&mut chunk).await?;
+            if read == 0 {
+                return Err(std::io::Error::from(std::io::ErrorKind::UnexpectedEof).into());
+            }
+            self.pending.extend_from_slice(&chunk[..read]);
+        }
+    }
+
+    /// A frame checked against its request, advancing the resume cursor.
+    fn accept(&mut self, bytes: &[u8]) -> Result<StreamFrame, IpcError> {
+        let response: IpcResponse = decode(bytes)?;
         if response.version != API_VERSION {
             return Err(IpcError::ResponseMismatch("protocol version"));
         }
@@ -207,9 +249,8 @@ impl<S: AsyncRead + Unpin> EventStream<S> {
         match &frame {
             StreamFrame::Event(event) => self.resume = Some(event.cursor.clone()),
             StreamFrame::Heartbeat { head_cursor } => self.resume = Some(head_cursor.clone()),
-            StreamFrame::Lagged { .. } => return Ok(frame),
+            StreamFrame::Lagged { .. } => {}
         }
-        self.ended = false;
         Ok(frame)
     }
 

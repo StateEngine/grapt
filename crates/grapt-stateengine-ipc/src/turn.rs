@@ -2,6 +2,7 @@
 //! `session.publish_turn`: one completed turn of a conversation a harness runs
 //! itself, with its token usage, diff counts and an erasable summary.
 use crate::Sha256Hex;
+use grapt_stateengine_api::{AgentId, EventId, IdempotencyKey, SessionId};
 use serde::{Deserialize, Serialize};
 
 /// The host capability that offers [`PublishTurn`].
@@ -63,8 +64,10 @@ pub struct TurnDecision {
 /// A nested agent's turn, under the StateEngine session it ran in.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct TurnNesting {
-    pub parent_session_id: String,
-    pub nested_agent_id: String,
+    #[serde(with = "crate::ids")]
+    pub parent_session_id: SessionId,
+    #[serde(with = "crate::ids")]
+    pub nested_agent_id: AgentId,
     pub depth: u32,
 }
 
@@ -72,11 +75,14 @@ pub struct TurnNesting {
 /// the request key; after an uncertain outcome, retry with it unchanged.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct PublishTurn {
-    pub idempotency_key: String,
+    #[serde(with = "crate::ids")]
+    pub idempotency_key: IdempotencyKey,
     /// The seat's agent; an owner connection names it.
-    pub target_agent_id: Option<String>,
+    #[serde(with = "crate::ids::option")]
+    pub target_agent_id: Option<AgentId>,
     /// The seat's session; an owner connection names it.
-    pub session_id: Option<String>,
+    #[serde(with = "crate::ids::option")]
+    pub session_id: Option<SessionId>,
     pub conversation_id: String,
     pub harness: String,
     pub model: TurnModel,
@@ -97,9 +103,17 @@ pub struct PublishTurn {
 impl PublishTurn {
     /// Why the host would refuse this turn, checked before it is sent.
     pub fn check(&self) -> Result<(), String> {
-        let key = self.idempotency_key.as_bytes();
+        let key = self.idempotency_key.0.as_bytes();
         if key.is_empty() || key.len() > MAX_KEY_BYTES || !key.iter().all(u8::is_ascii_graphic) {
             return Err("the idempotency key is not 1 to 128 printable ASCII bytes".into());
+        }
+        if self
+            .usage
+            .as_ref()
+            .and_then(|usage| usage.cost_usd)
+            .is_some_and(|cost| !cost.is_finite())
+        {
+            return Err("cost_usd is not a finite number".into());
         }
         if !(0..=MAX_OCCURRED_AT_US).contains(&self.occurred_at_us) {
             return Err("occurred_at_us is outside 0 through the end of year 9999".into());
@@ -118,19 +132,24 @@ impl PublishTurn {
         {
             return Err("a nesting depth is not 1 to 64".into());
         }
-        let decision = self.decision.as_ref().map_or(0, |decision| {
-            decision.title.len() + decision.rationale.len() + decision.scope.len()
-        });
-        let decision_and_paths = decision + paths.iter().map(String::len).sum::<usize>();
+        // The host bounds the serialized prose, escapes included.
+        let decision_and_paths = serialized(&self.decision)? + serialized(&paths)?;
         if decision_and_paths > MAX_DECISION_AND_PATHS_BYTES {
             return Err("the decision and paths together exceed 64 KiB".into());
         }
-        let body = self.body_text.as_ref().map_or(0, String::len);
+        let body = serialized(&self.body_text)?;
         if body + decision_and_paths > MAX_PROSE_BYTES {
             return Err("the body, decision and paths together exceed 1 MiB".into());
         }
         Ok(())
     }
+}
+
+/// The bytes `value` takes as JSON.
+fn serialized<T: Serialize>(value: &T) -> Result<usize, String> {
+    serde_json::to_vec(value)
+        .map(|bytes| bytes.len())
+        .map_err(|error| error.to_string())
 }
 
 /// Whether the host recorded the turn now or replayed an earlier commit.
@@ -145,15 +164,18 @@ pub enum CommitState {
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 pub struct TurnCommit {
     pub state: CommitState,
-    pub event_id: String,
+    #[serde(with = "crate::ids")]
+    pub event_id: EventId,
 }
 
 /// What the host recorded. Host measurements beside these fields are not
 /// part of the receipt and are not kept.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 pub struct PublishTurnReceipt {
-    pub agent_id: String,
-    pub session_id: String,
+    #[serde(with = "crate::ids")]
+    pub agent_id: AgentId,
+    #[serde(with = "crate::ids")]
+    pub session_id: SessionId,
     pub vendor_turn_id: String,
     /// The event's store sequence number.
     pub cursor: u64,
@@ -162,3 +184,6 @@ pub struct PublishTurnReceipt {
     pub content_verified: bool,
     pub commit: TurnCommit,
 }
+
+#[cfg(test)]
+mod tests;

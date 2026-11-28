@@ -1,5 +1,6 @@
 use super::*;
 use serde_json::json;
+use std::time::Duration;
 use tokio::io::AsyncWriteExt;
 
 type TestResult = Result<(), Box<dyn std::error::Error>>;
@@ -84,10 +85,39 @@ async fn a_frame_outside_its_schema_ends_the_stream() -> TestResult {
             json!({"cursor": "evcur_v1_c", "event_id": "ev_fixture",
             "kind": "unknown.kind", "occurred_at_us": 5, "payload": {}}),
         ),
+        output(
+            STREAM_SCHEMA,
+            json!({"cursor": "evcur_v1_c", "event_id": "ev_fixture",
+            "kind": "mail.notice", "occurred_at_us": 5, "payload": null}),
+        ),
     ] {
         let mut stream = stream(&[frame])?;
         assert!(matches!(stream.next().await, Err(IpcError::Malformed(_))));
         assert!(matches!(stream.next().await, Err(IpcError::StreamEnded)));
+        assert_eq!(stream.resume_cursor(), None);
     }
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_cancelled_next_loses_no_bytes_of_the_frame_it_awaited() -> TestResult {
+    let (mut host, client) = tokio::io::duplex(1 << 16);
+    let mut stream = EventStream::new(client, REQUEST, GENERATION, 65_536, None);
+    let heartbeat = output(
+        STREAM_SCHEMA,
+        json!({"kind": "heartbeat", "head_cursor": "evcur_v1_b"}),
+    );
+    let (head, tail) = heartbeat.split_at(6);
+    // Cancelled while idle, then again partway through a frame.
+    for part in [&[][..], head] {
+        host.write_all(part).await?;
+        let cancelled = tokio::time::timeout(Duration::ZERO, stream.next()).await;
+        assert!(cancelled.is_err());
+    }
+    host.write_all(tail).await?;
+    assert!(matches!(
+        stream.next().await?,
+        StreamFrame::Heartbeat { .. }
+    ));
     Ok(())
 }

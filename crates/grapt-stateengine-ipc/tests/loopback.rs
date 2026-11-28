@@ -4,10 +4,10 @@
 #![cfg(target_os = "linux")]
 use grapt_stateengine_ipc::wire::StartIdentity;
 use grapt_stateengine_ipc::{
-    connect, discover, observe_self, read_frame, write_frame, Activity, Capabilities, CommitState,
-    Connection, Endpoint, EventCursor, EventKind, HandshakeOptions, IdempotencyKey, IpcError,
-    PeerBinding, Principal, PublishTurn, StreamFrame, SubscribeRequest, TurnModel, TurnRole,
-    VerifiedPeer,
+    connect, discover, observe_self, read_frame, write_frame, Activity, AgentId, Capabilities,
+    CommitState, Connection, Endpoint, EventCursor, EventKind, HandshakeOptions, IdempotencyKey,
+    IpcError, PeerBinding, Principal, ProjectId, PublishTurn, SessionId, StreamFrame,
+    SubscribeRequest, TurnModel, TurnRole, VerifiedPeer,
 };
 use serde_json::{json, Value};
 use std::os::unix::fs::PermissionsExt;
@@ -519,9 +519,9 @@ fn output(request: &Value, schema: &str, value: Value) -> Value {
 
 fn turn(key: &str) -> TestResult<PublishTurn> {
     Ok(PublishTurn {
-        idempotency_key: key.into(),
-        target_agent_id: Some("agent-fixture".into()),
-        session_id: Some("ses_fixture".into()),
+        idempotency_key: IdempotencyKey(key.into()),
+        target_agent_id: Some(AgentId("agent-fixture".into())),
+        session_id: Some(SessionId("ses_fixture".into())),
         conversation_id: "conversation-fixture".into(),
         harness: "harness-fixture".into(),
         model: TurnModel {
@@ -545,13 +545,13 @@ fn turn(key: &str) -> TestResult<PublishTurn> {
 async fn a_host_without_a_capability_never_receives_its_request() -> TestResult {
     let fixture = Fixture::new("unoffered")?;
     let (mut connection, mut host) = negotiated(&fixture, &["ipc.capabilities"]).await?;
-    let refused = connection.publish_turn(&turn("key-a")?).await;
+    let refused = connection.publish_turn(&project(), &turn("key-a")?).await;
     assert!(matches!(
         refused,
         Err(IpcError::Unsupported("session.publish_turn"))
     ));
     let refused = connection
-        .report_activity("agent", None, Activity::Busy)
+        .report_activity(&AgentId("agent".into()), None, Activity::Busy)
         .await;
     assert!(matches!(
         refused,
@@ -599,18 +599,13 @@ async fn turns_and_activity_carry_their_keys_and_typed_receipts() -> TestResult 
         TestResult::Ok((published, reported))
     };
     let client_side = async {
-        assert!(matches!(
-            connection
-                .publish_turn(&PublishTurn {
-                    occurred_at_us: -1,
-                    ..turn("key-a")?
-                })
-                .await,
-            Err(IpcError::Invalid(_))
-        ));
-        let receipt = connection.publish_turn(&turn("key-a")?).await?;
+        let receipt = connection.publish_turn(&project(), &turn("key-a")?).await?;
         let activity = connection
-            .report_activity("agent-fixture", Some("prj_fixture"), Activity::Idle)
+            .report_activity(
+                &AgentId("agent-fixture".into()),
+                Some(&project()),
+                Activity::Idle,
+            )
             .await?;
         TestResult::Ok((receipt, activity))
     };
@@ -619,6 +614,11 @@ async fn turns_and_activity_carry_their_keys_and_typed_receipts() -> TestResult 
     let (receipt, activity) = client_result?;
     let input = &published["request"]["input"];
     assert_eq!(input["name"], "session.publish_turn");
+    // Owner authority starts at the registry: the project routes the turn.
+    assert_eq!(
+        published["cli_selections"],
+        json!({"project": "prj_fixture"})
+    );
     assert_eq!(
         (&input["key"], &input["arguments"]["idempotency_key"]),
         (&json!("key-a"), &json!("key-a"))
@@ -643,7 +643,7 @@ async fn a_subscription_asks_for_its_filter_and_reads_the_first_frame() -> TestR
     let (connection, mut host) = negotiated(&fixture, &LIVE).await?;
     let after = EventCursor::parse("evcur_v1_a").ok_or("cursor")?;
     let request = SubscribeRequest {
-        project_id: Some("prj_fixture".into()),
+        project_id: Some(project()),
         after_cursor: Some(after.clone()),
         filter: vec![EventKind::MailNotice, EventKind::AgentState],
         ..subscribed_request()
@@ -677,6 +677,10 @@ async fn a_subscription_asks_for_its_filter_and_reads_the_first_frame() -> TestR
         Err(IpcError::Invalid(_))
     ));
     Ok(())
+}
+
+fn project() -> ProjectId {
+    ProjectId("prj_fixture".into())
 }
 
 fn subscribed_request() -> SubscribeRequest {
