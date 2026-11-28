@@ -472,19 +472,28 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn unreadable_paths_refuse_and_absent_paths_stay_as_given() -> Result<(), std::io::Error> {
-        let root = std::env::temp_dir().join(format!("grapt-real-path-{}", std::process::id()));
-        let _stale = std::fs::remove_dir_all(&root);
-        std::fs::create_dir_all(&root)?;
-        let file = root.join("file");
+        /// A directory this test created itself, removed on drop.
+        struct Created(PathBuf);
+        impl Drop for Created {
+            fn drop(&mut self) {
+                let _cleanup = std::fs::remove_dir_all(&self.0);
+            }
+        }
+        let path = std::env::temp_dir().join(format!("grapt-real-path-{}", std::process::id()));
+        // Created exclusively: an existing directory fails the test and is
+        // never deleted, because only a directory made here gets the guard.
+        std::fs::create_dir(&path)?;
+        let root = Created(path);
+        let file = root.0.join("file");
         std::fs::write(&file, b"")?;
-        let through_file = real_database_path(&file.join("store.db"));
-        let absent = real_database_path(&root.join("store.db"))?;
-        std::fs::remove_dir_all(&root)?;
         assert_eq!(
-            through_file.map_err(|error| error.kind()),
+            real_database_path(&file.join("store.db")).map_err(|error| error.kind()),
             Err(std::io::ErrorKind::NotADirectory)
         );
-        assert_eq!(absent, root.join("store.db"));
+        assert_eq!(
+            real_database_path(&root.0.join("store.db"))?,
+            root.0.join("store.db")
+        );
         Ok(())
     }
 
