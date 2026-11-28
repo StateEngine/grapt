@@ -958,34 +958,37 @@ def t5_budget_witnesses() -> None:
         and runner_budget["concurrent_streaming_tok_per_s"]["status"] == "pass",
         f"detail={stream_detail!r} budget={runner_budget!r}",
     )
-    # End-to-end loopback-provider witness: real loopback-provider.py streaming
-    # SSE deltas updates the stream-metrics file while an observer with NO
-    # stream_tokens field in /state runs apply_step -> evaluate_t5_budgets passes.
+    # Validated SSE delta token accounting: malformed frames, raw substring
+    # spoofs, empty deltas return 0, and multiword frames never inflate counts.
+    check(
+        "validated_sse_delta_tokens rejects malformed/raw/empty frames and does not inflate multiword frames",
+        PROVIDER.validated_sse_delta_tokens('not json "response.output_text.delta"') == 0
+        and PROVIDER.validated_sse_delta_tokens('data: {broken json') == 0
+        and PROVIDER.validated_sse_delta_tokens('data: {"type":"response.output_text.delta","delta":"   "}') == 0
+        and PROVIDER.validated_sse_delta_tokens('data: {"type":"response.completed","delta":"hi"}') == 0
+        and PROVIDER.validated_sse_delta_tokens('data: {"type":"response.output_text.delta","delta":"one two three four five"}') == 1,
+    )
+    # End-to-end scoped loopback-provider witness:
+    # (a) Traffic on another socket/scope must NOT satisfy a quiet probe.
+    # (b) Traffic scoped to the measured terminal passes T5 budgets without /state stream_tokens.
     with tempfile.TemporaryDirectory() as raw_stream_dir:
         metrics_path = Path(raw_stream_dir) / "provider.stream-tokens.json"
-        PROVIDER._write_stream_metrics(metrics_path, 0)
-        client_sock, server_sock = socket.socketpair()
-        served_times: list[float] = []
-        stream_counter = {"tokens": 0}
+        PROVIDER._write_stream_metrics(metrics_path, {})
+        stream_counter: dict[str, int] = {}
         stream_lock = threading.Lock()
         request_body = json.dumps(
             {"input": [{"role": "user", "content": "stream a reply"}]}
         ).encode("utf-8")
-        request_wire = (
-            f"POST /responses HTTP/1.1\r\nHost: 127.0.0.1\r\n"
-            f"Content-Length: {len(request_body)}\r\n\r\n"
-        ).encode("utf-8") + request_body
 
-        class _StreamingObserver:
-            def __init__(self) -> None:
-                self._sent = False
-
-            def state(self) -> dict:
-                # Deliberately no `stream_tokens` field in /state: compare.py
-                # must witness real streaming from loopback-provider's metrics file.
-                return {"lines": ["prompt > LOOPBACK_ECHO" if self._sent else "prompt > "]}
-
-            def action(self, _payload: dict) -> None:
+        def _run_scoped_provider_stream(scope_id: str) -> None:
+            client_sock, server_sock = socket.socketpair()
+            served_times: list[float] = []
+            request_wire = (
+                f"POST /responses HTTP/1.1\r\nHost: 127.0.0.1\r\n"
+                f"X-Grapt-Stream-Scope: {scope_id}\r\n"
+                f"Content-Length: {len(request_body)}\r\n\r\n"
+            ).encode("utf-8") + request_body
+            try:
                 client_sock.sendall(request_wire)
                 client_sock.shutdown(socket.SHUT_WR)
                 worker = threading.Thread(
@@ -996,20 +999,65 @@ def t5_budget_witnesses() -> None:
                 while client_sock.recv(4096):
                     pass
                 worker.join(timeout=5)
+            finally:
+                client_sock.close()
+
+        class _ScopedObserver:
+            def __init__(self, marker: str, trigger_scope: str) -> None:
+                self._marker = marker
+                self._trigger_scope = trigger_scope
+                self._sent = False
+
+            def state(self) -> dict:
+                return {"lines": [f"prompt > {self._marker}" if self._sent else "prompt > "]}
+
+            def action(self, _payload: dict) -> None:
+                _run_scoped_provider_stream(self._trigger_scope)
                 self._sent = True
 
-        try:
-            lb_kind, lb_detail, _ = CMP.apply_step(
-                _StreamingObserver(),
-                {"echo": "LOOPBACK_ECHO"},
-                "native",
-                Path("."),
-                Path("."),
-                set(),
-                stream_metrics_path=metrics_path,
-            )
-        finally:
-            client_sock.close()
+        # (a) Traffic streams on `other_socket_scope`, while probe measures `quiet_probe_scope`.
+        cross_kind, cross_detail, _ = CMP.apply_step(
+            _ScopedObserver("QUIET_ECHO", "other_socket_scope"),
+            {"echo": "QUIET_ECHO", "stream_scope": "quiet_probe_scope"},
+            "native",
+            Path("."),
+            Path("."),
+            set(),
+            stream_metrics_path=metrics_path,
+        )
+        cross_budget = CMP.evaluate_t5_budgets(
+            [
+                {
+                    "client": "native",
+                    "steps": [
+                        {
+                            "kind": cross_kind,
+                            "t5_echo": True,
+                            "elapsed_ms": cross_detail["echo_ms"],
+                            "detail": cross_detail,
+                        }
+                    ],
+                    "idle_cpu_seconds": 0.10,
+                }
+            ]
+        )
+        check(
+            "provider traffic on another socket/scope never satisfies a quiet T5 echo probe",
+            cross_detail.get("streaming_observed") is False
+            and cross_budget["status"] == "not-measured",
+            f"detail={cross_detail!r} budget={cross_budget!r}",
+        )
+
+        # (b) Traffic streams on `measured_scope`, matching the probe's scope.
+        lb_kind, lb_detail, _ = CMP.apply_step(
+            _ScopedObserver("LOOPBACK_ECHO", "measured_scope"),
+            {"echo": "LOOPBACK_ECHO", "stream_scope": "measured_scope"},
+            "native",
+            Path("."),
+            Path("."),
+            set(),
+            stream_metrics_path=metrics_path,
+        )
         lb_budget = CMP.evaluate_t5_budgets(
             [
                 {
@@ -1029,7 +1077,7 @@ def t5_budget_witnesses() -> None:
             ]
         )
         check(
-            "end-to-end loopback-provider stream-metrics witness passes T5 budgets without /state stream_tokens",
+            "scoped end-to-end loopback-provider stream-metrics witness passes T5 budgets",
             lb_detail.get("streaming_observed") is True
             and float(lb_detail.get("observed_tok_per_s", 0.0)) >= 200.0
             and lb_budget["status"] == "pass"

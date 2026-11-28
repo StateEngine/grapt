@@ -2,7 +2,20 @@ use super::*;
 use crate::owner::RecordingOwner;
 use crate::residency::DrainResidency;
 use grapt_provider::{AdapterState, AttemptFragment, FinishReason, ToolExecution};
+use std::collections::BTreeSet;
 use std::sync::atomic::{AtomicUsize, Ordering};
+
+struct DefaultRunner;
+impl ToolRunner for DefaultRunner {
+    fn run(
+        &self,
+        _call: ToolCallId,
+        _tool: String,
+        _input: BoundedToolInput,
+    ) -> BoxFuture<'static, ToolOutcome> {
+        Box::pin(async { ToolOutcome::Completed { output: None } })
+    }
+}
 
 /// See the sibling module's note: a Step watch with no sender and no value.
 fn quiet_step() -> tokio::sync::watch::Receiver<Option<grapt_types::InterruptionSource>> {
@@ -209,6 +222,7 @@ fn abandoned_child_has_one_unknown_effect_terminal() {
             },
             &mut owner,
             &BTreeMap::new(),
+            &DefaultRunner,
         )
         .unwrap_or_else(|error| panic!("admission: {error:?}"));
     state
@@ -218,10 +232,11 @@ fn abandoned_child_has_one_unknown_effect_terminal() {
             },
             &mut owner,
             &BTreeMap::new(),
+            &DefaultRunner,
         )
         .unwrap_or_else(|error| panic!("abandonment: {error:?}"));
     state
-        .close_parent(&mut owner, &parent)
+        .close_parent(&mut owner, &parent, &DefaultRunner)
         .unwrap_or_else(|error| panic!("parent closure: {error:?}"));
     assert!(matches!(
         owner.tool_terminals().as_slice(),
@@ -258,6 +273,7 @@ fn nested_fanout_parent_scope_and_terminal_replay_are_bounded() {
                 },
                 owner,
                 &BTreeMap::new(),
+                &DefaultRunner,
             )
             .unwrap_or_else(|error| panic!("bounded admission: {error:?}"));
         received
@@ -294,7 +310,7 @@ fn nested_fanout_parent_scope_and_terminal_replay_are_bounded() {
     );
     // No abandonment message is delivered: parent closure owns every open child.
     state
-        .close_parent(&mut owner, &parent)
+        .close_parent(&mut owner, &parent, &DefaultRunner)
         .unwrap_or_else(|error| panic!("closure: {error:?}"));
     assert_eq!(owner.tool_terminals().len(), 64);
     assert!(owner.tool_terminals().iter().all(|(_, outcome)| matches!(
@@ -315,6 +331,7 @@ fn nested_fanout_parent_scope_and_terminal_replay_are_bounded() {
             },
             &mut owner,
             &BTreeMap::new(),
+            &DefaultRunner,
         )
         .unwrap_or_else(|error| panic!("late terminal: {error:?}"));
     assert_eq!(received.try_recv(), Ok(Err(NestedCallError::Closed)));
@@ -376,4 +393,87 @@ async fn nested_effect_waits_for_committed_admission() {
         .unwrap_or_else(|error| panic!("nested task failed: {error}"));
     assert_eq!(result, Err(NestedCallError::Durability));
     assert_eq!(entered.load(Ordering::SeqCst), 0);
+}
+
+#[test]
+fn abandoned_nested_approval_reports_effect_failed_and_clears_tracker() {
+    use std::sync::Mutex;
+
+    struct TrackedRunner {
+        pending: Mutex<BTreeSet<ToolCallId>>,
+    }
+    impl ToolRunner for TrackedRunner {
+        fn known_unexecuted(&self, call: &ToolCallId) -> bool {
+            self.pending
+                .lock()
+                .map(|mut set| set.remove(call))
+                .unwrap_or(false)
+        }
+        fn run(
+            &self,
+            _call: ToolCallId,
+            _tool: String,
+            _input: BoundedToolInput,
+        ) -> BoxFuture<'static, ToolOutcome> {
+            Box::pin(async { ToolOutcome::Completed { output: None } })
+        }
+    }
+
+    let unexecuted_child = call("nested-unexecuted-approval");
+    let dispatched_child = call("nested-dispatched-abandoned");
+    let parent = call("nested-parent");
+    let runner = TrackedRunner {
+        pending: Mutex::new(BTreeSet::from([unexecuted_child.clone()])),
+    };
+    let mut state = NestedState::default();
+    state.register(parent.clone());
+    let mut owner = RecordingOwner::new();
+    let top_level = BTreeMap::from([(parent.as_str().to_owned(), parent.clone())]);
+    for child in [&unexecuted_child, &dispatched_child] {
+        let (reply_tx, _reply_rx) = tokio::sync::oneshot::channel();
+        assert!(state
+            .handle(
+                NestedRequest::Start {
+                    parent: parent.clone(),
+                    call: child.clone(),
+                    tool: tool(),
+                    catalog: catalog(),
+                    input: input(),
+                    reply: reply_tx,
+                },
+                &mut owner,
+                &top_level,
+                &runner,
+            )
+            .is_ok());
+    }
+    assert!(state.close_parent(&mut owner, &parent, &runner).is_ok());
+    assert!(
+        runner
+            .pending
+            .lock()
+            .map(|set| set.is_empty())
+            .unwrap_or(false),
+        "abandoned nested approval must be removed from the runner tracker"
+    );
+    let outcome_of = |target: &ToolCallId| {
+        owner.committed.iter().find_map(|fact| match fact {
+            DurableFact::ToolTerminal { call, outcome } if call == target => Some(outcome.clone()),
+            _ => None,
+        })
+    };
+    assert!(matches!(
+        outcome_of(&unexecuted_child),
+        Some(ToolOutcome::Failed {
+            reason: ToolFailureReason::EffectFailed,
+            ..
+        })
+    ));
+    assert!(matches!(
+        outcome_of(&dispatched_child),
+        Some(ToolOutcome::Failed {
+            reason: ToolFailureReason::EffectUnknown,
+            ..
+        })
+    ));
 }

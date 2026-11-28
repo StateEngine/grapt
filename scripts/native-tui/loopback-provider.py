@@ -575,9 +575,98 @@ def prompt_of(body: bytes) -> str:
     return ""
 
 
-def _write_stream_metrics(path: Path, count: int) -> None:
+def _extract_stream_scope(headers: dict[str, str], body: bytes) -> str | None:
+    """Identify which terminal/session owns this provider stream so traffic on
+    another socket can never satisfy a quiet T5 echo probe."""
+    for header in ("x-grapt-stream-scope", "x-grapt-session-id"):
+        value = headers.get(header, "").strip()
+        if value:
+            return value
+    try:
+        decoded = json.loads(body.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return None
+    if not isinstance(decoded, dict):
+        return None
+    for key in ("stream_scope", "prompt_cache_key"):
+        value = decoded.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    metadata = decoded.get("metadata")
+    if isinstance(metadata, dict):
+        session_id = metadata.get("session_id")
+        if isinstance(session_id, str) and session_id.strip():
+            return session_id.strip()
+    return None
+
+
+def read_request_with_scope(
+    stream: socket.socket, diagnostics: bool = True
+) -> tuple[str, bool, str | None]:
+    buffered = b""
+    while b"\r\n\r\n" not in buffered:
+        chunk = stream.recv(READ_BYTES)
+        if not chunk:
+            return "", False, None
+        buffered += chunk
+        if len(buffered) > MAX_REQUEST_BYTES:
+            raise RuntimeError("provider request exceeded its bound")
+    head, _, rest = buffered.partition(b"\r\n\r\n")
+    length = 0
+    headers: dict[str, str] = {}
+    for line in head.decode("latin-1").split("\r\n"):
+        name, sep, value = line.partition(":")
+        if sep:
+            key = name.strip().lower()
+            headers[key] = value.strip()
+            if key == "content-length":
+                length = int(value.strip() or 0)
+    body = rest
+    while len(body) < length:
+        chunk = stream.recv(READ_BYTES)
+        if not chunk:
+            break
+        body += chunk
+        if len(body) > MAX_REQUEST_BYTES:
+            raise RuntimeError("provider request body exceeded its bound")
+    try:
+        offered = json.loads(body.decode("utf-8")).get("tools") or []
+        names = [t.get("name") or (t.get("function") or {}).get("name") for t in offered]
+        if diagnostics:
+            print("TOOLS_OFFERED " + json.dumps([n for n in names if n]), flush=True)
+    except Exception:
+        pass
+    return prompt_of(body), has_tool_result(body), _extract_stream_scope(headers, body)
+
+
+def validated_sse_delta_tokens(frame: str) -> int:
+    """Count validated assistant text delta chunks from a parsed SSE frame.
+    Rejects malformed JSON, raw substring spoofs, empty deltas, and prevents
+    multiword frames from inflating token counts."""
+    data_lines = [
+        line[len("data:"):].strip()
+        for line in frame.splitlines()
+        if line.startswith("data:")
+    ]
+    if len(data_lines) != 1:
+        return 0
+    try:
+        payload = json.loads(data_lines[0])
+    except json.JSONDecodeError:
+        return 0
+    if not isinstance(payload, dict):
+        return 0
+    if payload.get("type") != "response.output_text.delta":
+        return 0
+    delta = payload.get("delta")
+    if not isinstance(delta, str) or not delta.strip():
+        return 0
+    return 1
+
+
+def _write_stream_metrics(path: Path, scopes: dict[str, int]) -> None:
     tmp = path.with_suffix(path.suffix + ".tmp")
-    tmp.write_text(json.dumps({"stream_tokens": count}), encoding="utf-8")
+    tmp.write_text(json.dumps({"scopes": scopes}), encoding="utf-8")
     tmp.replace(path)
 
 
@@ -590,7 +679,7 @@ def serve(
     stream_lock: threading.Lock | None = None,
 ) -> None:
     try:
-        prompt, continuing = read_request(stream)
+        prompt, continuing, scope = read_request_with_scope(stream)
         # CHUNKED, with a terminating zero chunk. A stream that simply closed
         # after its last frame delivered every fragment and still ended the
         # execution as FAILED: the content decoded, and the response was then
@@ -608,15 +697,16 @@ def serve(
                 time.sleep(delay)
             payload = frame.encode("utf-8")
             stream.sendall(b"%x\r\n" % len(payload) + payload + b"\r\n")
-            if stream_metrics_path is not None and '"response.output_text.delta"' in frame:
-                if stream_lock is not None and stream_counter is not None:
-                    with stream_lock:
-                        stream_counter["tokens"] = stream_counter.get("tokens", 0) + 1
-                        count = stream_counter["tokens"]
-                        _write_stream_metrics(stream_metrics_path, count)
-                elif stream_counter is not None:
-                    stream_counter["tokens"] = stream_counter.get("tokens", 0) + 1
-                    _write_stream_metrics(stream_metrics_path, stream_counter["tokens"])
+            if stream_metrics_path is not None and scope is not None and stream_counter is not None:
+                tokens = validated_sse_delta_tokens(frame)
+                if tokens > 0:
+                    if stream_lock is not None:
+                        with stream_lock:
+                            stream_counter[scope] = stream_counter.get(scope, 0) + tokens
+                            _write_stream_metrics(stream_metrics_path, dict(stream_counter))
+                    else:
+                        stream_counter[scope] = stream_counter.get(scope, 0) + tokens
+                        _write_stream_metrics(stream_metrics_path, dict(stream_counter))
         stream.sendall(b"0\r\n\r\n")
         served.append(time.monotonic() - started)
     except (OSError, RuntimeError):
@@ -739,9 +829,9 @@ def main() -> int:
     address = listener.getsockname()
     served: list[float] = []
     stream_metrics_path = arguments.receipt.with_suffix(".stream-tokens.json")
-    stream_counter: dict[str, int] = {"tokens": 0}
+    stream_counter: dict[str, int] = {}
     stream_lock = threading.Lock()
-    _write_stream_metrics(stream_metrics_path, 0)
+    _write_stream_metrics(stream_metrics_path, {})
     arguments.receipt.write_text(
         json.dumps(
             {

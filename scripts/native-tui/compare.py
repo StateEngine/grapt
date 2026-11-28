@@ -492,6 +492,7 @@ def run_client(
     service_root: Path,
     idle_window_seconds: float = 0.0,
     stream_metrics_path: Path | None = None,
+    stream_scope: str | None = None,
 ) -> dict:
     # Which sessions already existed. Whatever appears while THIS client runs is
     # this client's, which is a launch fact rather than an inference from how
@@ -588,6 +589,7 @@ def run_client(
                 service_root,
                 sessions_before,
                 stream_metrics_path=stream_metrics_path,
+                stream_scope=step.get("stream_scope") or stream_scope,
             )
             elapsed_s = time.monotonic() - at
             timing_row = {
@@ -809,18 +811,25 @@ def form_producer(service_root: Path, before: set[str] | None, declared: dict) -
     )
 
 
-def _read_stream_tokens(state: object, stream_metrics_path: Path | None) -> float | None:
+def _read_stream_tokens(
+    state: object,
+    stream_metrics_path: Path | None,
+    stream_scope: str | None = None,
+) -> float | None:
     """Read genuine assistant stream token count from the observer /state payload
-    or the staged loopback provider's live stream-metrics counter file."""
+    or the staged loopback provider's scoped stream-metrics counter file. Never
+    reads a shared global counter across unrelated sockets."""
     if isinstance(state, dict) and isinstance(state.get("stream_tokens"), (int, float)):
         return float(state["stream_tokens"])
-    if stream_metrics_path is not None and stream_metrics_path.is_file():
+    if stream_metrics_path is not None and stream_metrics_path.is_file() and stream_scope:
         try:
             payload = json.loads(stream_metrics_path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
             return None
-        if isinstance(payload, dict) and isinstance(payload.get("stream_tokens"), (int, float)):
-            return float(payload["stream_tokens"])
+        if isinstance(payload, dict) and isinstance(payload.get("scopes"), dict):
+            scoped = payload["scopes"].get(stream_scope, 0)
+            if isinstance(scoped, (int, float)):
+                return float(scoped)
     return None
 
 
@@ -832,6 +841,7 @@ def apply_step(
     service_root: Path,
     sessions_before: set[str] | None,
     stream_metrics_path: Path | None = None,
+    stream_scope: str | None = None,
 ) -> tuple[str, object, bool]:
     if "echo" in step:
         text, shared = resolve(step["echo"], label)
@@ -844,7 +854,8 @@ def apply_step(
             raise HarnessError(
                 f"[{label}] composer echo marker `{expect_text}` was already present on screen before input"
             )
-        before_tokens = _read_stream_tokens(before_state, stream_metrics_path)
+        scope = step.get("stream_scope") or stream_scope
+        before_tokens = _read_stream_tokens(before_state, stream_metrics_path, scope)
         echo_start = time.monotonic()
         observer.action({"kind": "paste", "text": text})
         polls = int(step.get("polls", EXPECT_POLLS))
@@ -854,7 +865,7 @@ def apply_step(
             if expect_text in after_screen:
                 elapsed_s = max(time.monotonic() - echo_start, 1e-6)
                 echo_ms = round(elapsed_s * 1000.0, 3)
-                after_tokens = _read_stream_tokens(after_state, stream_metrics_path)
+                after_tokens = _read_stream_tokens(after_state, stream_metrics_path, scope)
                 # Populate concurrent streaming ONLY from genuine assistant stream
                 # token counters; never infer streaming from whole-screen text length,
                 # which would miscount static status repaints or pasted composer text.
@@ -1265,7 +1276,13 @@ def main() -> int:
         "--stream-metrics",
         type=Path,
         default=None,
-        help="path to the live loopback-provider stream-tokens JSON counter for T5 streaming witness",
+        help="path to the live loopback-provider scoped stream-tokens JSON counter for T5 streaming witness",
+    )
+    parser.add_argument(
+        "--stream-scope",
+        type=str,
+        default=None,
+        help="session/turn scope key attributing loopback-provider stream tokens to the measured terminal",
     )
     parser.add_argument(
         "--enforce-t5-budgets",
@@ -1315,6 +1332,7 @@ def main() -> int:
                 store_root,
                 idle_window_seconds=idle_window,
                 stream_metrics_path=arguments.stream_metrics,
+                stream_scope=arguments.stream_scope,
             )
         )
     if arguments.only != "native":

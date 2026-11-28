@@ -129,7 +129,7 @@ where
 
             // Nested commits must acknowledge before their parent can finish.
             Some(request) = nested_rx.recv() => {
-                if let Err(error) = nested_state.handle(request,&mut owner,&observed_calls) {
+                if let Err(error) = nested_state.handle(request, &mut owner, &observed_calls, tools.as_ref()) {
                     owner_error = Some(error);
                     break;
                 }
@@ -141,7 +141,7 @@ where
                 if settled_tools.contains_key(call.as_str()) {
                     continue;
                 }
-                if let Err(error) = nested_state.close_parent(&mut owner,&call) {
+                if let Err(error) = nested_state.close_parent(&mut owner, &call, tools.as_ref()) {
                     owner_error = Some(error);
                     break;
                 }
@@ -455,7 +455,7 @@ where
             biased;
 
             Some(request) = nested_rx.recv(), if !refused => {
-                if let Err(error) = nested_state.handle(request,&mut owner,&observed_calls) {
+                if let Err(error) = nested_state.handle(request, &mut owner, &observed_calls, tools.as_ref()) {
                     owner_error = Some(error);
                     refused = true;
                     nested_state.stop_admission();
@@ -467,7 +467,7 @@ where
                 if settled_tools.contains_key(call.as_str()) {
                     continue;
                 }
-                if let Err(error) = nested_state.close_parent(&mut owner,&call) {
+                if let Err(error) = nested_state.close_parent(&mut owner, &call, tools.as_ref()) {
                     owner_error = Some(error);
                     refused = true;
                     nested_state.stop_admission();
@@ -505,14 +505,16 @@ where
     nested_state.stop_admission();
     while let Ok(request) = nested_rx.try_recv() {
         if !refused {
-            if let Err(error) = nested_state.handle(request, &mut owner, &observed_calls) {
+            if let Err(error) =
+                nested_state.handle(request, &mut owner, &observed_calls, tools.as_ref())
+            {
                 owner_error = Some(error);
                 refused = true;
             }
         }
     }
     if !refused {
-        if let Err(error) = nested_state.close_all(&mut owner) {
+        if let Err(error) = nested_state.close_all(&mut owner, tools.as_ref()) {
             owner_error = Some(error);
             refused = true;
         }

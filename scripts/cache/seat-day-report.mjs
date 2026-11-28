@@ -150,7 +150,11 @@ function isoDayOf(value) {
 }
 
 function extractRecordedWindow(report) {
-  const hasWindow = report?.window !== null && report?.window !== undefined && typeof report.window === 'object';
+  const windowPresent = report?.window !== null && report?.window !== undefined;
+  if (windowPresent && (typeof report.window !== 'object' || Array.isArray(report.window))) {
+    return { day: null, fromMs: null, untilMs: null, invalid: true };
+  }
+  const hasWindow = windowPresent;
   let fromMs = null;
   let untilMs = null;
   let windowDay = null;
