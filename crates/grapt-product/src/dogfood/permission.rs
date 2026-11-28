@@ -21,10 +21,10 @@ use grapt_types::{
 };
 use serde_json::{json, Value};
 
-use super::{decode, invalid, ready, static_dto, DogfoodApplication};
+use super::{decode, invalid, ready, static_dto, ServerApplication};
 
 pub(crate) fn saved(
-    application: &DogfoodApplication,
+    application: &ServerApplication,
     project: Option<grapt_types::ProjectId>,
 ) -> Result<grapt_api::u3a::PermissionSavedListResponseDto, grapt_api::u3a::InvalidRequestErrorDto>
 {
@@ -45,7 +45,7 @@ pub(crate) fn saved(
 }
 
 pub(crate) fn list(
-    application: &DogfoodApplication,
+    application: &ServerApplication,
     principal: SealedPrincipal,
     query: PermissionLocationQueryDto,
 ) -> ApplicationFuture<PermissionGlobalListResponseDto, PermissionApplicationError> {
@@ -65,7 +65,7 @@ pub(crate) fn list(
 
 #[expect(clippy::too_many_lines, reason = "legacy")]
 pub(crate) fn create(
-    application: &DogfoodApplication,
+    application: &ServerApplication,
     principal: SealedPrincipal,
     session_id: WireId<SessionId>,
     request: PermissionCreateRequestDto,
@@ -213,7 +213,7 @@ pub(crate) fn create(
 }
 
 pub(crate) fn session_list(
-    application: &DogfoodApplication,
+    application: &ServerApplication,
     principal: SealedPrincipal,
     session_id: WireId<SessionId>,
 ) -> ApplicationFuture<PermissionListResponseDto, PermissionApplicationError> {
@@ -222,7 +222,7 @@ pub(crate) fn session_list(
 }
 
 pub(crate) fn get(
-    application: &DogfoodApplication,
+    application: &ServerApplication,
     principal: SealedPrincipal,
     session_id: WireId<SessionId>,
     request_id: WireId<PermissionId>,
@@ -246,7 +246,7 @@ pub(crate) fn get(
 }
 
 pub(crate) fn reply(
-    application: &DogfoodApplication,
+    application: &ServerApplication,
     principal: SealedPrincipal,
     session_id: WireId<SessionId>,
     request_id: WireId<PermissionId>,
@@ -351,7 +351,7 @@ pub(crate) fn reply(
     })
 }
 
-impl DogfoodApplication {
+impl ServerApplication {
     fn mint_permission(&self) -> Result<PermissionId, String> {
         format!("per_{}", self.ids.mint().as_str())
             .parse()
@@ -380,7 +380,7 @@ impl DogfoodApplication {
 }
 
 fn list_for(
-    application: &DogfoodApplication,
+    application: &ServerApplication,
     principal: &SealedPrincipal,
     session: Option<&SessionId>,
 ) -> Result<PermissionListResponseDto, PermissionApplicationError> {
@@ -416,7 +416,7 @@ pub(crate) fn pinned_rows(
 }
 
 fn polling_page(
-    application: &DogfoodApplication,
+    application: &ServerApplication,
     owner: &PermissionOwner<'_>,
     session: Option<&SessionId>,
 ) -> Result<grapt_permission::PermissionHttpPage, PermissionApplicationError> {

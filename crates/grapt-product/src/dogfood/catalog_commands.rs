@@ -55,7 +55,7 @@ fn safe_name(name: &str, origin: grapt_plugin::PluginOrigin) -> String {
 }
 
 pub(crate) fn response<T: DeserializeOwned + Send + 'static>(
-    application: super::super::DogfoodApplication,
+    application: super::super::ServerApplication,
     query: ProjectCurrentLocationQueryDto,
     inspection: bool,
 ) -> ApplicationFuture<T, InvalidRequestErrorDto> {

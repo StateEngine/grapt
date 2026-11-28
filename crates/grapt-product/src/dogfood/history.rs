@@ -7,7 +7,7 @@ use grapt_types::{ExecutionId, IdAuthority, MessageId, SessionId};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
-use super::DogfoodApplication;
+use super::ServerApplication;
 mod index;
 pub(crate) use index::recovery_point;
 mod omitted;
@@ -239,7 +239,7 @@ impl IndexedRow {
 
 /// Renders the rows one read selected.
 struct RowRenderer<'a> {
-    application: &'a DogfoodApplication,
+    application: &'a ServerApplication,
     session: &'a SessionId,
     cache_diagnostics: bool,
 }
@@ -470,7 +470,7 @@ fn unreadable_message_row(id: &str, seq: u64) -> Result<String, String> {
 }
 
 pub(crate) fn messages_get(
-    application: &DogfoodApplication,
+    application: &ServerApplication,
     session: &SessionId,
     query: MessageListQueryDto,
     view: grapt_api::u3a::MessageListView,
@@ -492,7 +492,7 @@ pub(crate) fn messages_get(
 }
 
 pub(crate) fn message_get(
-    application: &DogfoodApplication,
+    application: &ServerApplication,
     session: &SessionId,
     message: &MessageId,
 ) -> Result<grapt_api::u3a::SessionMessageResponseDto, grapt_api::u3a::SessionMessageApplicationError>
@@ -535,7 +535,7 @@ pub(crate) fn message_get(
     }
 }
 
-impl DogfoodApplication {
+impl ServerApplication {
     /// Rows stay in the internal (strict) form through the page
     /// pipeline: strict parsers touch every row after this point.
     /// The frozen string wire form is produced exactly once, by the

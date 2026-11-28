@@ -1,5 +1,5 @@
 use super::*;
-use crate::dogfood::DogfoodApplication;
+use crate::dogfood::ServerApplication;
 use grapt_runtime::SessionPorts;
 use grapt_session::SessionSeed;
 use grapt_types::{
@@ -80,7 +80,7 @@ impl Drop for Root {
 
 /// The parent Session a subagent is admitted under.
 fn a_parent(
-    application: &DogfoodApplication,
+    application: &ServerApplication,
     directory: &str,
 ) -> Result<SessionId, Box<dyn std::error::Error>> {
     // Any valid project identity: what this witness is about is the

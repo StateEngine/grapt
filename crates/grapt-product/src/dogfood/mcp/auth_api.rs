@@ -3,7 +3,7 @@
 //! an arbitrary endpoint, token, or credential-store location.
 use super::{auth::LoginState, Declaration};
 use crate::dogfood::{
-    connections::McpSnapshot, session_config, support::invalid, DogfoodApplication,
+    connections::McpSnapshot, session_config, support::invalid, ServerApplication,
 };
 use grapt_api::u3a::{
     ApplicationFuture, InvalidRequestErrorDto, McpAuthRequestDto, McpAuthResponseDto, McpAuthState,
@@ -13,7 +13,7 @@ use grapt_types::{IdAuthority, McpLoginId};
 use std::sync::Arc;
 
 pub(crate) fn respond(
-    application: DogfoodApplication,
+    application: ServerApplication,
     server: String,
     query: ProjectCurrentLocationQueryDto,
     request: McpAuthRequestDto,

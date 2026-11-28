@@ -6,7 +6,7 @@ mod preview_tests;
 fn application(
     root: &Root,
     file: bool,
-) -> Result<Arc<DogfoodApplication>, Box<dyn std::error::Error>> {
+) -> Result<Arc<ServerApplication>, Box<dyn std::error::Error>> {
     let store = if file {
         grapt_store::EventStore::open(&root.0.join("database.sqlite3"), "view-test")?
     } else {
@@ -22,7 +22,7 @@ fn application(
     Ok(app)
 }
 
-fn session(app: &DogfoodApplication, root: &Root) -> Result<SessionId, Box<dyn std::error::Error>> {
+fn session(app: &ServerApplication, root: &Root) -> Result<SessionId, Box<dyn std::error::Error>> {
     let seed = grapt_session::SessionSeed::new(
         ProjectId::new("prj_view").ok_or("project")?,
         root.0.to_str().ok_or("root encoding")?.to_owned(),
@@ -37,7 +37,7 @@ fn session(app: &DogfoodApplication, root: &Root) -> Result<SessionId, Box<dyn s
 }
 
 fn ask(
-    app: &DogfoodApplication,
+    app: &ServerApplication,
     owner: &PermissionOwner<'_>,
     session: &SessionId,
     index: usize,
@@ -72,7 +72,7 @@ fn ask(
 }
 
 fn parity(
-    app: &DogfoodApplication,
+    app: &ServerApplication,
     owner: &PermissionOwner<'_>,
     session: Option<&SessionId>,
 ) -> TestResult {

@@ -4,7 +4,7 @@ use std::path::Path;
 
 use grapt_types::{IdAuthority, SessionId};
 
-use super::DogfoodApplication;
+use super::ServerApplication;
 
 #[derive(Debug)]
 pub(super) struct PreparedWorktree {
@@ -15,7 +15,7 @@ pub(super) struct PreparedWorktree {
 
 impl PreparedWorktree {
     pub(super) async fn prepare(
-        application: &DogfoodApplication,
+        application: &ServerApplication,
         parent: &SessionId,
     ) -> Result<Self, String> {
         let source = application

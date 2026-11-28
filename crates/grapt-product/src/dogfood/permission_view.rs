@@ -14,7 +14,7 @@ use grapt_store::commit_projection::ProjectionConnection as Connection;
 use grapt_store::commit_projection::{CommittedReadProjection, PreparedReadProjection};
 use grapt_types::SessionId;
 
-use super::DogfoodApplication;
+use super::ServerApplication;
 
 const MAX_GENERATION_BYTES: usize = 1_048_576;
 const MAX_SESSIONS: usize = 4096;
@@ -272,7 +272,7 @@ fn build(connection: &Connection) -> Result<Option<Generation>, String> {
     }))
 }
 
-impl DogfoodApplication {
+impl ServerApplication {
     pub(super) fn poll_committed_permissions(
         &self,
         owner: &PermissionOwner<'_>,

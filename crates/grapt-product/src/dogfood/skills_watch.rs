@@ -336,7 +336,7 @@ impl Drive {
 }
 pub(super) fn attach(
     driver: &mut super::prompt_driver::PromptDriver,
-    app: &super::DogfoodApplication,
+    app: &super::ServerApplication,
 ) {
     driver.attach_skills(Arc::new(Drive {
         watch: app.skills_watch.clone(),

@@ -310,7 +310,7 @@ async fn assert_parked(
 }
 
 async fn resume(
-    application: Arc<DogfoodApplication>,
+    application: Arc<ServerApplication>,
     driver: &mut crate::dogfood::prompt_driver::PromptDriver,
     owner: &Arc<Owner>,
     session: &SessionId,
@@ -326,7 +326,7 @@ async fn resume(
 }
 
 async fn drive_rebound(
-    application: Arc<DogfoodApplication>,
+    application: Arc<ServerApplication>,
     driver: &mut crate::dogfood::prompt_driver::PromptDriver,
     owner: &Arc<Owner>,
     session: &SessionId,

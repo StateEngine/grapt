@@ -7,7 +7,7 @@ use grapt_types::{MailboxBody, ProtocolVersion, SeatMessageKind};
 use serde_json::{json, Value};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
-fn seed_settled_quiet(application: &DogfoodApplication, scope: &RemoteMailboxScope) -> TestResult {
+fn seed_settled_quiet(application: &ServerApplication, scope: &RemoteMailboxScope) -> TestResult {
     let protocol = progress::MailTransportVersion::V2;
     let mut inbox = application.lock_inbox();
     inbox

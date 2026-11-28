@@ -7,10 +7,10 @@ use grapt_runtime::SessionPorts;
 use grapt_types::DeterministicAuthorities;
 
 use super::{ResolvedLocation, MAX_PATH_BYTES};
-use crate::dogfood::{projects, DogfoodApplication};
+use crate::dogfood::{projects, ServerApplication};
 
 pub(crate) async fn resolve_for(
-    application: &DogfoodApplication,
+    application: &ServerApplication,
     query: &ProjectCurrentLocationQueryDto,
 ) -> Result<ResolvedLocation, String> {
     let Some(session) = query.session().as_present() else {

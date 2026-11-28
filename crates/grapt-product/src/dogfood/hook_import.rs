@@ -4,7 +4,7 @@
 use super::{
     catalog_config::{CatalogDocument, CatalogEnvironment},
     hooks::HookSettings,
-    mcp_config, DogfoodApplication,
+    mcp_config, ServerApplication,
 };
 use grapt_api::u3a::{
     ApplicationFuture, HookImportRequestDto, HookImportResponseDto, InvalidRequestErrorDto,
@@ -14,7 +14,7 @@ use serde_json::{Map, Value};
 use std::{collections::BTreeSet, path::Path};
 
 pub(crate) fn request(
-    application: DogfoodApplication,
+    application: ServerApplication,
     query: ProjectCurrentLocationQueryDto,
     request: HookImportRequestDto,
 ) -> ApplicationFuture<HookImportResponseDto, InvalidRequestErrorDto> {

@@ -192,7 +192,7 @@ fn unfinished_terminal(
 /// alive is a lie about the present, and a lie about the past as soon as the
 /// next startup calls it process loss.
 struct SettleOnDrop<'a> {
-    application: &'a crate::dogfood::DogfoodApplication,
+    application: &'a crate::dogfood::ServerApplication,
     operation: &'a grapt_types::SubagentOperationId,
     armed: std::cell::Cell<bool>,
 }

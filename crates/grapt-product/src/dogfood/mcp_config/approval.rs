@@ -1,7 +1,7 @@
 //! Preview and confirm exactly the project declaration selected by the catalog.
 use super::{
-    ApplicationFuture, DogfoodApplication, Edit, InvalidRequestErrorDto,
-    ProjectCurrentLocationQueryDto,
+    ApplicationFuture, Edit, InvalidRequestErrorDto, ProjectCurrentLocationQueryDto,
+    ServerApplication,
 };
 use crate::dogfood::{
     catalog_config::CatalogSources,
@@ -62,7 +62,7 @@ pub(crate) fn approve_edit(
 }
 
 pub(crate) fn preview(
-    application: DogfoodApplication,
+    application: ServerApplication,
     name: String,
     query: ProjectCurrentLocationQueryDto,
 ) -> ApplicationFuture<McpApprovalPreviewDto, InvalidRequestErrorDto> {

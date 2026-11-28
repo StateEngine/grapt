@@ -18,7 +18,7 @@ use grapt_types::{
 use serde_json::{json, Value};
 
 use super::support::{decode, invalid, not_found};
-use super::DogfoodApplication;
+use super::ServerApplication;
 
 #[derive(Debug, Default)]
 pub(in crate::dogfood) struct SessionCapabilities {
@@ -104,7 +104,7 @@ impl SessionCapabilities {
 
 /// Delete the durable session before releasing its process-private resources.
 pub(crate) fn delete_session(
-    application: &DogfoodApplication,
+    application: &ServerApplication,
     session: SessionId,
 ) -> Result<NoContent, SessionLookupApplicationError> {
     if application.get_record(&session).is_err() {
@@ -127,7 +127,7 @@ pub(crate) fn delete_session(
     Ok(NoContent)
 }
 
-fn remove_session(application: &DogfoodApplication, session: &SessionId) {
+fn remove_session(application: &ServerApplication, session: &SessionId) {
     application.mcp.end_resource_subscriptions(Some(session));
     match application.session_capabilities.lock() {
         Ok(mut custody) => custody.remove(session),
@@ -138,7 +138,7 @@ fn remove_session(application: &DogfoodApplication, session: &SessionId) {
     }
 }
 
-pub(crate) fn retire_producer(application: &DogfoodApplication, session: &SessionId) {
+pub(crate) fn retire_producer(application: &ServerApplication, session: &SessionId) {
     application.mcp.end_resource_subscriptions(Some(session));
     match application.session_capabilities.lock() {
         Ok(mut custody) => custody.retire_producer(session),
@@ -197,14 +197,14 @@ fn refused(error: impl ToString) -> SessionLookupApplicationError {
 }
 
 pub(crate) fn require_session(
-    application: &DogfoodApplication,
+    application: &ServerApplication,
     session: &SessionId,
 ) -> Result<(), SessionLookupApplicationError> {
     session_record(application, session).map(|_| ())
 }
 
 pub(crate) fn session_record(
-    application: &DogfoodApplication,
+    application: &ServerApplication,
     session: &SessionId,
 ) -> Result<grapt_session::SessionRecord, SessionLookupApplicationError> {
     let record = stored_record(application, session)?;
@@ -215,7 +215,7 @@ pub(crate) fn session_record(
 /// A read route's lookup: the record, with the structural carry check only.
 /// Every carried byte the route serves is digested by the fetch that reads it.
 pub(crate) fn require_readable_session(
-    application: &DogfoodApplication,
+    application: &ServerApplication,
     session: &SessionId,
 ) -> Result<(), SessionLookupApplicationError> {
     stored_record(application, session)?;
@@ -225,7 +225,7 @@ pub(crate) fn require_readable_session(
 }
 
 fn stored_record(
-    application: &DogfoodApplication,
+    application: &ServerApplication,
     session: &SessionId,
 ) -> Result<grapt_session::SessionRecord, SessionLookupApplicationError> {
     let authorities = DeterministicAuthorities::new(&*application.clock, &*application.ids);
@@ -240,7 +240,7 @@ fn stored_record(
 }
 
 pub(crate) fn capability(
-    application: &DogfoodApplication,
+    application: &ServerApplication,
     principal: grapt_api::SealedPrincipal,
     session: SessionId,
     request: SessionCapabilityPutDto,
@@ -302,7 +302,7 @@ pub(crate) fn capability(
 /// Inspect the last durable capture without resampling files or changing epochs.
 /// Session-entry values (including private seat packets) are deliberately absent.
 pub(crate) fn inspect(
-    application: &DogfoodApplication,
+    application: &ServerApplication,
     session: SessionId,
 ) -> Result<grapt_api::u3a::InstructionInspectionDto, SessionLookupApplicationError> {
     require_session(application, &session)?;
@@ -323,7 +323,7 @@ pub(crate) fn inspect(
 }
 
 pub(crate) fn entries(
-    application: &DogfoodApplication,
+    application: &ServerApplication,
     session: SessionId,
 ) -> Result<InstructionEntryListDto, SessionLookupApplicationError> {
     require_session(application, &session)?;
@@ -340,7 +340,7 @@ pub(crate) fn entries(
 }
 
 pub(crate) fn put(
-    application: &DogfoodApplication,
+    application: &ServerApplication,
     session: SessionId,
     key: InstructionEntryKeyDto,
     request: InstructionEntryPutDto,
@@ -371,7 +371,7 @@ pub(crate) fn put(
 }
 
 pub(crate) fn remove(
-    application: &DogfoodApplication,
+    application: &ServerApplication,
     session: SessionId,
     key: InstructionEntryKeyDto,
 ) -> Result<NoContent, SessionLookupApplicationError> {
@@ -396,7 +396,7 @@ pub(crate) fn remove(
 }
 
 fn revoke_native_target(
-    application: &DogfoodApplication,
+    application: &ServerApplication,
     inbox: &mut grapt_inbox::Inbox,
     session: &SessionId,
 ) -> Result<(), SessionLookupApplicationError> {
@@ -412,7 +412,7 @@ fn revoke_native_target(
     Ok(())
 }
 
-fn native_binding_changed(application: &DogfoodApplication, session: &SessionId) {
+fn native_binding_changed(application: &ServerApplication, session: &SessionId) {
     if let Some(native) = &application.native_mail {
         native.invalidate(session);
         // Registration never reverses the authenticated route's committed binding.

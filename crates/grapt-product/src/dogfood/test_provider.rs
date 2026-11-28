@@ -47,7 +47,7 @@ impl Server {
     }
 }
 
-pub(super) fn server(app: &DogfoodApplication) -> Result<&Server, String> {
+pub(super) fn server(app: &ServerApplication) -> Result<&Server, String> {
     app._test_provider
         .get()
         .ok_or_else(|| "application fixture provider absent".into())
@@ -59,8 +59,8 @@ pub(super) fn open(
     target: &ResolvedModelTarget,
     hub: Arc<DogfoodEventHub>,
     plugins: Arc<plugins::PluginRuntime>,
-) -> Result<(Arc<DogfoodApplication>, prompt_driver::PromptDriver), DogfoodRefusal> {
-    let failure = |error: String| DogfoodRefusal::Compose(error);
+) -> Result<(Arc<ServerApplication>, prompt_driver::PromptDriver), ServerRefusal> {
+    let failure = |error: String| ServerRefusal::Compose(error);
     let plugins = if plugins.service_root().as_os_str().is_empty() {
         plugins::PluginRuntime::compose(root).map_err(failure)?
     } else {
@@ -101,7 +101,7 @@ pub(super) fn open(
     provider_profile::configure(&inputs, address).map_err(|error| failure(error.to_string()))?;
     let parts = provider_inputs(&inputs).map_err(failure)?;
     let capacity = std::num::NonZeroUsize::new(8).ok_or_else(|| failure("capacity".into()))?;
-    let (app, driver) = DogfoodApplication::open_production(
+    let (app, driver) = ServerApplication::open_production(
         root,
         store,
         parts.targets,

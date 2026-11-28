@@ -60,13 +60,13 @@ impl Drop for Root {
     }
 }
 
-fn listed(app: &DogfoodApplication) -> Result<Value, Box<dyn std::error::Error>> {
+fn listed(app: &ServerApplication) -> Result<Value, Box<dyn std::error::Error>> {
     let query: SessionListQueryDto = decode(json!({}))?;
     let page = list::response(app, query).map_err(|error| format!("list refused: {error:?}"))?;
     Ok(serde_json::to_value(page)?)
 }
 
-fn got(app: &DogfoodApplication, session: &SessionId) -> Result<Value, Box<dyn std::error::Error>> {
+fn got(app: &ServerApplication, session: &SessionId) -> Result<Value, Box<dyn std::error::Error>> {
     let record = app.get_record(session)?;
     let response = app
         .session_response(&record)

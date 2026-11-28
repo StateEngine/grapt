@@ -9,10 +9,10 @@ use grapt_types::{FormId, SessionId};
 use serde_json::json;
 
 use crate::dogfood::support::{decode, invalid, ready};
-use crate::dogfood::{context, form, global_form, DogfoodApplication};
+use crate::dogfood::{context, form, global_form, ServerApplication};
 
 pub(super) fn session_form_list(
-    application: &DogfoodApplication,
+    application: &ServerApplication,
     session_id: WireId<SessionId>,
 ) -> ApplicationFuture<SessionFormListResponseDto, SessionLookupApplicationError> {
     ready((|| {
@@ -27,7 +27,7 @@ pub(super) fn session_form_list(
 }
 
 pub(super) fn global_form_get(
-    application: &DogfoodApplication,
+    application: &ServerApplication,
     form_id: WireId<FormId>,
     query: ProjectCurrentLocationQueryDto,
 ) -> ApplicationFuture<FormResponseDto, FormLookupApplicationError> {
@@ -39,7 +39,7 @@ pub(super) fn global_form_get(
 }
 
 pub(super) fn global_form_state(
-    application: &DogfoodApplication,
+    application: &ServerApplication,
     form_id: WireId<FormId>,
     query: ProjectCurrentLocationQueryDto,
 ) -> ApplicationFuture<FormStateResponseDto, FormLookupApplicationError> {
@@ -51,7 +51,7 @@ pub(super) fn global_form_state(
 }
 
 pub(super) fn global_form_reply(
-    application: &DogfoodApplication,
+    application: &ServerApplication,
     form_id: WireId<FormId>,
     query: ProjectCurrentLocationQueryDto,
     request: FormReplyRequestDto,
@@ -65,7 +65,7 @@ pub(super) fn global_form_reply(
 }
 
 pub(super) fn global_form_cancel(
-    application: &DogfoodApplication,
+    application: &ServerApplication,
     form_id: WireId<FormId>,
     query: ProjectCurrentLocationQueryDto,
 ) -> ApplicationFuture<NoContent, FormCancelApplicationError> {
@@ -77,7 +77,7 @@ pub(super) fn global_form_cancel(
 }
 
 pub(super) fn session_form_create(
-    application: &DogfoodApplication,
+    application: &ServerApplication,
     session_id: WireId<SessionId>,
     request: FormCreateRequestDto,
 ) -> ApplicationFuture<FormResponseDto, FormCreateApplicationError> {
@@ -85,7 +85,7 @@ pub(super) fn session_form_create(
 }
 
 pub(super) fn session_form_get(
-    application: &DogfoodApplication,
+    application: &ServerApplication,
     session_id: WireId<SessionId>,
     form_id: WireId<FormId>,
 ) -> ApplicationFuture<FormResponseDto, FormLookupApplicationError> {
@@ -97,7 +97,7 @@ pub(super) fn session_form_get(
 }
 
 pub(super) fn session_form_state(
-    application: &DogfoodApplication,
+    application: &ServerApplication,
     session_id: WireId<SessionId>,
     form_id: WireId<FormId>,
 ) -> ApplicationFuture<FormStateResponseDto, FormLookupApplicationError> {
@@ -109,7 +109,7 @@ pub(super) fn session_form_state(
 }
 
 pub(super) fn session_form_reply(
-    application: &DogfoodApplication,
+    application: &ServerApplication,
     session_id: WireId<SessionId>,
     form_id: WireId<FormId>,
     request: FormReplyRequestDto,
@@ -123,7 +123,7 @@ pub(super) fn session_form_reply(
 }
 
 pub(super) fn session_form_cancel(
-    application: &DogfoodApplication,
+    application: &ServerApplication,
     session_id: WireId<SessionId>,
     form_id: WireId<FormId>,
 ) -> ApplicationFuture<NoContent, FormCancelApplicationError> {

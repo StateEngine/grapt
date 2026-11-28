@@ -24,13 +24,13 @@ use grapt_provider::ToolDefinition;
 use serde::Deserialize;
 use serde_json::{json, Value};
 
-use grapt_api::u3a::DogfoodApplicationPort as _;
+use grapt_api::u3a::ApplicationPort as _;
 
 use super::catalog_config::{CatalogEnvironment, CatalogSources};
 use super::mcp::{PublishedTools, WithheldTool};
 use super::{
     catalogs, connections, model_inventory, selection, support, DeterministicAuthorities,
-    DogfoodApplication, SessionPorts, SessionSeed,
+    ServerApplication, SessionPorts, SessionSeed,
 };
 pub(crate) use authority::{PluginCallScope, SESSION_CALL_OPERATIONS};
 use host::ProductPluginHost;
@@ -74,7 +74,7 @@ pub(crate) fn project_blocked(
 }
 
 pub(crate) fn list(
-    application: &super::DogfoodApplication,
+    application: &super::ServerApplication,
     query: grapt_api::u3a::ProjectCurrentLocationQueryDto,
 ) -> grapt_api::u3a::ApplicationFuture<
     grapt_api::u3a::PluginListResponseDto,
@@ -121,7 +121,7 @@ pub(crate) fn list(
     })
 }
 
-pub(crate) fn catalog_draft(application: &super::DogfoodApplication) -> Result<Value, String> {
+pub(crate) fn catalog_draft(application: &super::ServerApplication) -> Result<Value, String> {
     let providers = super::model_inventory::providers(&application.catalog_snapshot())
         .as_array()
         .cloned()
@@ -163,7 +163,7 @@ pub(crate) struct PluginRuntime {
     ephemeral: bool,
     state: RwLock<PluginState>,
     refresh: Mutex<()>,
-    application: RwLock<Weak<super::DogfoodApplication>>,
+    application: RwLock<Weak<super::ServerApplication>>,
 }
 
 #[derive(Debug, Default)]
@@ -267,7 +267,7 @@ impl PluginRuntime {
         })
     }
 
-    pub(crate) fn bind(&self, application: &Arc<super::DogfoodApplication>) -> Result<(), String> {
+    pub(crate) fn bind(&self, application: &Arc<super::ServerApplication>) -> Result<(), String> {
         let mut bound = self
             .application
             .write()
@@ -421,7 +421,7 @@ impl PluginRuntime {
 
     fn materialize(
         candidate: &CandidateGeneration,
-        application: &super::DogfoodApplication,
+        application: &super::ServerApplication,
     ) -> Result<Materialized, String> {
         Ok(Materialized {
             skipped: candidate.skipped().to_vec(),

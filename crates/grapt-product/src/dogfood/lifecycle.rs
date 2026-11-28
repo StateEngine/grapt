@@ -58,7 +58,7 @@ impl super::ExecutionBackend {
 
 pub(super) fn attach_notice(
     driver: &mut super::prompt_driver::PromptDriver,
-    application: &super::DogfoodApplication,
+    application: &super::ServerApplication,
 ) {
     let ids = application.ids.clone();
     let clock = application.clock.clone();
@@ -83,7 +83,7 @@ pub(super) fn attach_notice(
 /// grace.
 pub(super) fn attach_close_grace(
     driver: &mut super::prompt_driver::PromptDriver,
-    application: &std::sync::Arc<super::DogfoodApplication>,
+    application: &std::sync::Arc<super::ServerApplication>,
 ) {
     let weak = std::sync::Arc::downgrade(application);
     let windows = std::sync::Arc::clone(application.hub.windows());

@@ -1461,7 +1461,7 @@
    "poison_recovery": "certain",
    "suggested_exempt": null,
    "test": false,
-   "guard_type": "Option<Arc<DogfoodApplication>>",
+   "guard_type": "Option<Arc<ServerApplication>>",
    "scope": "single-scope",
    "action": "needs-review",
    "reason": "Single-scope state (a session, connection or request); if confirmed as a plain value, recover by re-establishing that scope rather than swallowing a poisoned guard.",
@@ -2901,7 +2901,7 @@
   },
   {
    "file": "crates/grapt-product/src/dogfood/mod.rs",
-   "line": 663,
+   "line": 739,
    "function": "lock_inbox",
    "guard": "self.inbox",
    "kind": "std-lock",
@@ -3284,7 +3284,7 @@
   },
   {
    "file": "crates/grapt-product/src/dogfood/prompt_submission.rs",
-   "line": 150,
+   "line": 349,
    "function": "submit_prompt_run",
    "guard": null,
    "kind": "unresolved",

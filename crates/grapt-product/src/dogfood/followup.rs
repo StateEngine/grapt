@@ -19,7 +19,7 @@ struct RunIds {
 }
 
 impl RunIds {
-    fn mint(app: &DogfoodApplication) -> Result<Self, String> {
+    fn mint(app: &ServerApplication) -> Result<Self, String> {
         Ok(Self {
             operation: OperationId::new(format!("opr_{}", app.ids.mint().as_str()))
                 .ok_or("operation identity")?,
@@ -55,7 +55,7 @@ fn response(child: &SessionId, receipt: &FollowupReceipt) -> Result<Vec<u8>, Str
 
 #[expect(clippy::too_many_lines, reason = "legacy")]
 pub(super) fn submit(
-    app: &Arc<DogfoodApplication>,
+    app: &Arc<ServerApplication>,
     sender: &SessionId,
     child: &SessionId,
     principal: &SealedPrincipal,
@@ -189,7 +189,7 @@ pub(super) fn submit(
 }
 
 fn cancel_queued(
-    app: &DogfoodApplication,
+    app: &ServerApplication,
     message: &MessageId,
     reason: FollowupCancelReason,
 ) -> Result<(), String> {
@@ -206,7 +206,7 @@ fn cancel_queued(
 }
 
 fn abandon(
-    app: &DogfoodApplication,
+    app: &ServerApplication,
     message: &MessageId,
     child: &SessionId,
     execution: &ExecutionId,
@@ -252,7 +252,7 @@ fn abandon(
 }
 
 struct PendingFollowup {
-    app: Arc<DogfoodApplication>,
+    app: Arc<ServerApplication>,
     message: MessageId,
     child: SessionId,
     execution: ExecutionId,
@@ -287,7 +287,7 @@ impl Drop for PendingFollowup {
 }
 
 fn claim_with_custody(
-    app: &DogfoodApplication,
+    app: &ServerApplication,
     guard: &execution::WakeGuard,
     child: &SessionId,
     message: &MessageId,
@@ -335,7 +335,7 @@ fn claim_with_custody(
     reason = "one bounded followup custody transfer"
 )]
 async fn drive(
-    app: &DogfoodApplication,
+    app: &ServerApplication,
     child: &SessionId,
     message: &MessageId,
     principal: SealedPrincipal,

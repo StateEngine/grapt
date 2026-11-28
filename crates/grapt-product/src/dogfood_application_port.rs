@@ -1,7 +1,7 @@
 use grapt_api::u3a::{
-    AgentListResponseDto, AgentLocationQueryDto, ApplicationFuture, CatalogApplicationError,
-    CommandInspectionResponseDto, CommandListResponseDto, CompactRequestDto, CompactResponseDto,
-    DogfoodApplicationPort, FormCancelApplicationError, FormCreateApplicationError,
+    AgentListResponseDto, AgentLocationQueryDto, ApplicationFuture, ApplicationPort,
+    CatalogApplicationError, CommandInspectionResponseDto, CommandListResponseDto,
+    CompactRequestDto, CompactResponseDto, FormCancelApplicationError, FormCreateApplicationError,
     FormCreateRequestDto, FormListResponseDto, FormLookupApplicationError,
     FormReplyApplicationError, FormReplyRequestDto, FormResponseDto, FormStateResponseDto,
     HookImportRequestDto, HookImportResponseDto, InstructionEntryKeyDto, InstructionEntryListDto,
@@ -34,7 +34,7 @@ use grapt_api::u3a::{
 use grapt_api::SealedPrincipal;
 use grapt_types::{FormId, MessageId, PermissionId, ProjectId, SessionId, SessionLaunch};
 
-use crate::dogfood::DogfoodApplication;
+use crate::dogfood::ServerApplication;
 
 mod catalog;
 mod connections;
@@ -42,7 +42,7 @@ mod forms;
 mod permissions;
 mod sessions;
 
-impl DogfoodApplicationPort for DogfoodApplication {
+impl ApplicationPort for ServerApplication {
     fn session_rename(
         &self,
         _principal: SealedPrincipal,

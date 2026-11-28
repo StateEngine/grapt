@@ -270,7 +270,7 @@ impl ExecutionBackend {
     /// path an explicit user stop takes, so a close cannot leave a turn running
     /// where no window is left to watch it. The durable hold that keeps a later
     /// native wake from restarting the turn lives beside it in
-    /// `DogfoodApplication::close_after_last_window`, which owns the inbox.
+    /// `ServerApplication::close_after_last_window`, which owns the inbox.
     fn close(&self, session: &SessionId) -> Result<(), String> {
         self.0
             .interrupt(session, None)
@@ -285,11 +285,11 @@ fn recover_at_startup(
     store: &mut grapt_store::EventStore,
     ids: &Arc<OsRandomIds>,
     clock: &Arc<SystemClock>,
-) -> Result<(), DogfoodRefusal> {
+) -> Result<(), ServerRefusal> {
     let receipt_bytes = NonZeroU32::new(ATTEMPT_RECEIPT_BYTES)
-        .ok_or_else(|| DogfoodRefusal::Compose("attempt receipt bound is zero".to_owned()))?;
+        .ok_or_else(|| ServerRefusal::Compose("attempt receipt bound is zero".to_owned()))?;
     startup_recovery::recover(service_root, store, ids, clock, receipt_bytes)
-        .map_err(DogfoodRefusal::Compose)
+        .map_err(ServerRefusal::Compose)
 }
 
 pub(crate) fn event_hub() -> Result<Arc<DogfoodEventHub>, String> {
@@ -318,7 +318,7 @@ pub(crate) fn event_hub_with_grace(
 }
 
 #[derive(Debug, thiserror::Error)]
-pub enum DogfoodRefusal {
+pub enum ServerRefusal {
     #[error("dogfood composition refused: {0}")]
     Compose(String),
 }
@@ -342,8 +342,15 @@ pub(crate) struct CatalogProjection {
     missing_debug_implementations,
     reason = "the application owns the seeded production identity adapter"
 )]
+struct InitializedProductionInbox {
+    inbox: Arc<Mutex<Inbox>>,
+    readers: Option<grapt_store::read_pool::ReadPool>,
+    ids: Arc<OsRandomIds>,
+    clock: Arc<SystemClock>,
+}
+
 #[derive(Clone)]
-pub struct DogfoodApplication {
+pub struct ServerApplication {
     readers: Option<grapt_store::read_pool::ReadPool>,
     #[cfg(test)]
     _test_provider: Arc<std::sync::OnceLock<test_provider::Server>>,
@@ -409,7 +416,7 @@ enum SessionMetrics {
     ExceedsBound { updated_ms: i64 },
 }
 
-impl DogfoodApplication {
+impl ServerApplication {
     #[allow(clippy::too_many_arguments)]
     pub fn open_production(
         service_root: &Path,
@@ -421,7 +428,7 @@ impl DogfoodApplication {
         limits: ProductionProviderLimits,
         hub: Arc<DogfoodEventHub>,
         plugins: Arc<plugins::PluginRuntime>,
-    ) -> Result<(Arc<Self>, prompt_driver::PromptDriver), DogfoodRefusal> {
+    ) -> Result<(Arc<Self>, prompt_driver::PromptDriver), ServerRefusal> {
         Self::open_production_mode(
             service_root,
             store,
@@ -449,7 +456,7 @@ impl DogfoodApplication {
         hub: Arc<DogfoodEventHub>,
         plugins: Arc<plugins::PluginRuntime>,
         external_host: bool,
-    ) -> Result<(Arc<Self>, prompt_driver::PromptDriver), DogfoodRefusal> {
+    ) -> Result<(Arc<Self>, prompt_driver::PromptDriver), ServerRefusal> {
         if !external_host {
             return Self::open_production(
                 service_root,
@@ -478,67 +485,53 @@ impl DogfoodApplication {
         )
     }
 
-    #[allow(clippy::too_many_arguments)]
-    #[expect(clippy::too_many_lines, reason = "legacy")]
-    fn open_production_mode(
+    fn initialize_production_inbox(
         service_root: &Path,
         mut store: grapt_store::EventStore,
-        targets: ProviderTargetAuthority,
-        credential: CredentialAuthority,
-        secondary_credentials: Vec<(grapt_types::ProviderId, CredentialAuthority)>,
-        endpoint: LiveEndpoint,
-        limits: ProductionProviderLimits,
-        hub: Arc<DogfoodEventHub>,
-        plugins: Arc<plugins::PluginRuntime>,
         ephemeral: bool,
-        external_host: bool,
-    ) -> Result<(Arc<Self>, prompt_driver::PromptDriver), DogfoodRefusal> {
+    ) -> Result<InitializedProductionInbox, ServerRefusal> {
         #[cfg(feature = "loopback-provider-testkit")]
         if !ephemeral {
-            startup_fixture::observe(service_root, &mut store).map_err(DogfoodRefusal::Compose)?;
+            startup_fixture::observe(service_root, &mut store).map_err(ServerRefusal::Compose)?;
         }
-        schemas::install_fresh(&mut store).map_err(DogfoodRefusal::Compose)?;
+        let _ = ephemeral;
+        schemas::install_fresh(&mut store).map_err(ServerRefusal::Compose)?;
         grapt_instruction::InstructionService::ensure_tables(&mut store)
-            .map_err(|error| DogfoodRefusal::Compose(error.to_string()))?;
+            .map_err(|error| ServerRefusal::Compose(error.to_string()))?;
         grapt_form::FormService::initialize(&mut store)
-            .map_err(|error| DogfoodRefusal::Compose(error.to_string()))?;
+            .map_err(|error| ServerRefusal::Compose(error.to_string()))?;
         grapt_shell::schema::initialize(&mut store)
-            .map_err(|error| DogfoodRefusal::Compose(error.to_string()))?;
+            .map_err(|error| ServerRefusal::Compose(error.to_string()))?;
         PermissionHttpState::initialize(&mut store)
-            .map_err(|error| DogfoodRefusal::Compose(error.to_string()))?;
+            .map_err(|error| ServerRefusal::Compose(error.to_string()))?;
         let ids = Arc::new(
-            OsRandomIds::seed().map_err(|error| DogfoodRefusal::Compose(error.to_string()))?,
+            OsRandomIds::seed().map_err(|error| ServerRefusal::Compose(error.to_string()))?,
         );
         let clock = Arc::new(SystemClock);
         recover_at_startup(service_root, &mut store, &ids, &clock)?;
-        let inbox =
-            Inbox::new(store).map_err(|error| DogfoodRefusal::Compose(error.to_string()))?;
+        let inbox = Inbox::new(store).map_err(|error| ServerRefusal::Compose(error.to_string()))?;
         let readers = inbox
             .store()
             .read_pool()
-            .map_err(|error| DogfoodRefusal::Compose(error.to_string()))?;
-        let inbox = Arc::new(Mutex::new(inbox));
-        let mcp = Arc::new(
-            mcp::registry_with_forms(
-                (!ephemeral).then_some(service_root),
-                inbox.clone(),
-                ids.clone(),
-                clock.clone(),
-                hub.clone(),
-            )
-            .map_err(DogfoodRefusal::Compose)?,
-        );
-        let catalog = CatalogProjection::production(service_root, &targets, &credential)
-            .map_err(DogfoodRefusal::Compose)?;
-        let tool_permissions = Arc::new(ToolPermissionAuthority::default());
-        let permissions = Arc::new(Mutex::new(PermissionHttpState::default()));
-        // One registry, shared. The executor needs it to publish a session's
-        // MCP tools to the model; the connection endpoint needs it to report
-        // status. A second registry would start a second copy of every
-        // configured server and report on connections nobody is calling.
+            .map_err(|error| ServerRefusal::Compose(error.to_string()))?;
+        Ok(InitializedProductionInbox {
+            inbox: Arc::new(Mutex::new(inbox)),
+            readers,
+            ids,
+            clock,
+        })
+    }
 
-        let session_capabilities = Arc::new(Mutex::new(context::SessionCapabilities::default()));
-        let native_mail = if external_host {
+    fn build_native_mail_owners(
+        inbox: &Arc<Mutex<Inbox>>,
+        session_capabilities: &Arc<Mutex<context::SessionCapabilities>>,
+        ids: &Arc<OsRandomIds>,
+        clock: &Arc<SystemClock>,
+        hub: &Arc<DogfoodEventHub>,
+        service_root: &Path,
+        external_host: bool,
+    ) -> Arc<native_mail::custody::NativeMailOwners> {
+        if external_host {
             native_mail::custody::NativeMailOwners::with_external_host(
                 inbox.clone(),
                 session_capabilities.clone(),
@@ -557,22 +550,62 @@ impl DogfoodApplication {
                 hub.clone(),
                 service_root,
             )
-        };
-        // The subagent tool runs its child through THIS application, and the
-        // application is not built yet — it owns the executor that owns the
-        // location that builds the tool runner. So the seam is created here,
-        // threaded down empty, and populated the moment the application is in
-        // its `Arc`, a few lines below.
-        let child_seam: subagent::ChildSeam = Arc::new(std::sync::OnceLock::new());
-        let status = session_status::SessionStatusEmitter::journaled(&ids, &clock, &hub, &inbox);
-        let wake_slots = Arc::new(execution::WakeSlots::default());
-        let open_executor = if ephemeral {
-            LiveExecutor::open_ephemeral
-        } else {
-            LiveExecutor::open
-        };
-        let executor = open_executor(
+        }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn open_production_mode(
+        service_root: &Path,
+        store: grapt_store::EventStore,
+        targets: ProviderTargetAuthority,
+        credential: CredentialAuthority,
+        secondary_credentials: Vec<(grapt_types::ProviderId, CredentialAuthority)>,
+        endpoint: LiveEndpoint,
+        limits: ProductionProviderLimits,
+        hub: Arc<DogfoodEventHub>,
+        plugins: Arc<plugins::PluginRuntime>,
+        ephemeral: bool,
+        external_host: bool,
+    ) -> Result<(Arc<Self>, prompt_driver::PromptDriver), ServerRefusal> {
+        let InitializedProductionInbox {
+            inbox,
+            readers,
+            ids,
+            clock,
+        } = Self::initialize_production_inbox(service_root, store, ephemeral)?;
+        let mcp = Arc::new(
+            mcp::registry_with_forms(
+                (!ephemeral).then_some(service_root),
+                inbox.clone(),
+                ids.clone(),
+                clock.clone(),
+                hub.clone(),
+            )
+            .map_err(ServerRefusal::Compose)?,
+        );
+        let catalog = CatalogProjection::production(service_root, &targets, &credential)
+            .map_err(ServerRefusal::Compose)?;
+        let tool_permissions = Arc::new(ToolPermissionAuthority::default());
+        let permissions = Arc::new(Mutex::new(PermissionHttpState::default()));
+        // One registry, shared. The executor needs it to publish a session's
+        // MCP tools to the model; the connection endpoint needs it to report
+        // status. A second registry would start a second copy of every
+        // configured server and report on connections nobody is calling.
+        let session_capabilities = Arc::new(Mutex::new(context::SessionCapabilities::default()));
+        let native_mail = Self::build_native_mail_owners(
+            &inbox,
+            &session_capabilities,
+            &ids,
+            &clock,
+            &hub,
             service_root,
+            external_host,
+        );
+        let child_seam: subagent::ChildSeam = Arc::new(std::sync::OnceLock::new());
+        let wake_slots = Arc::new(execution::WakeSlots::default());
+        let executor = Self::open_live_executor(
+            service_root,
+            ephemeral,
             LiveDependencies {
                 catalog: Arc::clone(&catalog),
                 wake_slots: Arc::clone(&wake_slots),
@@ -580,7 +613,7 @@ impl DogfoodApplication {
                 ids: Arc::clone(&ids),
                 clock: Arc::clone(&clock),
                 hub: Arc::clone(&hub),
-                status: Arc::clone(&status),
+                status: session_status::SessionStatusEmitter::journaled(&ids, &clock, &hub, &inbox),
                 permissions: Arc::clone(&permissions),
                 tool_permissions: Arc::clone(&tool_permissions),
                 mcp: Arc::clone(&mcp),
@@ -594,19 +627,12 @@ impl DogfoodApplication {
             secondary_credentials,
             endpoint,
             limits,
-        )
-        .map_err(|error| DogfoodRefusal::Compose(error.to_string()))?;
-        let (prompt_mailbox, driver) = prompt_driver::PromptMailbox::new();
+        )?;
+        let (prompt_mailbox, mut driver) = prompt_driver::PromptMailbox::new();
         let runtime_generation = subagent::adopt_runtime(&inbox, clock.now().as_millis())
-            .map_err(DogfoodRefusal::Compose)?;
+            .map_err(ServerRefusal::Compose)?;
         let permission_view = permission_view::PermissionView::attach(&inbox);
-        let mut driver = driver;
-        driver.attach_mcp(mcp.clone());
-        driver.attach_scan_indexes(inbox.clone());
-        if !ephemeral {
-            driver.attach_native_mail(native_mail.clone());
-            driver.attach_session_ends(executor.session_ends());
-        }
+        let session_ends = executor.session_ends();
         let application = Arc::new(Self {
             readers,
             #[cfg(test)]
@@ -635,22 +661,70 @@ impl DogfoodApplication {
             metrics_bound: MetricsBound::PRODUCTION,
             launches: std::sync::Arc::new(launch_mode::Launches::default()),
         });
+        Self::attach_live_hooks(
+            &mut driver,
+            &application,
+            &child_seam,
+            session_ends,
+            ephemeral,
+        );
+        Ok((application, driver))
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn open_live_executor(
+        service_root: &Path,
+        ephemeral: bool,
+        deps: LiveDependencies,
+        targets: ProviderTargetAuthority,
+        credential: CredentialAuthority,
+        secondary_credentials: Vec<(grapt_types::ProviderId, CredentialAuthority)>,
+        endpoint: LiveEndpoint,
+        limits: ProductionProviderLimits,
+    ) -> Result<LiveExecutor, ServerRefusal> {
+        let open = if ephemeral {
+            LiveExecutor::open_ephemeral
+        } else {
+            LiveExecutor::open
+        };
+        open(
+            service_root,
+            deps,
+            targets,
+            credential,
+            secondary_credentials,
+            endpoint,
+            limits,
+        )
+        .map_err(|error| ServerRefusal::Compose(error.to_string()))
+    }
+
+    fn attach_live_hooks(
+        driver: &mut prompt_driver::PromptDriver,
+        application: &Arc<Self>,
+        child_seam: &subagent::ChildSeam,
+        session_ends: Arc<hooks::session_end::SessionEnds>,
+        ephemeral: bool,
+    ) {
+        driver.attach_mcp(application.mcp.clone());
+        driver.attach_scan_indexes(application.inbox.clone());
         // A `Weak`, so the application is not kept alive by the executor it
         // owns. `set` cannot fail here — this is the only writer — and a seam
         // that were somehow left empty refuses the child loudly rather than
         // skipping it.
-        let _bound = child_seam.set(Arc::downgrade(&application));
+        let _bound = child_seam.set(Arc::downgrade(application));
         if let Some(native) = &application.native_mail {
-            native.attach_wake_application(Arc::downgrade(&application));
+            driver.attach_native_mail(native.clone());
+            native.attach_wake_application(Arc::downgrade(application));
             native.restore_selected();
         }
-        lifecycle::attach_notice(&mut driver, &application);
-        skills_watch::attach(&mut driver, &application);
-        lifecycle::attach_close_grace(&mut driver, &application);
+        lifecycle::attach_notice(driver, application);
+        skills_watch::attach(driver, application);
+        lifecycle::attach_close_grace(driver, application);
         if !ephemeral {
-            driver.attach_auto_resume_app(Arc::clone(&application));
+            driver.attach_session_ends(session_ends);
+            driver.attach_auto_resume_app(Arc::clone(application));
         }
-        Ok((application, driver))
     }
 
     fn mint_event(&self) -> Result<EventId, String> {

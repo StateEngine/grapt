@@ -4,7 +4,7 @@ use super::*;
 
 /// Record a token calibration, then grow its row past the public notice bound.
 fn oversized_calibration(
-    app: &crate::dogfood::DogfoodApplication,
+    app: &crate::dogfood::ServerApplication,
     fixture: &Fixture,
 ) -> Result<(), String> {
     let session = &fixture.session;

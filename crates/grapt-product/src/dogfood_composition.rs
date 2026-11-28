@@ -3,8 +3,8 @@
 use std::path::Path;
 use std::sync::Arc;
 
-use crate::compose::{DogfoodComposition, HostMode, ProductRefusal};
-use crate::dogfood::DogfoodApplication;
+use crate::compose::{HostMode, ProductRefusal, ServerComposition};
+use crate::dogfood::ServerApplication;
 
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn production_dogfood_composition(
@@ -17,7 +17,7 @@ pub(crate) fn production_dogfood_composition(
     limits: crate::dogfood::production::ProductionProviderLimits,
     close_grace: std::time::Duration,
     host_mode: HostMode,
-) -> Result<DogfoodComposition, ProductRefusal> {
+) -> Result<ServerComposition, ProductRefusal> {
     let hub = crate::dogfood::event_hub_with_grace(close_grace).map_err(ProductRefusal::Compose)?;
     crate::dogfood::stream_diagnostics::install(&hub, service_root);
     let (application, driver, _plugins) = open_production_application(
@@ -33,7 +33,7 @@ pub(crate) fn production_dogfood_composition(
     )?;
     let capture = Arc::clone(&application);
     let mut composition =
-        DogfoodComposition::ready(application.clone(), capture, Arc::clone(&hub), Some(driver));
+        ServerComposition::ready(application.clone(), capture, Arc::clone(&hub), Some(driver));
     composition.installer = Some(Arc::new(crate::dogfood::claude_plugins::Installer::new(
         service_root,
     )));
@@ -63,7 +63,7 @@ pub(crate) fn open_production_application(
     external_host: bool,
 ) -> Result<
     (
-        Arc<DogfoodApplication>,
+        Arc<ServerApplication>,
         crate::dogfood::prompt_driver::PromptDriver,
         Arc<crate::dogfood::plugins::PluginRuntime>,
     ),
@@ -71,7 +71,7 @@ pub(crate) fn open_production_application(
 > {
     let plugins = crate::dogfood::plugins::PluginRuntime::compose(service_root)
         .map_err(ProductRefusal::Compose)?;
-    let (application, driver) = DogfoodApplication::open_production_with_external_host(
+    let (application, driver) = ServerApplication::open_production_with_external_host(
         service_root,
         store,
         targets,

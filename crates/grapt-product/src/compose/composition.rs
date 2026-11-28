@@ -1,7 +1,7 @@
 //! Application ports and service-owned execution custody.
 use super::*;
 
-pub(crate) struct DogfoodComposition {
+pub(crate) struct ServerComposition {
     pub(crate) ports: Arc<grapt_api::u3a::ApplicationSlot>,
     pub(crate) integrations: Option<Arc<dyn grapt_api::u3a::IntegrationApplicationPort>>,
     pub(crate) installer: Option<Arc<dyn grapt_api::u3a::ClaudePluginApplicationPort>>,
@@ -9,9 +9,9 @@ pub(crate) struct DogfoodComposition {
     pub(crate) driver: Option<ServiceDriver>,
 }
 
-impl DogfoodComposition {
+impl ServerComposition {
     pub(crate) fn ready(
-        application: Arc<dyn DogfoodApplicationPort>,
+        application: Arc<dyn ApplicationPort>,
         capture: Arc<dyn CaptureApplicationPort>,
         hub: Arc<DogfoodEventHub>,
         driver: Option<crate::dogfood::prompt_driver::PromptDriver>,

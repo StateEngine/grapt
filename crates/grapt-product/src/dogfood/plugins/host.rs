@@ -3,7 +3,7 @@ use super::*;
 
 #[derive(Debug)]
 pub(crate) struct ProductPluginHost {
-    pub(crate) application: Weak<super::DogfoodApplication>,
+    pub(crate) application: Weak<super::ServerApplication>,
     pub(crate) handle: tokio::runtime::Handle,
     subscriptions: Mutex<BTreeMap<u64, PluginEventSubscription>>,
     next_subscription: Mutex<u64>,
@@ -20,7 +20,7 @@ struct PluginEventSubscription {
 
 impl ProductPluginHost {
     pub(crate) fn new(
-        application: Weak<super::DogfoodApplication>,
+        application: Weak<super::ServerApplication>,
         handle: tokio::runtime::Handle,
     ) -> Self {
         Self {
@@ -32,7 +32,7 @@ impl ProductPluginHost {
         }
     }
 
-    pub(crate) fn application(&self) -> Result<Arc<super::DogfoodApplication>, String> {
+    pub(crate) fn application(&self) -> Result<Arc<super::ServerApplication>, String> {
         self.application
             .upgrade()
             .ok_or_else(|| "plugin host application is no longer active".to_owned())
@@ -46,7 +46,7 @@ impl ProductPluginHost {
         serde_json::to_value(value).map_err(|error| error.to_string())
     }
 
-    pub(crate) fn located(application: &super::DogfoodApplication, data: Value) -> Value {
+    pub(crate) fn located(application: &super::ServerApplication, data: Value) -> Value {
         json!({
             "location": {
                 "directory": application.catalog_snapshot().directory,
@@ -57,7 +57,7 @@ impl ProductPluginHost {
     }
 
     fn session_get(
-        application: &super::DogfoodApplication,
+        application: &super::ServerApplication,
         authorized: &Authorized<'_>,
     ) -> Result<Value, String> {
         let record = application.get_record(&authorized.call()?.scope.session)?;
@@ -72,7 +72,7 @@ impl ProductPluginHost {
     /// workspace. A guest may not choose another location or parent.
     fn session_create(
         &self,
-        application: &super::DogfoodApplication,
+        application: &super::ServerApplication,
         authorized: &Authorized<'_>,
         payload: &Value,
     ) -> Result<Value, String> {
@@ -152,7 +152,7 @@ impl ProductPluginHost {
 
     fn session_prompt(
         &self,
-        application: &Arc<super::DogfoodApplication>,
+        application: &Arc<super::ServerApplication>,
         authorized: &Authorized<'_>,
         payload: &Value,
     ) -> Result<Value, String> {
@@ -176,7 +176,7 @@ impl ProductPluginHost {
 
     fn session_synthetic(
         &self,
-        application: &Arc<super::DogfoodApplication>,
+        application: &Arc<super::ServerApplication>,
         authorized: &Authorized<'_>,
         payload: &Value,
     ) -> Result<Value, String> {
@@ -227,7 +227,7 @@ impl ProductPluginHost {
     fn event_subscribe(
         &self,
         context: &PluginHostContext,
-        application: &super::DogfoodApplication,
+        application: &super::ServerApplication,
         authorized: &Authorized<'_>,
         payload: &Value,
     ) -> Result<Value, String> {

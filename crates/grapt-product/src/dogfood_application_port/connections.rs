@@ -6,38 +6,38 @@ use grapt_api::u3a::{
     ProjectCurrentLocationQueryDto,
 };
 
-use crate::dogfood::{connections, mcp, mcp_config, mcp_content, DogfoodApplication};
+use crate::dogfood::{connections, mcp, mcp_config, mcp_content, ServerApplication};
 
 pub(super) fn integration_list(
-    application: &DogfoodApplication,
+    application: &ServerApplication,
     query: ProjectCurrentLocationQueryDto,
 ) -> ApplicationFuture<IntegrationListResponseDto, InvalidRequestErrorDto> {
     connections::integrations(application, query)
 }
 
 pub(super) fn mcp_inspect(
-    application: &DogfoodApplication,
+    application: &ServerApplication,
     query: ProjectCurrentLocationQueryDto,
 ) -> ApplicationFuture<McpInspectionResponseDto, InvalidRequestErrorDto> {
     connections::inspect(application, query)
 }
 
 pub(super) fn mcp_list(
-    application: &DogfoodApplication,
+    application: &ServerApplication,
     query: ProjectCurrentLocationQueryDto,
 ) -> ApplicationFuture<McpListResponseDto, InvalidRequestErrorDto> {
     connections::response(application.clone(), query, connections::Kind::McpServers)
 }
 
 pub(super) fn mcp_configuration_list(
-    application: &DogfoodApplication,
+    application: &ServerApplication,
     query: ProjectCurrentLocationQueryDto,
 ) -> ApplicationFuture<McpConfigurationListResponseDto, InvalidRequestErrorDto> {
     connections::configuration(application, query)
 }
 
 pub(super) fn mcp_add(
-    application: &DogfoodApplication,
+    application: &ServerApplication,
     server: String,
     query: ProjectCurrentLocationQueryDto,
     request: McpAddRequestDto,
@@ -46,7 +46,7 @@ pub(super) fn mcp_add(
 }
 
 pub(super) fn mcp_approval(
-    application: &DogfoodApplication,
+    application: &ServerApplication,
     server: String,
     query: ProjectCurrentLocationQueryDto,
 ) -> ApplicationFuture<McpApprovalPreviewDto, InvalidRequestErrorDto> {
@@ -54,7 +54,7 @@ pub(super) fn mcp_approval(
 }
 
 pub(super) fn mcp_configuration(
-    application: &DogfoodApplication,
+    application: &ServerApplication,
     server: String,
     query: ProjectCurrentLocationQueryDto,
     request: McpConfigurationRequestDto,
@@ -63,7 +63,7 @@ pub(super) fn mcp_configuration(
 }
 
 pub(super) fn mcp_reconnect(
-    application: &DogfoodApplication,
+    application: &ServerApplication,
     server: String,
     query: ProjectCurrentLocationQueryDto,
 ) -> ApplicationFuture<NoContent, InvalidRequestErrorDto> {
@@ -71,7 +71,7 @@ pub(super) fn mcp_reconnect(
 }
 
 pub(super) fn mcp_auth(
-    application: &DogfoodApplication,
+    application: &ServerApplication,
     server: String,
     query: ProjectCurrentLocationQueryDto,
     request: McpAuthRequestDto,
@@ -80,7 +80,7 @@ pub(super) fn mcp_auth(
 }
 
 pub(super) fn mcp_content(
-    application: &DogfoodApplication,
+    application: &ServerApplication,
     server: String,
     query: ProjectCurrentLocationQueryDto,
     request: McpContentRequestDto,
@@ -89,7 +89,7 @@ pub(super) fn mcp_content(
 }
 
 pub(super) fn mcp_resources(
-    application: &DogfoodApplication,
+    application: &ServerApplication,
     query: ProjectCurrentLocationQueryDto,
 ) -> ApplicationFuture<McpResourcesResponseDto, InvalidRequestErrorDto> {
     mcp_content::all_resources(application.clone(), query)

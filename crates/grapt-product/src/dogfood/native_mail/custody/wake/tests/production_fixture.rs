@@ -9,7 +9,7 @@ pub(super) async fn open(
 ) -> Result<
     (
         Root,
-        Arc<DogfoodApplication>,
+        Arc<ServerApplication>,
         crate::dogfood::prompt_driver::PromptDriver,
         SessionId,
     ),
@@ -56,7 +56,7 @@ pub(super) async fn open(
     )?);
     let hub = crate::dogfood::event_hub()?;
     let plugins = crate::dogfood::plugins::PluginRuntime::compose(&root.0)?;
-    let (application, driver) = DogfoodApplication::open_production(
+    let (application, driver) = ServerApplication::open_production(
         &root.0,
         store,
         targets,

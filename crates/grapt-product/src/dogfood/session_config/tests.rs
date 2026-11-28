@@ -1,5 +1,5 @@
 use super::*;
-use crate::dogfood::{production::tests::projection_target, DogfoodApplication};
+use crate::dogfood::{production::tests::projection_target, ServerApplication};
 use grapt_types::{ClockAuthority, DeterministicAuthorities, InstructionKey, ProjectId};
 use serde_json::json;
 use std::{
@@ -55,7 +55,7 @@ impl Root {
     fn open(
         &self,
     ) -> TestResult<(
-        Arc<DogfoodApplication>,
+        Arc<ServerApplication>,
         crate::dogfood::prompt_driver::PromptDriver,
     )> {
         Ok(crate::dogfood::test_provider::open(
@@ -73,7 +73,7 @@ impl Drop for Root {
     }
 }
 
-fn session(root: &Root, app: &Arc<DogfoodApplication>, agent: &str) -> TestResult<SessionId> {
+fn session(root: &Root, app: &Arc<ServerApplication>, agent: &str) -> TestResult<SessionId> {
     let authorities = DeterministicAuthorities::new(&*app.clock, &*app.ids);
     let seed = grapt_session::SessionSeed::new(
         ProjectId::new("prj_config").ok_or("project")?,
@@ -94,7 +94,7 @@ fn session(root: &Root, app: &Arc<DogfoodApplication>, agent: &str) -> TestResul
 }
 
 async fn bind(
-    app: &Arc<DogfoodApplication>,
+    app: &Arc<ServerApplication>,
     session: &SessionId,
     path: &Path,
     success: bool,

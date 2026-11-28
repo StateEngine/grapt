@@ -3,7 +3,7 @@ use super::*;
 pub(in crate::dogfood) mod auto_resume;
 mod owned;
 
-impl DogfoodApplication {
+impl ServerApplication {
     #[allow(
         clippy::too_many_arguments,
         reason = "typed synthetic admission coordinates"
@@ -140,77 +140,20 @@ impl DogfoodApplication {
         })
     }
 
-    #[expect(clippy::too_many_lines, reason = "legacy")]
-    fn submit_prompt_run(
+    fn parse_prompt_input(
         &self,
-        principal: SealedPrincipal,
-        session_id: WireId<SessionId>,
-        request: PromptRequestDto,
-        child_execution: Option<ExecutionId>,
-    ) -> ApplicationFuture<PromptResponseDto, SessionPromptApplicationError> {
-        let session = session_id.into_inner();
-        let request = match serde_json::to_value(request) {
-            Ok(value) => value,
-            Err(error) => {
-                return ready(Err(SessionPromptApplicationError::InvalidRequest(invalid(
-                    error.to_string(),
-                ))));
-            }
-        };
-        let max_steps = match grapt_inbox::admission::options::max_steps(request.get("metadata")) {
-            Ok(limit) => limit,
-            Err(error) => {
-                return ready(Err(SessionPromptApplicationError::InvalidRequest(invalid(
-                    error,
-                ))))
-            }
-        };
-        let seat_startup =
-            request.pointer("/metadata/origin").and_then(Value::as_str) == Some("seat-startup");
-        let record = match self.get_record(&session) {
-            Ok(record) => record,
-            Err(_) => {
-                return ready(Err(SessionPromptApplicationError::SessionNotFound(
-                    not_found(&session),
-                )));
-            }
-        };
-        // The old-client fallback: a launcher that stated no mode left no
-        // durable fact, so decide here from the only evidence there is — whether
-        // a window is watching this Session as its prompt arrives. A launcher
-        // that names no window is the headless pattern, which keeps the
-        // exception older drivers already relied on. `record.launch` being
-        // `Some` means the fact exists and this never overrides it.
-        if record.launch.is_none() {
-            self.launches
-                .decide_without_fact(&session, self.hub.windows().has_window(&session));
-        }
-        let agent =
-            match grapt_types::AgentId::new(record.agent.unwrap_or_else(|| "default".to_owned())) {
-                Some(agent) => agent,
-                None => {
-                    return ready(Err(SessionPromptApplicationError::InvalidRequest(invalid(
-                        "session agent identity is invalid",
-                    ))));
-                }
-            };
-        let Some(text) = request
+        request: &Value,
+    ) -> Result<(String, MessageId, Option<DeliveryMode>, bool), SessionPromptApplicationError>
+    {
+        let text = request
             .get("text")
             .and_then(Value::as_str)
             .map(str::to_owned)
-        else {
-            return ready(Err(SessionPromptApplicationError::InvalidRequest(invalid(
-                "prompt text is absent",
-            ))));
-        };
-        let text = match support::compose_prompt_extensions(&request, text) {
-            Ok(text) => text,
-            Err(error) => {
-                return ready(Err(SessionPromptApplicationError::InvalidRequest(invalid(
-                    error,
-                ))));
-            }
-        };
+            .ok_or_else(|| {
+                SessionPromptApplicationError::InvalidRequest(invalid("prompt text is absent"))
+            })?;
+        let text = support::compose_prompt_extensions(request, text)
+            .map_err(|error| SessionPromptApplicationError::InvalidRequest(invalid(error)))?;
         let input = request
             .get("id")
             .and_then(Value::as_str)
@@ -224,48 +167,46 @@ impl DogfoodApplication {
                 None => format!("msg_{}", self.ids.mint().as_str())
                     .parse()
                     .map_err(|_| "minted prompt id is invalid".to_owned()),
-            });
-        let input = match input {
-            Ok(input) => input,
-            Err(error) => {
-                return ready(Err(SessionPromptApplicationError::InvalidRequest(invalid(
-                    error,
-                ))));
-            }
-        };
+            })
+            .map_err(|error| SessionPromptApplicationError::InvalidRequest(invalid(error)))?;
         let delivery = match request.get("delivery").and_then(Value::as_str) {
             Some("steer") => Some(DeliveryMode::Steer),
             Some("queue") => Some(DeliveryMode::Queue),
             None => None,
             Some(_) => {
-                return ready(Err(SessionPromptApplicationError::InvalidRequest(invalid(
+                return Err(SessionPromptApplicationError::InvalidRequest(invalid(
                     "delivery is invalid",
-                ))));
+                )));
             }
         };
         let resume = request
             .get("resume")
             .and_then(Value::as_bool)
             .is_none_or(|value| value);
-        if let Err(error) = self.ensure_session_writer(&session) {
-            return ready(Err(SessionPromptApplicationError::Conflict(conflict(
-                error,
-            ))));
-        }
+        Ok((text, input, delivery, resume))
+    }
+
+    fn resolve_delivery_and_verify_effects(
+        &self,
+        session: &SessionId,
+        input: &MessageId,
+        requested_delivery: Option<DeliveryMode>,
+        seat_startup: bool,
+    ) -> Result<DeliveryMode, SessionPromptApplicationError> {
+        self.ensure_session_writer(session)
+            .map_err(|error| SessionPromptApplicationError::Conflict(conflict(error)))?;
         // Busy submissions join the next safe Step. At idle, preserve queued
         // work's admission order; stable retries always keep their stored mode.
-        let idle = self.wake_slots.reserve_idle(&session);
-        let delivery = match delivery {
+        let idle = self.wake_slots.reserve_idle(session);
+        let delivery = match requested_delivery {
             Some(delivery) => delivery,
-            None => match self.lock_inbox().admitted_delivery(&input) {
+            None => match self.lock_inbox().admitted_delivery(input) {
                 Ok(Some(delivery)) => delivery,
                 Ok(None) if seat_startup => DeliveryMode::Queue,
                 Ok(None) if idle.is_ok() => DeliveryMode::Queue,
                 Ok(None) => DeliveryMode::Steer,
                 Err(error) => {
-                    return ready(Err(SessionPromptApplicationError::Conflict(conflict(
-                        error,
-                    ))));
+                    return Err(SessionPromptApplicationError::Conflict(conflict(error)));
                 }
             },
         };
@@ -273,58 +214,63 @@ impl DogfoodApplication {
         // the user sees the way out, instead of queueing a prompt that fails.
         // A live composition's nested calls also lack terminals until they
         // settle, so only an idle Session's unresolved starts are lost runs.
-        let resolved = match idle {
-            Ok(idle) => {
-                let resolved =
-                    continuation::require_resolved_effects(self.lock_inbox().store(), &session);
-                drop(idle);
-                resolved
-            }
-            Err(_) => Ok(()),
-        };
-        if let Err(error) = resolved {
-            return ready(Err(SessionPromptApplicationError::Conflict(conflict(
-                error,
-            ))));
+        if let Ok(idle) = idle {
+            let resolved =
+                continuation::require_resolved_effects(self.lock_inbox().store(), session);
+            drop(idle);
+            resolved.map_err(|error| SessionPromptApplicationError::Conflict(conflict(error)))?;
         }
-        let images = match prompt_images::capture(self, &request) {
-            Ok(images) => images,
-            Err(error) => {
-                return ready(Err(SessionPromptApplicationError::InvalidRequest(invalid(
-                    error,
-                ))))
-            }
-        };
+        Ok(delivery)
+    }
+
+    fn capture_and_reserve_prompt(
+        &self,
+        session: &SessionId,
+        request: &Value,
+        directory: &str,
+        child_execution: Option<&ExecutionId>,
+    ) -> Result<
+        (
+            Vec<grapt_types::ArtifactRef>,
+            prompt_driver::Reservation,
+            super::execution::WakeReservation,
+        ),
+        SessionPromptApplicationError,
+    > {
+        let images = prompt_images::capture(self, request)
+            .map_err(|error| SessionPromptApplicationError::InvalidRequest(invalid(error)))?;
         let claim = if child_execution.is_some() {
-            subagent::claim_single_prompt(self, &session)
+            subagent::claim_single_prompt(self, session)
         } else {
-            subagent::allow_human_prompt(self, &session)
+            subagent::allow_human_prompt(self, session)
         };
-        if let Err(error) = claim {
-            return ready(Err(SessionPromptApplicationError::Conflict(conflict(
-                error,
-            ))));
-        }
-        let authorities = DeterministicAuthorities::new(&*self.clock, &*self.ids);
-        let reservation = match self.prompt_mailbox.reserve() {
-            Ok(reservation) => reservation,
-            Err(error) => {
-                return ready(Err(SessionPromptApplicationError::Conflict(conflict(
-                    error,
-                ))));
-            }
-        };
-        let wake = match self
+        claim.map_err(|error| SessionPromptApplicationError::Conflict(conflict(error)))?;
+        let reservation = self
+            .prompt_mailbox
+            .reserve()
+            .map_err(|error| SessionPromptApplicationError::Conflict(conflict(error)))?;
+        let wake = self
             .wake_slots
-            .reserve_for_workspace(&session, Path::new(record.placement.directory()))
-        {
-            Ok(wake) => Some(wake),
-            Err(error) => {
-                return ready(Err(SessionPromptApplicationError::Conflict(conflict(
-                    error,
-                ))));
-            }
-        };
+            .reserve_for_workspace(session, Path::new(directory))
+            .map_err(|error| SessionPromptApplicationError::Conflict(conflict(error)))?;
+        Ok((images, reservation, wake))
+    }
+
+    #[allow(clippy::too_many_arguments, reason = "prompt admission parameters")]
+    fn admit_prompt_entry(
+        &self,
+        session: &SessionId,
+        request: &Value,
+        input: &MessageId,
+        text: &str,
+        delivery: DeliveryMode,
+        resume: bool,
+        seat_startup: bool,
+        images: &[grapt_types::ArtifactRef],
+    ) -> Result<(u64, Value, bool), SessionPromptApplicationError> {
+        let max_steps = grapt_inbox::admission::options::max_steps(request.get("metadata"))
+            .map_err(|error| SessionPromptApplicationError::InvalidRequest(invalid(error)))?;
+        let authorities = DeterministicAuthorities::new(&*self.clock, &*self.ids);
         let origin = if seat_startup {
             grapt_inbox::UserInputOrigin::SeatStartup
         } else {
@@ -332,63 +278,121 @@ impl DogfoodApplication {
         };
         let admission = SessionPorts::new(Arc::clone(&self.inbox), &authorities)
             .prompt_with_options(
-                &session,
+                session,
                 input.clone(),
-                &text,
+                text,
                 delivery,
                 resume,
                 grapt_inbox::UserInputOptions {
-                    images: &images,
+                    images,
                     origin,
                     max_steps,
                 },
-            );
-        let admission = match admission {
-            Ok(admission) => admission,
-            Err(error) => {
-                return ready(Err(SessionPromptApplicationError::Conflict(conflict(
-                    error.to_string(),
-                ))));
-            }
-        };
+            )
+            .map_err(|error| {
+                SessionPromptApplicationError::Conflict(conflict(error.to_string()))
+            })?;
         let (seq, created_ms) = match &admission.outcome {
             AdmitOutcome::Admitted { seq, .. } => (*seq, admission.created_ms),
             AdmitOutcome::Reconciled { .. } => {
-                match self.lock_inbox().admission_coordinates(&input) {
-                    Ok(coordinates) => (coordinates.seq, coordinates.created_ms),
-                    Err(error) => {
-                        return ready(Err(SessionPromptApplicationError::Conflict(conflict(
-                            error,
-                        ))));
-                    }
-                }
+                let coordinates = self
+                    .lock_inbox()
+                    .admission_coordinates(input)
+                    .map_err(|error| SessionPromptApplicationError::Conflict(conflict(error)))?;
+                (coordinates.seq, coordinates.created_ms)
             }
         };
         if matches!(admission.outcome, AdmitOutcome::Admitted { .. }) {
-            input_events::publish(&self.lock_inbox(), &self.hub, &session, seq);
+            input_events::publish(&self.lock_inbox(), &self.hub, session, seq);
             self.agent_activity.send_replace(());
         }
-        session_title::automatic(self, &session);
-        let mut body = json!({
-            "data": {
-                "admittedSeq": seq,
-                "id": input.as_str(),
-                "sessionID": session.as_str(),
-                "timeCreated": created_ms as f64,
-                "type": "user",
-                "data": {"text": text},
-                "delivery": match delivery { DeliveryMode::Steer => "steer", DeliveryMode::Queue => "queue" },
-            }
-        });
-        if origin == grapt_inbox::UserInputOrigin::SeatStartup {
-            body["data"]["data"]["metadata"] = json!({"origin":"seat-startup"});
+        session_title::automatic(self, session);
+        let body = Self::build_prompt_response_body(
+            session, input, text, seq, created_ms, delivery, origin,
+        );
+        Ok((seq, body, should_execute(&admission.outcome)))
+    }
+
+    fn prepare_prompt_session(
+        &self,
+        session: &SessionId,
+        request: PromptRequestDto,
+    ) -> Result<(Value, String, grapt_types::AgentId), SessionPromptApplicationError> {
+        let request = serde_json::to_value(request).map_err(|error| {
+            SessionPromptApplicationError::InvalidRequest(invalid(error.to_string()))
+        })?;
+        let _ = grapt_inbox::admission::options::max_steps(request.get("metadata"))
+            .map_err(|error| SessionPromptApplicationError::InvalidRequest(invalid(error)))?;
+        let record = self
+            .get_record(session)
+            .map_err(|_| SessionPromptApplicationError::SessionNotFound(not_found(session)))?;
+        if record.launch.is_none() {
+            self.launches
+                .decide_without_fact(session, self.hub.windows().has_window(session));
         }
+        let agent = grapt_types::AgentId::new(record.agent.unwrap_or_else(|| "default".to_owned()))
+            .ok_or_else(|| {
+                SessionPromptApplicationError::InvalidRequest(invalid(
+                    "session agent identity is invalid",
+                ))
+            })?;
+        Ok((request, record.placement.directory().to_owned(), agent))
+    }
+
+    fn submit_prompt_run(
+        &self,
+        principal: SealedPrincipal,
+        session_id: WireId<SessionId>,
+        request: PromptRequestDto,
+        child_execution: Option<ExecutionId>,
+    ) -> ApplicationFuture<PromptResponseDto, SessionPromptApplicationError> {
+        let session = session_id.into_inner();
+        let (request, directory, agent) = match self.prepare_prompt_session(&session, request) {
+            Ok(prepared) => prepared,
+            Err(error) => return ready(Err(error)),
+        };
+        let seat_startup =
+            request.pointer("/metadata/origin").and_then(Value::as_str) == Some("seat-startup");
+        let (text, input, requested_delivery, resume) = match self.parse_prompt_input(&request) {
+            Ok(parsed) => parsed,
+            Err(error) => return ready(Err(error)),
+        };
+        let delivery = match self.resolve_delivery_and_verify_effects(
+            &session,
+            &input,
+            requested_delivery,
+            seat_startup,
+        ) {
+            Ok(delivery) => delivery,
+            Err(error) => return ready(Err(error)),
+        };
+        let (images, reservation, wake) = match self.capture_and_reserve_prompt(
+            &session,
+            &request,
+            &directory,
+            child_execution.as_ref(),
+        ) {
+            Ok(reserved) => reserved,
+            Err(error) => return ready(Err(error)),
+        };
+        let (seq, body, should_exec) = match self.admit_prompt_entry(
+            &session,
+            &request,
+            &input,
+            &text,
+            delivery,
+            resume,
+            seat_startup,
+            &images,
+        ) {
+            Ok(admitted) => admitted,
+            Err(error) => return ready(Err(error)),
+        };
         let respond = |body: Value| {
             decode(body)
                 .map_err(|error| SessionPromptApplicationError::InvalidRequest(invalid(error)))
         };
-        let should_execute = should_execute(&admission.outcome);
-        if !should_execute {
+        if !should_exec {
             return ready(respond(body));
         }
         let accepted = match self.schedule_admitted(
@@ -398,7 +402,7 @@ impl DogfoodApplication {
             seq,
             agent,
             reservation,
-            wake,
+            Some(wake),
             child_execution,
             None,
         ) {
@@ -418,7 +422,6 @@ impl DogfoodApplication {
                     ))
                 })?
                 .map_err(|error| SessionPromptApplicationError::Conflict(conflict(error)))?;
-            // Admitted but blocked: still an acceptance, and it says why.
             let mut body = body;
             if let Some(reason) = queued {
                 body["queued"] = json!({ "reason": reason });
@@ -431,7 +434,6 @@ impl DogfoodApplication {
         clippy::too_many_arguments,
         reason = "one admitted execution custody transfer"
     )]
-    #[expect(clippy::too_many_lines, reason = "legacy")]
     pub(in crate::dogfood) fn schedule_admitted(
         &self,
         principal: SealedPrincipal,
@@ -492,35 +494,11 @@ impl DogfoodApplication {
                 let completion = wake.as_ref().map(|wake| wake.completion());
                 async move {
                     let _completion = completion;
-                    let wake = if let Some(fence) = &native_wake {
-                        let Some(reservation) = wake else {
-                            started.settle_queued(
-                                "Native inbox execution custody is unavailable.".into(),
-                            );
-                            fence.settle(&application, None).await;
-                            return;
-                        };
-                        let acquired = match reservation.enter(&started, receiver.clone()).await {
-                            Ok(Some(guard)) => guard,
-                            Ok(None) => {
-                                started.settle(Ok(()));
-                                fence.settle(&application, None).await;
-                                return;
-                            }
-                            Err(reason) => {
-                                started.settle_queued(reason);
-                                fence.settle(&application, None).await;
-                                return;
-                            }
-                        };
-                        if let Err(refusal) = fence.validate_after_wait().await {
-                            started.settle_queued(refusal.to_string());
-                            fence.settle(&application, Some(refusal)).await;
-                            return;
-                        }
-                        Some(super::execution::WakeCustody::Acquired(acquired))
-                    } else {
-                        wake.map(super::execution::WakeCustody::Reserved)
+                    let Some(wake) = application
+                        .acquire_wake_custody(&native_wake, wake, &started, receiver.clone())
+                        .await
+                    else {
+                        return;
                     };
                     application
                         .execute_owned_prompt(
@@ -550,5 +528,66 @@ impl DogfoodApplication {
             failed,
         );
         Ok(accepted)
+    }
+    fn build_prompt_response_body(
+        session: &SessionId,
+        input: &MessageId,
+        text: &str,
+        seq: u64,
+        created_ms: i64,
+        delivery: DeliveryMode,
+        origin: grapt_inbox::UserInputOrigin,
+    ) -> Value {
+        let mut body = json!({
+            "data": {
+                "admittedSeq": seq,
+                "id": input.as_str(),
+                "sessionID": session.as_str(),
+                "timeCreated": created_ms as f64,
+                "type": "user",
+                "data": {"text": text},
+                "delivery": match delivery { DeliveryMode::Steer => "steer", DeliveryMode::Queue => "queue" },
+            }
+        });
+        if origin == grapt_inbox::UserInputOrigin::SeatStartup {
+            body["data"]["data"]["metadata"] = json!({"origin":"seat-startup"});
+        }
+        body
+    }
+
+    async fn acquire_wake_custody(
+        &self,
+        native_wake: &Option<super::native_mail::custody::NativeWakeFence>,
+        wake: Option<super::execution::WakeReservation>,
+        started: &prompt_driver::Started,
+        receiver: watch::Receiver<bool>,
+    ) -> Option<Option<super::execution::WakeCustody>> {
+        let Some(fence) = native_wake else {
+            return Some(wake.map(super::execution::WakeCustody::Reserved));
+        };
+        let Some(reservation) = wake else {
+            started.settle_queued("Native inbox execution custody is unavailable.".into());
+            fence.settle(self, None).await;
+            return None;
+        };
+        let acquired = match reservation.enter(started, receiver).await {
+            Ok(Some(guard)) => guard,
+            Ok(None) => {
+                started.settle(Ok(()));
+                fence.settle(self, None).await;
+                return None;
+            }
+            Err(reason) => {
+                started.settle_queued(reason);
+                fence.settle(self, None).await;
+                return None;
+            }
+        };
+        if let Err(refusal) = fence.validate_after_wait().await {
+            started.settle_queued(refusal.to_string());
+            fence.settle(self, Some(refusal)).await;
+            return None;
+        }
+        Some(Some(super::execution::WakeCustody::Acquired(acquired)))
     }
 }

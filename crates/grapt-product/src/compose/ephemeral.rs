@@ -11,7 +11,7 @@ use grapt_api::{PreparedApiHost, TokioDeadlineDriver};
 use grapt_store::{EventStore, OsRandomIds};
 use grapt_types::{service::ProcessId, IdAuthority};
 
-use super::{DogfoodComposition, ProductRefusal};
+use super::{ProductRefusal, ServerComposition};
 use crate::compose_host::{bind_loopback, ephemeral_service};
 use crate::input::{read_config, Credential};
 
@@ -54,7 +54,7 @@ pub(crate) fn run(root: &Path) -> Result<(), ProductRefusal> {
     crate::commit_executor::install(&mut store);
     let hub = crate::dogfood::event_hub().map_err(ProductRefusal::Compose)?;
     let plugins = crate::dogfood::plugins::PluginRuntime::compose_ephemeral(root);
-    let (application, driver) = crate::dogfood::DogfoodApplication::open_ephemeral(
+    let (application, driver) = crate::dogfood::ServerApplication::open_ephemeral(
         root,
         store,
         targets,
@@ -71,7 +71,7 @@ pub(crate) fn run(root: &Path) -> Result<(), ProductRefusal> {
         .map_err(ProductRefusal::Compose)?;
     let mut driver = super::ServiceDriver::Ready(driver);
     let dogfood =
-        DogfoodComposition::ready(application.clone(), application, Arc::clone(&hub), None);
+        ServerComposition::ready(application.clone(), application, Arc::clone(&hub), None);
     let ids = OsRandomIds::seed().map_err(|error| ProductRefusal::Compose(error.to_string()))?;
     let credential = Credential {
         username: "ephemeral".into(),

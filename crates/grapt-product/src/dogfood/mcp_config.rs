@@ -5,7 +5,7 @@ pub(crate) mod file;
 pub(crate) use approval::preview;
 
 use crate::dogfood::{
-    catalog_config::CatalogEnvironment, session_config, support::invalid, DogfoodApplication,
+    catalog_config::CatalogEnvironment, session_config, support::invalid, ServerApplication,
 };
 use grapt_api::u3a::{
     ApplicationFuture, InvalidRequestErrorDto, McpConfigurationRequestDto, NoContent,
@@ -22,7 +22,7 @@ pub(crate) enum Edit {
 }
 
 pub(crate) fn request(
-    application: DogfoodApplication,
+    application: ServerApplication,
     name: String,
     query: ProjectCurrentLocationQueryDto,
     request: McpConfigurationRequestDto,

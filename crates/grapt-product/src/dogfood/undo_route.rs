@@ -40,7 +40,7 @@ impl ApprovedUndo {
     }
 }
 
-impl grapt_api::u3a::SessionEditApplicationPort for DogfoodApplication {
+impl grapt_api::u3a::SessionEditApplicationPort for ServerApplication {
     fn session_rewind_preview(
         &self,
         _principal: SealedPrincipal,
@@ -94,7 +94,7 @@ impl grapt_api::u3a::SessionEditApplicationPort for DogfoodApplication {
     }
 }
 
-fn lookup(application: &DogfoodApplication, session: &SessionId) -> Result<PathBuf, Error> {
+fn lookup(application: &ServerApplication, session: &SessionId) -> Result<PathBuf, Error> {
     let record = context::session_record(application, session).map_err(|error| match error {
         SessionLookupApplicationError::Unavailable => Error::InvalidRequest(invalid(
             "History is temporarily unavailable; retry the request",
@@ -106,7 +106,7 @@ fn lookup(application: &DogfoodApplication, session: &SessionId) -> Result<PathB
         .map_err(|error| Error::Conflict(conflict(error)))
 }
 
-impl DogfoodApplication {
+impl ServerApplication {
     fn undo_workspace(&self, root: &Path) -> Result<checkpoints::Workspace, Error> {
         let provider_catalog = self.catalog_snapshot();
         let service = Path::new(&provider_catalog.directory);

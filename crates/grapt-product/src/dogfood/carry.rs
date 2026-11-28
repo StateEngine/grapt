@@ -9,7 +9,7 @@ use grapt_artifact::{CarryDigestBudget, CarryWorkers};
 use grapt_store::{session_content_refs, CarryEnumerationBounds};
 use grapt_types::SessionId;
 
-use super::DogfoodApplication;
+use super::ServerApplication;
 
 const MAX_VERIFIED_SESSIONS: usize = 64;
 const MAX_ROWS: u64 = 1_048_576;
@@ -86,7 +86,7 @@ impl VerifiedSessions {
     }
 }
 
-impl DogfoodApplication {
+impl ServerApplication {
     /// Writer admission: every carried object is re-digested.
     pub(super) fn verify_session_carry(&self, session: &SessionId) -> Result<(), String> {
         self.check_session_carry(session, Depth::Digest)

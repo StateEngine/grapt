@@ -1,12 +1,12 @@
 //! Ordinary authenticated HTTP host for Session configuration witnesses.
-use crate::dogfood::DogfoodApplication;
+use crate::dogfood::ServerApplication;
 use serde_json::{json, Value};
 use std::{sync::Arc, time::Duration};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 
 async fn host(
-    application: &Arc<DogfoodApplication>,
+    application: &Arc<ServerApplication>,
 ) -> Result<grapt_api::RunningApiHost, Box<dyn std::error::Error>> {
     let limits = crate::compose_host::host_limits()?;
     let config = crate::input::ServiceConfig {
@@ -22,7 +22,7 @@ async fn host(
         close_grace_ms: None,
         max_inflight_streams: None,
     };
-    let composition = crate::compose::DogfoodComposition::ready(
+    let composition = crate::compose::ServerComposition::ready(
         application.clone(),
         application.clone(),
         application.hub.clone(),
@@ -48,7 +48,7 @@ async fn host(
 }
 
 pub(super) async fn call(
-    application: &Arc<DogfoodApplication>,
+    application: &Arc<ServerApplication>,
     method: &str,
     path: &str,
     body: &str,
@@ -107,7 +107,7 @@ pub(super) fn page<T: serde::de::DeserializeOwned>(
 }
 
 pub(super) async fn approver(
-    application: &Arc<DogfoodApplication>,
+    application: &Arc<ServerApplication>,
     query: &str,
 ) -> Result<(grapt_api::RunningApiHost, TcpStream), Box<dyn std::error::Error>> {
     let host = host(application).await?;

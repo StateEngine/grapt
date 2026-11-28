@@ -15,7 +15,7 @@ impl Drop for Root {
 }
 
 async fn call(
-    application: &Arc<DogfoodApplication>,
+    application: &Arc<ServerApplication>,
     path: &str,
     body: &str,
 ) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
@@ -41,7 +41,7 @@ async fn call(
         },
         grapt_types::service::ProcessId::new(std::process::id()).ok_or("process")?,
         &config,
-        Some(crate::compose::DogfoodComposition::ready(
+        Some(crate::compose::ServerComposition::ready(
             application.clone(),
             application.clone(),
             application.hub.clone(),

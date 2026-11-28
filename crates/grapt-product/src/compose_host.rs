@@ -22,7 +22,7 @@ use grapt_types::authority::DeterministicAuthorities;
 use grapt_types::service::ProcessId;
 use grapt_types::SeatRecipientId;
 
-use crate::compose::{DogfoodComposition, ProductRefusal};
+use crate::compose::{ProductRefusal, ServerComposition};
 use crate::input::{Credential, ServiceConfig};
 pub(crate) fn registration_was_released(outcome: &StopOutcome) -> bool {
     matches!(outcome, StopOutcome::Released { .. })
@@ -57,7 +57,7 @@ pub(crate) fn product_service(
     credential: &Credential,
     pid: ProcessId,
     config: &ServiceConfig,
-    dogfood: Option<DogfoodComposition>,
+    dogfood: Option<ServerComposition>,
 ) -> Result<AuthenticatedApiService, ProductRefusal> {
     product_service_mode(limits, credential, pid, config, dogfood, false)
 }
@@ -67,7 +67,7 @@ pub(crate) fn ephemeral_service(
     credential: &Credential,
     pid: ProcessId,
     config: &ServiceConfig,
-    dogfood: DogfoodComposition,
+    dogfood: ServerComposition,
 ) -> Result<AuthenticatedApiService, ProductRefusal> {
     product_service_mode(limits, credential, pid, config, Some(dogfood), true)
 }
@@ -77,7 +77,7 @@ fn product_service_mode(
     credential: &Credential,
     pid: ProcessId,
     config: &ServiceConfig,
-    dogfood: Option<DogfoodComposition>,
+    dogfood: Option<ServerComposition>,
     ephemeral: bool,
 ) -> Result<AuthenticatedApiService, ProductRefusal> {
     let clock = SystemClock;

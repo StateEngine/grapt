@@ -12,7 +12,7 @@ impl ProductPluginHost {
     pub(crate) fn websearch(
         &self,
         operation: HostOperation,
-        application: &Arc<super::DogfoodApplication>,
+        application: &Arc<super::ServerApplication>,
         authorized: &Authorized<'_>,
         payload: &Value,
     ) -> Result<Value, String> {
@@ -101,7 +101,7 @@ impl ProductPluginHost {
 }
 
 fn selection(
-    application: &super::DogfoodApplication,
+    application: &super::ServerApplication,
     registry: &WebSearchRegistry,
 ) -> Result<Value, String> {
     selected(application.lock_inbox().store(), registry)
@@ -156,7 +156,7 @@ fn put_selection(
     }
 }
 
-fn publish_updated(application: &super::DogfoodApplication) -> Result<(), String> {
+fn publish_updated(application: &super::ServerApplication) -> Result<(), String> {
     let id = grapt_api::u3a::WireId::parse(format!("evt_{}", application.ids.mint().as_str()))
         .ok_or_else(|| "websearch update event identity is invalid".to_owned())?;
     let created = grapt_api::u3a::FiniteF64::try_new(application.clock.now().as_millis() as f64)

@@ -6,7 +6,7 @@ use std::time::Duration;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 pub(super) fn service(
-    app: &Arc<crate::dogfood::DogfoodApplication>,
+    app: &Arc<crate::dogfood::ServerApplication>,
 ) -> Result<grapt_api::AuthenticatedApiService, String> {
     let config = crate::input::ServiceConfig {
         slot: "read-isolation".into(),
@@ -26,7 +26,7 @@ pub(super) fn service(
         secret: "synthetic-reader-secret".into(),
     };
     let ports =
-        crate::compose::DogfoodComposition::ready(app.clone(), app.clone(), app.hub.clone(), None);
+        crate::compose::ServerComposition::ready(app.clone(), app.clone(), app.hub.clone(), None);
     crate::compose_host::product_service(
         &crate::compose_host::host_limits().map_err(|error| error.to_string())?,
         &credential,

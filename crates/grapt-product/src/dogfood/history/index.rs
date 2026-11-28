@@ -222,7 +222,7 @@ fn select_page_rows(
     Ok((ascending, rows, visited))
 }
 
-impl DogfoodApplication {
+impl ServerApplication {
     /// The rows one page carries, and the unreadable owned rows inside the
     /// same span. The span is the page's own cursor range, not the returned
     /// rows': an unreadable row usually has no rendered peer, so a span taken

@@ -2,7 +2,7 @@
 //! admission order, including a pending compaction barrier.
 use super::*;
 
-impl DogfoodApplication {
+impl ServerApplication {
     pub(crate) fn pending_list(
         &self,
         session_id: WireId<SessionId>,

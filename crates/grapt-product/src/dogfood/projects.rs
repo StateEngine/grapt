@@ -14,7 +14,7 @@ use grapt_session::SessionListStore;
 use serde_json::{json, Value};
 
 use super::support::decode;
-use super::DogfoodApplication;
+use super::ServerApplication;
 
 /// The most projects listed; the TUI keeps the same number of catalog rows.
 pub(crate) const MAX_PROJECTS: usize = 128;
@@ -22,7 +22,7 @@ pub(crate) const MAX_PROJECTS: usize = 128;
 /// (project, directory) pairs read to find them: four directories a project.
 const MAX_LOCATIONS: usize = 4 * MAX_PROJECTS;
 
-pub(crate) fn list(application: &DogfoodApplication) -> Result<ProjectListResponseDto, String> {
+pub(crate) fn list(application: &ServerApplication) -> Result<ProjectListResponseDto, String> {
     let rows = {
         let mut inbox = application.lock_inbox();
         SessionListStore::over(inbox.store_mut())

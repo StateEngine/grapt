@@ -7,7 +7,7 @@ use grapt_api::u3a::{
 };
 use grapt_session::rewind::{self, RewindError};
 
-fn lookup(application: &DogfoodApplication, session: &SessionId) -> Result<(), Error> {
+fn lookup(application: &ServerApplication, session: &SessionId) -> Result<(), Error> {
     context::require_session(application, session).map_err(|error| match error {
         SessionLookupApplicationError::Unavailable => Error::InvalidRequest(invalid(
             "History is temporarily unavailable; retry the request",
@@ -30,7 +30,7 @@ fn refusal(error: RewindError) -> Error {
     }
 }
 
-impl DogfoodApplication {
+impl ServerApplication {
     pub(crate) fn preview_rewind(
         &self,
         session_id: WireId<SessionId>,

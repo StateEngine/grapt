@@ -21,7 +21,7 @@ pub(crate) struct PreparedCreate {
     pub(crate) seed: SessionSeed,
 }
 
-impl DogfoodApplication {
+impl ServerApplication {
     /// Resolve a create request into a validated seed.
     ///
     /// Location and model are resolved through the catalog because the request

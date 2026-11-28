@@ -6,11 +6,11 @@ use axum::response::{IntoResponse, Response};
 use crate::SealedPrincipal;
 
 use super::super::application::{
-    ApplicationRequest, CatalogApplicationError, DogfoodApplicationPort,
-    FormCancelApplicationError, FormCreateApplicationError, FormLookupApplicationError,
-    FormReplyApplicationError, PermissionApplicationError, SessionActiveApplicationError,
-    SessionCompactApplicationError, SessionListApplicationError, SessionLookupApplicationError,
-    SessionMessageApplicationError, SessionMessagesApplicationError, SessionPromptApplicationError,
+    ApplicationPort, ApplicationRequest, CatalogApplicationError, FormCancelApplicationError,
+    FormCreateApplicationError, FormLookupApplicationError, FormReplyApplicationError,
+    PermissionApplicationError, SessionActiveApplicationError, SessionCompactApplicationError,
+    SessionListApplicationError, SessionLookupApplicationError, SessionMessageApplicationError,
+    SessionMessagesApplicationError, SessionPromptApplicationError,
     SessionReconcileApplicationError, SessionRewindApplicationError, SessionUndoApplicationError,
 };
 
@@ -19,7 +19,7 @@ use super::{json, unavailable_response, ApplicationUnavailable, Endpoint};
 #[expect(clippy::cognitive_complexity, reason = "legacy")]
 #[expect(clippy::too_many_lines, reason = "legacy")]
 pub(super) async fn execute_application(
-    application: &dyn DogfoodApplicationPort,
+    application: &dyn ApplicationPort,
     principal: SealedPrincipal,
     request: ApplicationRequest,
 ) -> Response {

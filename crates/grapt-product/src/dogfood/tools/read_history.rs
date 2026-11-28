@@ -92,7 +92,7 @@ pub(super) fn run(
 }
 
 pub(in crate::dogfood) fn read(
-    app: &crate::dogfood::DogfoodApplication,
+    app: &crate::dogfood::ServerApplication,
     session: &SessionId,
     request: Request,
 ) -> Result<Vec<u8>, String> {

@@ -3,7 +3,7 @@ use crate::dogfood::{backend_result::ExecutionFailure, background_child::Backgro
 use grapt_subagent::{OperationStatus, SubagentCancelReason, SubagentTerminal};
 
 struct Fixture {
-    app: Arc<DogfoodApplication>,
+    app: Arc<ServerApplication>,
     child: SessionId,
     parent: SessionId,
     _driver: crate::dogfood::prompt_driver::PromptDriver,

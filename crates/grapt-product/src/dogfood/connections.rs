@@ -30,7 +30,7 @@ pub(crate) enum Kind {
 
 /// Apply the existing plugin transform to the composed connection catalog.
 pub(crate) fn integrations(
-    application: &super::DogfoodApplication,
+    application: &super::ServerApplication,
     query: ProjectCurrentLocationQueryDto,
 ) -> ApplicationFuture<grapt_api::u3a::IntegrationListResponseDto, InvalidRequestErrorDto> {
     let application = application.clone();
@@ -77,7 +77,7 @@ pub(crate) fn integrations(
 }
 
 pub(crate) fn inspect(
-    application: &super::DogfoodApplication,
+    application: &super::ServerApplication,
     query: ProjectCurrentLocationQueryDto,
 ) -> ApplicationFuture<grapt_api::u3a::McpInspectionResponseDto, InvalidRequestErrorDto> {
     response(application.clone(), query, Kind::McpInspection)
@@ -90,7 +90,7 @@ pub(crate) fn inspect(
 /// declared server is listed without being started — a preview must report
 /// what a write would do without spawning a peer to find out.
 pub(crate) fn configuration(
-    application: &super::DogfoodApplication,
+    application: &super::ServerApplication,
     query: ProjectCurrentLocationQueryDto,
 ) -> ApplicationFuture<grapt_api::u3a::McpConfigurationListResponseDto, InvalidRequestErrorDto> {
     let application = application.clone();
@@ -109,7 +109,7 @@ pub(crate) fn configuration(
 }
 
 pub(crate) fn reconnect(
-    application: super::DogfoodApplication,
+    application: super::ServerApplication,
     server: String,
     query: ProjectCurrentLocationQueryDto,
 ) -> ApplicationFuture<NoContent, InvalidRequestErrorDto> {
@@ -130,7 +130,7 @@ pub(crate) fn reconnect(
 }
 
 pub(crate) fn add_runtime(
-    application: super::DogfoodApplication,
+    application: super::ServerApplication,
     server: String,
     query: ProjectCurrentLocationQueryDto,
     request: McpAddRequestDto,
@@ -168,7 +168,7 @@ pub(crate) fn add_runtime(
 }
 
 pub(crate) fn response<T: DeserializeOwned + Send + 'static>(
-    application: super::DogfoodApplication,
+    application: super::ServerApplication,
     query: ProjectCurrentLocationQueryDto,
     kind: Kind,
 ) -> ApplicationFuture<T, InvalidRequestErrorDto> {

@@ -2,7 +2,7 @@
 use super::*;
 use std::sync::atomic::AtomicUsize;
 
-fn recovered_wake(application: &DogfoodApplication, session: &SessionId) -> bool {
+fn recovered_wake(application: &ServerApplication, session: &SessionId) -> bool {
     let inbox = application.lock_inbox();
     let Some(input) = inbox
         .pending_native_mail_wake(session)

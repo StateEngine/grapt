@@ -17,7 +17,7 @@ impl ProductPluginHost {
     pub(crate) fn session_generate(
         &self,
         context: &PluginHostContext,
-        application: &Arc<super::super::DogfoodApplication>,
+        application: &Arc<super::super::ServerApplication>,
         authorized: &Authorized<'_>,
         payload: &Value,
     ) -> Result<Value, String> {
@@ -59,7 +59,7 @@ impl ProductPluginHost {
     fn generation_context_hooks(
         &self,
         context: &PluginHostContext,
-        application: &super::super::DogfoodApplication,
+        application: &super::super::ServerApplication,
         authorized: &Authorized<'_>,
         session: &grapt_types::SessionId,
         prompt: &str,
@@ -112,7 +112,7 @@ impl ProductPluginHost {
 }
 
 fn generation_context(
-    application: &super::super::DogfoodApplication,
+    application: &super::super::ServerApplication,
     session: &grapt_types::SessionId,
 ) -> Result<Vec<CodexInputItem>, String> {
     let mut context = Vec::new();

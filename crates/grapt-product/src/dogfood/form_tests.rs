@@ -65,7 +65,7 @@ impl Drop for Root {
     }
 }
 
-fn open(root: &Path) -> TestResult<Arc<DogfoodApplication>> {
+fn open(root: &Path) -> TestResult<Arc<ServerApplication>> {
     let (application, _driver) = crate::dogfood::test_provider::open(
         root,
         grapt_store::EventStore::open(&root.join("database.sqlite3"), "session-form-recovery")?,
@@ -76,7 +76,7 @@ fn open(root: &Path) -> TestResult<Arc<DogfoodApplication>> {
     Ok(application)
 }
 
-fn session(app: &DogfoodApplication, root: &Path) -> TestResult<SessionId> {
+fn session(app: &ServerApplication, root: &Path) -> TestResult<SessionId> {
     let seed = grapt_session::SessionSeed::new(
         app.catalog_snapshot().project.clone(),
         root.to_str().ok_or("path encoding")?.to_owned(),
@@ -88,7 +88,7 @@ fn session(app: &DogfoodApplication, root: &Path) -> TestResult<SessionId> {
         .session)
 }
 
-fn create_form(app: &DogfoodApplication, owner: &SessionId, name: &str) -> TestResult<FormId> {
+fn create_form(app: &ServerApplication, owner: &SessionId, name: &str) -> TestResult<FormId> {
     let id: FormId = format!("frm_recovery_{name}").parse()?;
     let request = decode(json!({"id":id.as_str(), "title":"Branch?", "fields":[
         {"key":"branch", "type":"string", "required":true}]}))?;
@@ -97,7 +97,7 @@ fn create_form(app: &DogfoodApplication, owner: &SessionId, name: &str) -> TestR
 }
 
 fn answer(
-    app: &DogfoodApplication,
+    app: &ServerApplication,
     owner: &SessionId,
     form: &FormId,
 ) -> Result<NoContent, FormReplyApplicationError> {
@@ -106,7 +106,7 @@ fn answer(
     reply(app, owner.clone(), form.clone(), request)
 }
 
-fn facts(app: &DogfoodApplication, owner: &SessionId) -> TestResult<Vec<String>> {
+fn facts(app: &ServerApplication, owner: &SessionId) -> TestResult<Vec<String>> {
     let inbox = app.lock_inbox();
     let mut query = inbox.store().connection().prepare(
         "SELECT type FROM event WHERE aggregate_family='session' AND aggregate_id=?1 AND type LIKE 'form.%' ORDER BY seq")?;
@@ -116,7 +116,7 @@ fn facts(app: &DogfoodApplication, owner: &SessionId) -> TestResult<Vec<String>>
     Ok(rows)
 }
 
-fn epoch(app: &DogfoodApplication, owner: &SessionId) -> TestResult<i64> {
+fn epoch(app: &ServerApplication, owner: &SessionId) -> TestResult<i64> {
     Ok(app.lock_inbox().store().connection().query_row(
         "SELECT epoch FROM aggregate_writer WHERE aggregate_family='session' AND aggregate_id=?1",
         [owner.as_str()],
