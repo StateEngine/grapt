@@ -281,6 +281,8 @@ pub struct Client<C: Connection> {
     sessions: Vec<SessionSummary>,
     catalog_reach: CatalogReach,
     permissions: Vec<PermissionAsk>,
+    /// The open asks need a fresh read: see `take_permission_refresh`.
+    permissions_stale: bool,
     /// Bumped by every acknowledged close, rename, create, reply or cancel, so
     /// an off-loop snapshot issued before it is never applied over it.
     acknowledged: u64,
@@ -388,6 +390,7 @@ impl<C: Connection> Client<C> {
             sessions: Vec::new(),
             catalog_reach: CatalogReach::Read,
             permissions: Vec::new(),
+            permissions_stale: false,
             acknowledged: 0,
             grants: grants::State::default(),
             selected: None,

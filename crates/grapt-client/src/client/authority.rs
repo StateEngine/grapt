@@ -25,6 +25,13 @@ impl<C: Connection> Client<C> {
         }
     }
 
+    /// Consume the hint to re-read the open asks, raised when a session was
+    /// installed without a list of its own. The host reads them on its
+    /// periodic lane, whose answer an acknowledged reply fences out.
+    pub fn take_permission_refresh(&mut self) -> bool {
+        std::mem::take(&mut self.permissions_stale)
+    }
+
     /// Consume a coalesced hint to re-read the selected Session forms.
     pub fn take_session_form_refresh(&mut self) -> bool {
         std::mem::take(&mut self.session_forms_dirty)

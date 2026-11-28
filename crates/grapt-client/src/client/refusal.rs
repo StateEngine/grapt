@@ -22,13 +22,16 @@ impl<C: Connection> Client<C> {
     }
 
     /// Latch the refusal and settle the reads only the pump advances, which
-    /// it no longer does: queued history, a preset read, an MCP catalog read
-    /// and a tool refresh. A request its host polls settles at its next poll.
+    /// it no longer does: queued history, a preset read, the catalog lane's
+    /// agent, model, repository and command reads, an MCP catalog read and a
+    /// tool refresh. A request its host polls settles at its next poll.
     pub(super) fn settle_refused(&mut self, missing: &'static str) -> ClientError {
         self.recovery.too_old = Some(missing);
         self.recovery.history = None;
         let refusal = too_old(missing).to_string();
         self.refuse_preset(&refusal);
+        self.refuse_catalog(&refusal);
+        self.refuse_commands(&refusal);
         self.refuse_mcp_catalog(refusal);
         self.cancel_tool_refresh();
         too_old(missing)

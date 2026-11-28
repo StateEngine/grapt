@@ -288,16 +288,6 @@ impl<C: Connection> Client<C> {
     }
 
     pub(super) fn request_queued_inputs(&mut self, session: &SessionWireId) {
-        self.queue_presentation(session, false);
-    }
-
-    /// The open asks across sessions, then the queued inputs, re-read on the
-    /// same lane: for a session installed without a list of its own.
-    pub(super) fn request_asks_and_queued_inputs(&mut self, session: &SessionWireId) {
-        self.queue_presentation(session, true);
-    }
-
-    fn queue_presentation(&mut self, session: &SessionWireId, permissions: bool) {
         if self.selected.as_ref() == Some(session) {
             if self
                 .recovery
@@ -312,7 +302,7 @@ impl<C: Connection> Client<C> {
             // read lane, while live frames and the composer remain responsive.
             self.recovery.history = Some(History {
                 session: session.clone(),
-                permissions,
+                permissions: false,
                 messages: false,
                 pending: false,
             });

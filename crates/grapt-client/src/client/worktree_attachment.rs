@@ -349,10 +349,10 @@ impl<C: Connection> Client<C> {
         if self.preset.launch.is_none() {
             self.preset.job = None;
         }
-        // Every open ask, the new Session's included, comes from one list
-        // read after the install, so no ask staged earlier outlives a newer
-        // one.
-        self.request_asks_and_queued_inputs(&id);
+        // Every open ask, the new Session's included, comes from one list the
+        // host reads after the install, fenced like any periodic read.
+        self.permissions_stale = true;
+        self.request_queued_inputs(&id);
         self.draft_creation = creation::Draft::Inactive;
         self.sessions.retain(|row| row.id != id);
         self.sessions.insert(

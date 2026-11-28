@@ -107,6 +107,22 @@ impl<C: Connection> Client<C> {
         }
         self.command_catalog.reset();
     }
+    /// A refused service answers no command read: a waiting or due one
+    /// settles, saying why.
+    pub(super) fn refuse_commands(&mut self, refusal: &str) {
+        if self.command_catalog.pending {
+            self.connection.cancel_catalog();
+        }
+        if self.commands_pending() {
+            self.command_catalog.location = self.form_location();
+            self.command_catalog.session = self.selected.clone();
+            self.command_catalog.rows.clear();
+            self.command_catalog.pending = false;
+            self.command_catalog.settled = true;
+            self.command_catalog.note = Some(format!("Commands unavailable: {refusal}"));
+        }
+    }
+
     pub(super) fn advance_commands(&mut self) -> bool {
         if !self.command_catalog.enabled
             || self.catalog_pending()

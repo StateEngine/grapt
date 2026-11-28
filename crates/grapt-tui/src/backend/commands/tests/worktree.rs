@@ -1042,8 +1042,14 @@ fn staged_target_asks_survive(
     client.peer_mut().nonblocking_only = true;
     finish_attachment(&mut submissions, &mut client)?;
     assert_eq!(client.selected(), Some(&target));
-    // The installed session's asks come from the list read after it.
-    client.pump()?;
+    // The installed session's asks come from the list the host reads after
+    // it, on the hint the install raised.
+    assert!(
+        client.take_permission_refresh(),
+        "no fresh list was asked for"
+    );
+    client.peer_mut().nonblocking_only = false;
+    client.refresh_permissions()?;
     assert!(
         client
             .permissions()

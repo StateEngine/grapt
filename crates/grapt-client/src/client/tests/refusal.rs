@@ -41,3 +41,41 @@ fn an_answered_send_only_ask_leaves_the_open_list() -> TestResult {
     assert_eq!(open, [other], "only the answered ask left");
     Ok(())
 }
+
+#[test]
+fn a_refusal_settles_the_catalog_lane_and_fences_periodic_reads() -> TestResult {
+    let mut client = client();
+    client.create_session()?;
+    client.open_commands();
+    client.settle_refused("session snapshots");
+    assert!(client
+        .commands_status()
+        .is_some_and(|status| status.contains("Upgrade")));
+    assert!(too_old(
+        client.prepare_read(super::offloop::PeriodicRead::Permissions)
+    ));
+    assert_eq!(client.recovery_wait(), None);
+    Ok(())
+}
+
+#[test]
+fn a_list_read_before_a_reply_is_acknowledged_never_brings_the_ask_back() -> TestResult {
+    let mut client = client();
+    let session = client.create_session()?;
+    let ask = seed_ask(&mut client.connection, &session, "write a file");
+    let prepared = client
+        .prepare_read(super::offloop::PeriodicRead::Permissions)?
+        .ok_or("no list read")?;
+    // The host holds the answer while the reply is acknowledged.
+    let held = client.connection.call(&prepared.request);
+    client.send_permission_reply(&session, &ask, crate::wire::PermissionReplyChoice::Once)?;
+    assert!(
+        !client.accept_read(prepared, held)?,
+        "the held list was applied"
+    );
+    assert!(client
+        .permissions()
+        .iter()
+        .all(|open| open.request_id != ask));
+    Ok(())
+}

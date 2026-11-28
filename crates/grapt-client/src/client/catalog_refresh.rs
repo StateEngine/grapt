@@ -238,6 +238,20 @@ impl<C: Connection> Client<C> {
         self.install_catalog_rows(agents, models, default);
     }
 
+    /// A refused service answers no catalog read: a waiting catalog or
+    /// repository read ends, saying why.
+    pub(super) fn refuse_catalog(&mut self, refusal: &str) {
+        if self.catalog_in_flight() {
+            self.connection.cancel_catalog();
+        }
+        if self.catalog_refresh.job.take().is_some() {
+            self.catalog_refresh.note = Some(format!("Catalog refresh failed: {refusal}"));
+        }
+        if self.catalog_refresh.repository.take().is_some() {
+            self.catalog_refresh.repository_note = Some(refusal.to_owned());
+        }
+    }
+
     #[expect(clippy::too_many_lines, reason = "legacy")]
     pub(super) fn advance_catalog(&mut self) -> bool {
         let Some(mut job) = self.catalog_refresh.job.take() else {
