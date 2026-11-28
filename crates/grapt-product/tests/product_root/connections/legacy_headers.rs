@@ -7,6 +7,10 @@ fn legacy_connection_header_writes_the_named_key_without_replacing_the_default()
     reset(&root);
     let profile = root.join("profile");
     assert!(Command::new(shipped_cli::product_binary())
+        .env(
+            grapt_login::profile_security::TEST_KEYSTORE_VARIABLE,
+            grapt_login::profile_security::isolate_test_keystore()?
+        )
         .args(["init-profile", "--service"])
         .arg(&profile)
         .output()?
@@ -18,6 +22,10 @@ fn legacy_connection_header_writes_the_named_key_without_replacing_the_default()
         .encoded()?;
     let mut process = RestartProcess(
         grapt_service::launcher_environment::command(shipped_cli::product_binary())
+            .env(
+                grapt_login::profile_security::TEST_KEYSTORE_VARIABLE,
+                grapt_login::profile_security::isolate_test_keystore()?,
+            )
             .args([
                 "serve-terminal",
                 "--profile-approval",

@@ -404,6 +404,8 @@ mod tests {
             let ids = grapt_store::OsRandomIds::seed().map_err(|error| error.to_string())?;
             let root = std::env::temp_dir().join(format!("frc-{name}-{}", ids.mint().as_str()));
             std::fs::create_dir(&root).map_err(|error| error.to_string())?;
+            grapt_login::profile_security::isolate_test_keystore()
+                .map_err(|error| error.to_string())?;
             Ok(Self(root))
         }
 

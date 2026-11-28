@@ -63,6 +63,7 @@ async fn connect_and_read_listing(
         std::thread::current().id()
     ));
     let _ = std::fs::remove_dir_all(&root);
+    grapt_login::profile_security::isolate_test_keystore()?;
     crate::dogfood::first_use::initialize_empty_profile(&root)?;
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
     let base = format!("http://{}/v1", listener.local_addr()?);

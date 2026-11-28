@@ -25,6 +25,10 @@ struct Progress {
 fn progress(binary: &Path, profile: &Path, endpoint: &str) -> TestResult<Progress> {
     let process = RestartProcess(
         grapt_service::launcher_environment::command(binary)
+            .env(
+                grapt_login::profile_security::TEST_KEYSTORE_VARIABLE,
+                grapt_login::profile_security::isolate_test_keystore()?,
+            )
             .args([
                 "login",
                 "chatgpt",

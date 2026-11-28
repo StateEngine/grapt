@@ -22,6 +22,10 @@ fn browser_callback_checks_state_and_host_before_exchanging_and_activating() -> 
     reset(&root);
     let profile = root.join("profile");
     assert!(Command::new(shipped_cli::product_binary())
+        .env(
+            grapt_login::profile_security::TEST_KEYSTORE_VARIABLE,
+            grapt_login::profile_security::isolate_test_keystore()?
+        )
         .args(["init-profile", "--service"])
         .arg(&profile)
         .output()?
@@ -56,6 +60,10 @@ fn browser_callback_checks_state_and_host_before_exchanging_and_activating() -> 
         .encoded()?;
     let mut process = RestartProcess(
         grapt_service::launcher_environment::command(shipped_cli::product_binary())
+            .env(
+                grapt_login::profile_security::TEST_KEYSTORE_VARIABLE,
+                grapt_login::profile_security::isolate_test_keystore()?,
+            )
             .args([
                 "serve-terminal",
                 "--profile-approval",

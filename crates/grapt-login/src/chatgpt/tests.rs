@@ -617,7 +617,8 @@ async fn a_start_after_an_interrupted_projection_derives_the_credential_again() 
         expires_at: Timestamp::from_millis(NOW + 240 * HOUR),
         account: "account-a".to_owned(),
     };
-    replace(&profile.0, STATE_FILE, &encode(&second)).unwrap_or_else(|error| panic!("{error}"));
+    replace_all(&profile.0, &[(STATE_FILE, &encode(&second))], &[])
+        .unwrap_or_else(|error| panic!("{error}"));
     assert_eq!(profile.read(CREDENTIAL_FILE), first.access);
     let issuer = Issuer::start(Vec::new()).await;
     let renewal = refresh_if_due(&profile.0, &client(), &issuer.base, &Fixed(NOW)).await;
@@ -704,6 +705,79 @@ fn an_oversized_or_foreign_credential_is_replaced_by_the_generation() {
         .unwrap_or_else(|error| panic!("{error}"));
     project(&profile.0, &tokens).unwrap_or_else(|error| panic!("{error}"));
     assert_eq!(profile.read(CREDENTIAL_FILE), tokens.access);
+}
+
+/// While the keystore is away, neither a save nor a projection replaces a
+/// sealed sign-in with an unsealed one.
+#[cfg(not(windows))]
+#[test]
+fn a_sealed_sign_in_is_never_replaced_unsealed_without_its_keystore(
+) -> Result<(), Box<dyn std::error::Error>> {
+    let profile = Profile::new("sealed-outage");
+    save(&profile.0, &signed_in(NOW + HOUR))?;
+    let stored = || -> std::io::Result<Vec<Vec<u8>>> {
+        [STATE_FILE, CREDENTIAL_FILE]
+            .iter()
+            .map(|name| std::fs::read(profile.0.join(name)))
+            .collect()
+    };
+    let before = stored()?;
+    let next = signed_in(NOW + 2 * HOUR);
+    let headless = crate::profile_security::TestKeystoreUnavailable::now();
+    assert!(save(&profile.0, &next).is_err());
+    assert!(project(&profile.0, &next).is_err());
+    drop(headless);
+    assert_eq!(stored()?, before);
+    Ok(())
+}
+
+/// While the keystore is away, a save whose projection is sealed leaves even
+/// unsealed sign-in state untouched rather than publishing it first.
+#[cfg(not(windows))]
+#[test]
+fn a_save_never_publishes_state_its_sealed_projection_would_refuse(
+) -> Result<(), Box<dyn std::error::Error>> {
+    let profile = Profile::new("sealed-projection-outage");
+    save(&profile.0, &signed_in(NOW + HOUR))?;
+    std::fs::write(profile.0.join(STATE_FILE), encode(&signed_in(NOW + HOUR)))?;
+    let state = std::fs::read(profile.0.join(STATE_FILE))?;
+    let headless = crate::profile_security::TestKeystoreUnavailable::now();
+    assert!(save(&profile.0, &signed_in(NOW + 2 * HOUR)).is_err());
+    drop(headless);
+    assert_eq!(std::fs::read(profile.0.join(STATE_FILE))?, state);
+    Ok(())
+}
+
+#[cfg(not(windows))]
+#[test]
+fn a_projection_never_goes_unsealed_beside_sealed_state() -> Result<(), Box<dyn std::error::Error>>
+{
+    let profile = Profile::new("sealed-state-outage");
+    save(&profile.0, &signed_in(NOW + HOUR))?;
+    std::fs::write(profile.0.join(CREDENTIAL_FILE), "stale")?;
+    let headless = crate::profile_security::TestKeystoreUnavailable::now();
+    assert!(project(&profile.0, &signed_in(NOW + HOUR)).is_err());
+    drop(headless);
+    assert_eq!(profile.read(CREDENTIAL_FILE), "stale");
+    Ok(())
+}
+
+/// A sealed sign-in read through a refused session bus keeps that bus's
+/// repair step rather than a bare error kind.
+#[cfg(not(windows))]
+#[test]
+fn a_sealed_sign_in_read_keeps_the_bus_repair_step() -> Result<(), Box<dyn std::error::Error>> {
+    use crate::profile_security::{BusRefusal, TestBusRefused};
+    let profile = Profile::new("sealed-read-bus");
+    save(&profile.0, &signed_in(NOW + HOUR))?;
+    for refusal in [BusRefusal::Malformed, BusRefusal::Unreachable] {
+        let refused = TestBusRefused::now(refusal);
+        let error = load(&profile.0).err().map(|error| error.to_string());
+        drop(refused);
+        let error = error.unwrap_or_default();
+        assert!(error.contains(refusal.guidance()), "{error}");
+    }
+    Ok(())
 }
 
 fn write_config(profile: &std::path::Path, credential_version: &str) {

@@ -33,6 +33,7 @@ impl Profile {
             std::fs::remove_dir_all(&root)?;
         }
         std::fs::create_dir(&root)?;
+        grapt_login::profile_security::isolate_test_keystore()?;
         std::fs::write(root.join("grapt.jsonc"), serde_json::json!({
             "store":{"authority":"initialize"},"product":{"build":"live-credential-tests"},
             "provider":{"id":"openai","model":"gpt-5.6","base_model":"gpt-5.6",

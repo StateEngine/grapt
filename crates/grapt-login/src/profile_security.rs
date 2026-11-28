@@ -1,9 +1,12 @@
 //! Protection for the existing profile files; never a second credential store.
 //!
-//! On Windows a credential is sealed with AES-256-GCM under one key per user
-//! that Windows Credential Manager holds; the file stays the only store of the
-//! credential itself. Credentials sealed earlier with DPAPI stay readable and
-//! are sealed the new way when next written.
+//! A credential is sealed with AES-256-GCM under a key the operating system's
+//! keystore holds (Windows Credential Manager, the macOS Keychain or the Linux
+//! Secret Service); the file stays the only store of the credential itself.
+//! Credentials stored earlier, sealed with DPAPI or as owner-only plaintext,
+//! stay readable and are sealed the new way when next written. Off Windows, a
+//! machine with no reachable keystore stores a new credential owner-only, with
+//! a warning, and never reads a sealed credential any other way.
 //!
 //! The DPAPI operation.
 //! Copyright 2025 OpenAI. Modified by Grapt; see licenses/openai-codex/.
@@ -31,14 +34,19 @@ mod refusal;
 pub(crate) use refusal::child_refusal;
 pub use refusal::{failure_code, failure_diagnostic};
 
-#[cfg(windows)]
 mod entropy;
-#[cfg(any(windows, test))]
 mod envelope;
-#[cfg(all(windows, test))]
+mod fallback;
+pub use fallback::{keystore_fallback, KeystoreFallback, KEYSTORE_FALLBACK};
+#[cfg(test)]
 pub(crate) mod fixtures;
-#[cfg(windows)]
 mod keystore;
+#[cfg(all(not(windows), test))]
+pub(crate) use keystore::test_store::BusRefused as TestBusRefused;
+#[cfg(all(not(windows), any(test, feature = "loopback-testkit")))]
+pub use keystore::test_store::Unavailable as TestKeystoreUnavailable;
+#[cfg(any(test, feature = "loopback-testkit"))]
+pub use keystore::{isolate_test_keystore, TEST_KEYSTORE_VARIABLE};
 
 /// The earlier Windows format, still opened so existing credentials migrate.
 const DPAPI_ENVELOPE: &[u8] = b"secode.dpapi.current-user.v1\n";
@@ -72,53 +80,113 @@ pub fn is_key_missing(error: &io::Error) -> bool {
         .is_some_and(|inner| inner.downcast_ref::<KeyMissing>().is_some())
 }
 
+/// Why a credential is not sealed when `DBUS_SESSION_BUS_ADDRESS` is set but
+/// malformed, and the step that fixes it. Fixed text: it names no value.
+pub const BUS_ADDRESS_INVALID: &str =
+    "DBUS_SESSION_BUS_ADDRESS is set but is not a valid D-Bus address, so the system keystore \
+     was not used; correct or unset it, then try again";
+
+/// Why a credential is not sealed or opened when the keystore on the bus
+/// `DBUS_SESSION_BUS_ADDRESS` names fails, and the step that fixes it.
+pub const BUS_UNREACHABLE: &str =
+    "the system keystore on the session bus DBUS_SESSION_BUS_ADDRESS names could not be used; \
+     check that address or unset it, then try again";
+
+#[cfg(test)]
+pub(crate) use keystore::bus_refused;
+pub use keystore::BusRefusal;
+
+/// The session bus refusal behind a keystore error, if there is one.
+#[must_use]
+pub fn bus_refusal(error: &io::Error) -> Option<BusRefusal> {
+    keystore::bus_refusal(error)
+}
+
+/// Whether an [`open`] or [`seal`] refusal means the system keystore could not
+/// be reached at all. A sealed credential then waits for the keystore; it is
+/// never read or replaced another way.
+#[must_use]
+pub fn is_keystore_unavailable(error: &io::Error) -> bool {
+    keystore::is_unavailable(error)
+}
+
+/// Whether bytes are sealed under a keystore key, without opening them.
+#[must_use]
+pub fn is_keystore_sealed(bytes: &[u8]) -> bool {
+    bytes.starts_with(KEYSTORE_ENVELOPE)
+}
+
 /// Whether bytes carry a protected format, without attempting decryption.
 #[must_use]
 pub fn is_protected(bytes: &[u8]) -> bool {
     bytes.starts_with(KEYSTORE_ENVELOPE) || bytes.starts_with(DPAPI_ENVELOPE)
 }
 
-/// Finite room for DPAPI's header, padding and authentication data.
+/// Finite room for an envelope's header, nonce and tag, and for DPAPI's
+/// header, padding and authentication data.
 #[must_use]
 pub const fn stored_bound(plaintext_bound: usize) -> usize {
-    if cfg!(windows) {
-        plaintext_bound.saturating_add(1024)
-    } else {
-        plaintext_bound
+    plaintext_bound.saturating_add(1024)
+}
+
+/// Protect bytes with the system keystore. Nothing is stored another way:
+/// when the keystore cannot seal them, this refuses.
+pub fn seal(bytes: &[u8]) -> io::Result<Vec<u8>> {
+    seal_with(&keystore::current()?, bytes)
+}
+
+/// Protect bytes that will be written as `target`; see [`seal_replacing`].
+pub fn seal_for(bytes: &[u8], target: &Path) -> io::Result<Vec<u8>> {
+    seal_replacing(bytes, &[target])
+}
+
+/// Protect bytes that will take the place of every file in `targets`: the
+/// file they are written as, and any file whose credential they succeed.
+///
+/// Off Windows, when no keystore is present at all, the bytes are returned as
+/// they are for the owner-only file and [`keystore_fallback`] reports it, but
+/// only while no target holds a sealed credential: a sealed credential is
+/// never succeeded by an unsealed one, so that case refuses as keystore
+/// unavailable.
+pub fn seal_replacing(bytes: &[u8], targets: &[&Path]) -> io::Result<Vec<u8>> {
+    let mut sealed = seal_all(&[bytes], targets)?;
+    sealed
+        .pop()
+        .ok_or_else(|| io::Error::other("sealing returned no bytes"))
+}
+
+/// Protect several files that are published together as one decision, each
+/// item becoming one file and `targets` naming every file they replace or
+/// succeed. Either every item is sealed or, under [`seal_replacing`]'s
+/// headless rule, every item stays as it is; never a mix.
+pub fn seal_all(items: &[&[u8]], targets: &[&Path]) -> io::Result<Vec<Vec<u8>>> {
+    match keystore::current() {
+        Ok(key) => items.iter().map(|bytes| seal_with(&key, bytes)).collect(),
+        #[cfg(not(windows))]
+        Err(error) if keystore::is_unavailable(&error) => {
+            fallback::permit(targets, error)?;
+            Ok(items.iter().map(|bytes| bytes.to_vec()).collect())
+        }
+        Err(error) => {
+            let _ = targets;
+            Err(error)
+        }
     }
 }
 
-/// Protect bytes before the existing atomic writer creates its temporary file.
-pub fn seal(bytes: &[u8]) -> io::Result<Vec<u8>> {
-    #[cfg(windows)]
-    {
-        let key = keystore::current()?;
-        let mut nonce = [0; envelope::NONCE_BYTES];
-        entropy::fill(&mut nonce)?;
-        envelope::seal(&key.id, &key.secret, nonce, bytes)
-    }
-    #[cfg(not(windows))]
-    Ok(bytes.to_vec())
+fn seal_with(key: &keystore::Key, bytes: &[u8]) -> io::Result<Vec<u8>> {
+    let mut nonce = [0; envelope::NONCE_BYTES];
+    entropy::fill(&mut nonce)?;
+    envelope::seal(&key.id, &key.secret, nonce, bytes)
 }
 
 /// Decode an envelope in memory, bounding the plaintext independently of storage.
 /// Legacy plaintext remains readable; an invalid envelope never falls back to it.
 pub fn open(bytes: &[u8], plaintext_bound: usize) -> io::Result<Vec<u8>> {
     let plaintext = if let Some(sealed) = bytes.strip_prefix(KEYSTORE_ENVELOPE) {
-        #[cfg(windows)]
-        {
-            let key = keystore::by_id(&envelope::key_id(sealed)?)?
-                .ok_or_else(|| io::Error::other(KeyMissing))?;
-            envelope::open(&key.secret, sealed)?
-        }
-        #[cfg(not(windows))]
-        {
-            let _ = sealed;
-            return Err(io::Error::new(
-                io::ErrorKind::Unsupported,
-                "a credential sealed with Windows Credential Manager opens only for its Windows account",
-            ));
-        }
+        let key = keystore::by_id(&envelope::key_id(sealed)?)?
+            .ok_or_else(|| io::Error::other(KeyMissing))?;
+        envelope::open(&key.secret, sealed)?
     } else if let Some(protected) = bytes.strip_prefix(DPAPI_ENVELOPE) {
         #[cfg(windows)]
         {

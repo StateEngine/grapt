@@ -3,8 +3,16 @@ all-features = true
 
 [advisories]
 # Unmaintained with no fixed release: 2025-0141 is pulled in by syntect,
-# 2026-0543 (chrono) by mxc-sdk through the sandbox.
-ignore = ["RUSTSEC-2025-0141", "RUSTSEC-2026-0543"]
+# 2026-0543 (chrono) by mxc-sdk through the sandbox, and 2026-0370/0371/0372
+# (zvariant, zbus_names, zvariant_derive, merged into zbus 6) by keyring
+# 3.6.3's Linux Secret Service through zbus 4.
+ignore = [
+    "RUSTSEC-2025-0141",
+    "RUSTSEC-2026-0543",
+    "RUSTSEC-2026-0370",
+    "RUSTSEC-2026-0371",
+    "RUSTSEC-2026-0372",
+]
 
 [licenses]
 allow = [

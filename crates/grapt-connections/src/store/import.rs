@@ -133,7 +133,10 @@ impl ProfileImport {
                 .ok_or_else(|| invalid("account import material was already consumed"))?;
             let commit = match material {
                 Material::Legacy(bytes) => {
-                    let stored = zeroize::Zeroizing::new(profile_security::seal(&bytes)?);
+                    let stored = zeroize::Zeroizing::new(profile_security::seal_for(
+                        &bytes,
+                        &root.join(&record.credential_file),
+                    )?);
                     profile_security::replace_private_file(root, &record.credential_file, &stored)?;
                     profile_security::replace_private_file(root, &record.discovery_file, listing)?;
                     records.connections.push(record);

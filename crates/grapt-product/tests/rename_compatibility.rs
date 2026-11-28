@@ -32,6 +32,7 @@ impl Fixture {
         fs::create_dir_all(&home)?;
         fs::create_dir_all(&profile)?;
         profile_security::protect_directory(&profile)?;
+        profile_security::isolate_test_keystore()?;
         let legacy: Value = serde_json::from_str(include_str!("rename_compatibility/legacy.json"))?;
         for (name, bytes) in [
             (
@@ -95,6 +96,10 @@ impl Fixture {
             .args(["--port", "0", "--notify-ready"])
             .current_dir(self.profile.parent().ok_or("repository missing")?)
             .env("GRAPT_TEST_HOME", &self.home)
+            .env(
+                profile_security::TEST_KEYSTORE_VARIABLE,
+                profile_security::isolate_test_keystore()?,
+            )
             .env("XDG_CONFIG_HOME", self.home.join(".config"))
             .env("XDG_DATA_HOME", self.home.join(".local/share"));
         for key in [

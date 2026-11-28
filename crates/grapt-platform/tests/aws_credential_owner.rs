@@ -26,6 +26,7 @@ fn aws_owner_retains_destination_selection_and_disconnect_authority() -> TestRes
     std::fs::create_dir(&path)?;
     let root = Profile(std::fs::canonicalize(path)?);
     grapt_login::profile_security::protect_directory(&root.0)?;
+    grapt_login::profile_security::isolate_test_keystore()?;
     let provider = ProviderId::new("bedrock-fixture").ok_or("provider")?;
     let endpoint = "https://bedrock-runtime.us-east-1.amazonaws.com";
     let binding = DestinationBinding::key(ApiDestination::parse(endpoint)?);
