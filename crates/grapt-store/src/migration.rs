@@ -232,11 +232,14 @@ fn take_backup(
             format!("{base}-{suffix}.bak")
         };
         let candidate_path = backup_dir.join(&candidate);
-        match std::fs::OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .open(&candidate_path)
-        {
+        let mut options = std::fs::OpenOptions::new();
+        options.write(true).create_new(true);
+        // The backup holds everything the store holds; only its owner reads it.
+        // Unix enforces 0600; Windows inherits the resolved parent directory's
+        // ACL until shared Windows ACL extraction lands.
+        #[cfg(unix)]
+        std::os::unix::fs::OpenOptionsExt::mode(&mut options, 0o600);
+        match options.open(&candidate_path) {
             Ok(_file) => {
                 claimed = Some((candidate, candidate_path));
                 break;

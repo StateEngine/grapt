@@ -424,9 +424,6 @@
     "crates/grapt-product/src/compose/ephemeral.rs": {
       "fn run :: clippy::too_many_lines": 1
     },
-    "crates/grapt-product/src/compose/terminal/feedback.rs": {
-      "mod tests::fn owned_open_payloads_never_cross_the_terminal_boundary :: clippy::too_many_lines": 1
-    },
     "crates/grapt-product/src/compose/tests.rs": {
       "fn schema_matches :: clippy::too_many_lines": 1
     },
@@ -1397,9 +1394,6 @@
     },
     "crates/grapt-store/src/migrations.rs": {
       "struct SourceColumns :: clippy::struct_excessive_bools": 1
-    },
-    "crates/grapt-store/src/owned_open.rs": {
-      "mod tests::fn migration_authority_refusals_name_the_setting_and_the_fix :: clippy::too_many_lines": 1
     },
     "crates/grapt-store/src/plugin_compatibility.rs": {
       "impl EventStore::fn put_integration_credential :: clippy::too_many_lines": 1

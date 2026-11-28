@@ -89,8 +89,8 @@ fn absent_or_published(path: &Path) -> Result<(), String> {
     }
 }
 
-/// This install's own complete published profile: an open-ready configuration
-/// stamped by this build over a store that is openable (or mid-replay). The
+/// This install's own complete published profile: a configuration stamped by
+/// this build over a store that is openable (or mid-replay). The
 /// configuration is parsed with the account's own JSONC decoder: a published
 /// profile keeps its source document's comments. The check is conservative
 /// and read-only; anything it cannot verify keeps the generic refusal above.
@@ -109,12 +109,6 @@ fn published_own_profile(path: &Path) -> bool {
     let Ok(parsed) = super::decode(&config_bytes) else {
         return false;
     };
-    let open_ready = parsed
-        .value()
-        .get("store")
-        .and_then(|store| store.value().get("authority"))
-        .and_then(|value| value.value().as_str())
-        == Some("open-ready");
     let Ok(own_build) = super::super::executable_build() else {
         return false;
     };
@@ -124,7 +118,7 @@ fn published_own_profile(path: &Path) -> bool {
         .and_then(|product| product.value().get("build"))
         .and_then(|value| value.value().as_str())
         .is_some_and(|build| build == own_build);
-    if !open_ready || !stamped {
+    if !stamped {
         return false;
     }
     // Discovery only: this asks whether the profile can be opened at all, and

@@ -347,11 +347,17 @@ fn location_request(
     (status, body)
 }
 
+/// A store that cannot be opened refuses at first contact, before the
+/// product takes registration or controller authority.
 #[test]
-fn absent_store_refuses_before_registration_authority() {
-    let root = root("absent");
+fn damaged_store_refuses_before_registration_authority() {
+    let root = root("damaged-store");
     reset(&root);
     write_inputs(&root);
+    let damaged = vec![b'x'; 4096];
+    if let Err(error) = fs::write(root.join("database.sqlite3"), &damaged) {
+        panic!("damaged store fixture write failed: {error}");
+    }
     let output =
         match grapt_service::launcher_environment::command(env!("CARGO_BIN_EXE_grapt-server"))
             .arg("serve")
@@ -366,19 +372,30 @@ fn absent_store_refuses_before_registration_authority() {
         };
     assert!(
         !output.status.success(),
-        "an absent store launched the product"
+        "a damaged store launched the product"
+    );
+    // Refused at first contact by the platform, not later by the store's own
+    // open after authority was already taken.
+    let text = String::from_utf8_lossy(&output.stdout) + String::from_utf8_lossy(&output.stderr);
+    assert!(
+        text.contains("first-contact store classification"),
+        "the damaged store was not refused at first contact: {text}"
+    );
+    assert!(
+        fs::read(root.join("database.sqlite3")).is_ok_and(|bytes| bytes == damaged),
+        "the damaged store was changed"
     );
     assert!(
         !root.join("registration").exists(),
-        "absent store created registration"
+        "damaged store created registration"
     );
     assert!(
         !root.join("registration.elected").exists(),
-        "absent store acquired controller authority"
+        "damaged store acquired controller authority"
     );
     assert!(
         !root.join("registration.lock").exists(),
-        "absent store acquired registration lock"
+        "damaged store acquired registration lock"
     );
 }
 

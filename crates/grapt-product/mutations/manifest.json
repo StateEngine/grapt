@@ -7,22 +7,22 @@
       "id": "IPR01",
       "package": "grapt-product",
       "test_target": "product_root",
-      "test": "absent_store_refuses_before_registration_authority",
+      "test": "damaged_store_refuses_before_registration_authority",
       "file": "crates/grapt-product/src/compose.rs",
       "old": "    let platform = grapt_platform::PlatformOwner::prepare(service_root)\n        .map_err(|error| ProductRefusal::Platform(error.to_string()))?;",
       "new": "    let platform = match grapt_platform::PlatformOwner::prepare(service_root) {\n        Ok(platform) => platform,\n        Err(_error) => {\n            let database = service_root.join(\"database.sqlite3\");\n            let store = grapt_store::EventStore::open(&database, env!(\"CARGO_PKG_VERSION\"))\n                .map_err(|error| ProductRefusal::Platform(error.to_string()))?;\n            drop(store);\n            let migrations = grapt_store::ProductionMigrations::load()\n                .map_err(|error| ProductRefusal::Platform(error.to_string()))?;\n            grapt_store::apply_migrations(\n                &database,\n                service_root,\n                env!(\"CARGO_PKG_VERSION\"),\n                &migrations.as_slice(),\n            )\n            .map_err(|error| ProductRefusal::Platform(error.to_string()))?;\n            grapt_platform::PlatformOwner::prepare(service_root)\n                .map_err(|error| ProductRefusal::Platform(error.to_string()))?\n        }\n    };",
-      "red": "an absent store launched the product",
+      "red": "a damaged store launched the product",
       "repin_note": "Commit 2ba71e34 moved first-contact classification and exact owned-open authority out of product composition. The current equivalent law is the product boundary's refusal to synthesize, migrate and retry around a refused PlatformOwner; changing only the platform absent arm still refuses at the store's explicit migration authority boundary and therefore witnesses nothing."
     },
     {
       "id": "IPR02",
       "package": "grapt-product",
       "test_target": "product_root",
-      "test": "absent_store_refuses_before_registration_authority",
+      "test": "damaged_store_refuses_before_registration_authority",
       "file": "crates/grapt-product/src/compose.rs",
       "old": "    let platform = grapt_platform::PlatformOwner::prepare(service_root)\n        .map_err(|error| ProductRefusal::Platform(error.to_string()))?;",
       "new": "    let platform = match grapt_platform::PlatformOwner::prepare(service_root) {\n        Ok(platform) => platform,\n        Err(error) => {\n            let _premature = std::fs::write(service_root.join(\"registration\"), b\"premature\");\n            return Err(ProductRefusal::Platform(error.to_string()));\n        }\n    };",
-      "red": "absent store created registration",
+      "red": "damaged store created registration",
       "repin_note": "Commit 2ba71e34 replaced product-local readiness matching with PlatformOwner::prepare. Product composition still owns the ordering law: a refused platform acquisition returns before any registration artifact or controller authority exists."
     },
     {
