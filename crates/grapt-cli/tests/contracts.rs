@@ -43,6 +43,15 @@ fn command_grammar_refuses_mixed_connection_and_session_modes(
     ]);
     assert_eq!(mixed, Err(CommandError::ConnectionMode));
 
+    // Naming no connection selects the default profile rather than refusing.
+    assert!(matches!(
+        CliCommand::parse(["run", "fix", "the", "bug"]),
+        Ok(CliCommand::Run {
+            connection: grapt_cli::ConnectionChoice::DefaultProfile,
+            ..
+        })
+    ));
+
     let sessions = CliCommand::parse([
         "attach",
         "--service",
@@ -288,7 +297,9 @@ async fn connection_command_help_bypasses_open_stdin_and_hostile_home(
                 assert!(help.contains(connection), "{verb}: {connection}");
             }
         }
-        assert!(CliCommand::parse([verb]).is_err());
+        // Run still needs a prompt and attach a session; acp needs neither,
+        // so naming nothing serves the default profile.
+        assert_eq!(CliCommand::parse([verb]).is_err(), verb != "acp", "{verb}");
     }
     let run = sandbox.help(&["run", "--help"]).await?;
     assert!(run.contains("--stdin reads bounded UTF-8 through EOF"));

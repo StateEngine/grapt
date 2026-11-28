@@ -116,7 +116,8 @@ fn a_secondary_account_still_refuses_a_model_its_catalog_does_not_describe() -> 
         Err(refusal) => refusal.to_string(),
     };
     assert!(
-        refusal.contains("account model vendor-model-new has no catalog metadata"),
+        refusal.contains("an account model has no catalog metadata")
+            && !refusal.contains("vendor-model-new"),
         "{refusal}"
     );
     std::fs::remove_dir_all(root)?;

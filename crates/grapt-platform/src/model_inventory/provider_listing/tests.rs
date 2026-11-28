@@ -201,3 +201,17 @@ fn review_a_malformed_remote_context_is_unknown_not_a_refusal() -> Result<(), St
     }
     Ok(())
 }
+
+#[test]
+fn a_listing_refusal_never_repeats_a_model_identity_the_provider_returned() -> Result<(), String> {
+    for rows in [
+        json!([{"id":"provider-chosen-name"},{"id":"provider-chosen-name"}]),
+        json!([{"id":"provider-chosen-name","max_model_len":0}]),
+    ] {
+        let Err(refusal) = inventory(json!({}), rows) else {
+            return Err("an invalid listing was admitted".into());
+        };
+        assert!(!refusal.contains("provider-chosen-name"), "{refusal}");
+    }
+    Ok(())
+}

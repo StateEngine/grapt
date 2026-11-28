@@ -122,6 +122,20 @@ impl<T: Transport> Api<T> {
                 if let Ok(error) =
                     serde_json::from_slice::<grapt_api::u3a::InvalidRequestErrorDto>(&reply.body)
                 {
+                    // The service's own statement about an endpoint: an
+                    // unreachable server, no models, or a model with no window,
+                    // each with the step that fixes it.
+                    if error.kind().as_value().is_some_and(|kind| {
+                        kind.as_str() == grapt_api::u3a::INTEGRATION_ENDPOINT_KIND
+                    }) {
+                        let message = error.message().get().as_str();
+                        if !message.is_empty()
+                            && message.len() <= 1024
+                            && !message.chars().any(char::is_control)
+                        {
+                            return Err(endpoint_notice(message));
+                        }
+                    }
                     if error.kind().as_value().is_some_and(|kind| {
                         kind.as_str() == grapt_api::u3a::INTEGRATION_AZURE_CREDENTIALS_KIND
                     }) {
@@ -303,3 +317,12 @@ fn open(value: &str) -> Result<std::process::Child, String> {
 
 #[cfg(test)]
 mod tests;
+
+/// An endpoint refusal as the pane shows it: the service's sentence, first
+/// letter raised.
+fn endpoint_notice(message: &str) -> String {
+    let mut chars = message.chars();
+    chars.next().map_or_else(String::new, |first| {
+        first.to_uppercase().chain(chars).collect::<String>() + "."
+    })
+}

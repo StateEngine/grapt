@@ -19,6 +19,58 @@ guide as `QUICKSTART.md` beside its binaries. The
 [daily driver guide](docs/daily-driver/TUI-DRIVER.md) and
 [shell environment policy](docs/daily-driver/SHELL-ENVIRONMENT.md) cover ongoing use.
 
+## Build from source
+
+With [Rust](https://rustup.rs) installed, build the binaries from a checkout.
+The toolchain pinned in `rust-toolchain.toml` installs itself on first use.
+
+```sh
+cargo build --locked --release -p grapt-cli -p grapt-product -p grapt-tui
+```
+
+This writes `grapt`, `grapt-server` and `grapt-tui` to `target/release/`. Keep the
+three binaries in the same directory and put that directory on your `PATH`.
+
+## Connect a model
+
+Connect a hosted provider with its API key. When the provider's usual key
+variable, such as `ANTHROPIC_API_KEY`, is set, `grapt login` uses it, unless you
+pass endpoint or cloud setup or a service is already running; otherwise it asks
+for the key. `--key-stdin` reads a key from standard input instead.
+
+```sh
+grapt login anthropic
+```
+
+To use a model server on your own machine, name its preset. Grapt connects to
+the server's usual address and offers every listed model that can call tools and
+return text:
+
+| Server | Command | Address |
+| --- | --- | --- |
+| Ollama | `grapt login ollama` | `http://127.0.0.1:11434/v1` |
+| LM Studio | `grapt login lmstudio` | `http://127.0.0.1:1234/v1` |
+| vLLM | `grapt login vllm` | `http://127.0.0.1:8000/v1` |
+| llama.cpp server | `grapt login llamacpp` | `http://127.0.0.1:8080/v1` |
+| Any OpenAI-compatible server | `grapt login custom --base-url <url>` | yours |
+
+Use `--base-url` for another address, and `--model <id>` to connect one model by
+name. A local server needs no API key. Grapt reads each model's context window
+from the server. Serve the model with a window of at least 64K tokens, because a
+smaller window cannot hold Grapt's first request. For Ollama, start the server
+with `OLLAMA_CONTEXT_LENGTH=65536 ollama serve`.
+
+## Run a task
+
+In a repository, run one task and print the reply:
+
+```sh
+grapt run "summarize this repository"
+```
+
+`grapt run` uses your default profile and starts its service when none is
+running. Run `grapt` for the interactive terminal.
+
 Headless tasks can use [step limits](docs/headless-step-limits.md) to bound their work.
 
 For new headless runs without session/harness persistence, see

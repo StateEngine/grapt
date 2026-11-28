@@ -153,6 +153,11 @@ pub enum ApiClientError {
     ProviderKeyRejected,
     #[error("provider verification did not complete")]
     ProviderVerificationFailed,
+    /// The service's own statement about an endpoint it could not connect.
+    #[error("{0}")]
+    EndpointRefused(String),
+    #[error("no provider is connected to this profile yet; connect one with grapt login <provider>, then retry")]
+    ProviderSetup,
     #[error("{}", grapt_api::u3a::INTEGRATION_GOOGLE_ADC_MESSAGE)]
     GoogleAdcCredentials,
     #[error("{}", grapt_api::u3a::INTEGRATION_AWS_CREDENTIALS_MESSAGE)]
@@ -268,6 +273,12 @@ impl ApiClient {
 
     /// Transfer the one owned child for explicit shutdown. Its stdin pipe
     /// stays open until shutdown starts, including across client clones.
+    /// Whether this client owns the service it talks to: a child this
+    /// command started, which inherited this command's environment.
+    pub(crate) fn owns_service(&self) -> bool {
+        self.embedded.is_some()
+    }
+
     pub(crate) async fn take_embedded_child(&self) -> Option<tokio::process::Child> {
         let embedded = self.embedded.as_ref()?;
         embedded.child.lock().await.take()
@@ -890,9 +901,19 @@ async fn json_response(response: reqwest::Response) -> Result<reqwest::Response,
         .and_then(|bytes| String::from_utf8(bytes).ok())
         .filter(|value| !value.is_empty());
     Err(match detail {
+        Some(detail) if provider_setup(status, &detail) => ApiClientError::ProviderSetup,
         Some(detail) => ApiClientError::StatusDetail { status, detail },
         None => ApiClientError::Status(status),
     })
+}
+
+/// A service with no connected provider answers a run as unavailable for
+/// provider setup; that is a missing connection, not an outage.
+fn provider_setup(status: StatusCode, detail: &str) -> bool {
+    status == StatusCode::SERVICE_UNAVAILABLE
+        && serde_json::from_str::<serde_json::Value>(detail).is_ok_and(|body| {
+            body["_tag"] == "ServiceUnavailableError" && body["service"] == "provider-setup"
+        })
 }
 
 fn validate_endpoint(value: &str, mode: ClientMode) -> Result<ClientEndpoint, ApiClientError> {

@@ -235,14 +235,15 @@ impl ConnectionSetup {
             .as_mut()
             .filter(|selected| selected.provider == connection)
         {
-            let parsed: serde_json::Value =
-                serde_json::from_slice(&listing).map_err(|_| "invalid verified model list")?;
-            if !parsed["data"].as_array().is_some_and(|rows| {
-                rows.iter()
-                    .any(|row| row["id"].as_str() == Some(selected.model.as_str()))
-            }) {
+            // A reconnect keeps the chosen model only while it still runs
+            // here, and its variant only while the new listing offers it.
+            if !provider.runs(&listing, selected.model.as_str())? {
                 selected.model = ModelId::new(model).ok_or("invalid replacement model")?;
                 selected.variant = None;
+            } else if let Some(variant) = &selected.variant {
+                if !offers_variant(provider, &listing, selected.model.as_str(), variant)? {
+                    selected.variant = None;
+                }
             }
         }
         let approval = grapt_platform::profile_configuration::ConnectionChange::prepare(
@@ -368,6 +369,57 @@ impl ConnectionSetup {
                 "connection metadata changed; metadata directory durability is uncertain ({reason:?})"
             ));
         }
+        Ok(())
+    }
+}
+
+/// Whether the listing row for `model` offers `variant`, read as the model
+/// inventory reads it.
+fn offers_variant(
+    provider: KeyProvider,
+    listing: &[u8],
+    model: &str,
+    variant: &grapt_types::ModelVariantId,
+) -> Result<bool, String> {
+    let parsed: serde_json::Value =
+        serde_json::from_slice(listing).map_err(|_| "invalid verified model list")?;
+    let Some(row) = parsed["data"]
+        .as_array()
+        .and_then(|rows| rows.iter().find(|row| row["id"].as_str() == Some(model)))
+    else {
+        return Ok(false);
+    };
+    Ok(grapt_platform::offered_variants(provider.id(), model, row)?.contains(variant))
+}
+
+#[cfg(test)]
+mod variant_tests {
+    use super::*;
+
+    #[test]
+    fn a_variant_stays_only_while_the_live_row_offers_it() -> Result<(), String> {
+        let provider = KeyProvider::from_id("custom")?.ok_or("custom provider")?;
+        let listing = br#"{"data":[{"id":"local","max_model_len":65536,
+            "supported_reasoning_levels":[{"effort":"low"}]}]}"#;
+        let variant = |name: &str| grapt_types::ModelVariantId::new(name).ok_or("variant");
+        assert!(offers_variant(
+            provider,
+            listing,
+            "local",
+            &variant("low")?
+        )?);
+        assert!(!offers_variant(
+            provider,
+            listing,
+            "local",
+            &variant("high")?
+        )?);
+        assert!(!offers_variant(
+            provider,
+            listing,
+            "absent",
+            &variant("low")?
+        )?);
         Ok(())
     }
 }
