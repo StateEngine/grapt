@@ -60,6 +60,8 @@ winreg = "=0.56.0"
 windows-env = "=0.3.1"
 
 [dev-dependencies]
+# Tests never touch the production credential keystore entry or pointer.
+grapt-login = { path = "../grapt-login", features = ["loopback-testkit"] }
 # `test-util` lets launch-window tests advance the 30 s bound on a paused clock.
 tokio = { version = "1", default-features = false, features = ["io-std", "io-util", "macros", "net", "process", "rt-multi-thread", "signal", "sync", "test-util", "time"] }
 

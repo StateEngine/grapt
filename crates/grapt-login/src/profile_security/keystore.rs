@@ -4,22 +4,23 @@
 //! the name of its own Credential Manager entry. An entry is written once,
 //! under a name no other key has, and never replaced, so no process and no
 //! machine sharing a roaming account can overwrite a key another envelope
-//! needs. Which key seals next is a local choice: a pointer file in the
-//! user's local application data names it, and a lock beside the pointer
-//! keeps concurrent first uses of one machine to one new key. A pointer that
-//! is missing, unreadable or names a key Credential Manager no longer holds
+//! needs. Which key seals next is a local choice: a pointer file in a private
+//! directory of the user's local application data names it, and a lock beside
+//! the pointer keeps concurrent first uses of one machine to one new key. A
+//! pointer that is missing or names a key Credential Manager no longer holds
 //! only leads to a new key; nothing sealed earlier depends on the pointer.
 use super::entropy;
 use super::envelope::{ID_BYTES, KEY_BYTES};
 use std::fs::{self, OpenOptions};
-use std::io::{self, Write};
-use std::path::PathBuf;
+use std::io;
+use std::path::{Path, PathBuf};
 use zeroize::Zeroizing;
 
-#[cfg(not(test))]
+#[cfg(not(any(test, feature = "loopback-testkit")))]
 const SERVICE: &str = "grapt-credential-key";
-/// The crate's own tests never read or write a production entry.
-#[cfg(test)]
+/// Tests, in this crate and in every crate that tests with its testkit, never
+/// read or write a production entry or pointer.
+#[cfg(any(test, feature = "loopback-testkit"))]
 const SERVICE: &str = "grapt-credential-key-test";
 const POINTER: &str = "credential-key";
 const LOCK: &str = "credential-key.lock";
@@ -38,15 +39,14 @@ pub(super) fn by_id(id: &[u8; ID_BYTES]) -> io::Result<Option<Key>> {
 /// The key that seals next on this machine, made now if there is none.
 pub(super) fn current() -> io::Result<Key> {
     let directory = directory()?;
+    // The directory is this user's alone, and never a link, before anything
+    // in it is trusted or written.
+    fs::create_dir_all(&directory)?;
+    super::protect_directory(&directory)?;
     if let Some(key) = pointed(&directory)? {
         return Ok(key);
     }
-    fs::create_dir_all(&directory)?;
-    let lock = OpenOptions::new()
-        .create(true)
-        .truncate(false)
-        .write(true)
-        .open(directory.join(LOCK))?;
+    let lock = open_lock(&directory)?;
     lock.lock()?;
     let key = match pointed(&directory) {
         Ok(Some(key)) => Ok(key),
@@ -60,21 +60,39 @@ pub(super) fn current() -> io::Result<Key> {
 
 /// The key the pointer names, or `None` when there is no usable pointer or
 /// Credential Manager no longer holds its key.
-fn pointed(directory: &std::path::Path) -> io::Result<Option<Key>> {
-    let text = match fs::read_to_string(directory.join(POINTER)) {
-        Ok(text) => text,
+fn pointed(directory: &Path) -> io::Result<Option<Key>> {
+    // A link or an oversized file in place of the pointer refuses.
+    let bytes = match super::read_owner_only_file(&directory.join(POINTER), ID_BYTES * 2) {
+        Ok(bytes) => bytes,
         Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
         Err(error) => return Err(error),
     };
-    match parse(text.trim()) {
+    match std::str::from_utf8(&bytes).ok().and_then(parse) {
         Some(id) => read(id),
         None => Ok(None),
     }
 }
 
+/// The lock file, refused when it is a link or not the file that was opened.
+fn open_lock(directory: &Path) -> io::Result<fs::File> {
+    let path = directory.join(LOCK);
+    if fs::symlink_metadata(&path).is_ok_and(|metadata| !metadata.is_file()) {
+        return Err(io::Error::other(
+            "the credential key lock is not a regular file; it was left in place",
+        ));
+    }
+    let lock = OpenOptions::new()
+        .create(true)
+        .truncate(false)
+        .write(true)
+        .open(&path)?;
+    super::verify_private_file(&path, &lock)?;
+    Ok(lock)
+}
+
 /// Holding the lock: write a key under a new name, read it back, then point
 /// at it. A crash before the pointer moves leaves an unused entry only.
-fn create(directory: &std::path::Path) -> io::Result<Key> {
+fn create(directory: &Path) -> io::Result<Key> {
     let mut id = [0; ID_BYTES];
     entropy::fill(&mut id)?;
     let mut secret = Zeroizing::new([0; KEY_BYTES]);
@@ -97,16 +115,8 @@ fn create(directory: &std::path::Path) -> io::Result<Key> {
             "the new credential sealing key read back differently",
         ));
     }
-    let pending = directory.join(format!("{POINTER}.pending"));
-    let mut file = OpenOptions::new()
-        .create(true)
-        .truncate(true)
-        .write(true)
-        .open(&pending)?;
-    file.write_all(hex(&id).as_bytes())?;
-    file.sync_all()?;
-    drop(file);
-    fs::rename(&pending, directory.join(POINTER))?;
+    // Staged through a file created new for this process, then published.
+    super::replace_sign_in_file(directory, POINTER, hex(&id).as_bytes())?;
     Ok(stored)
 }
 
@@ -135,13 +145,14 @@ fn entry(id: [u8; ID_BYTES]) -> io::Result<keyring::Entry> {
     keyring::Entry::new(SERVICE, &hex(&id)).map_err(unavailable)
 }
 
-/// The user's local application data, never a roaming or temporary place.
-#[cfg(not(test))]
+/// A directory of its own in the user's local application data, never a
+/// roaming or temporary place.
+#[cfg(not(any(test, feature = "loopback-testkit")))]
 fn directory() -> io::Result<PathBuf> {
     std::env::var_os("LOCALAPPDATA")
         .map(PathBuf::from)
         .filter(|path| path.is_absolute())
-        .map(|path| path.join("grapt"))
+        .map(|path| path.join("grapt").join("credential-keys"))
         .ok_or_else(|| {
             io::Error::new(
                 io::ErrorKind::NotFound,
@@ -152,7 +163,7 @@ fn directory() -> io::Result<PathBuf> {
 
 /// One test key per account, shared by every test process through the lock,
 /// so test runs never accumulate Credential Manager entries.
-#[cfg(test)]
+#[cfg(any(test, feature = "loopback-testkit"))]
 fn directory() -> io::Result<PathBuf> {
     Ok(std::env::temp_dir().join("grapt-login-test-keys"))
 }

@@ -39,8 +39,13 @@ pub(super) fn seal(
     Ok(sealed)
 }
 
-/// The identity of the key that sealed what follows [`PREFIX`].
+/// The identity of the key that sealed what follows [`PREFIX`]. An envelope
+/// too short to hold an identity, a nonce and a tag is damaged, and refuses
+/// before any key is looked up, so damage never reads as a missing key.
 pub(super) fn key_id(sealed: &[u8]) -> io::Result<[u8; ID_BYTES]> {
+    if sealed.len() < ID_BYTES + NONCE_BYTES + TAG_BYTES {
+        return Err(refused());
+    }
     sealed
         .get(..ID_BYTES)
         .and_then(|id| id.try_into().ok())
@@ -51,11 +56,7 @@ pub(super) fn key_id(sealed: &[u8]) -> io::Result<[u8; ID_BYTES]> {
 /// altered, or sealed under another key, fail authentication and are refused.
 pub(super) fn open(key: &[u8; KEY_BYTES], sealed: &[u8]) -> io::Result<Vec<u8>> {
     let id = key_id(sealed)?;
-    let rest = &sealed[ID_BYTES..];
-    if rest.len() < NONCE_BYTES + TAG_BYTES {
-        return Err(refused());
-    }
-    let (nonce, body) = rest.split_at(NONCE_BYTES);
+    let (nonce, body) = sealed[ID_BYTES..].split_at(NONCE_BYTES);
     let nonce = Nonce::try_assume_unique_for_key(nonce).map_err(|_| refused())?;
     let mut body = zeroize::Zeroizing::new(body.to_vec());
     let plaintext = cipher(key)?
@@ -110,6 +111,7 @@ mod tests {
             *last ^= 1;
         }
         assert!(open(&key, &altered).is_err());
+        assert!(key_id(&body[..ID_BYTES + NONCE_BYTES]).is_err());
         assert!(open(&key, &body[..ID_BYTES + NONCE_BYTES]).is_err());
         Ok(())
     }

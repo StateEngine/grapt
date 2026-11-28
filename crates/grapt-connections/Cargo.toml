@@ -21,6 +21,8 @@ zeroize = "1.9"
 libc = "0.2"
 
 [dev-dependencies]
+# Tests never touch the production credential keystore entry or pointer.
+grapt-login = { path = "../grapt-login", features = ["loopback-testkit"] }
 tokio = { version = "1", default-features = false, features = ["macros", "rt", "time"] }
 
 [lints]

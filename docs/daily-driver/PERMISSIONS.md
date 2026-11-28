@@ -50,8 +50,9 @@ Provider keys and ChatGPT access/refresh tokens are sealed with AES-256-GCM in
 the existing profile files, under a key that Windows Credential Manager holds.
 Each key has its own `grapt-credential-key` entry, written once and never
 replaced, and each sealed file names the key that sealed it. A small file in
-`%LOCALAPPDATA%\grapt` records which key seals next on this machine; losing it
-only creates a new key. Keys stay with Windows, not in the repository or a
+the private directory `%LOCALAPPDATA%\grapt\credential-keys` records which key
+seals next on this machine; losing it only creates a new key. A damaged sealed
+file is refused as damaged, never treated as one whose key is missing. Keys stay with Windows, not in the repository or a
 profile file. Files sealed earlier with DPAPI **CurrentUser** stay
 readable and are sealed the new way when next written. Atomic replacement writes
 only protected bytes to the private temporary file. Legacy ChatGPT state is

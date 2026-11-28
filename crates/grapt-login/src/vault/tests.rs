@@ -247,5 +247,18 @@ fn an_entry_whose_key_is_gone_can_be_replaced_and_removed() -> TestResult {
     crate::profile_security::replace_private_file(&profile.0, "fixture.credential", &orphan()?)?;
     assert!(vault.remove(&key)?);
     assert!(vault.get(&key, &api)?.is_none());
+    // A damaged envelope naming an unknown key is damage, not a missing key:
+    // it is neither replaced nor removed.
+    let mut truncated = orphan()?;
+    truncated.truncate(truncated.len() - 20);
+    crate::profile_security::replace_private_file(&profile.0, "fixture.credential", &truncated)?;
+    assert!(matches!(
+        vault.get(&key, &api),
+        Err(VaultError::Unavailable(_))
+    ));
+    assert!(vault
+        .put(&key, &api, secret("other-key")?, Timestamp::from_millis(2))
+        .is_err());
+    assert!(vault.remove(&key).is_err());
     Ok(())
 }
