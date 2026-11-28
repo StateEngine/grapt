@@ -6,12 +6,12 @@ license.workspace = true
 description = "Bounded image preparation shared by explicit user attachments and image tools"
 
 [dependencies]
-base64 = "0.22.1"
-crc32fast = "=1.5.2"
-image = { version = "=0.25.9", default-features = false, features = ["png", "jpeg", "gif", "webp"] }
+base64 = { workspace = true }
+crc32fast = { workspace = true }
+image = { workspace = true, features = ["png", "jpeg", "gif", "webp"] }
 
 [target.'cfg(unix)'.dependencies]
-libc = "0.2"
+libc = { workspace = true }
 
 [lints]
 workspace = true

@@ -6,16 +6,16 @@ license = "MIT OR Apache-2.0"
 description = "Bounded public-web fetching through a DNS-pinned HTTP adapter"
 
 [dependencies]
-reqwest = { version = "0.13.4", default-features = false, features = ["rustls-no-provider", "http2"] }
-rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
-rustls-platform-verifier = "0.7"
-thiserror = "2"
-tokio = { version = "1", default-features = false, features = ["time", "rt", "sync"] }
+reqwest = { workspace = true, features = ["rustls-no-provider", "http2"] }
+rustls = { workspace = true, features = ["ring", "std", "tls12"] }
+rustls-platform-verifier = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true, features = ["time", "rt", "sync"] }
 htmd = "=0.5.4"
-url = "2"
+url = { workspace = true }
 
 [dev-dependencies]
-tokio = { version = "1", default-features = false, features = ["time", "net", "rt", "macros", "io-util"] }
+tokio = { workspace = true, features = ["time", "net", "rt", "macros", "io-util"] }
 
 [lints]
 workspace = true

@@ -10,21 +10,21 @@ description = "Location-owned bind intent and listener acquisition: typed bind h
 # `sync` feature is enabled for production because nothing here schedules,
 # reads a clock or spawns.
 [dependencies]
-thiserror = "2"
-tokio = { version = "1", features = ["net"] }
+thiserror = { workspace = true }
+tokio = { workspace = true, default-features = true, features = ["net"] }
 
 # `rt` and `macros` exist only so `#[tokio::test]` can drive the async bind
 # surface; `net` additionally gives the tests `TcpStream`, which is how a held
 # listener is proved undamaged after a conflicting bind without this crate
 # growing an accept API it does not own.
 [dev-dependencies]
-tokio = { version = "1", features = ["net", "rt", "macros"] }
-trybuild = "1.0.120"
+tokio = { workspace = true, default-features = true, features = ["net", "rt", "macros"] }
+trybuild = { workspace = true }
 # Reads the R4H-L acceptance corpus in tests/acceptance_corpus.rs. Already a
 # dev-dependency of thirteen sibling crates at the admitted base, so this edge
 # adds no package to the lock. A hand-rolled reader was the alternative, and a
 # validator that must refuse malformed input is the last place to put one.
-serde_json = "1"
+serde_json = { workspace = true }
 
 [lints]
 workspace = true

@@ -25,18 +25,18 @@ path = "tests/compile_fail.rs"
 
 [dependencies]
 grapt-types = { path = "../grapt-types" }
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
-thiserror = "2"
-tokio = { version = "1", default-features = false, features = ["io-util", "net", "time"] }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true, features = ["io-util", "net", "time"] }
 
 [target.'cfg(unix)'.dependencies]
 # DAILY-DRIVER-01: nonblocking/no-follow install-prefix lock open only.
-libc = "0.2"
+libc = { workspace = true }
 
 [target.'cfg(windows)'.dependencies]
 # DAILY-DRIVER-01: retained install-lock identity; admitted by ruling.
-same-file = "1.0"
+same-file = { workspace = true }
 
 [dev-dependencies]
 # Integration tests do not inherit normal dependencies.
@@ -44,19 +44,19 @@ grapt-types = { path = "../grapt-types" }
 # The corpus is JSON and JSONL. The owner PRODUCES expected/* from this crate's
 # own model and compares exhaustively, so a reader that silently accepted a
 # malformed row would defeat the comparison it exists to make.
-serde_json = "1"
+serde_json = { workspace = true }
 # The corpus owner validates this manifest against the ACTUAL ratified schema
 # file, resolved through the frozen-fixture seam. Two of that schema's reachable
 # constraints are `pattern`, so the evaluator needs a regex. `regex-lite` is
 # already resolved in this workspace (grapt-session), so this edge adds no
 # package to the lock.
-regex-lite = "0.1"
+regex-lite = { workspace = true }
 
 # R4D-2C: rollback-after-commit is forbidden by ownership, so its witness must
 # be a compile failure. `trybuild` is already resolved elsewhere in the
 # workspace; the controller itself needs no external locking dependency.
-trybuild = "1.0.120"
-tokio = { version = "1", default-features = false, features = ["io-util", "macros", "net", "rt", "time"] }
+trybuild = { workspace = true }
+tokio = { workspace = true, features = ["io-util", "macros", "net", "rt", "time"] }
 
 [lints]
 workspace = true

@@ -72,19 +72,19 @@ grapt-connections = { path = "../grapt-connections" }
 grapt-image = { path = "../grapt-image" }
 grapt-login = { path = "../grapt-login" }
 grapt-worktree = { path = "../grapt-worktree" }
-base64 = "0.22.1"
-crc32fast = "=1.5.2"
-globset = "=0.4.20"
+base64 = { workspace = true }
+crc32fast = { workspace = true }
+globset = { workspace = true }
 # Image viewing: decoder stays behind an exact dependency pin.
-image = { version = "=0.25.9", default-features = false, features = ["png", "jpeg", "gif", "webp"] }
+image = { workspace = true, features = ["png", "jpeg", "gif", "webp"] }
 jsonschema = { version = "=0.56.0", default-features = false }
 notify = { version = "=8.2.0", default-features = false, features = ["macos_fsevent"] }
-processkit = { version = "=3.3.4", default-features = false, features = ["limits", "process-control"] }
-regex = "=1.13.1"
-ring = "0.17.14"
-rusqlite = { version = "0.41", features = ["bundled"] }
-same-file = "=1.0.6"
-tempfile = "=3.27.0"
+processkit = { workspace = true, features = ["limits", "process-control"] }
+regex = { workspace = true }
+ring = { workspace = true }
+rusqlite = { workspace = true, features = ["bundled"] }
+same-file = { workspace = true }
+tempfile = { workspace = true }
 grapt-api = { path = "../grapt-api" }
 grapt-artifact = { path = "../grapt-artifact" }
 grapt-auth-basic = { path = "../grapt-auth-basic" }
@@ -122,24 +122,24 @@ grapt-subagent = { path = "../grapt-subagent" }
 grapt-toolchain = { path = "../grapt-toolchain" }
 grapt-tools-local = { path = "../grapt-tools-local" }
 grapt-types = { path = "../grapt-types" }
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
-toml = "0.8"
-thiserror = "2"
-tokio = { version = "1", default-features = false, features = ["io-util", "macros", "net", "process", "rt-multi-thread", "signal", "sync", "time"] }
-url = "2.5.8"
-yaml-rust2 = { version = "=0.11.0", default-features = false }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+toml = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true, features = ["io-util", "macros", "net", "process", "rt-multi-thread", "signal", "sync", "time"] }
+url = { workspace = true }
+yaml-rust2 = { workspace = true }
 
 [target.'cfg(windows)'.dependencies]
-sysinfo = { version = "=0.39.6", default-features = false, features = ["system"] }
+sysinfo = { workspace = true, features = ["system"] }
 interprocess = { version = "=2.4.5", default-features = false }
 win32job = "=2.0.3"
 filedescriptor = "=0.8.3"
-tokio = { version = "1", default-features = false, features = ["signal"] }
+tokio = { workspace = true, features = ["signal"] }
 conpty-oxide = { version = "=0.1.2", default-features = false, features = ["blocking"] }
 windows-spawn = { version = "=0.1.0", default-features = false }
 # Same safe adapter already used by the CLI: refuse hard-linked plugin resources.
-winapi-util = "=0.1.11"
+winapi-util = { workspace = true }
 # Handle-based Windows directory tree deletion without workspace unsafe.
 fs_at = "=0.2.1"
 
@@ -148,11 +148,11 @@ winconsole = { version = "=0.11.1", default-features = false }
 
 [target.'cfg(any(target_os = "linux", target_os = "macos"))'.dependencies]
 # Safe process identity and non-reaping exit observation during cleanup.
-rustix = { version = "=1.1.6", default-features = false, features = ["process", "std"] }
+rustix = { workspace = true, features = ["process", "std"] }
 
 [target.'cfg(unix)'.dependencies]
 portable-pty = "=0.9.0"
-nix = { version = "=0.30.1", default-features = false, features = ["signal", "process", "socket", "uio", "fs", "dir"] }
+nix = { workspace = true, features = ["signal", "process", "socket", "uio", "fs", "dir"] }
 
 [dev-dependencies]
 # Tests never touch the production credential keystore entry or pointer.
@@ -160,13 +160,13 @@ grapt-login = { path = "../grapt-login", features = ["loopback-testkit"] }
 grapt-tui-driver = { path = "../grapt-tui-driver" }
 grapt-client = { path = "../grapt-client" }
 grapt-provider = { path = "../grapt-provider", features = ["deterministic-testkit"] }
-tokio = { version = "1", default-features = false, features = ["test-util"] }
+tokio = { workspace = true, features = ["test-util"] }
 grapt-mcp-client = { path = "../grapt-mcp-client", features = ["loopback-testkit"] }
-rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
-rustls-platform-verifier = "0.7"
+rustls = { workspace = true, features = ["ring", "std", "tls12"] }
+rustls-platform-verifier = { workspace = true }
 grapt-store = { path = "../grapt-store" }
-serde_json = "1"
-sha2 = "0.10"
+serde_json = { workspace = true }
+sha2 = { workspace = true }
 
 [lints]
 workspace = true

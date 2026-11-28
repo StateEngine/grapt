@@ -25,15 +25,15 @@ name = "frozen_clone_rehearsal"
 path = "tests/frozen_clone_rehearsal.rs"
 
 [dependencies]
-rusqlite = { version = "0.41", features = ["bundled", "backup"] }
-same-file = "1.0"
+rusqlite = { workspace = true, features = ["bundled", "backup"] }
+same-file = { workspace = true }
 grapt-permission = { path = "../grapt-permission" }
 grapt-store = { path = "../grapt-store" }
 grapt-types = { path = "../grapt-types" }
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
-sha2 = "0.10"
-thiserror = "2"
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
+thiserror = { workspace = true }
 
 [lints]
 workspace = true

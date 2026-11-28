@@ -6,15 +6,15 @@ license.workspace = true
 description = "The MCP protocol domain: bounded JSON-RPC framing, an exact initialize handshake, and validated tool discovery. It is pure: no transport, process, socket, clock or permission authority, and no workspace dependency."
 
 [dependencies]
-serde_json = "1"
-thiserror = "2"
-url = "2.5.8"
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+url = { workspace = true }
 
 [dev-dependencies]
 # The dependency-direction gate parses this crate's manifest AND the workspace
 # root manifest structurally, so a dependency renamed once under
 # [workspace.dependencies] is still resolved to the crate it really names.
-toml = "0.8"
+toml = { workspace = true }
 
 [lints]
 workspace = true

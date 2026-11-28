@@ -6,10 +6,10 @@ license.workspace = true
 description = "The event stream's transport-neutral core: bounds, positions, live blocks and reconcile counts."
 
 [dependencies]
-bytes = "1"
+bytes = { workspace = true }
 grapt-types = { path = "../grapt-types" }
-serde = { version = "1", features = ["derive"] }
-thiserror = "2"
+serde = { workspace = true, features = ["derive"] }
+thiserror = { workspace = true }
 
 [lints]
 workspace = true

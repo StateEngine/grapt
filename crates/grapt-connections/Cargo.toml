@@ -13,17 +13,17 @@ grapt-connections-catalog = { path = "../grapt-connections-catalog" }
 grapt-config = { path = "../grapt-config" }
 grapt-login = { path = "../grapt-login" }
 grapt-types = { path = "../grapt-types" }
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
-zeroize = "1.9"
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+zeroize = { workspace = true }
 
 [target.'cfg(unix)'.dependencies]
-libc = "0.2"
+libc = { workspace = true }
 
 [dev-dependencies]
 # Tests never touch the production credential keystore entry or pointer.
 grapt-login = { path = "../grapt-login", features = ["loopback-testkit"] }
-tokio = { version = "1", default-features = false, features = ["macros", "rt", "time"] }
+tokio = { workspace = true, features = ["macros", "rt", "time"] }
 
 [lints]
 workspace = true

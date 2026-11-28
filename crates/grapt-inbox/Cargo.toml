@@ -18,9 +18,9 @@ path = "tests/inbox_admission.rs"
 [dependencies]
 grapt-types = { path = "../grapt-types" }
 grapt-store = { path = "../grapt-store" }
-rusqlite = { version = "0.41", features = ["bundled"] }
-serde_json = "1"
-thiserror = "2"
+rusqlite = { workspace = true, features = ["bundled"] }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
 
 [lints]
 workspace = true

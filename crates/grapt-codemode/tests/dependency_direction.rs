@@ -84,10 +84,15 @@ fn resolved(key: &str, value: &Value, root: &Value) -> Result<(String, Value, bo
             .and_then(|v| v.get("dependencies"))
             .and_then(|v| v.get(key))
             .ok_or("missing workspace dependency")?;
-        let mut base = inherited
-            .as_table()
-            .cloned()
-            .ok_or("workspace dependency must be a table")?;
+        let mut base = match inherited {
+            Value::String(version) => {
+                let mut table = toml::value::Table::new();
+                table.insert("version".into(), Value::String(version.clone()));
+                table
+            }
+            Value::Table(table) => table.clone(),
+            _ => return Err("workspace dependency must be a string or table".into()),
+        };
         let local = value.as_table().ok_or("dependency must be a table")?;
         for (field, value) in local {
             if field == "workspace" {

@@ -8,17 +8,17 @@ description = "Sealed remote-seat-mail-transport/v1 port, strict DTOs, authentic
 [dependencies]
 grapt-diagnostics = { path = "../grapt-diagnostics" }
 grapt-types = { path = "../grapt-types" }
-serde_json = "1"
-tokio = { version = "1", default-features = false, features = ["time"] }
-reqwest = { version = "0.13.4", default-features = false, features = ["rustls-no-provider", "http2"] }
+serde_json = { workspace = true }
+tokio = { workspace = true, features = ["time"] }
+reqwest = { workspace = true, features = ["rustls-no-provider", "http2"] }
 # Reqwest's existing no-provider TLS feature requires an explicit provider even
 # for a loopback-only client. This is the existing ring-backed workspace config;
 # it never installs a process-global crypto provider.
-rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
+rustls = { workspace = true, features = ["ring", "std", "tls12"] }
 
 [lints]
 workspace = true
 
 [dev-dependencies]
-trybuild = "1.0.120"
-tokio = { version = "1", default-features = false, features = ["rt", "net", "io-util", "sync", "time"] }
+trybuild = { workspace = true }
+tokio = { workspace = true, features = ["rt", "net", "io-util", "sync", "time"] }

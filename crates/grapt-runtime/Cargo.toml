@@ -18,16 +18,16 @@ grapt-provider = { path = "../grapt-provider" }
 grapt-session = { path = "../grapt-session" }
 grapt-store = { path = "../grapt-store" }
 grapt-types = { path = "../grapt-types" }
-thiserror = "2"
-tokio = { version = "1", features = ["rt", "sync", "macros", "time"] }
+thiserror = { workspace = true }
+tokio = { workspace = true, default-features = true, features = ["rt", "sync", "macros", "time"] }
 
 [dev-dependencies]
-tempfile = "3.27.0"
-rusqlite = { version = "0.41", features = ["bundled"] }
+tempfile = { workspace = true }
+rusqlite = { workspace = true, features = ["bundled"] }
 grapt-provider = { path = "../grapt-provider", features = ["deterministic-testkit", "loopback-testkit"] }
-serde_json = "1"
-trybuild = "1.0.120"
-tokio = { version = "1", features = ["rt", "rt-multi-thread", "sync", "macros", "time", "test-util"] }
+serde_json = { workspace = true }
+trybuild = { workspace = true }
+tokio = { workspace = true, default-features = true, features = ["rt", "rt-multi-thread", "sync", "macros", "time", "test-util"] }
 
 [lints]
 workspace = true

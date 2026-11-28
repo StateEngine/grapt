@@ -13,15 +13,15 @@ path = "tests/integration/main.rs"
 [dependencies]
 grapt-types = { path = "../grapt-types" }
 grapt-store = { path = "../grapt-store" }
-rusqlite = { version = "0.41", features = ["bundled"] }
-serde_json = "1"
-thiserror = "2"
+rusqlite = { workspace = true, features = ["bundled"] }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
 # The frozen answer validator enforces `format: "uri"` by WHATWG URL parse and
 # `pattern` by regular expression, so honouring them needs both engines in the
 # LIBRARY closure — this crate's validator runs in the product, not in a gate.
 #
 # `url` is already resolved at 2.5.8 in this workspace.
-url = "2.5.8"
+url = { workspace = true }
 # `regress` implements ECMAScript RegExp semantics, which is the contract the
 # frozen `pattern` constraint actually owes: the wire calls `new RegExp(pattern)`
 # with NO flags, and in that mode JavaScript is NOT a Unicode-scalar engine.
