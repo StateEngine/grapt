@@ -4,20 +4,10 @@
 
 use super::*;
 
-/// How the connection a frame arrived on carries live blocks: a legacy
-/// stream appends deltas; a positions stream places each by its offset and
-/// proves each end.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum StreamMode {
-    #[default]
-    Legacy,
-    Positions,
-}
-
 impl SessionView {
     /// The part of a delta its open slice has not yet received, or `None` for
-    /// a duplicate. On a positions stream a delta the server could not place
-    /// is a hole. Every admitted byte enters the block's digest before the
+    /// a duplicate. A delta the server could not place is a hole. Every
+    /// admitted byte enters the block's digest before the
     /// slice bound can discard any of it.
     pub(super) fn admit_delta(
         &mut self,
@@ -25,26 +15,20 @@ impl SessionView {
         index: usize,
         envelope: &EventEnvelope,
         text: String,
-        mode: StreamMode,
     ) -> Result<Option<String>, ProjectionError> {
         let from = envelope
             .data
             .get("from")
             .and_then(serde_json::Value::as_u64);
-        let text = match from {
-            None if mode == StreamMode::Positions => {
-                return Err(ProjectionError::OffsetGap { kind });
-            }
-            None => text,
-            Some(from) => {
-                let slice = &self.slices[index];
-                let received = slice.text.len().saturating_add(slice.truncated_bytes);
-                match admit(received, from, &text) {
-                    Offset::Append(tail) => tail.to_owned(),
-                    Offset::Duplicate => return Ok(None),
-                    Offset::Hole => return Err(ProjectionError::OffsetGap { kind }),
-                }
-            }
+        let Some(from) = from else {
+            return Err(ProjectionError::OffsetGap { kind });
+        };
+        let slice = &self.slices[index];
+        let received = slice.text.len().saturating_add(slice.truncated_bytes);
+        let text = match admit(received, from, &text) {
+            Offset::Append(tail) => tail.to_owned(),
+            Offset::Duplicate => return Ok(None),
+            Offset::Hole => return Err(ProjectionError::OffsetGap { kind }),
         };
         let ordinal = self.slices[index].ordinal;
         if let Some(wired) = self.slice_wires.get_mut(&ordinal) {

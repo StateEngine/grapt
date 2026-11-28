@@ -22,10 +22,10 @@ fn explicit_git_protection_narrows_layers_without_changing_false_or_default_auth
             &CatalogSources::read(&workspace, CatalogEnvironment::isolated(&root))?,
         )
     };
-    assert!(read()?.is_none());
+    assert!(read()?.is_some(), "isolation should default on");
     std::fs::write(
         config.join("grapt.json"),
-        br#"{"sandbox":{"git_metadata_read_only":false}}"#,
+        br#"{"sandbox":{"enabled":false,"git_metadata_read_only":false}}"#,
     )?;
     assert!(read()?.is_none(), "false silently enabled containment");
     std::fs::write(

@@ -15,8 +15,8 @@ Inspect the project before changing it.
 
 Using tools:
 - Find and read code with the dedicated tools rather than the shell: glob finds files by name, \
-grep searches contents (regex=true for patterns), list shows one directory and read_lines reads \
-source with line numbers. Use shell for builds, tests, git and other programs.
+grep searches contents (regex=true for patterns), list shows one directory and read reads \
+files with line numbers. Use shell for builds, tests, git and other programs.
 - Read the part of a file you are about to change first. Use edit for one exact replacement, \
 with enough surrounding text in old_text to make it unique; use the offered patch tool for several changes or files \
 in one step; write to create a new file or to replace a whole file.
@@ -80,10 +80,21 @@ struct AmbientObservation {
     failure: Option<String>,
 }
 
+impl AmbientObservation {
+    /// What the model is told while the source is unreadable.
+    fn notice(&self) -> Option<String> {
+        self.failure.as_ref().map(|reason| {
+            format!(
+                "Instruction source core/instructions is temporarily unavailable: {reason}. Continuing with its last known value; repair the source and retry refresh."
+            )
+        })
+    }
+}
+
 mod imports;
 mod rules;
 pub(super) mod source;
-use source::read_file;
+use source::{read_file, read_scoped_relative};
 
 impl InstructionRoots {
     /// The roots for a turn at `location`, which the Session resolved once
@@ -214,7 +225,7 @@ pub(super) struct EffectiveInstructions {
 }
 
 pub(super) struct PreparedInstructions {
-    pub(super) frozen_tools: Option<Vec<grapt_provider::ToolDefinition>>,
+    pub(super) tools: tool_epoch::SessionTools,
     pub(super) current: Vec<CodexInputItem>,
     pub(super) initial: Vec<CodexInputItem>,
     pub(super) updates: Vec<grapt_instruction::InstructionUpdate>,
@@ -223,6 +234,8 @@ pub(super) struct PreparedInstructions {
     current_session_index: Option<usize>,
     subagent_context: Option<String>,
 }
+mod builtin_epoch;
+pub(in crate::dogfood) use builtin_epoch::BuiltinEpoch;
 mod epoch;
 mod refresh_error;
 pub(super) use refresh_error::RefreshError;
@@ -251,11 +264,7 @@ impl EffectiveInstructions {
     ) -> Result<PreparedInstructions, RefreshError> {
         // File I/O precedes the synchronous Session-owned journal transaction.
         let ambient = self.roots.ambient()?;
-        let ambient_notice = ambient.failure.as_ref().map(|reason| {
-            format!(
-                "Instruction source core/instructions is temporarily unavailable: {reason}. Continuing with its last known value; repair the source and retry refresh."
-            )
-        });
+        let ambient_notice = ambient.notice();
         let (skill_guidance, skill_notice) = self.roots.skill_guidance()?;
         let mut inbox = self
             .inbox
@@ -326,78 +335,79 @@ impl EffectiveInstructions {
             std::env::consts::OS
         );
         let session_line = format!("Session ID: {}", self.session.as_str());
-        InstructionService::refresh(
+        let refreshed = InstructionService::refresh_recorded(
             inbox.store_mut(),
-            RefreshInput {
-                event,
-                session: self.session.clone(),
-                created_ms: now,
-                required: vec![
-                    key("core/base")?,
-                    key("core/environment")?,
-                    key("core/date")?,
-                    key("core/instructions")?,
-                    key("session/id")?,
-                    // core/skill-guidance is observed but not required: a
-                    // skill catalog that cannot be read must not stop a new
-                    // Session from starting, only withhold its guidance.
-                    entries_key.clone(),
-                ],
-                observations: {
-                    let mut observations = vec![
-                        SourceObservation::Available {
-                            key: key("core/base")?,
-                            value: InstructionValue::Text(BASE.to_owned()),
-                        },
-                        SourceObservation::Available {
-                            key: key("core/environment")?,
-                            value: InstructionValue::Text(environment),
-                        },
-                        SourceObservation::Available {
-                            key: key("session/id")?,
-                            value: InstructionValue::Text(session_line),
-                        },
-                        SourceObservation::Available {
-                            key: key("core/date")?,
-                            value: InstructionValue::Text(format!("Current UTC date: {date}")),
-                        },
-                        SourceObservation::Available {
-                            key: key("core/agent-guidance")?,
-                            value: InstructionValue::Text(self.roots.agents.clone()),
-                        },
-                        ambient.source,
-                        SourceObservation::Available {
-                            key: entries_key,
-                            value: InstructionValue::Text(entry_text),
-                        },
-                        skill_guidance,
-                    ];
-                    if let Some((tools, failed)) = tools {
-                        observations.extend(tool_epoch::observations(tools, failed)?);
-                        if let Some(guidance) = mcp_guidance {
-                            let key = key("core/mcp-guidance")?;
-                            // Guidance is filtered through current live routes and permissions.
-                            // Another server's failure cannot retain withdrawn instructions.
-                            observations.push(if guidance.is_empty() {
-                                SourceObservation::Removed { key }
-                            } else {
-                                SourceObservation::Available {
-                                    key,
-                                    value: InstructionValue::Text(guidance.to_owned()),
-                                }
-                            });
+            &self.session,
+            &BuiltinEpoch::keys()?,
+            |recorded| {
+                Ok::<_, RefreshError>(RefreshInput {
+                    event,
+                    session: self.session.clone(),
+                    created_ms: now,
+                    required: vec![
+                        key("core/base")?,
+                        key("core/environment")?,
+                        key("core/date")?,
+                        key("core/instructions")?,
+                        key("session/id")?,
+                        // core/skill-guidance is observed but not required: a
+                        // skill catalog that cannot be read must not stop a new
+                        // Session from starting, only withhold its guidance.
+                        entries_key.clone(),
+                    ],
+                    observations: {
+                        let mut observations = vec![
+                            SourceObservation::Available {
+                                key: key("core/environment")?,
+                                value: InstructionValue::Text(environment),
+                            },
+                            SourceObservation::Available {
+                                key: key("session/id")?,
+                                value: InstructionValue::Text(session_line),
+                            },
+                            SourceObservation::Available {
+                                key: key("core/date")?,
+                                value: InstructionValue::Text(format!("Current UTC date: {date}")),
+                            },
+                            SourceObservation::Available {
+                                key: key("core/agent-guidance")?,
+                                value: InstructionValue::Text(self.roots.agents.clone()),
+                            },
+                            ambient.source,
+                            SourceObservation::Available {
+                                key: entries_key,
+                                value: InstructionValue::Text(entry_text),
+                            },
+                            skill_guidance,
+                        ];
+                        observations.extend(BuiltinEpoch::from_recorded(recorded).observations()?);
+                        if let Some((tools, failed)) = tools {
+                            observations.extend(tool_epoch::observations(tools, failed)?);
+                            if let Some(guidance) = mcp_guidance {
+                                let key = key("core/mcp-guidance")?;
+                                // Guidance is filtered through current live routes and permissions.
+                                // Another server's failure cannot retain withdrawn instructions.
+                                observations.push(if guidance.is_empty() {
+                                    SourceObservation::Removed { key }
+                                } else {
+                                    SourceObservation::Available {
+                                        key,
+                                        value: InstructionValue::Text(guidance.to_owned()),
+                                    }
+                                });
+                            }
                         }
-                    }
-                    observations
-                },
+                        observations
+                    },
+                })
             },
-        )
-        .map_err(|error| error.to_string())?;
+        )?;
         let history = InstructionService::request_history(inbox.store(), &self.session)
             .map_err(RefreshError::history)?
             .ok_or("effective instructions have no durable baseline")?;
         warn_skipped(&history.skipped);
         let mut prepared = epoch::prepare(history, [ambient_notice, skill_notice])?;
+        prepared.tools.epoch = BuiltinEpoch::from_recorded(&refreshed.1);
         if let Some(child) =
             grapt_subagent::SubagentService::child_context_on(inbox.store(), &self.session)
                 .map_err(|error| error.to_string())?

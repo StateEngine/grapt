@@ -190,9 +190,10 @@ fn frc_live_delta_uses_serialized_wire_before_block_end() {
         (EventMember::ReasoningStarted, EventMember::ReasoningDelta),
     ] {
         let mut view = SessionView::new(&sid(SESSION));
+        let mut placer = crate::double::Placer::default();
         assert_eq!(view.apply(&plain(start), bounds()), Ok(Applied::Changed));
         assert_eq!(
-            view.apply(&delta(member, "frc-active α"), bounds()),
+            view.apply(&placer.place(delta(member, "frc-active α")), bounds()),
             Ok(Applied::Changed),
             "serialized live delta should apply before block end"
         );
@@ -221,8 +222,9 @@ fn frc_live_delta_missing_payload_is_not_empty_text() {
     }
     let mut view = SessionView::new(&sid(SESSION));
     let _ = view.apply(&plain(EventMember::TextStarted), bounds());
+    let mut placer = crate::double::Placer::default();
     assert_eq!(
-        view.apply(&delta(EventMember::TextDelta, ""), bounds()),
+        view.apply(&placer.place(delta(EventMember::TextDelta, "")), bounds()),
         Ok(Applied::Changed)
     );
 }
@@ -253,8 +255,9 @@ fn conformant(view: &mut SessionView) {
         execution(EventMember::ExecutionSucceeded, "exe1"),
         plain(EventMember::SessionIdle),
     ];
+    let mut placer = crate::double::Placer::default();
     for envelope in script {
-        match view.apply(&envelope, bounds()) {
+        match view.apply(&placer.place(envelope), bounds()) {
             Ok(_) => {}
             Err(error) => panic!("conformant transcript must apply: {error}"),
         }
@@ -318,27 +321,26 @@ fn a_delta_without_an_opened_block_is_refused() {
 }
 
 #[test]
-fn an_end_without_an_opened_block_is_refused() {
+fn an_end_that_cannot_prove_its_text_is_refused() {
     let mut view = SessionView::new(&sid(SESSION));
     assert_eq!(
         view.apply(&plain(EventMember::TextEnded), bounds()),
-        Err(ProjectionError::EndWithoutOpen {
+        Err(ProjectionError::EndUnproven {
             kind: SliceKind::Text
         })
     );
+    assert!(view.slices.is_empty(), "a refused end creates no slice");
 }
 
 #[test]
-fn a_second_open_of_the_same_kind_is_refused() {
+fn a_second_open_of_the_same_block_is_a_duplicate() {
     let mut view = SessionView::new(&sid(SESSION));
     let _ = view.apply(&plain(EventMember::TextStarted), bounds());
     assert_eq!(
         view.apply(&plain(EventMember::TextStarted), bounds()),
-        Err(ProjectionError::OverlappingOpen {
-            kind: SliceKind::Text
-        })
+        Ok(Applied::Ignored)
     );
-    assert_eq!(view.slices.len(), 1, "the refused open added no slice");
+    assert_eq!(view.slices.len(), 1, "the retained start added no slice");
 }
 
 #[test]
@@ -502,8 +504,12 @@ fn an_unclosed_slice_is_reported_open_rather_than_repaired() {
     // What an interrupted execution actually looks like. Closing it would
     // claim a completion that did not happen.
     let mut view = SessionView::new(&sid(SESSION));
-    let _ = view.apply(&plain(EventMember::TextStarted), bounds());
-    let _ = view.apply(&delta(EventMember::TextDelta, "partial"), bounds());
+    let mut placer = crate::double::Placer::default();
+    let _ = view.apply(&placer.place(plain(EventMember::TextStarted)), bounds());
+    let _ = view.apply(
+        &placer.place(delta(EventMember::TextDelta, "partial")),
+        bounds(),
+    );
     let _ = view.apply(
         &execution(EventMember::ExecutionInterrupted, "exe1"),
         bounds(),
@@ -538,9 +544,10 @@ fn absent_usage_stays_absent_and_never_becomes_zero() {
 fn the_slice_retention_bound_evicts_visibly() {
     let bounds = small_bounds(2, 1024);
     let mut view = SessionView::new(&sid(SESSION));
+    let mut placer = crate::double::Placer::default();
     for _ in 0..5 {
-        let _ = view.apply(&plain(EventMember::TextStarted), bounds);
-        let _ = view.apply(&plain(EventMember::TextEnded), bounds);
+        let _ = view.apply(&placer.place(plain(EventMember::TextStarted)), bounds);
+        let _ = view.apply(&placer.place(plain(EventMember::TextEnded)), bounds);
     }
     assert_eq!(view.slices.len(), 2, "retention bound held");
     assert_eq!(
@@ -556,10 +563,14 @@ fn the_slice_retention_bound_evicts_visibly() {
 fn the_slice_byte_bound_truncates_visibly_and_on_a_character_boundary() {
     let bounds = small_bounds(64, 8);
     let mut view = SessionView::new(&sid(SESSION));
-    let _ = view.apply(&plain(EventMember::TextStarted), bounds);
+    let mut placer = crate::double::Placer::default();
+    let _ = view.apply(&placer.place(plain(EventMember::TextStarted)), bounds);
     // Multi-byte characters so a naive byte cut would split one and produce
     // invalid UTF-8.
-    let _ = view.apply(&delta(EventMember::TextDelta, "ααααα"), bounds);
+    let _ = view.apply(
+        &placer.place(delta(EventMember::TextDelta, "ααααα")),
+        bounds,
+    );
     let slice = &view.slices[0];
     assert!(
         slice.text.len() <= bounds.max_slice_bytes,

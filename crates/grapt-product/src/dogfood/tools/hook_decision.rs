@@ -79,6 +79,9 @@ impl PermissionToolRunner {
             } else {
                 input
             };
+            if let Some(refused) = runner.screened(&tool, &input, &options) {
+                return refused.await;
+            }
             // Revalidate the replacement against the exact public schema and
             // strict built-in decoder before resolving its permission targets.
             runner

@@ -50,6 +50,9 @@ pub enum ConnectionChoice {
         product_binary: PathBuf,
         service_root: PathBuf,
     },
+    /// No connection was named: the user's default profile, through its
+    /// running service or one this command owns until it exits.
+    DefaultProfile,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -756,11 +759,12 @@ fn connection(parsed: &Parsed) -> Result<ConnectionChoice, CommandError> {
     if parsed.product_binary.is_some() {
         return Err(CommandError::ConnectionMode);
     }
-    parsed
+    Ok(parsed
         .service_root
         .clone()
-        .map(|service_root| ConnectionChoice::Discover { service_root })
-        .ok_or(CommandError::ConnectionMode)
+        .map_or(ConnectionChoice::DefaultProfile, |service_root| {
+            ConnectionChoice::Discover { service_root }
+        }))
 }
 
 fn selector(parsed: &Parsed) -> Result<SessionSelector, CommandError> {

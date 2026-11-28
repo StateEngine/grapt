@@ -116,6 +116,7 @@ grapt-session = { path = "../grapt-session" }
 grapt-service-state = { path = "../grapt-service-state" }
 grapt-shell = { path = "../grapt-shell" }
 grapt-stateengine-api = { path = "../grapt-stateengine-api" }
+grapt-stateengine-ipc = { path = "../grapt-stateengine-ipc" }
 grapt-store = { path = "../grapt-store" }
 grapt-subagent = { path = "../grapt-subagent" }
 grapt-toolchain = { path = "../grapt-toolchain" }
@@ -139,6 +140,8 @@ conpty-oxide = { version = "=0.1.2", default-features = false, features = ["bloc
 windows-spawn = { version = "=0.1.0", default-features = false }
 # Same safe adapter already used by the CLI: refuse hard-linked plugin resources.
 winapi-util = "=0.1.11"
+# Handle-based Windows directory tree deletion without workspace unsafe.
+fs_at = "=0.2.1"
 
 [target.'cfg(windows)'.dev-dependencies]
 winconsole = { version = "=0.11.1", default-features = false }
@@ -149,7 +152,7 @@ rustix = { version = "=1.1.6", default-features = false, features = ["process", 
 
 [target.'cfg(unix)'.dependencies]
 portable-pty = "=0.9.0"
-nix = { version = "=0.30.1", default-features = false, features = ["signal", "process", "socket", "uio", "fs"] }
+nix = { version = "=0.30.1", default-features = false, features = ["signal", "process", "socket", "uio", "fs", "dir"] }
 
 [dev-dependencies]
 # Tests never touch the production credential keystore entry or pointer.

@@ -182,15 +182,13 @@ timeout. Half-open detection on Windows uses TCP keepalive and is best-effort.
 ### Permissions and presets
 
 Every Session runs at a permission preset: how much the agent may do without
-asking you. Maintainer is the default. It allows ordinary work, and its short
-exception list asks before:
+asking you. Maintainer is the default. It allows read-only inspection and
+workspace file creates/edits (`fs.create`, `fs.modify`), and asks before:
 
-- shell commands the safety classifier finds destructive: recursive or forced
-  deletes; Git commands that discard work; disk, boot or power commands;
-  recursive permission or ownership changes; writes outside the workspace;
-  generated scripts run by an interpreter; commands run as another user;
-  commands too complex to check; commands built from input it has not seen;
+- shell commands (whether ordinary or destructive);
+- file overwrites, moves, and deletes (`fs.overwrite`, `fs.move`, `fs.delete`);
 - the `external_directory` action, access to a directory outside the project;
+- MCP, plugin, or unknown tools;
 - creating, editing, moving or deleting the permission authority files: the
   profile's `service.conf`, `grapt.json` or `grapt.jsonc` (and the
   pre-rename `secode.json` or `secode.jsonc`), and the resolved <!-- grapt-rename: keep -->

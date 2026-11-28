@@ -42,17 +42,22 @@ pub(super) fn captured_failure(
             detail: None,
         };
     };
-    let detail = artifacts
-        .capture(
-            std::io::Cursor::new(detail.into_bytes()),
-            bound,
-            ArtifactKind::CapturedOutput,
-            Sensitivity::Ordinary,
-        )
-        .ok()
-        .and_then(|captured| {
+    let detail = match artifacts.capture(
+        std::io::Cursor::new(detail.into_bytes()),
+        bound,
+        ArtifactKind::CapturedOutput,
+        Sensitivity::Ordinary,
+    ) {
+        Ok(captured) => {
             ToolTerminalArtifact::new(captured.reference().clone(), captured.disposition())
-        });
+        }
+        Err(error) => {
+            crate::server_log::warn(format_args!(
+                "tool failure detail artifact capture failed reason={reason:?}: {error}"
+            ));
+            None
+        }
+    };
     ToolTerminalOutcome::Failed { reason, detail }
 }
 

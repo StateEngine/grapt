@@ -81,10 +81,7 @@ impl<C: Connection> Client<C> {
                 _ => ContentKind::User,
             },
         });
-        let result = self
-            .connection
-            .begin_operator(&wire)
-            .map_err(ClientError::from);
+        let result = self.begin_operator(&wire);
         self.mcp_content_result(result)
     }
 
@@ -92,7 +89,7 @@ impl<C: Connection> Client<C> {
         if !self.mcp_content_pending() {
             return Ok(None);
         }
-        let result = self.connection.poll_operator().map_err(ClientError::from);
+        let result = self.poll_operator();
         self.mcp_content_result(result)
     }
 

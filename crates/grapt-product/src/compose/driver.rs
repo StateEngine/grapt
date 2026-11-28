@@ -7,6 +7,12 @@ pub(crate) enum ServiceDriver {
 }
 
 impl ServiceDriver {
+    pub(crate) fn attach_auto_resume_principal(&mut self, principal: grapt_api::SealedPrincipal) {
+        if let Self::Ready(driver) = self {
+            driver.attach_auto_resume_principal(principal);
+        }
+    }
+
     pub(crate) async fn run_until_shutdown(
         &mut self,
         stop: impl std::future::Future<Output = StopReason>,

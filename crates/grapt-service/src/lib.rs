@@ -128,7 +128,7 @@ pub use attribution::{
     RetainedOwnerMapping, RetainedSource, ShapeObservation,
 };
 pub use authenticated_health_probe::{
-    AuthenticatedHealthProbe, HealthExpectation, HealthProbeRefusal,
+    AuthenticatedHealthProbe, HealthExpectation, HealthProbeRefusal, HEALTH_PROBE_ALLOWANCE,
 };
 pub use custody::{
     ArtifactClass, ArtifactCustody, CapThatFired, CleanupInventory, DeclaredArtifact,

@@ -21,10 +21,12 @@ mod storage;
 
 use history::{
     check_cache, decode_observations, decode_required, fold_history, resolve_delta, resolve_map,
-    write_folded_state, CacheStatus, Observed,
+    write_folded_state, CacheStatus, Fold, Observed,
 };
 pub use projection::InstructionProjector;
-use storage::{decode_entry, ensure_tables, insert_blob, instruction_event_data, load_entry};
+use storage::{
+    decode_entry, ensure_tables, insert_blob, instruction_event_data, load_blob, load_entry,
+};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum InstructionValue {
@@ -181,6 +183,18 @@ pub struct CurrentInstructions {
     pub skipped: Vec<SkippedInstructionEvent>,
 }
 
+/// What a Session's instructions record for one key.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RecordedValue {
+    /// The Session has never had instructions: it is new.
+    Never,
+    /// Its instructions, or the last ones a move or rewind cleared, lack it.
+    Absent,
+    Present(String),
+    /// Journal rows could not be read, so what it records is unknown.
+    Unreadable,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum EntryOutcome {
     Applied,
@@ -245,18 +259,67 @@ impl InstructionService {
         store: &mut EventStore,
         input: RefreshInput,
     ) -> Result<RefreshOutcome, InstructionError> {
+        let session = input.session.clone();
+        Self::refresh_folded(store, &session, |_, _| Ok((input, ()))).map(|(outcome, ())| outcome)
+    }
+
+    /// Refresh with an input chosen from what the Session records for each
+    /// of `keys`, in order, read from the same fold the refresh applies, so
+    /// the journal is read once. A move or rewind clears the Session's
+    /// instructions but not what it began with, so a cleared Session answers
+    /// from the values it last held.
+    pub fn refresh_recorded<E: From<InstructionError>>(
+        store: &mut EventStore,
+        session: &SessionId,
+        keys: &[InstructionKey],
+        build: impl FnOnce(&[RecordedValue]) -> Result<RefreshInput, E>,
+    ) -> Result<(RefreshOutcome, Vec<RecordedValue>), E> {
+        Self::refresh_folded(store, session, |conn, fold| {
+            let recorded = keys
+                .iter()
+                .map(|key| recorded_in(conn, fold, key))
+                .collect::<Result<Vec<_>, _>>()?;
+            Ok((build(&recorded)?, recorded))
+        })
+    }
+
+    fn refresh_folded<T, E: From<InstructionError>>(
+        store: &mut EventStore,
+        session: &SessionId,
+        build: impl FnOnce(&rusqlite::Connection, &Fold) -> Result<(RefreshInput, T), E>,
+    ) -> Result<(RefreshOutcome, T), E> {
         let held = store.held_writers();
-        let aggregate = AggregateId::Session(input.session.clone());
-        let tx = store.governed_transaction()?;
+        let aggregate = AggregateId::Session(session.clone());
+        let tx = store
+            .governed_transaction()
+            .map_err(InstructionError::from)?;
         ensure_tables(&tx)?;
         // Refresh folds the journal and checks the cache before it appends, so
         // a corrupt cache fails closed here; its projector then continues from
         // the cache this check just proved.
-        let fold = fold_history(&tx, &input.session)?;
-        let cache = check_cache(&tx, &input.session, &fold)?;
+        let fold = fold_history(&tx, session)?;
+        let cache = check_cache(&tx, session, &fold)?;
         if cache != CacheStatus::Present {
-            write_folded_state(&tx, &input.session, fold.persistable())?;
+            write_folded_state(&tx, session, fold.persistable())?;
         }
+        let (input, chosen) = build(&tx, &fold)?;
+        if input.session != *session {
+            return Err(InstructionError::Corruption {
+                reason: "refresh input names another Session".into(),
+            }
+            .into());
+        }
+        let outcome = Self::apply_refresh(tx, held, aggregate, fold, input)?;
+        Ok((outcome, chosen))
+    }
+
+    fn apply_refresh(
+        tx: grapt_store::GovernedTransaction<'_>,
+        held: grapt_store::HeldWriters,
+        aggregate: AggregateId,
+        fold: Fold,
+        input: RefreshInput,
+    ) -> Result<RefreshOutcome, InstructionError> {
         let truth = fold.history;
         let required = decode_required(input.required)?;
         let observations = decode_observations(input.observations)?;
@@ -513,5 +576,25 @@ impl InstructionService {
             });
         }
         Ok(entries)
+    }
+}
+
+/// What `fold` records for `key`; unreadable when it had to skip rows.
+fn recorded_in(
+    conn: &rusqlite::Connection,
+    fold: &Fold,
+    key: &InstructionKey,
+) -> Result<RecordedValue, InstructionError> {
+    if !fold.skipped.is_empty() {
+        return Ok(RecordedValue::Unreadable);
+    }
+    let values = match (&fold.history, &fold.cleared) {
+        (Some(history), _) => &history.state.current,
+        (None, Some(cleared)) => cleared,
+        (None, None) => return Ok(RecordedValue::Never),
+    };
+    match values.get(key) {
+        Some(hash) => Ok(RecordedValue::Present(load_blob(conn, *hash)?)),
+        None => Ok(RecordedValue::Absent),
     }
 }

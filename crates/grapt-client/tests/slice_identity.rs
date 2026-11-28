@@ -9,25 +9,29 @@ fn frame(
     kind: &str,
     message: &str,
     ordinal: u64,
-    delta: Option<&str>,
+    delta: Option<(&str, usize)>,
 ) -> TestResult<EventEnvelope> {
     let mut value = json!({
         "id": "evt_slice_identity", "type": format!("session.{kind}.{}", if delta.is_some() { "delta" } else { "started" }),
         "created": 1, "data": {"sessionID": SESSION, "assistantMessageID": message, "ordinal": ordinal},
     });
-    if let Some(delta) = delta {
+    if let Some((delta, from)) = delta {
         value["data"]["delta"] = json!(delta);
+        value["data"]["from"] = json!(from);
     } else {
         value["durable"] = json!({"aggregateID": SESSION, "seq": 1, "version": 1});
     }
     Ok(EventEnvelope::decode(&value.to_string())?)
 }
 
+/// The text every opened block starts with.
+const ORIGINAL: &str = "original Ω";
+
 fn opened(kind: &str) -> TestResult<SessionView> {
     let mut view = SessionView::new(&wire::session_id(SESSION)?);
     view.apply(&frame(kind, MESSAGE, 0, None)?, Bounds::default())?;
     view.apply(
-        &frame(kind, MESSAGE, 0, Some("original Ω"))?,
+        &frame(kind, MESSAGE, 0, Some((ORIGINAL, 0)))?,
         Bounds::default(),
     )?;
     Ok(view)
@@ -37,7 +41,12 @@ fn rejects_mismatch(kind: &str, message: &str, ordinal: u64) -> TestResult {
     let mut view = opened(kind)?;
     let before = view.slices[0].text.clone();
     let result = view.apply(
-        &frame(kind, message, ordinal, Some(" belongs elsewhere"))?,
+        &frame(
+            kind,
+            message,
+            ordinal,
+            Some((" belongs elsewhere", ORIGINAL.len())),
+        )?,
         Bounds::default(),
     );
     assert!(result.is_err(), "delta for a different block was accepted");
@@ -74,7 +83,7 @@ fn matching_text_and_reasoning_deltas_extend_their_blocks() -> TestResult {
     for kind in ["text", "reasoning"] {
         let mut view = opened(kind)?;
         view.apply(
-            &frame(kind, MESSAGE, 0, Some(" continues"))?,
+            &frame(kind, MESSAGE, 0, Some((" continues", ORIGINAL.len())))?,
             Bounds::default(),
         )?;
         assert_eq!(view.slices.len(), 1);
@@ -101,7 +110,7 @@ fn rejects_unidentified_history(kind: &str) -> TestResult {
     view.apply_durable(&message, Bounds::default())?;
     assert!(!view.slices[0].closed);
     let result = view.apply(
-        &frame(kind, "msg_next_block", 0, Some(" belongs elsewhere"))?,
+        &frame(kind, "msg_next_block", 0, Some((" belongs elsewhere", 0)))?,
         Bounds::default(),
     );
     assert!(result.is_err(), "delta for a different block was accepted");

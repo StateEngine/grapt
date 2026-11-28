@@ -253,6 +253,7 @@ impl PermissionPoll {
                 .peer_mut()
                 .authority_dirty
                 .swap(false, Ordering::AcqRel)
+                | client.take_permission_refresh()
                 || self.retry.is_some_and(|at| at <= now))
         {
             return Ok(false);

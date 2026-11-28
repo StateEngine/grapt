@@ -433,17 +433,33 @@ fn fu02_root_overwrite_and_invalid_input_refuse() -> Result<(), String> {
     let scratch = Scratch::new("refusals")?;
     let root = &scratch.0;
     std::fs::write(root.join("existing"), b"preserve").map_err(|error| error.to_string())?;
+    std::fs::create_dir(root.join("nested")).map_err(|error| error.to_string())?;
     // An existing regular file is overwritten (fs.overwrite), not refused.
-    for path in ["../escape", "AGENTS.md", ".git", "missing/file"] {
-        assert!(
-            call(
-                root,
-                WRITE_TOOL,
-                serde_json::json!({"path":path,"content":"bad"})
-            )
-            .is_err(),
-            "accepted {path}"
-        );
+    for path in [
+        "../escape",
+        "AGENTS.md",
+        "AGENTS.override.md",
+        "nested/AGENTS.md",
+        "nested/AGENTS.override.md",
+        "nested/agents.override.md",
+        ".git",
+        "missing/file",
+    ] {
+        let error = call(
+            root,
+            WRITE_TOOL,
+            serde_json::json!({"path":path,"content":"bad"}),
+        )
+        .err()
+        .ok_or_else(|| format!("accepted {path}"))?;
+        if path.to_ascii_lowercase().ends_with("agents.md")
+            || path.to_ascii_lowercase().ends_with("agents.override.md")
+        {
+            assert!(
+                error.contains("protected control metadata"),
+                "expected instruction protection for {path}, got: {error}"
+            );
+        }
     }
     assert_eq!(
         std::fs::read(root.join("existing")).map_err(|error| error.to_string())?,
@@ -545,20 +561,34 @@ fn fu12_absolute_coding_paths_preserve_workspace_authority() -> Result<(), Strin
         )
         .is_err());
     }
+    std::fs::create_dir(root.join("nested")).map_err(|error| error.to_string())?;
     for name in [
         "AGENTS.md",
+        "AGENTS.override.md",
+        "nested/AGENTS.md",
+        "nested/AGENTS.override.md",
+        "nested/agents.override.md",
         ".git",
         ".grapt",
         ".stateengine",
         ".codex",
         "CLAUDE.md",
     ] {
-        assert!(call(
+        let error = call(
             root,
             WRITE_TOOL,
-            serde_json::json!({"path":root.join(name),"content":"bad"})
+            serde_json::json!({"path":root.join(name),"content":"bad"}),
         )
-        .is_err());
+        .err()
+        .ok_or_else(|| format!("accepted {name}"))?;
+        if name.to_ascii_lowercase().ends_with("agents.md")
+            || name.to_ascii_lowercase().ends_with("agents.override.md")
+        {
+            assert!(
+                error.contains("protected control metadata"),
+                "expected instruction protection for {name}, got: {error}"
+            );
+        }
     }
     assert!(!outside.0.join("new").exists());
     Ok(())

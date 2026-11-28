@@ -1,13 +1,19 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 //! An authenticated connection: one request at a time, each answer checked
 //! against its request and bounded by the negotiated reply size.
+use crate::activity::{
+    Activity, ActivityReceipt, AgentSelector, ExternalRequest, ACTIVITY_CAPABILITY,
+};
+use crate::events::{EventStream, SubscribeRequest, EVENTS_CAPABILITY, MIN_BATCH_BYTES};
 use crate::frame::{decode, encode, read_frame, write_frame};
 use crate::handshake::{handshake, HandshakeOptions, Session};
 use crate::peer::PeerBinding;
 use crate::server_peer::VerifiedPeer;
-use crate::wire::{IpcEnvelope, IpcResponse, IpcResult, Operation, Output, Request};
+use crate::turn::{PublishTurn, PublishTurnReceipt, PUBLISH_TURN_CAPABILITY};
+use crate::wire::{CliSelections, IpcEnvelope, IpcResponse, IpcResult, Operation, Output, Request};
 use crate::{IpcError, API_VERSION, MAX_FRAME_BYTES};
-use grapt_stateengine_api::IdempotencyKey;
+use grapt_stateengine_api::{IdempotencyKey, ProjectId};
+use serde::de::DeserializeOwned;
 use serde_json::Value;
 use tokio::io::{AsyncRead, AsyncWrite};
 
@@ -76,12 +82,128 @@ impl<S: AsyncRead + AsyncWrite + Unpin> Connection<S> {
         self.call(name, arguments, Some(key.0.clone())).await
     }
 
+    /// Record one completed turn of a seat's conversation in `project`. An
+    /// owner connection names the seat's agent and session. After an
+    /// uncertain outcome, retry with the same turn on a new connection.
+    pub async fn publish_turn(
+        &mut self,
+        project: &ProjectId,
+        turn: &PublishTurn,
+    ) -> Result<PublishTurnReceipt, IpcError> {
+        self.require(PUBLISH_TURN_CAPABILITY)?;
+        turn.check().map_err(IpcError::Invalid)?;
+        if turn.target_agent_id.is_none() || turn.session_id.is_none() {
+            return Err(IpcError::Invalid(
+                "an owner connection names the seat's agent and session".into(),
+            ));
+        }
+        let arguments =
+            serde_json::to_value(turn).map_err(|error| IpcError::Malformed(error.to_string()))?;
+        let operation = Operation {
+            name: crate::turn::PUBLISH_TURN_OPERATION.to_owned(),
+            arguments,
+            key: Some(turn.idempotency_key.0.clone()),
+        };
+        let selections = CliSelections {
+            project: project.clone(),
+        };
+        let output = self
+            .exchange(Request::Operation(operation), Some(selections))
+            .await?;
+        receipt(output, crate::turn::RECEIPT_SCHEMA)
+    }
+
+    /// Report an external seat's turn state, naming its agent and project:
+    /// owner authority starts at the registry.
+    pub async fn report_activity(
+        &mut self,
+        agent: &AgentSelector,
+        project: &ProjectId,
+        state: Activity,
+    ) -> Result<ActivityReceipt, IpcError> {
+        self.require(ACTIVITY_CAPABILITY)?;
+        if agent.is_empty() {
+            return Err(IpcError::Invalid(
+                "an owner report names the seat's agent".into(),
+            ));
+        }
+        let output = self
+            .exchange(
+                Request::External(ExternalRequest::SessionActivity {
+                    project: Some(project.clone()),
+                    agent: Some(agent.clone()),
+                    state,
+                }),
+                None,
+            )
+            .await?;
+        receipt(output, crate::activity::RECEIPT_SCHEMA)
+    }
+
+    /// Turn this connection into a push event stream. Its frames are bounded
+    /// by the smaller of `max_batch_bytes` and the negotiated reply size.
+    pub async fn subscribe(
+        mut self,
+        request: SubscribeRequest,
+    ) -> Result<EventStream<S>, IpcError> {
+        self.require(EVENTS_CAPABILITY)?;
+        if self.broken {
+            return Err(IpcError::ConnectionBroken);
+        }
+        let limit = request
+            .max_batch_bytes
+            .min(self.session.maximum_reply_bytes);
+        if limit < MIN_BATCH_BYTES {
+            return Err(IpcError::Invalid(format!(
+                "a subscription's batch bound is {limit} bytes, under {MIN_BATCH_BYTES}"
+            )));
+        }
+        let resume = request.after_cursor.clone();
+        let request_id = self.send(Request::Subscribe(request), None).await?;
+        Ok(EventStream::new(
+            self.stream,
+            request_id,
+            self.session.generation,
+            limit,
+            resume,
+        ))
+    }
+
+    fn require(&self, capability: &'static str) -> Result<(), IpcError> {
+        let offered = self
+            .session
+            .capabilities
+            .as_deref()
+            .is_some_and(|names| names.iter().any(|name| name == capability));
+        if offered {
+            Ok(())
+        } else {
+            Err(IpcError::Unsupported(capability))
+        }
+    }
+
     async fn call(
         &mut self,
         name: &str,
         arguments: Value,
         key: Option<String>,
     ) -> Result<Output, IpcError> {
+        let operation = Operation {
+            name: name.to_owned(),
+            arguments,
+            key,
+        };
+        self.exchange(Request::Operation(operation), None).await
+    }
+
+    /// Write one request and return its id. Once it is on the wire, any
+    /// failure leaves the stream's position unknown, so the connection takes
+    /// no further request until an answer is read.
+    async fn send(
+        &mut self,
+        request: Request,
+        cli_selections: Option<CliSelections>,
+    ) -> Result<u64, IpcError> {
         if self.broken {
             return Err(IpcError::ConnectionBroken);
         }
@@ -94,17 +216,28 @@ impl<S: AsyncRead + AsyncWrite + Unpin> Connection<S> {
             request_id,
             generation: self.session.generation,
             authority: None,
-            request: Request::Operation(Operation {
-                name: name.to_owned(),
-                arguments,
-                key,
-            }),
+            cli_selections,
+            request,
         };
         let payload = encode(&envelope)?;
-        // Once a request is on the wire, any failure leaves the stream's
-        // position unknown, so the connection takes no further request.
+        // Refused before any byte is written, so the connection stays usable.
+        if payload.len() > MAX_FRAME_BYTES as usize {
+            return Err(IpcError::OutgoingFrame {
+                length: payload.len(),
+                limit: MAX_FRAME_BYTES,
+            });
+        }
         self.broken = true;
         write_frame(&mut self.stream, &payload, MAX_FRAME_BYTES).await?;
+        Ok(request_id)
+    }
+
+    async fn exchange(
+        &mut self,
+        request: Request,
+        cli_selections: Option<CliSelections>,
+    ) -> Result<Output, IpcError> {
+        let request_id = self.send(request, cli_selections).await?;
         let reply = read_frame(&mut self.stream, self.session.maximum_reply_bytes).await?;
         let response: IpcResponse = decode(&reply)?;
         if response.version != API_VERSION {
@@ -122,4 +255,15 @@ impl<S: AsyncRead + AsyncWrite + Unpin> Connection<S> {
             IpcResult::Error(error) => Err(IpcError::Refused(error)),
         }
     }
+}
+
+/// An output's value under the schema its request expects.
+fn receipt<T: DeserializeOwned>(output: Output, schema: &str) -> Result<T, IpcError> {
+    if output.schema != schema {
+        return Err(IpcError::Malformed(format!(
+            "an answer has schema {:?}, not {schema:?}",
+            output.schema
+        )));
+    }
+    serde_json::from_value(output.value).map_err(|error| IpcError::Malformed(error.to_string()))
 }

@@ -17,14 +17,33 @@ pub(in crate::dogfood) use receipt::project as project_receipt;
 pub(super) use receipt::Receipt;
 #[cfg(target_os = "linux")]
 pub(in crate::dogfood) mod posix;
+#[cfg(any(unix, windows, test))]
+mod scratch;
 #[cfg(windows)]
 pub(super) mod windows;
 
 fn backend() -> &'static str {
     if cfg!(target_os = "linux") {
         "bwrap"
+    } else if cfg!(target_os = "macos") {
+        "seatbelt"
     } else {
         "mxc"
+    }
+}
+
+#[cfg(not(any(windows, target_os = "linux")))]
+pub(super) fn unsupported_platform_refusal() -> String {
+    if cfg!(target_os = "macos") {
+        refusal(
+            &degraded("macOS Seatbelt shell containment is not wired into this build"),
+            "macOS Seatbelt sandbox unavailable; no command ran; set \"sandbox\": {\"enabled\": false} in user grapt.json to opt out",
+        )
+    } else {
+        refusal(
+            &degraded("OS shell containment is unavailable on this platform"),
+            "sandbox unavailable; no command ran; set \"sandbox\": {\"enabled\": false} in user grapt.json to opt out",
+        )
     }
 }
 
@@ -48,11 +67,33 @@ pub(in crate::dogfood::tools) struct Plan {
     #[serde(default)]
     denied: Vec<PathBuf>,
     network: bool,
+    /// When the host temp directory was omitted from `writable` because it is
+    /// an ancestor of the workspace, the planner records it here so the helper
+    /// (whose environment is cleared) creates a private per-command scratch
+    /// directory inside it and sets `TMPDIR`/`TEMP`/`TMP`.
+    #[serde(default)]
+    private_temp_parent: Option<PathBuf>,
+    /// Exact Unix per-UID scratch anchor path (`<temp_parent>/grapt-scratch-<euid>`)
+    /// recorded by the planner when `private_temp_parent` is disabled due to a
+    /// temp-overlapping write grant, so the helper precreates/verifies ONLY this
+    /// exact path and never touches unrelated protected entries by basename.
+    #[serde(default)]
+    protected_scratch_anchor: Option<PathBuf>,
 }
 
 impl Plan {
     pub(super) fn git_metadata_read_only(&self) -> bool {
         self.git_metadata_read_only
+    }
+
+    #[cfg(any(target_os = "linux", windows, test))]
+    pub(super) fn private_temp_parent(&self) -> Option<&Path> {
+        self.private_temp_parent.as_deref()
+    }
+
+    #[cfg(target_os = "linux")]
+    pub(super) fn protected_scratch_anchor(&self) -> Option<&Path> {
+        self.protected_scratch_anchor.as_deref()
     }
 
     pub(super) fn policy(&self) -> grapt_sandbox::Policy {
@@ -69,14 +110,63 @@ impl Plan {
         }
     }
 
-    pub(super) fn path_count(&self) -> usize {
-        self.readable.len() + self.writable.len() + self.protected.len() + self.denied.len()
+    /// Policy used when previewing scoped write grants before approval: guards
+    /// the Unix per-UID scratch anchor even when `private_temp_parent` is still
+    /// active, matching `Plan::filesystem()` so overlapping grants fail before
+    /// approval rather than later during `WriteTarget::from_file`.
+    pub(super) fn preview_policy(&self) -> grapt_sandbox::Policy {
+        let mut policy = self.policy();
+        policy.protected_paths = self.protected_paths_with_scratch_anchor();
+        policy
     }
 
-    pub(super) fn add_write_target(&mut self, path: &Path) {
+    fn protected_paths_with_scratch_anchor(&self) -> Vec<PathBuf> {
+        #[cfg(unix)]
+        {
+            let mut protected = self.protected.clone();
+            let temp_parent = self
+                .private_temp_parent
+                .clone()
+                .or_else(|| config::canonical_temp_dir().ok());
+            if let Some(parent) = temp_parent {
+                let anchor = scratch::unix_scratch_anchor_path(&parent);
+                if !protected.iter().any(|existing| existing == &anchor) {
+                    protected.push(anchor);
+                }
+            }
+            protected
+        }
+        #[cfg(not(unix))]
+        {
+            self.protected.clone()
+        }
+    }
+
+    pub(super) fn path_count(&self) -> usize {
+        self.readable.len()
+            + self.writable.len()
+            + self.protected.len()
+            + self.denied.len()
+            + usize::from(self.private_temp_parent.is_some())
+    }
+
+    pub(super) fn add_write_target(&mut self, path: &Path) -> Result<(), String> {
+        let canonical_target = std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
         if !self.writable.iter().any(|held| held == path) {
             self.writable.push(path.to_path_buf());
         }
+        let temp_parent = match self.private_temp_parent.clone() {
+            Some(parent) => parent,
+            None => config::canonical_temp_dir()?,
+        };
+        if config::path_overlaps_scratch(path, &temp_parent)
+            || config::path_overlaps_scratch(&canonical_target, &temp_parent)
+        {
+            self.private_temp_parent = None;
+            self.protected_scratch_anchor =
+                config::protect_unix_scratch_anchor(&mut self.protected, &temp_parent)?;
+        }
+        config::check_path_budget(self.path_count(), false)
     }
 
     pub(super) fn read(root: &Path, sources: &CatalogSources) -> Result<Option<Self>, String> {
@@ -90,10 +180,11 @@ impl Plan {
                 .map(|path| grapt_types::PathIdentity::canonical(super::path_text(path)))
                 .collect()
         };
+        let protected = self.protected_paths_with_scratch_anchor();
         grapt_types::FilesystemAuthority::new(
             identities(&self.readable),
             identities(&self.writable),
-            identities(&self.protected),
+            identities(protected.as_slice()),
         )
         .with_read_deny(identities(&self.denied))
     }
@@ -177,7 +268,10 @@ pub(in crate::dogfood) fn receipt(raw: &str) -> Option<serde_json::Value> {
     match enforcement.get("kind")?.as_str()? {
         "harness_only" => {}
         "platform_sandbox" | "degraded"
-            if matches!(enforcement.get("backend")?.as_str()?, "mxc" | "bwrap") => {}
+            if matches!(
+                enforcement.get("backend")?.as_str()?,
+                "mxc" | "bwrap" | "seatbelt"
+            ) => {}
         _ => return None,
     }
     value.get("ran")?;

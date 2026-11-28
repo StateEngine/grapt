@@ -57,6 +57,7 @@ pub(super) struct AcpProcess {
     /// Whether the last cleanup found the whole group gone and both threads
     /// joined; never set by a probe that did not run.
     pub(super) cleaned_up: bool,
+    _installed_binary: Option<process_fixture::InstalledProductBinary>,
 }
 
 #[cfg(unix)]
@@ -109,16 +110,19 @@ impl AcpProcess {
         let (home, config) = (root.join("home"), root.join("global-config"));
         fs::create_dir_all(&home).unwrap_or_else(|error| panic!("{error}"));
         fs::create_dir_all(&config).unwrap_or_else(|error| panic!("{error}"));
+        let installed_binary = process_fixture::installed_product_binary();
         let mut command = Command::new(super::cli_continuity::cli_binary());
         command
             .args(["acp", "--embedded", "--product"])
-            .arg(env!("CARGO_BIN_EXE_grapt-server"))
+            .arg(installed_binary.path())
             .arg("--service")
             .arg(root)
             .env("GRAPT_LIVE_HEADLESS_LOOPBACK", format!("http://{provider}"))
             .env("GRAPT_TEST_HOME", &home)
             .env("GRAPT_CONFIG_DIR", &config);
-        Self::spawn(command, frame_cap)
+        let mut process = Self::spawn(command, frame_cap);
+        process._installed_binary = Some(installed_binary);
+        process
     }
 
     /// Run `command` in its own process group, speaking ACP over its stdio.
@@ -182,6 +186,7 @@ impl AcpProcess {
             frames: Some(frames),
             reader: Some(reader),
             cleaned_up: false,
+            _installed_binary: None,
         }
     }
 

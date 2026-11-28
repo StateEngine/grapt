@@ -222,6 +222,13 @@ pub enum TransportError {
     FrameTooLarge { bound: usize },
     #[error("response was not valid UTF-8: {reason}")]
     NotUtf8 { reason: String },
+    /// The service predates what this client needs to show a session live:
+    /// stream positions and the coherent session snapshot.
+    #[error(
+        "This Grapt server is older than this client: it has no {missing}. \
+         Upgrade the Grapt server to this client's version, then reconnect."
+    )]
+    ServerTooOld { missing: &'static str },
 }
 
 impl TransportError {

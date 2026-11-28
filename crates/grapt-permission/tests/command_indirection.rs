@@ -2,7 +2,7 @@
 use grapt_permission::{
     command_safety::simple_commands,
     prefix::PrefixPattern,
-    preset::{decide, Effect, Layer, Preset},
+    preset::{decide, Compose, Effect, Layer, LayerName, Preset, Rule},
 };
 
 fn decision(command: &str) -> Effect {
@@ -10,7 +10,18 @@ fn decision(command: &str) -> Effect {
     decide(
         "shell",
         &[&resource],
-        &[Layer::preset_in(Preset::Maintainer, Some("/repo"))],
+        &[
+            Layer::preset_in(Preset::Maintainer, Some("/repo")),
+            Layer {
+                name: LayerName::Config,
+                rules: vec![
+                    Rule::new("shell", "*", Effect::Allow),
+                    Rule::destructive("shell", Effect::Ask, Some("/repo")),
+                ],
+                floor: false,
+                compose: Compose::Override,
+            },
+        ],
     )
     .effect
 }

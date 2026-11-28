@@ -30,6 +30,7 @@ fn contained_ctrl_c_preserves_the_command_handler_and_exit_status(
                 "sandbox":{"enabled":true,"network":false,"writable_roots":[workspace]}
             }))?,
         )?;
+        unattended(&base);
         let provider = ProviderFixture::start(vec![
             Script::ToolInput {
                 call: "call_contained_start",
@@ -362,6 +363,7 @@ fn pty_input_output_and_restart_refusal_cross_the_production_tool_path(
     let _journey = process_journey_custody();
     let root = root("terminal-io");
     prepare(&root, 200_000);
+    unattended(&root);
     #[cfg(windows)]
     let command = "set /p reply=ready^> & set reply";
     #[cfg(not(windows))]

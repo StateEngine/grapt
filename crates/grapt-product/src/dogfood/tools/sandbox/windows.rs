@@ -268,38 +268,101 @@ fn run(mut channel: std::fs::File) -> Result<i32, String> {
     // The authenticated parent retains no-delete-sharing pins until this
     // handoff completes. Resolve while those names cannot be replaced, then
     // retain the helper's own native pins through the contained child lifetime.
-    let policy = request.plan.policy();
-    let targets = request
+    let mut policy = request.plan.policy();
+    let mut environment = request.environment;
+    let scratch =
+        super::scratch::PrivateScratch::attach(&request.plan, &mut policy, &mut environment)?;
+    let targets = match request
         .write_targets
         .iter()
         .map(|path| grapt_sandbox::WriteTarget::resolve(&policy, path))
-        .collect::<Result<Vec<_>, _>>()?;
+        .collect::<Result<Vec<_>, _>>()
+    {
+        Ok(targets) => targets,
+        Err(reason) => {
+            let cleanup_err = super::scratch::cleanup_after_stop(scratch, true);
+            return Err(super::scratch::combine_errors(reason, [cleanup_err]));
+        }
+    };
     let request = ShellRequest {
         command_line: request.command_line,
         working_directory: request.directory,
-        environment: request.environment,
+        environment,
         timeout_ms: request.timeout_ms,
         policy,
     };
     let mut child = match Mxc.spawn_with_write_targets(&request, &targets) {
         Ok(child) => child,
         Err(failure) => {
-            send(
+            let cleanup_err =
+                super::scratch::cleanup_after_stop(scratch, !failure.effects_possible);
+            let receipt_err = send(
                 &mut channel,
                 &failure.enforcement,
                 (!failure.effects_possible).then_some(false),
-            )?;
-            return Err(failure.reason);
+            )
+            .err();
+            return Err(super::scratch::combine_errors(
+                failure.reason,
+                [receipt_err, cleanup_err],
+            ));
         }
     };
     if let Err(reason) = send(&mut channel, &child.enforcement(), Some(true)) {
-        let _killed = child.kill();
-        return Err(reason);
+        let (kill_err, reap_err, stopped) = stop_and_reap_child(child);
+        let cleanup_err = super::scratch::cleanup_after_stop(scratch, stopped);
+        return Err(super::scratch::combine_errors(
+            reason,
+            [kill_err, reap_err, cleanup_err],
+        ));
     }
     drop(channel);
-    child
+    let status = child
         .wait()
-        .map_err(|error| format!("sandbox process observation failed: {error}"))
+        .map_err(|error| format!("sandbox process observation failed: {error}"));
+    match status {
+        Ok(code) => {
+            // Drop the contained process handle so job/container teardown
+            // completes before walking scratch.
+            drop(child);
+            let cleanup = scratch.map_or(Ok(()), super::scratch::PrivateScratch::cleanup);
+            let (exit_code, diagnostic) = super::scratch::finish_with_exit_code(code, cleanup);
+            if let Some(reason) = diagnostic {
+                if code == 0 {
+                    return Err(reason);
+                }
+                eprintln!("{reason}");
+            }
+            Ok(exit_code)
+        }
+        Err(wait_reason) => {
+            let (kill_err, reap_err, stopped) = stop_and_reap_child(child);
+            let cleanup_err = super::scratch::cleanup_after_stop(scratch, stopped);
+            Err(super::scratch::combine_errors(
+                wait_reason,
+                [kill_err, reap_err, cleanup_err],
+            ))
+        }
+    }
+}
+
+fn stop_and_reap_child(
+    mut child: grapt_sandbox::ContainedShell,
+) -> (Option<String>, Option<String>, bool) {
+    // Always terminate and wait() the full contained process tree, then drop
+    // the handle: MXC try_wait() only observes foreground exit and leaves
+    // descendant teardown to wait() / Drop.
+    let kill_err = child
+        .kill()
+        .err()
+        .map(|error| format!("sandbox kill failed: {error}"));
+    let reap_err = child
+        .wait()
+        .err()
+        .map(|error| format!("sandbox reap failed: {error}"));
+    let stopped = reap_err.is_none();
+    drop(child);
+    (kill_err, reap_err, stopped)
 }
 
 fn send(
@@ -358,6 +421,8 @@ mod tests {
             protected: vec![],
             denied: Vec::new(),
             network: false,
+            private_temp_parent: None,
+            protected_scratch_anchor: None,
         };
         let environment = super::super::super::shell_environment::Environment::parent()?;
         let pending = Pending::prepare(

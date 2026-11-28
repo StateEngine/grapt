@@ -17,8 +17,9 @@ pub use admission::InboxProjector;
 pub use admission::{
     AdmissionCoordinates, AdmitOutcome, AdmitRequest, CompactionAdmission, CompactionAdmitRequest,
     CompactionFailRequest, CompactionFailure, Inbox, InboxError, InputAcceptance, NativeMailResume,
-    PendingCompaction, PendingInput, PromoteScope, Promoted, PromotedInput, PromotedInputKind,
-    PromotedMessage, SyntheticAdmitRequest, UserInputOptions, UserInputOrigin, WakeDisposition,
+    PendingCompaction, PendingInput, PromoteOutcome, PromoteScope, Promoted, PromotedInput,
+    PromotedInputKind, PromotedMessage, SyntheticAdmitRequest, UserInputOptions, UserInputOrigin,
+    WakeDisposition,
 };
 pub use event::{InboxEvent, InboxEventError, OperationDeliverySettlement};
 pub use fold::{InboxFold, OperationDeliveryRow, PendingRow};

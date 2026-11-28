@@ -20,22 +20,26 @@
 //! misreport it.
 use super::*;
 
+pub(in crate::dogfood) mod auto_resume;
+
 pub(super) fn recover(
+    service_root: &Path,
     store: &mut grapt_store::EventStore,
     ids: &Arc<OsRandomIds>,
     clock: &Arc<SystemClock>,
     receipt_bytes: NonZeroU32,
 ) -> Result<(), DogfoodRefusal> {
+    auto_resume::ensure_schema_if_missing(store).map_err(DogfoodRefusal::Compose)?;
     let runtime_ids = execution::RuntimeEventIds(Arc::clone(ids));
     let runtime_clock = execution::RuntimeClock(Arc::clone(clock));
-    let mut first = |store: &mut grapt_store::EventStore, session: &SessionId| {
-        settle_lost_tool_runs(store, session, &runtime_ids, &runtime_clock)
+    let mut attempt_first = |store: &mut grapt_store::EventStore, session: &SessionId| {
+        settle_lost_tool_runs(service_root, store, session, &runtime_ids, &runtime_clock)
     };
     let attempts = recover_process_loss_attempts(
         store,
         clock.as_ref(),
         AttemptRecordCeiling::new(receipt_bytes),
-        &mut first,
+        &mut attempt_first,
     )
     .map_err(|error| DogfoodRefusal::Compose(error.to_string()))?;
     for warning in &attempts.warnings {
@@ -49,6 +53,8 @@ pub(super) fn recover(
             attempts.warnings_omitted
         ));
     }
+    let pre_recovery_forms = auto_resume::fence_pre_recovery_form_sessions(store, clock.as_ref())
+        .map_err(DogfoodRefusal::Compose)?;
     let forms = elicitation::recover(store, ids.as_ref(), clock.as_ref())
         .map_err(DogfoodRefusal::Compose)?;
     for warning in &forms {
@@ -56,7 +62,17 @@ pub(super) fn recover(
             "startup warning reason=form-recovery-skipped detail={warning}"
         ));
     }
-    session_status::SessionStatusEmitter::recover(store, clock, ids, &mut first);
+    let mut status_first = |store: &mut grapt_store::EventStore, session: &SessionId| {
+        settle_lost_tool_runs(service_root, store, session, &runtime_ids, &runtime_clock)?;
+        auto_resume::enqueue_if_eligible(
+            store,
+            session,
+            &pre_recovery_forms,
+            clock.as_ref(),
+            ids.as_ref(),
+        )
+    };
+    session_status::SessionStatusEmitter::recover(store, clock, ids, &mut status_first);
     Ok(())
 }
 
@@ -66,6 +82,7 @@ pub(super) fn recover(
 /// corrupt or larger than reconciliation may settle, is reported and does not
 /// hold the Session's marks back, since no later start could settle it either.
 fn settle_lost_tool_runs(
+    service_root: &Path,
     store: &mut grapt_store::EventStore,
     session: &SessionId,
     ids: &execution::RuntimeEventIds,
@@ -87,8 +104,24 @@ fn settle_lost_tool_runs(
     if orphans.is_empty() {
         return Ok(());
     }
-    grapt_runtime::reconcile_orphaned_nested(store, session, &orphans, ids, clock)
-        .map_err(|reason| format!("its lost tool runs could not be recorded: {reason}"))?;
+    let artifacts = match execution::artifacts::open_artifacts(service_root) {
+        Ok(store) => Some(store),
+        Err(error) => {
+            crate::server_log::warn(format_args!(
+                "startup warning reason=lost-tool-runs-artifact-store-unavailable detail=session {session}: {error}"
+            ));
+            None
+        }
+    };
+    grapt_runtime::reconcile_orphaned_nested_with_artifacts(
+        store,
+        session,
+        &orphans,
+        ids,
+        clock,
+        artifacts.as_ref(),
+    )
+    .map_err(|reason| format!("its lost tool runs could not be recorded: {reason}"))?;
     crate::server_log::info(format_args!(
         "session {session}: recorded {} tool runs lost at restart as unknown",
         orphans.len()

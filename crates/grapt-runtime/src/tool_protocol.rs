@@ -368,10 +368,48 @@ where
         _tool: String,
         _input: BoundedToolInput,
     ) -> BoxFuture<'static, ToolTerminalOutcome> {
-        Box::pin(async {
+        let artifacts = Arc::clone(&self.artifacts);
+        Box::pin(async move {
+            let detail = match CaptureBound::new(2048, 2048) {
+                Some(bound) => match artifacts.capture(
+                    std::io::Cursor::new(
+                        b"tool execution refused: governed tool authority is unavailable"
+                            .as_slice(),
+                    ),
+                    bound,
+                    ArtifactKind::Diagnostic,
+                    Sensitivity::Ordinary,
+                ) {
+                    Ok(captured) => {
+                        let artifact = ToolTerminalArtifact::new(
+                            captured.reference().clone(),
+                            captured.disposition(),
+                        );
+                        if artifact.is_none() {
+                            grapt_diagnostics::report(
+                                "governed tool refusal diagnostic artifact disposition mismatch"
+                                    .to_owned(),
+                            );
+                        }
+                        artifact
+                    }
+                    Err(error) => {
+                        grapt_diagnostics::report(format!(
+                            "governed tool refusal diagnostic artifact capture failed: {error}"
+                        ));
+                        None
+                    }
+                },
+                None => {
+                    grapt_diagnostics::report(
+                        "governed tool refusal diagnostic capture bound invalid".to_owned(),
+                    );
+                    None
+                }
+            };
             ToolTerminalOutcome::Failed {
                 reason: ToolFailureReason::AuthorityUnavailable,
-                detail: None,
+                detail,
             }
         })
     }
@@ -671,13 +709,15 @@ mod tests {
         let outcome =
             ToolRunner::run(&runner, call(), "provider-authored-label".to_owned(), input).await;
 
-        assert_eq!(
-            outcome,
+        match outcome {
             ToolTerminalOutcome::Failed {
                 reason: ToolFailureReason::AuthorityUnavailable,
-                detail: None,
+                detail: Some(detail),
+            } => {
+                assert!(detail.reference().length() > 0);
             }
-        );
+            other => panic!("expected AuthorityUnavailable with named detail artifact: {other:?}"),
+        }
         assert_eq!(calls.load(Ordering::SeqCst), 0);
     }
 

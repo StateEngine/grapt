@@ -75,7 +75,7 @@ impl ModelInventory {
                 .ok_or("account model has no identity")?;
             let id = ModelId::new(raw).ok_or("account model identity is invalid")?;
             if !seen.insert(raw) {
-                return Err(format!("account discovery repeats model {raw}"));
+                return Err("account discovery repeats a model".into());
             }
             let catalog_id = match row.get("catalog_model_id") {
                 Some(value)
@@ -92,7 +92,9 @@ impl ModelInventory {
                 Some(value) if value.get("id").and_then(Value::as_str) == Some(catalog_id) => {
                     value.clone()
                 }
-                Some(_) => return Err(format!("model catalog identity disagrees with key {raw}")),
+                Some(_) => {
+                    return Err("model catalog identity disagrees with its listing key".into())
+                }
                 None if matches!(provider.as_str(), "azure" | "azure-cognitive-services")
                     && row.get("catalog_model_id").is_some() =>
                 {
@@ -120,11 +122,11 @@ impl ModelInventory {
                     if value.and_then(Value::as_u64) == Some(0) {
                         None
                     } else {
-                        positive(value, raw, "catalog context limit")?
+                        positive(value, "catalog context limit")?
                     }
                 }
             };
-            let live_context = positive(row.get("max_model_len"), raw, "provider max_model_len")?;
+            let live_context = positive(row.get("max_model_len"), "provider max_model_len")?;
             // An endpoint-reported context length never widens an explicitly
             // configured window; it can only tighten it, like a catalog limit.
             // A malformed report is remote data, so that field stays unknown
@@ -184,14 +186,14 @@ fn optional_positive(value: Option<&Value>) -> Option<u64> {
     value?.as_u64()
 }
 
-fn positive(value: Option<&Value>, model: &str, field: &str) -> Result<Option<u64>, String> {
+fn positive(value: Option<&Value>, field: &str) -> Result<Option<u64>, String> {
     match value {
         None | Some(Value::Null) => Ok(None),
         Some(value) => value
             .as_u64()
             .filter(|value| *value > 0)
             .map(Some)
-            .ok_or_else(|| format!("model {model} has an invalid {field}")),
+            .ok_or_else(|| format!("a listed model has an invalid {field}")),
     }
 }
 
@@ -201,7 +203,7 @@ fn unknown_metadata(model: &str, row: &Value) -> Result<Value, String> {
         Some(value) => value
             .as_str()
             .filter(|name| !name.is_empty() && name.len() <= 256)
-            .ok_or_else(|| format!("model {model} has an invalid display name"))?,
+            .ok_or("a listed model has an invalid display name")?,
     };
     // Missing modalities/tool flags project as null in the public model DTO.
     // A listing's id and context length do not establish other capabilities.

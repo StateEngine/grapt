@@ -20,6 +20,7 @@ pub(super) struct ExistingAdmission {
     pub(super) text: String,
     pub(super) description: Option<String>,
     pub(super) metadata: Option<Value>,
+    pub(super) retired: bool,
 }
 
 impl Inbox {
@@ -90,6 +91,7 @@ impl Inbox {
                 text,
                 description,
                 metadata,
+                retired: false,
             }));
         }
 
@@ -134,6 +136,7 @@ impl Inbox {
                 text: String::new(),
                 description: None,
                 metadata: None,
+                retired: false,
             }));
         }
 
@@ -214,9 +217,27 @@ impl Inbox {
             })?
             .collect::<Result<_, _>>()?;
         match messages.as_slice() {
-            [] => Err(corrupt(
-                "admitted event exists but neither pending row nor projected message".into(),
-            )),
+            [] => {
+                // A retired synthetic auto-resume input is a valid terminal
+                // outcome: its `session_pending` slot was freed without
+                // promoting a message, and exact-key retries reconcile cleanly.
+                if input_type == "synthetic"
+                    && Self::is_retired_resume_input_within(tx, session, input)?
+                {
+                    return Ok(Some(ExistingAdmission {
+                        session: session.to_owned(),
+                        input_type: input_type.to_owned(),
+                        delivery: delivery.to_owned(),
+                        text: text.to_owned(),
+                        description,
+                        metadata,
+                        retired: true,
+                    }));
+                }
+                Err(corrupt(
+                    "admitted event exists but neither pending row nor projected message".into(),
+                ))
+            }
             [(
                 message_session,
                 message_type,
@@ -239,6 +260,8 @@ impl Inbox {
                         "projected message disagrees with the admitted event".into(),
                     ));
                 }
+                let retired = input_type == "synthetic"
+                    && Self::is_retired_resume_input_within(tx, session, input)?;
                 Ok(Some(ExistingAdmission {
                     session: session.to_owned(),
                     input_type: input_type.to_owned(),
@@ -246,6 +269,7 @@ impl Inbox {
                     text: text.to_owned(),
                     description,
                     metadata,
+                    retired,
                 }))
             }
             _ => Err(corrupt(format!(
@@ -253,6 +277,23 @@ impl Inbox {
                 messages.len()
             ))),
         }
+    }
+
+    fn is_retired_resume_input_within(
+        tx: &Transaction<'_>,
+        session: &str,
+        input: &MessageId,
+    ) -> Result<bool, InboxError> {
+        use rusqlite::OptionalExtension as _;
+        let active: Option<i64> = tx
+            .query_row(
+                "SELECT active FROM session_resume_input
+                 WHERE session_id = ?1 AND input_id = ?2",
+                rusqlite::params![session, input.as_str()],
+                |row| row.get(0),
+            )
+            .optional()?;
+        Ok(active == Some(0))
     }
 
     pub(super) fn reconcile_user(

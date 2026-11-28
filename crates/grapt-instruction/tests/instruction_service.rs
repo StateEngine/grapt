@@ -1,6 +1,7 @@
 use grapt_instruction::{
     EntryOutcome, InstructionBoundary, InstructionChange, InstructionError, InstructionProjector,
-    InstructionService, InstructionValue, RefreshInput, RefreshOutcome, SourceObservation,
+    InstructionService, InstructionValue, RecordedValue, RefreshInput, RefreshOutcome,
+    SourceObservation,
 };
 use grapt_store::{AggregateId, AppendInput, Appended, EventStore};
 use grapt_types::{EventId, EventSeq, EventVersion, InstructionKey, SessionId};
@@ -903,5 +904,103 @@ fn a_first_value_source_survives_compaction_rebuild_and_failed_refresh() -> Test
     let compacted = InstructionService::history(&store, &session)?.ok_or("history")?;
     assert_eq!(compacted.initial[0].value, "original");
     assert!(compacted.updates.is_empty());
+    Ok(())
+}
+
+enum Probe {
+    Seen(RecordedValue),
+    Failed(InstructionError),
+}
+
+impl From<InstructionError> for Probe {
+    fn from(error: InstructionError) -> Self {
+        Self::Failed(error)
+    }
+}
+
+/// What a refresh reads for `key`, aborted before it writes anything.
+fn recorded(
+    store: &mut EventStore,
+    session: &SessionId,
+    key: &InstructionKey,
+) -> Result<RecordedValue, Box<dyn std::error::Error>> {
+    let seen = |recorded: &[RecordedValue]| {
+        let first = recorded.first().cloned().unwrap_or(RecordedValue::Never);
+        Err::<RefreshInput, _>(Probe::Seen(first))
+    };
+    match InstructionService::refresh_recorded(store, session, std::slice::from_ref(key), seen) {
+        Err(Probe::Seen(recorded)) => Ok(recorded),
+        Err(Probe::Failed(error)) => Err(error.into()),
+        Ok(_) => Err("the probe refreshed".into()),
+    }
+}
+
+#[test]
+fn a_recorded_value_outlives_a_rewind_a_move_and_a_fork() -> TestResult {
+    let mut store = EventStore::open_in_memory()?;
+    let marker = key("core/marker")?;
+    let current: SessionId = "ses_recorded_current".parse()?;
+    elect(&mut store, &current)?;
+    assert_eq!(
+        recorded(&mut store, &current, &marker)?,
+        RecordedValue::Never
+    );
+    let observed = vec![available(&marker, "2")];
+    refresh(&mut store, "evt_recorded_a", &current, vec![], observed)?;
+    let older: SessionId = "ses_recorded_older".parse()?;
+    elect(&mut store, &older)?;
+    let base = vec![available(&key("core/base")?, "base")];
+    refresh(&mut store, "evt_recorded_b", &older, vec![], base)?;
+    append(
+        &mut store,
+        "evt_recorded_c",
+        &current,
+        "session.moved",
+        &current,
+    )?;
+    let rewind = "session.revert.committed";
+    append(&mut store, "evt_recorded_d", &older, rewind, &older)?;
+    assert_eq!(
+        recorded(&mut store, &current, &marker)?,
+        RecordedValue::Present("2".into())
+    );
+    assert_eq!(
+        recorded(&mut store, &older, &marker)?,
+        RecordedValue::Absent
+    );
+    // A fork inherits its parent's record up to the fork point.
+    let child: SessionId = "ses_recorded_child".parse()?;
+    let forked = json!({"sessionID": child.as_str(), "parentID": older.as_str(),
+        "parentSeq": 1, "from": "msg_fork_boundary"});
+    append_versioned(
+        &mut store,
+        "evt_recorded_e",
+        &child,
+        "session.forked",
+        2,
+        &forked,
+    )?;
+    assert_eq!(
+        recorded(&mut store, &child, &marker)?,
+        RecordedValue::Absent
+    );
+    // A row this build cannot read leaves the record unknown, never absent.
+    let aggregate = AggregateId::Session(older.clone());
+    let writer = store.fencing_token(&aggregate)?;
+    let bad = json!({"sessionID": older.as_str(), "delta": {"core/marker": 7}});
+    let row = AppendInput {
+        id: &"evt_recorded_f".parse()?,
+        aggregate,
+        writer,
+        kind_name: "session.instructions.updated",
+        version: EventVersion::new(2).ok_or("version")?,
+        created_ms: 1786147200002,
+        data: &bad,
+    };
+    store.append(row, &mut [])?.1.discard();
+    assert_eq!(
+        recorded(&mut store, &older, &marker)?,
+        RecordedValue::Unreadable
+    );
     Ok(())
 }

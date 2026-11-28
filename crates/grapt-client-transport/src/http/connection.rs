@@ -212,27 +212,16 @@ impl Connection for HttpConnection {
             }
             self.identity_pending = false;
         }
-        // Stream positions first, unless this connection refused them; an
-        // older service refuses the parameter with exactly 400 and the
-        // subscribe is retried once without it. Any other refusing status is
-        // reported by the next poll, never mistaken for "not subscribed"; a
-        // transport failure still reads as a closed stream, as before.
-        let positions = self.legacy.positions();
-        let outcome = match self.open_stream(positions) {
-            Err(TransportError::Status { status: 400 }) if positions => self.open_stream(false),
-            outcome => outcome,
-        };
-        match outcome {
-            Ok(()) if !positions => self.legacy.installed(),
+        // A refusing status (an older service's 400 for positions among them)
+        // is reported by the next poll, never mistaken for "not subscribed";
+        // a transport failure still reads as a closed stream, as before.
+        match self.open_stream() {
             Ok(()) => {}
-            Err(refusal @ TransportError::Status { .. }) => self.refusal = Some(refusal),
+            Err(
+                refusal @ (TransportError::Status { .. } | TransportError::ServerTooOld { .. }),
+            ) => self.refusal = Some(refusal),
             Err(_) => {}
         }
-    }
-
-    fn refuse_positions(&mut self) {
-        self.legacy = super::recovery::LegacyLatch::Pending;
-        self.retire_stream();
     }
 
     fn retire_stream(&mut self) {
@@ -243,9 +232,9 @@ impl Connection for HttpConnection {
 
 impl HttpConnection {
     /// One subscribe attempt: a stream, or why there is none.
-    fn open_stream(&mut self, positions: bool) -> Result<(), TransportError> {
+    fn open_stream(&mut self) -> Result<(), TransportError> {
         let deadline = tokio::time::Instant::now() + READ_TIMEOUT;
-        let request = self.subscribe_request(positions)?;
+        let request = self.subscribe_request()?;
         let socket = self.connect(STREAM_CONNECT_TIMEOUT)?;
         let mut stream = window::SocketWindow {
             stream: socket,
@@ -262,12 +251,10 @@ impl HttpConnection {
         // has not yet answered is not idle — it is still being established.
         let head = Self::read_head(&mut stream)?;
         if !(200..300).contains(&head.status) {
-            return Err(TransportError::Status {
-                status: head.status,
-            });
+            return Err(super::recovery::subscribe_refusal(head.status));
         }
-        self.reader = self.stream_reader(positions);
-        self.stream_binding = Some(self.binding_for(positions));
+        self.reader = self.stream_reader();
+        self.stream_binding = Some(self.binding_for());
         // Whatever arrived with the head is already stream content.
         self.push_stream_bytes(&head.body_prefix)?;
         let stream = stream.stream;

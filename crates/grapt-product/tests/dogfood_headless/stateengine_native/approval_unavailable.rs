@@ -131,7 +131,12 @@ fn seat01_headless_native_and_codemode_fail_promptly_and_profile_grants_execute(
         command.push(serde_json::json!("--calls-file"));
         command.push(serde_json::json!(calls_file));
         if allow {
-            config["permission"] = serde_json::json!({"stateengine_*":{"stateengine/*":"allow","stateengine/*/*":"ask"}});
+            config["permission"] = serde_json::json!({
+                "execute": "allow",
+                "stateengine_*": {"stateengine/*": "allow", "stateengine/*/*": "ask"}
+            });
+        } else if nested {
+            config["permission"] = serde_json::json!({"execute": "allow"});
         }
         fs::write(&path, config.to_string())?;
         let provider = ProviderFixture::start(vec![

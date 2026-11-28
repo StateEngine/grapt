@@ -21,8 +21,26 @@ struct StoredTool {
     grammar: Option<String>,
 }
 
+/// The tools a Session's records fix for its requests.
+pub(in crate::dogfood) struct SessionTools {
+    /// The MCP catalog frozen into the Session's cached prefix, if any.
+    pub(in crate::dogfood) frozen: Option<Vec<ToolDefinition>>,
+    /// Which built-in tools it advertises; unread until a refresh reads it.
+    pub(in crate::dogfood) epoch: super::BuiltinEpoch,
+}
+
+impl SessionTools {
+    pub(super) fn frozen(frozen: Option<Vec<ToolDefinition>>) -> Self {
+        Self {
+            frozen,
+            epoch: super::BuiltinEpoch::Unreadable,
+        }
+    }
+}
+
+/// Tool records the request encodes itself, never shown as instructions.
 pub(super) fn metadata(key: &str) -> bool {
-    matches!(key, FROZEN | CURRENT)
+    matches!(key, FROZEN | CURRENT | super::builtin_epoch::KEY)
 }
 
 pub(super) fn observations(

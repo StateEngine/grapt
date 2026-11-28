@@ -3,7 +3,7 @@ use super::*;
 #[test]
 fn review_backfill_keeps_the_open_blocks_identity() -> Result<(), Box<dyn std::error::Error>> {
     for kind in ["text", "reasoning"] {
-        let (mut client, id) = seeded(Bounds::PRODUCTION, turns(200));
+        let (mut client, id) = seeded(Bounds::PRODUCTION, turns(300));
         client.reconcile(&id)?;
         hold_older_page(&mut client);
         client.peer_mut().event(

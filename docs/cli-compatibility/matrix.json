@@ -400,7 +400,7 @@
       ],
       "class": "implemented",
       "typescript": "`opencode run <message...> [-- more]`: words joined, a word with a space quoted (run/run.ts formatMessage)",
-      "rust": "`grapt run <connection> <message...> [-- more]`, with the same joining; --prompt and --stdin remain",
+      "rust": "`grapt run [<connection>] <message...> [-- more]`, with the same joining; --prompt and --stdin remain",
       "evidence": [
         "test:crates/grapt-cli/tests/public_seams/compatibility.rs::run_takes_the_typescript_message_words_and_defaults_to_a_new_session",
         "test:crates/grapt-product/tests/dogfood_headless/cli_compatibility.rs::the_typescript_run_service_and_resume_forms_work_against_the_real_product"

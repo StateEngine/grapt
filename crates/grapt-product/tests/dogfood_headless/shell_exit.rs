@@ -8,6 +8,7 @@ fn model_receives_diff_and_failing_test_output_after_nonzero_shell_exits(
     let _journey = process_journey_custody();
     let root = root("shell-exit-model-output");
     prepare(&root, 120_000);
+    unattended(&root);
     fs::write(root.join("before.txt"), "before\n")?;
     fs::write(root.join("after.txt"), "after\n")?;
     fs::write(
@@ -64,7 +65,17 @@ fn model_receives_diff_and_failing_test_output_after_nonzero_shell_exits(
                     .find(|item| item["type"] == "function_call_output" && item["call_id"] == call)
             })
             .and_then(|item| item["output"].as_str())
-            .map(str::to_owned)
+            .map(|raw| {
+                serde_json::from_str::<serde_json::Value>(raw)
+                    .ok()
+                    .and_then(|receipt| {
+                        receipt
+                            .get("output")
+                            .and_then(serde_json::Value::as_str)
+                            .map(str::to_owned)
+                    })
+                    .unwrap_or_else(|| raw.to_owned())
+            })
             .ok_or_else(|| format!("model request omitted result for {call}: {request}"))
     };
     // Frozen42e4888cc0 tool-shell witness: plain hello plus a separate

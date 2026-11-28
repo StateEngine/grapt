@@ -155,6 +155,18 @@ class RatchetMonotonicTests(unittest.TestCase):
         self.assertTrue(any('checked config grapt-product[feature:legacy-ui] was dropped' in p
                             for p in mono.check_cycles_ratchet(base, deleted_feature, live)))
 
+    def test_cycles_ratchet_wires_new_feature_baseline_inheritance(self):
+        c2, e2 = [['c::a', 'c::b']], [['c::a', 'c::b'], ['c::b', 'c::a']]
+        base = {'configs': ['p'], 'cycles': {'p': c2}, 'edges': {'p': e2}}
+        head = {'configs': ['p', 'p[feature:frozen]'],
+                'cycles': {'p': c2, 'p[feature:frozen]': c2},
+                'edges': {'p': e2, 'p[feature:frozen]': e2}}
+        self.assertEqual(mono.check_cycles_ratchet(base, head, {'p', 'p[feature:frozen]'}), [])
+        self.assertTrue(mono.check_cycles_ratchet(base, head, {'p'}))
+        grown = {**head, 'edges': {'p': e2, 'p[feature:frozen]': e2 + [['c::a', 'c::c']]}}
+        problems = mono.check_cycles_ratchet(base, grown, {'p', 'p[feature:frozen]'})
+        self.assertTrue(any('new cyclic edge c::a -> c::c' in p for p in problems))
+
     def test_git_show_json_fails_closed_on_git_errors(self):
         from unittest.mock import patch
 

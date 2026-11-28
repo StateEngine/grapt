@@ -71,7 +71,7 @@ pub(crate) mod prompt_driver;
 mod prompt_images;
 mod prompt_submission;
 pub(crate) mod provider_capacity;
-pub(crate) mod provider_errors;
+mod provider_errors;
 mod provider_generation;
 mod public_terminal;
 mod read_projection;
@@ -95,6 +95,7 @@ mod source_file;
 mod startup_fixture;
 mod startup_recovery;
 mod stateengine_resume;
+pub(crate) mod stateengine_seat;
 mod step_events;
 pub(crate) mod stream_diagnostics;
 mod subagent;
@@ -498,7 +499,7 @@ impl DogfoodApplication {
         let clock = Arc::new(SystemClock);
         let receipt_bytes = NonZeroU32::new(ATTEMPT_RECEIPT_BYTES)
             .ok_or_else(|| DogfoodRefusal::Compose("attempt receipt bound is zero".to_owned()))?;
-        startup_recovery::recover(&mut store, &ids, &clock, receipt_bytes)?;
+        startup_recovery::recover(service_root, &mut store, &ids, &clock, receipt_bytes)?;
         let inbox =
             Inbox::new(store).map_err(|error| DogfoodRefusal::Compose(error.to_string()))?;
         let readers = inbox
@@ -635,6 +636,9 @@ impl DogfoodApplication {
         lifecycle::attach_notice(&mut driver, &application);
         skills_watch::attach(&mut driver, &application);
         lifecycle::attach_close_grace(&mut driver, &application);
+        if !ephemeral {
+            driver.attach_auto_resume_app(Arc::clone(&application));
+        }
         Ok((application, driver))
     }
 

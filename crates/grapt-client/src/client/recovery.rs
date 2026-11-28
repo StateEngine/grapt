@@ -33,6 +33,9 @@ pub(super) struct Recovery {
     /// Counts tail reads. A backfill reply carries the generation it was
     /// started under, so a restarted read of the same session fences it out.
     pub(super) generation: u64,
+    /// The service is too old for this client: what it lacks. Terminal, so
+    /// recovery never opens another stream against it.
+    pub(super) too_old: Option<&'static str>,
 }
 
 impl Default for Recovery {
@@ -48,6 +51,7 @@ impl Default for Recovery {
             backfill: None,
             older: super::history::OlderHistory::default(),
             generation: 0,
+            too_old: None,
         }
     }
 }
@@ -62,16 +66,10 @@ pub(super) struct History {
     session: SessionWireId,
     permissions: bool,
     messages: bool,
-    /// Which messages read is in flight; decided when it starts.
-    read: MessagesRead,
     pub(super) pending: bool,
-}
-
-/// The legacy page read, or a snapshot on a positions connection.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum MessagesRead {
-    Legacy,
-    Snapshot,
+    /// The acknowledgment count when the permission list was asked for: a
+    /// reply acknowledged since makes that list older than the open asks.
+    acknowledged: u64,
 }
 
 impl ClientError {
@@ -93,6 +91,12 @@ impl<C: Connection> Client<C> {
     /// Uses the same monotonic epoch as `pump_at`.
     pub fn recovery_wait_at(&self, now: Duration) -> Option<Duration> {
         let poll = Duration::from_millis(10);
+        // A service refused as too old is never read or subscribed again, and
+        // the reads the pump owns settled with the refusal: only a request its
+        // host polls still waits, to settle at its next poll.
+        if self.recovery.too_old.is_some() {
+            return self.operator_request_pending().then_some(poll);
+        }
         let subscription = (!self.connection.subscribed()).then(|| {
             if self.recovery.subscription_pending {
                 poll
@@ -175,6 +179,9 @@ impl<C: Connection> Client<C> {
                     }
                     Ok(Some(false)) => self.defer_subscription(now),
                     Err(error) if error.is_transient() => self.defer_subscription(now),
+                    Err(TransportError::ServerTooOld { missing }) => {
+                        return Err(self.settle_refused(missing));
+                    }
                     Err(error) => return Err(error.into()),
                 }
             }
@@ -248,8 +255,8 @@ impl<C: Connection> Client<C> {
                 session,
                 permissions: true,
                 messages: true,
-                read: MessagesRead::Legacy,
                 pending: false,
+                acknowledged: self.acknowledged,
             });
         }
     }
@@ -261,15 +268,15 @@ impl<C: Connection> Client<C> {
             .is_some_and(|history| history.permissions || history.messages)
     }
 
-    /// The queued messages read is waiting for the next stream to prove its
-    /// mode, so that stream must be read until its first frame arrives.
+    /// The queued snapshot read is waiting for the stream's first frame, so
+    /// that stream must be read until it arrives.
     pub(super) fn waiting_for_mode(&self) -> bool {
-        self.needs_mode_proof()
+        !self.positions.proven
             && self
                 .recovery
                 .history
                 .as_ref()
-                .is_some_and(|history| !history.pending && !history.permissions && history.messages)
+                .is_some_and(|history| !history.pending && history.messages)
     }
 
     pub(super) fn defer_queued_inputs(&mut self) {
@@ -301,8 +308,8 @@ impl<C: Connection> Client<C> {
                 session: session.clone(),
                 permissions: false,
                 messages: false,
-                read: MessagesRead::Legacy,
                 pending: false,
+                acknowledged: self.acknowledged,
             });
         }
     }
@@ -324,27 +331,20 @@ impl<C: Connection> Client<C> {
             let Some(mut history) = self.recovery.history.take() else {
                 return Ok(false);
             };
-            if !history.pending {
-                history.read = if !history.permissions && history.messages {
-                    // The messages read waits, bounded, for a stream to prove
-                    // its mode; the deadline starts with the first wait.
-                    let Some(read) = self.messages_read(Some(now)) else {
-                        self.positions.handshake_since.get_or_insert(now);
-                        self.recovery.history = Some(history);
-                        return Ok(false);
-                    };
-                    read
-                } else {
-                    MessagesRead::Legacy
-                };
+            // The snapshot waits, bounded, for this stream's first frame: a
+            // read before the subscription is open could miss what it carries.
+            if !history.pending
+                && !history.permissions
+                && history.messages
+                && !self.first_frame_seen(now)
+            {
+                self.recovery.history = Some(history);
+                return Ok(false);
             }
-            let snapshot = history.read == MessagesRead::Snapshot;
             let operation = if history.permissions {
                 Operation::PermissionRequestList
-            } else if snapshot {
-                Operation::SessionSnapshot
             } else if history.messages {
-                Operation::MessageList
+                Operation::SessionSnapshot
             } else {
                 Operation::SessionPendingList
             };
@@ -352,14 +352,10 @@ impl<C: Connection> Client<C> {
                 self.connection.poll_read()
             } else {
                 let request = if history.permissions {
+                    history.acknowledged = self.acknowledged;
                     WireRequest::new(operation, None, None)?
-                } else if !history.messages || snapshot {
-                    WireRequest::new(operation, Some(&history.session), None)?
-                } else if self.history_window.is_some() {
-                    super::paged_history::window_request(&history.session, None, true)?
                 } else {
                     WireRequest::new(operation, Some(&history.session), None)?
-                        .with_query("order", "desc")
                 };
                 self.connection.begin_read(&request)
             };
@@ -387,30 +383,22 @@ impl<C: Connection> Client<C> {
                 }
                 return Ok(true);
             }
-            let bytes = match self.accept_response(operation, response) {
-                // This service has no snapshot: legacy mode for this connection.
-                Err(error) if snapshot && super::snapshot::unsupported(&error) => {
-                    // Kept queued: it reads once the legacy stream arrives.
-                    self.recovery.history = Some(history);
-                    self.refuse_snapshot();
-                    return Ok(true);
-                }
-                accepted => accepted?,
-            };
+            let accepted = self.accept_response(operation, response);
+            let bytes = accepted.map_err(|error| self.latch_too_old(error))?;
             if history.permissions {
-                self.accept_permissions(bytes)?;
+                // A reply acknowledged while the list was read is newer than
+                // it: the host re-reads on its fenced lane instead.
+                if history.acknowledged == self.acknowledged {
+                    self.accept_permissions(bytes)?;
+                } else {
+                    self.permissions_stale = true;
+                }
                 history.permissions = false;
                 self.recovery.history = Some(history);
                 continue;
             }
             if history.messages {
-                if snapshot {
-                    self.install_snapshot(&history.session, &bytes)?;
-                } else {
-                    let page = crate::wire::decode_messages(&bytes)?;
-                    self.adopt_tail(&history.session, &page, bytes.len())?;
-                    self.positions.legacy_unproven |= self.positions.mode.is_none();
-                }
+                self.install_snapshot(&history.session, &bytes)?;
                 self.recovery.history_delay = RETRY_MIN;
                 self.recovery.history_due = now.saturating_add(Duration::from_secs(1));
                 history.messages = false;

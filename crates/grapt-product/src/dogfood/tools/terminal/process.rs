@@ -355,13 +355,7 @@ impl Drop for Control {
 pub(super) fn spawn(spec: &ExecSpec) -> Result<Spawned, SpawnFailure> {
     #[cfg(not(target_os = "linux"))]
     if spec.environment.sandbox().is_some() {
-        let enforcement =
-            super::super::sandbox::degraded("MXC native process containment requires Windows");
-        return Err(super::super::sandbox::refusal(
-            &enforcement,
-            "sandbox unavailable; no command ran",
-        )
-        .into());
+        return Err(super::super::sandbox::unsupported_platform_refusal().into());
     }
 
     #[cfg(not(windows))]

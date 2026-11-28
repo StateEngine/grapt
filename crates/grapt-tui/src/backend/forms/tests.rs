@@ -179,6 +179,9 @@ impl Transport for Peer {
 }
 impl Connection for Peer {
     fn poll_frame(&mut self) -> std::result::Result<FramePoll, TransportError> {
+        if let Some(connect) = self.inner.connect() {
+            return Ok(connect);
+        }
         if let Some(frame) = self.frames.pop_front() {
             return Ok(self.inner.serve(FramePoll::Frame(frame)));
         }
@@ -226,9 +229,17 @@ fn fixture() -> Result<(Client<Peer>, SessionWireId, FormRow)> {
     let row = client.forms().first().ok_or("form")?.clone();
     Ok((client, session, row))
 }
+/// The stream's positioned connect, then the snapshot it permits.
+fn prove(client: &mut Client<Peer>) -> Result {
+    for _ in 0..2 {
+        client.pump()?;
+    }
+    Ok(())
+}
 #[test]
 fn session_notifications_discover_late_forms_without_an_idle_timer() -> Result {
     let (mut client, session, mut row) = fixture()?;
+    prove(&mut client)?;
     let now = Instant::now();
     let mut poll = Poll::new(now);
     refresh(&mut poll, &mut client, now)?;
@@ -242,7 +253,7 @@ fn session_notifications_discover_late_forms_without_an_idle_timer() -> Result {
     row.title = "late question".into();
     let form: serde_json::Value = serde_json::from_slice(&grapt_client::wire::encode_form(&row)?)?;
     let event = serde_json::json!({"type":"form.created","id":"evt_000000000001",
-        "created":1,"durable":{"aggregateID":session,"seq":1,"version":1},
+        "created":1,"durable":{"aggregateID":session,"seq":1_000,"version":1},
         "data":{"sessionID":session,"form":form["data"]}})
     .to_string();
     client.peer_mut().frames.extend([event.clone(), event]);
@@ -310,6 +321,7 @@ fn idle_does_not_repeat_session_or_location_discovery() -> Result {
 #[test]
 fn global_form_hints_coalesce_and_failed_reads_retry_within_the_bound() -> Result {
     let (mut client, session, mut row) = fixture()?;
+    prove(&mut client)?;
     let now = Instant::now();
     let mut poll = Poll::new(now);
     refresh(&mut poll, &mut client, now)?;

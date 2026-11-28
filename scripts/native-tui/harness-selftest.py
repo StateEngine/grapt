@@ -677,6 +677,567 @@ def call_identity_witnesses() -> None:
     PROVIDER._call_sequence = 0
 
 
+def t5_budget_witnesses() -> None:
+    passing = CMP.evaluate_t5_budgets(
+        [
+            {
+                "client": "native",
+                "steps": [
+                    {"kind": "type", "t5_echo": True, "elapsed_ms": 8.0, "streaming_observed": True, "observed_tok_per_s": 240.0},
+                    {"kind": "key", "t5_echo": True, "elapsed_ms": 12.5, "streaming_observed": True, "observed_tok_per_s": 220.0},
+                    {"kind": "echo", "elapsed_ms": 15.9, "streaming_observed": True, "observed_tok_per_s": 210.0},
+                ],
+                "idle_cpu_seconds": 0.12,
+            }
+        ]
+    )
+    check(
+        "t5 smoothness budgets pass within 16ms echo p95, witnessed >=200 tok/s streaming, and idle CPU ceiling",
+        passing["status"] == "pass"
+        and passing["echo_p95_ms"]["status"] == "pass"
+        and passing["concurrent_streaming_tok_per_s"]["status"] == "pass"
+        and passing["idle_cpu_seconds"]["status"] == "pass",
+        f"got={passing!r}",
+    )
+    static_rate_only = CMP.evaluate_t5_budgets(
+        [
+            {
+                "client": "native",
+                "steps": [
+                    {"kind": "echo", "elapsed_ms": 8.0, "streaming_tok_per_s": 250.0},
+                ],
+                "idle_cpu_seconds": 0.12,
+            }
+        ]
+    )
+    check(
+        "t5 smoothness budgets refuse pass when streaming rate is only statically declared (unwitnessed)",
+        static_rate_only["status"] == "not-measured"
+        and static_rate_only["concurrent_streaming_tok_per_s"]["status"] == "not-measured",
+        f"got={static_rate_only!r}",
+    )
+    skipped_echo = CMP.evaluate_t5_budgets(
+        [
+            {
+                "client": "native",
+                "steps": [
+                    {"kind": "echo", "t5_echo": True, "elapsed_ms": 8.0, "streaming_observed": True, "observed_tok_per_s": 240.0},
+                    {"kind": "echo", "t5_echo": True, "skipped": True, "elapsed_ms": None, "detail": {"skipped": "native skipped"}},
+                ],
+                "idle_cpu_seconds": 0.10,
+            }
+        ]
+    )
+    check(
+        "t5 smoothness budgets fail closed when any tagged echo step is skipped by native",
+        skipped_echo["status"] == "fail"
+        and skipped_echo["echo_p95_ms"]["status"] == "fail"
+        and skipped_echo["echo_p95_ms"].get("reason") == "t5-echo-step-skipped",
+        f"got={skipped_echo!r}",
+    )
+    failing = CMP.evaluate_t5_budgets(
+        [
+            {
+                "client": "native",
+                "steps": [{"kind": "echo", "elapsed_ms": 22.0}],
+                "t5_metrics": {"idle_cpu_seconds": 0.8},
+            }
+        ]
+    )
+    check(
+        "t5 smoothness budgets fail when echo p95 or idle CPU exceeds budget",
+        failing["status"] == "fail"
+        and failing["echo_p95_ms"]["status"] == "fail"
+        and failing["idle_cpu_seconds"]["status"] == "fail",
+        f"got={failing!r}",
+    )
+    missing_echo = CMP.evaluate_t5_budgets(
+        [
+            {
+                "client": "native",
+                "steps": [{"kind": "type", "seconds": 0.01}],
+                "idle_cpu_seconds": 0.05,
+            }
+        ]
+    )
+    check(
+        "t5 smoothness budgets refuse pass when echo samples are absent",
+        missing_echo["status"] == "not-measured"
+        and missing_echo["echo_p95_ms"]["status"] == "not-measured",
+        f"got={missing_echo!r}",
+    )
+    cumulative_only = CMP.evaluate_t5_budgets(
+        [
+            {
+                "client": "native",
+                "steps": [{"kind": "echo", "elapsed_ms": 5.0}],
+                "resources": {"processor_seconds": 0.05},
+            }
+        ]
+    )
+    check(
+        "t5 smoothness budgets never treat cumulative journey CPU as idle CPU",
+        cumulative_only["status"] == "not-measured"
+        and cumulative_only["idle_cpu_seconds"]["status"] == "not-measured",
+        f"got={cumulative_only!r}",
+    )
+    unmeasured = CMP.evaluate_t5_budgets([{"client": "retained", "steps": []}])
+    check(
+        "t5 smoothness budgets report not-measured when native side is absent",
+        unmeasured["status"] == "not-measured",
+        f"got={unmeasured!r}",
+    )
+    readings = iter(
+        [
+            {"observed": True, "processor_seconds": 1.25},
+            {"observed": True, "processor_seconds": 1.29},
+        ]
+    )
+    delta = CMP.measure_idle_cpu_delta(1234, 0.001, sampler=lambda _pid: next(readings))
+    check(
+        "measure_idle_cpu_delta computes quiet window delta rather than cumulative CPU",
+        delta == 0.04,
+        f"got={delta!r}",
+    )
+    unobserved = CMP.measure_idle_cpu_delta(
+        1234, 0.001, sampler=lambda _pid: {"observed": False, "processor_seconds": None}
+    )
+    check(
+        "measure_idle_cpu_delta returns None when process CPU is unobserved",
+        unobserved is None,
+        f"got={unobserved!r}",
+    )
+    decreased_readings = iter(
+        [
+            {"observed": True, "processor_seconds": 2.50},
+            {"observed": True, "processor_seconds": 1.10},
+        ]
+    )
+    decreased = CMP.measure_idle_cpu_delta(
+        1234, 0.001, sampler=lambda _pid: next(decreased_readings)
+    )
+    check(
+        "measure_idle_cpu_delta fails closed (None) instead of clamping decreased counters to zero",
+        decreased is None,
+        f"got={decreased!r}",
+    )
+    partial_counters_readings = iter(
+        [
+            {"observed": True, "processor_seconds": 1.25, "processes_without_counters": 0},
+            {"observed": True, "processor_seconds": 1.29, "processes_without_counters": 1},
+        ]
+    )
+    partial_counters = CMP.measure_idle_cpu_delta(
+        1234, 0.001, sampler=lambda _pid: next(partial_counters_readings)
+    )
+    check(
+        "measure_idle_cpu_delta fails closed on partial process-tree counter coverage",
+        partial_counters is None,
+        f"got={partial_counters!r}",
+    )
+    check(
+        "is_quit_step identifies quit/Control+q and never treats Control+c interrupt as quit",
+        CMP.is_quit_step({"key": "Control+q"}, "native")
+        and CMP.is_quit_step({"quit": True}, "native")
+        and not CMP.is_quit_step({"key": "Control+c"}, "native")
+        and not CMP.is_quit_step({"key": "Ctrl+c"}, "native")
+        and not CMP.is_quit_step({"key": "Enter"}, "native"),
+    )
+
+    class _FakeObserver:
+        def __init__(self, screens: list[str], stream_tokens: list[int | None] | None = None) -> None:
+            self._screens = list(screens)
+            self._tokens = list(stream_tokens) if stream_tokens is not None else [None] * len(screens)
+            self._index = 0
+
+        def state(self) -> dict:
+            idx = min(self._index, len(self._screens) - 1)
+            payload: dict[str, object] = {"lines": [self._screens[idx]]}
+            if self._tokens[idx] is not None:
+                payload["stream_tokens"] = self._tokens[idx]
+            return payload
+
+        def action(self, _payload: dict) -> None:
+            self._index += 1
+
+    already_present_rejected = False
+    try:
+        CMP.apply_step(
+            _FakeObserver(["prompt ECHO_MARKER already here"]),
+            {"echo": "ECHO_MARKER"},
+            "native",
+            Path("."),
+            Path("."),
+            set(),
+        )
+    except CMP.HarnessError:
+        already_present_rejected = True
+    check(
+        "echo step refuses when marker was already present on screen before input",
+        already_present_rejected,
+    )
+    # Negative runner test: a large static status repaint or pasted composer
+    # text (without genuine assistant stream_tokens) must NOT satisfy T5 streaming.
+    repaint_kind, repaint_detail, _ = CMP.apply_step(
+        _FakeObserver(["prompt > ", f"{'STATUS_BAR_REPAINT ' * 80}prompt > REPAINT_ECHO"]),
+        {"echo": "REPAINT_ECHO"},
+        "native",
+        Path("."),
+        Path("."),
+        set(),
+    )
+    check(
+        "echo step succeeds when marker was absent before input and newly painted after",
+        repaint_kind == "echo"
+        and isinstance(repaint_detail, dict)
+        and repaint_detail.get("observed") is True
+        and repaint_detail.get("absent_before") is True
+        and repaint_detail.get("streaming_observed") is False
+        and repaint_detail.get("echo_ms") is not None,
+        f"got={repaint_detail!r}",
+    )
+    repaint_budget = CMP.evaluate_t5_budgets(
+        [
+            {
+                "client": "native",
+                "steps": [
+                    {
+                        "kind": repaint_kind,
+                        "t5_echo": True,
+                        "elapsed_ms": repaint_detail["echo_ms"],
+                        "detail": repaint_detail,
+                    }
+                ],
+                "idle_cpu_seconds": 0.10,
+            }
+        ]
+    )
+    check(
+        "static screen repaint or pasted composer text never satisfies T5 concurrent streaming",
+        repaint_budget["status"] == "not-measured"
+        and repaint_budget["concurrent_streaming_tok_per_s"]["status"] == "not-measured",
+        f"got={repaint_budget!r}",
+    )
+    # Positive end-to-end runner test: genuine observer-reported assistant
+    # stream_tokens advancing alongside the echo marker populates
+    # streaming_observed=True and observed_tok_per_s >= 200 so T5 passes.
+    stream_kind, stream_detail, _ = CMP.apply_step(
+        _FakeObserver(
+            ["prompt > ", "assistant streaming... prompt > STREAM_ECHO"],
+            stream_tokens=[10, 60],
+        ),
+        {"echo": "STREAM_ECHO"},
+        "native",
+        Path("."),
+        Path("."),
+        set(),
+    )
+    runner_budget = CMP.evaluate_t5_budgets(
+        [
+            {
+                "client": "native",
+                "steps": [
+                    {
+                        "kind": stream_kind,
+                        "t5_echo": True,
+                        "elapsed_ms": stream_detail["echo_ms"],
+                        "streaming_observed": stream_detail["streaming_observed"],
+                        "observed_tok_per_s": stream_detail["observed_tok_per_s"],
+                        "detail": stream_detail,
+                    }
+                ],
+                "idle_cpu_seconds": 0.10,
+            }
+        ]
+    )
+    check(
+        "runner echo with genuine stream_tokens populates observed_tok_per_s and passes T5 budgets",
+        stream_detail.get("streaming_observed") is True
+        and float(stream_detail.get("observed_tok_per_s", 0.0)) >= 200.0
+        and runner_budget["status"] == "pass"
+        and runner_budget["concurrent_streaming_tok_per_s"]["status"] == "pass",
+        f"detail={stream_detail!r} budget={runner_budget!r}",
+    )
+    # Validated SSE delta token accounting: malformed frames, raw substring
+    # spoofs, empty deltas return 0; valid single- and multi-word deltas count
+    # their emitted token units.
+    check(
+        "validated_sse_delta_tokens rejects malformed/raw/empty frames and counts single- and multi-word deltas",
+        PROVIDER.validated_sse_delta_tokens('not json "response.output_text.delta"') == 0
+        and PROVIDER.validated_sse_delta_tokens('data: {broken json') == 0
+        and PROVIDER.validated_sse_delta_tokens('data: {"type":"response.output_text.delta","delta":"   "}') == 0
+        and PROVIDER.validated_sse_delta_tokens('data: {"type":"response.completed","delta":"hi"}') == 0
+        and PROVIDER.validated_sse_delta_tokens('data: {"type":"response.output_text.delta","delta":"hello "}') == 1
+        and PROVIDER.validated_sse_delta_tokens('data: {"type":"response.output_text.delta","delta":"one two three four five"}') == 5,
+    )
+    # End-to-end scoped loopback-provider witness:
+    # (a) Traffic on another socket/scope must NOT satisfy a quiet probe.
+    # (b) Traffic on another socket sharing prompt_cache_key must NOT satisfy a quiet probe.
+    # (c) Traffic scoped via dedicated per-run path passes T5 budgets without /state stream_tokens.
+    with tempfile.TemporaryDirectory() as raw_stream_dir:
+        metrics_path = Path(raw_stream_dir) / "provider.stream-tokens.json"
+        PROVIDER._write_stream_metrics(metrics_path, {})
+        stream_counter: dict[str, int] = {}
+        stream_lock = threading.Lock()
+
+        def _run_scoped_provider_stream(
+            *,
+            path: str = "/responses",
+            scope_header: str | None = None,
+            body_extra: dict[str, object] | None = None,
+            prompt: str = "reply with exactly: alpha beta gamma delta",
+        ) -> None:
+            payload: dict[str, object] = {"input": [{"role": "user", "content": prompt}]}
+            if body_extra:
+                payload.update(body_extra)
+            request_body = json.dumps(payload).encode("utf-8")
+            client_sock, server_sock = socket.socketpair()
+            served_times: list[float] = []
+            header_lines = [f"POST {path} HTTP/1.1", "Host: 127.0.0.1"]
+            if scope_header is not None:
+                header_lines.append(f"X-Grapt-Stream-Scope: {scope_header}")
+            header_lines.append(f"Content-Length: {len(request_body)}")
+            request_wire = ("\r\n".join(header_lines) + "\r\n\r\n").encode("utf-8") + request_body
+            try:
+                client_sock.sendall(request_wire)
+                client_sock.shutdown(socket.SHUT_WR)
+                worker = threading.Thread(
+                    target=PROVIDER.serve,
+                    args=(server_sock, 0, served_times, metrics_path, stream_counter, stream_lock),
+                )
+                worker.start()
+                while client_sock.recv(4096):
+                    pass
+                worker.join(timeout=5)
+            finally:
+                client_sock.close()
+
+        class _InstantEchoObserver:
+            """Decouples paste echo timing from unrelated socket I/O so isolation
+            probes remain deterministic under load."""
+
+            def __init__(self, marker: str, on_paste: object = None) -> None:
+                self._marker = marker
+                self._on_paste = on_paste
+                self._sent = False
+
+            def state(self) -> dict:
+                return {"lines": [f"prompt > {self._marker}" if self._sent else "prompt > "]}
+
+            def action(self, _payload: dict) -> None:
+                if callable(self._on_paste):
+                    self._on_paste()
+                self._sent = True
+
+        # (a) Traffic streams on `other_socket_scope` concurrently while probe
+        # measures `quiet_probe_scope`; paste timing is never blocked on the
+        # unrelated socket's response or file writes.
+        unrelated_thread = threading.Thread(
+            target=_run_scoped_provider_stream,
+            kwargs={"path": "/scopes/other_socket_scope/responses"},
+        )
+        unrelated_thread.start()
+        cross_kind, cross_detail, _ = CMP.apply_step(
+            _InstantEchoObserver("QUIET_ECHO"),
+            {"echo": "QUIET_ECHO", "stream_scope": "quiet_probe_scope"},
+            "native",
+            Path("."),
+            Path("."),
+            set(),
+            stream_metrics_path=metrics_path,
+        )
+        unrelated_thread.join(timeout=5)
+        cross_budget = CMP.evaluate_t5_budgets(
+            [
+                {
+                    "client": "native",
+                    "steps": [
+                        {
+                            "kind": cross_kind,
+                            "t5_echo": True,
+                            "elapsed_ms": cross_detail["echo_ms"],
+                            "detail": cross_detail,
+                        }
+                    ],
+                    "idle_cpu_seconds": 0.10,
+                }
+            ]
+        )
+        cross_metrics = json.loads(metrics_path.read_text(encoding="utf-8"))["scopes"]
+        check(
+            "provider traffic on another socket/scope never satisfies a quiet T5 echo probe",
+            cross_metrics.get("other_socket_scope", 0) > 0
+            and cross_metrics.get("quiet_probe_scope", 0) == 0
+            and cross_detail.get("streaming_observed") is False
+            and cross_budget["status"] == "not-measured",
+            f"metrics={cross_metrics!r} detail={cross_detail!r} budget={cross_budget!r}",
+        )
+
+        # (b) A second socket sharing `prompt_cache_key` (with no dedicated
+        # per-run scope) must NOT satisfy a quiet T5 echo probe.
+        shared_key = "shared_project_cache_key"
+        cache_key_thread = threading.Thread(
+            target=_run_scoped_provider_stream,
+            kwargs={"path": "/responses", "body_extra": {"prompt_cache_key": shared_key}},
+        )
+        cache_key_thread.start()
+        cache_kind, cache_detail, _ = CMP.apply_step(
+            _InstantEchoObserver("CACHE_KEY_ECHO"),
+            {"echo": "CACHE_KEY_ECHO", "stream_scope": shared_key},
+            "native",
+            Path("."),
+            Path("."),
+            set(),
+            stream_metrics_path=metrics_path,
+        )
+        cache_key_thread.join(timeout=5)
+        cache_budget = CMP.evaluate_t5_budgets(
+            [
+                {
+                    "client": "native",
+                    "steps": [
+                        {
+                            "kind": cache_kind,
+                            "t5_echo": True,
+                            "elapsed_ms": cache_detail["echo_ms"],
+                            "detail": cache_detail,
+                        }
+                    ],
+                    "idle_cpu_seconds": 0.10,
+                }
+            ]
+        )
+        cache_metrics = json.loads(metrics_path.read_text(encoding="utf-8"))["scopes"]
+        check(
+            "second socket sharing prompt_cache_key never satisfies a quiet T5 echo probe",
+            shared_key not in cache_metrics
+            and cache_detail.get("streaming_observed") is False
+            and cache_budget["status"] == "not-measured",
+            f"metrics={cache_metrics!r} detail={cache_detail!r} budget={cache_budget!r}",
+        )
+
+        # (c) A second socket using the same `/scopes/<id>/` URL path but an
+        # explicitly different `X-Grapt-Stream-Scope` header must attribute to
+        # the explicit header and NOT satisfy the quiet URL-scoped probe.
+        hdr_thread = threading.Thread(
+            target=_run_scoped_provider_stream,
+            kwargs={
+                "path": "/scopes/quiet_header_scope/responses",
+                "scope_header": "other_header_scope",
+            },
+        )
+        hdr_thread.start()
+        hdr_kind, hdr_detail, _ = CMP.apply_step(
+            _InstantEchoObserver("HDR_PRECEDENCE_ECHO"),
+            {"echo": "HDR_PRECEDENCE_ECHO", "stream_scope": "quiet_header_scope"},
+            "native",
+            Path("."),
+            Path("."),
+            set(),
+            stream_metrics_path=metrics_path,
+        )
+        hdr_thread.join(timeout=5)
+        hdr_budget = CMP.evaluate_t5_budgets(
+            [
+                {
+                    "client": "native",
+                    "steps": [
+                        {
+                            "kind": hdr_kind,
+                            "t5_echo": True,
+                            "elapsed_ms": hdr_detail["echo_ms"],
+                            "detail": hdr_detail,
+                        }
+                    ],
+                    "idle_cpu_seconds": 0.10,
+                }
+            ]
+        )
+        hdr_metrics = json.loads(metrics_path.read_text(encoding="utf-8"))["scopes"]
+        check(
+            "explicit X-Grapt-Stream-Scope header overrides shared /scopes/<id>/ URL prefix",
+            hdr_metrics.get("other_header_scope", 0) > 0
+            and hdr_metrics.get("quiet_header_scope", 0) == 0
+            and hdr_detail.get("streaming_observed") is False
+            and hdr_budget["status"] == "not-measured",
+            f"metrics={hdr_metrics!r} detail={hdr_detail!r} budget={hdr_budget!r}",
+        )
+
+        # (d) Traffic scoped to `measured_scope` via dedicated request path
+        # passes T5 budgets without /state stream_tokens. Use a controlled clock
+        # on `CMP.time` so disk/provider I/O latency inside the test harness
+        # never causes echo-budget jitter while the real provider stream writes
+        # validated tokens to `metrics_path`.
+        class _ControlledClock:
+            def __init__(self, ticks: list[float], base_time: object) -> None:
+                self._ticks = iter(ticks)
+                self._last = ticks[-1]
+                self._base_time = base_time
+
+            def monotonic(self) -> float:
+                self._last = next(self._ticks, self._last)
+                return self._last
+
+            def sleep(self, seconds: float) -> None:
+                self._base_time.sleep(seconds)
+
+        orig_cmp_time = CMP.time
+        CMP.time = _ControlledClock([100.0, 100.005], orig_cmp_time)
+        try:
+            lb_kind, lb_detail, _ = CMP.apply_step(
+                _InstantEchoObserver(
+                    "LOOPBACK_ECHO",
+                    on_paste=lambda: _run_scoped_provider_stream(
+                        path="/scopes/measured_scope/responses"
+                    ),
+                ),
+                {"echo": "LOOPBACK_ECHO", "stream_scope": "measured_scope"},
+                "native",
+                Path("."),
+                Path("."),
+                set(),
+                stream_metrics_path=metrics_path,
+            )
+        finally:
+            CMP.time = orig_cmp_time
+        lb_budget = CMP.evaluate_t5_budgets(
+            [
+                {
+                    "client": "native",
+                    "steps": [
+                        {
+                            "kind": lb_kind,
+                            "t5_echo": True,
+                            "elapsed_ms": lb_detail["echo_ms"],
+                            "streaming_observed": lb_detail["streaming_observed"],
+                            "observed_tok_per_s": lb_detail["observed_tok_per_s"],
+                            "detail": lb_detail,
+                        }
+                    ],
+                    "idle_cpu_seconds": 0.10,
+                }
+            ]
+        )
+        check(
+            "scoped end-to-end loopback-provider stream-metrics witness passes T5 budgets",
+            lb_detail.get("streaming_observed") is True
+            and lb_detail.get("echo_ms") == 5.0
+            and float(lb_detail.get("observed_tok_per_s", 0.0)) >= 200.0
+            and lb_budget["status"] == "pass"
+            and lb_budget["concurrent_streaming_tok_per_s"]["status"] == "pass",
+            f"detail={lb_detail!r} budget={lb_budget!r}",
+        )
+    non_t5_rejected = False
+    try:
+        CMP.validate_t5_scenario({"name": "j02"}, [{"key": "Enter"}])
+    except CMP.HarnessError:
+        non_t5_rejected = True
+    check(
+        "validate_t5_scenario rejects non-T5 scenarios under --enforce-t5-budgets",
+        non_t5_rejected,
+    )
+
+
 def main() -> int:
     with tempfile.TemporaryDirectory() as raw:
         root = Path(raw)
@@ -802,6 +1363,9 @@ def main() -> int:
     undrained_pipe_witnesses()
     print()
     capture_coherence_witnesses()
+    print()
+    t5_budget_witnesses()
+    print()
     provider_shape_witnesses()
     call_identity_witnesses()
 

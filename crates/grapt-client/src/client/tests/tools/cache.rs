@@ -47,6 +47,7 @@ fn tool_hint_updates_cache_without_erasing_live_text_and_reconnect_does_not_doub
     let mut client = Client::new(peer, Bounds::PRODUCTION);
     client.select_first_offer()?;
     assert_eq!(client.create_session()?, session);
+    prove(&mut client);
     assert_eq!(
         client.view().ok_or("view")?.cache.history_share(),
         Some(0.0)
@@ -58,7 +59,7 @@ fn tool_hint_updates_cache_without_erasing_live_text_and_reconnect_does_not_doub
         ),
         (
             "session.text.delta",
-            serde_json::json!({"assistantMessageID":"msg_fixture_answer","ordinal":0,"sessionID":session.as_inner().as_str(),"delta":"UNFINISHED"}),
+            serde_json::json!({"assistantMessageID":"msg_fixture_answer","ordinal":0,"sessionID":session.as_inner().as_str(),"delta":"UNFINISHED","from":0}),
         ),
     ] {
         let mut frame =
@@ -100,6 +101,7 @@ fn tool_hint_updates_cache_without_erasing_live_text_and_reconnect_does_not_doub
     }
     client.peer_mut().frames.push_back(FramePoll::Closed);
     client.pump()?;
+    prove(&mut client);
     client.reconcile(&session)?;
     assert_eq!(client.view().ok_or("recovered view")?.cache, observed);
     Ok(())

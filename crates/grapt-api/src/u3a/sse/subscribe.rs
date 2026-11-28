@@ -64,7 +64,9 @@ impl DogfoodEventHub {
             sender
                 .try_send(stamp(self.connected.clone())?)
                 .map_err(|_| SseError::Encode)?;
-            self.queue_hydration(&interest, &mut |frame| {
+            // An HTTP client keeps a partial snapshot: hydration is courtesy
+            // there, and its live stream stays usable.
+            let _partial = self.queue_hydration(&interest, &mut |frame| {
                 stamp(frame).is_ok_and(|frame| sender.try_send(frame).is_ok())
             });
         }

@@ -9,6 +9,7 @@ fn native_failure_causes_reach_model_and_transcript_without_stderr_credentials(
     let root = root("native-failure-causes");
     let _cleanup = terminal_coordination::RootCleanup(root.clone());
     prepare(&root, 30_000);
+    unattended(&root);
     fs::write(root.join("binary.rs"), b"binary\0data")?;
     let command = if cfg!(windows) {
         "echo NATIVE_STDERR 1>&2 & echo api_key=PRIVATE_STDERR_KEY 1>&2 & ping -n 6 127.0.0.1 >nul"

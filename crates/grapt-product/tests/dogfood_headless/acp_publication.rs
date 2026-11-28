@@ -9,6 +9,10 @@ use serde_json::{json as value, Value};
 const PUBLIC_BYTES: usize = 256 * 1_024;
 const TURN_ALLOWANCE: Duration = Duration::from_secs(60);
 
+fn acp_workspace(root: &Path) -> PathBuf {
+    root.with_extension("workspace")
+}
+
 #[test]
 #[cfg_attr(not(windows), expect(clippy::too_many_lines, reason = "legacy"))]
 fn a_real_publication_gap_backfills_without_an_extra_terminal_close() {
@@ -39,11 +43,14 @@ p=Path("gap-executions.log"); p.write_text(p.read_text()+"run\n"); print("z" * 3
         // result remains legal input for this explicitly bounded test model.
         |root| {
             prepare_model_inventory(root, 1_000_000);
-            fs::write(root.join("gap-executions.log"), "")
+            let ws = acp_workspace(root);
+            fs::create_dir_all(&ws)
+                .unwrap_or_else(|error| panic!("workspace creation failed: {error}"));
+            fs::write(ws.join("gap-executions.log"), "")
                 .unwrap_or_else(|error| panic!("effect counter creation failed: {error}"));
         },
         |root, observed| {
-            let effects = fs::read_to_string(root.join("gap-executions.log"))
+            let effects = fs::read_to_string(acp_workspace(root).join("gap-executions.log"))
                 .unwrap_or_else(|error| panic!("effect counter missing: {error}"));
             assert_eq!(effects, "run\n", "recovery executed the shell tool again");
             assert_eq!(
@@ -105,7 +112,17 @@ p=Path("gap-executions.log"); p.write_text(p.read_text()+"run\n"); print("z" * 3
     // fields; the actual ACP truncation marker still accounts for raw bytes.
     let partial: Value = serde_json::from_str(&format!("{prefix}\"}}"))
         .unwrap_or_else(|error| panic!("recovered receipt prefix was malformed: {error}"));
-    assert_eq!(partial["enforcement"]["kind"], "harness_only");
+    #[cfg(target_os = "linux")]
+    assert_eq!(partial["enforcement"]["kind"], "platform_sandbox");
+    #[cfg(not(target_os = "linux"))]
+    assert!(
+        matches!(
+            partial["enforcement"]["kind"].as_str(),
+            Some("platform_sandbox" | "harness_only")
+        ),
+        "unexpected enforcement kind: {:?}",
+        partial["enforcement"]
+    );
     let omitted = partial["omitted_output_bytes"]
         .as_u64()
         .unwrap_or_else(|| panic!("public receipt loss count missing"));
@@ -182,10 +199,12 @@ fn prompt(root: &Path, provider: SocketAddr) -> (Result<Value, String>, AcpObser
             deadline,
             &mut observed,
         )?;
+        let ws = acp_workspace(root);
+        let cwd = if ws.is_dir() { ws.as_path() } else { root };
         let created = acp.request(
             2,
             "session/new",
-            value!({"cwd": root, "mcpServers": []}),
+            value!({"cwd": cwd, "mcpServers": []}),
             deadline,
             &mut observed,
         )?;
@@ -204,7 +223,7 @@ fn prompt(root: &Path, provider: SocketAddr) -> (Result<Value, String>, AcpObser
                 // Only the publication-gap fixture creates this counter.
                 // The effect cannot produce its oversize result until the
                 // actual host observes the acknowledged text prefix.
-                if root.join("gap-executions.log").is_file()
+                if cwd.join("gap-executions.log").is_file()
                     && row
                         .pointer("/params/update/sessionUpdate")
                         .and_then(Value::as_str)
@@ -214,7 +233,7 @@ fn prompt(root: &Path, provider: SocketAddr) -> (Result<Value, String>, AcpObser
                         .and_then(Value::as_str)
                         == Some("before tool\n")
                 {
-                    fs::write(root.join("gap-prefix-seen"), "seen")
+                    fs::write(cwd.join("gap-prefix-seen"), "seen")
                         .unwrap_or_else(|error| panic!("prefix acknowledgement failed: {error}"));
                 }
             },
@@ -222,7 +241,13 @@ fn prompt(root: &Path, provider: SocketAddr) -> (Result<Value, String>, AcpObser
     })();
     // Prompt diagnostics end before this fixture closes protocol stdin. The
     // owned service stop has its own legitimate stream-shutdown diagnostic.
-    observed.stream_ends = if root.join("gap-executions.log").is_file() {
+    let gap_dir = acp_workspace(root);
+    let gap_log = if gap_dir.is_dir() {
+        gap_dir.join("gap-executions.log")
+    } else {
+        root.join("gap-executions.log")
+    };
+    observed.stream_ends = if gap_log.is_file() {
         PollDeadline::within(Duration::from_secs(2))
             .poll(Duration::from_millis(10), || {
                 let ends = stream_ends(root);
@@ -342,6 +367,7 @@ fn witness_observed_checked(
     let _journey = process_journey_custody();
     let root = root(&format!("acp-publication-{label}"));
     prepare(&root, 90_000);
+    unattended(&root);
     configure(&root);
     fs::write(root.join("README.md"), "the file a tool step reads\n")
         .unwrap_or_else(|error| panic!("fixture file failed: {error}"));
@@ -388,6 +414,7 @@ fn witness_observed_checked(
         }
     }
     check(&root, &observed);
+    process_fixture::cleanup(&acp_workspace(&root));
     process_fixture::cleanup(&root);
     observed
 }

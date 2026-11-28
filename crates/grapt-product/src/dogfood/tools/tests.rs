@@ -366,11 +366,12 @@ async fn shell_is_cwd_bound_timed_and_output_bounded() -> Result<(), String> {
     let EffectTarget::Shell {
         command: expected,
         program,
-        environment,
+        mut environment,
     } = prepared.target
     else {
         return Err("shell preparation changed effect class".to_owned());
     };
+    environment.without_sandbox();
     let output = run_shell(
         &scratch.0,
         &expected,
@@ -396,11 +397,12 @@ async fn shell_is_cwd_bound_timed_and_output_bounded() -> Result<(), String> {
     let EffectTarget::Shell {
         command: failed_command,
         program: failed_program,
-        environment: failed_environment,
+        environment: mut failed_environment,
     } = failed.target
     else {
         return Err("failed shell preparation changed effect class".to_owned());
     };
+    failed_environment.without_sandbox();
     let failed_output = run_shell(
         &scratch.0,
         &failed_command,
@@ -436,11 +438,12 @@ async fn shell_preserves_quoted_program_and_spaced_arguments_after_authorization
         let EffectTarget::Shell {
             command: expected,
             program,
-            environment,
+            mut environment,
         } = prepared.target
         else {
             return Err("shell preparation changed effect class".to_owned());
         };
+        environment.without_sandbox();
         let output = run_shell(
             &scratch.0,
             &expected,
@@ -831,6 +834,39 @@ fn an_edit_copied_from_read_output_applies_to_a_crlf_file_and_keeps_its_endings(
         std::fs::read(&target).map_err(|error| error.to_string())?,
         b"first\r\nsecond\r\nnew line\r\nthird\r\n",
         "the edit applied and every line kept its CRLF ending"
+    );
+    Ok(())
+}
+
+#[test]
+fn unexecuted_approvals_clears_on_dispatch_denial_and_abort() -> Result<(), String> {
+    let tracked = UnexecutedApprovals::default();
+    let dispatched = ToolCallId::new("call_dispatched").ok_or("call id")?;
+    let denied = ToolCallId::new("call_denied").ok_or("call id")?;
+    let aborted = ToolCallId::new("call_aborted").ok_or("call id")?;
+    let unknown = ToolCallId::new("call_never_pending").ok_or("call id")?;
+
+    assert!(
+        !tracked.take_if_unexecuted(&unknown),
+        "unknown/untracked calls must fail closed as false (EffectUnknown)"
+    );
+
+    // Normal dispatch clears the entry before effect execution.
+    tracked.mark_pending(&dispatched);
+    tracked.clear(&dispatched);
+    assert!(!tracked.take_if_unexecuted(&dispatched));
+
+    // Denial/cancellation clears the entry so it never accumulates.
+    tracked.mark_pending(&denied);
+    tracked.clear(&denied);
+    assert!(!tracked.take_if_unexecuted(&denied));
+
+    // Aborted pending approval reports known_unexecuted=true once and removes the entry.
+    tracked.mark_pending(&aborted);
+    assert!(tracked.take_if_unexecuted(&aborted));
+    assert!(
+        tracked.is_empty(),
+        "settled/denied/aborted approvals must never accumulate"
     );
     Ok(())
 }

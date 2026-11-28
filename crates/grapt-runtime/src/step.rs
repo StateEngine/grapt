@@ -672,6 +672,13 @@ impl<O: AttemptOwner> AttemptOwner for ProgressOwner<O> {
         self.inner.capture_hosted_output(text)
     }
 
+    fn capture_diagnostic_detail(
+        &mut self,
+        text: &str,
+    ) -> Result<grapt_types::ToolTerminalArtifact, OwnerError> {
+        self.inner.capture_diagnostic_detail(text)
+    }
+
     fn commit(&mut self, fact: DurableFact) -> Result<(), OwnerError> {
         let provider_finished = matches!(
             &fact,

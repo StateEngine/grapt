@@ -383,6 +383,15 @@ fn split_terminal_input_is_decided_as_the_line_it_completes() -> Result<(), Stri
     let layers = [
         Layer::owner(),
         Layer::preset_in(Preset::Maintainer, Some(&root)),
+        Layer {
+            name: grapt_permission::preset::LayerName::Config,
+            rules: vec![
+                grapt_permission::preset::Rule::new("shell", "*", Effect::Allow),
+                grapt_permission::preset::Rule::destructive("shell", Effect::Ask, Some(&root)),
+            ],
+            floor: false,
+            compose: grapt_permission::preset::Compose::Override,
+        },
     ];
     // Each allowed piece is delivered; an asked one is refused.
     let send = |chars: &str| -> Result<Effect, String> {
@@ -471,6 +480,15 @@ async fn a_real_shell_never_runs_a_delete_typed_around_its_decision() -> Result<
     let layers = [
         Layer::owner(),
         Layer::preset_in(Preset::Maintainer, Some(&root)),
+        Layer {
+            name: grapt_permission::preset::LayerName::Config,
+            rules: vec![
+                grapt_permission::preset::Rule::new("shell", "*", Effect::Allow),
+                grapt_permission::preset::Rule::destructive("shell", Effect::Ask, Some(&root)),
+            ],
+            floor: false,
+            compose: grapt_permission::preset::Compose::Override,
+        },
     ];
     let prepare = |chars: &str| -> Result<(Effect, StdinSpec), String> {
         let input = BoundedToolInput::new(

@@ -5,9 +5,79 @@ use grapt_config::ConfigValue;
 
 const INSTRUCTION_FILES: [&str; 2] = ["AGENTS.md", "AGENTS.override.md"];
 
+pub(super) fn canonical_temp_dir() -> Result<PathBuf, String> {
+    canonical(&std::env::temp_dir())
+}
+
+fn initial_writable_roots(root: &Path) -> Result<(Vec<PathBuf>, PathBuf), String> {
+    let canonical_root = canonical(root)?;
+    let canonical_temp = canonical_temp_dir()?;
+    // Never grant the shared host temp directory as a writable root: every
+    // sandboxed command gets its own per-command private scratch directory
+    // under `canonical_temp` (same 1-slot path budget, uniform isolation for
+    // all workspaces).
+    Ok((vec![canonical_root], canonical_temp))
+}
+
+/// True when `grant` overlaps the per-UID scratch anchor (at or below the
+/// anchor, or at an ancestor such as `temp_parent` itself).
+pub(super) fn path_overlaps_scratch(grant: &Path, temp_parent: &Path) -> bool {
+    #[cfg(unix)]
+    {
+        let anchor = scratch::unix_scratch_anchor_path(temp_parent);
+        grant.starts_with(&anchor) || anchor.starts_with(grant)
+    }
+    #[cfg(not(unix))]
+    {
+        temp_parent.starts_with(grant)
+    }
+}
+
+#[cfg(unix)]
+pub(super) fn protect_unix_scratch_anchor(
+    protected: &mut Vec<PathBuf>,
+    canonical_temp: &Path,
+) -> Result<Option<PathBuf>, String> {
+    // Purely record the anchor path during read-only planning; the 0700
+    // directory is created only at actual command launch time (never during
+    // Plan::read or preflight) before Linux synthetic mount targets run.
+    let anchor = scratch::unix_scratch_anchor_path(canonical_temp);
+    if !protected.iter().any(|existing| existing == &anchor) {
+        protected.push(anchor.clone());
+    }
+    Ok(Some(anchor))
+}
+
+#[cfg(not(unix))]
+pub(super) fn protect_unix_scratch_anchor(
+    _protected: &mut Vec<PathBuf>,
+    _canonical_temp: &Path,
+) -> Result<Option<PathBuf>, String> {
+    Ok(None)
+}
+
+fn maybe_protect_unix_scratch_anchor(
+    protected: &mut Vec<PathBuf>,
+    canonical_temp: &Path,
+    writable_overlaps_scratch: bool,
+) -> Result<Option<PathBuf>, String> {
+    if writable_overlaps_scratch {
+        protect_unix_scratch_anchor(protected, canonical_temp)
+    } else {
+        Ok(None)
+    }
+}
+
+pub(super) fn check_path_budget(count: usize, reserves_private_temp: bool) -> Result<(), String> {
+    if count + usize::from(reserves_private_temp) > 128 {
+        return Err("sandbox policy exceeds 128 paths".into());
+    }
+    Ok(())
+}
+
 #[expect(clippy::too_many_lines, reason = "legacy")]
 pub(super) fn read(root: &Path, sources: &CatalogSources) -> Result<Option<Plan>, String> {
-    let mut enabled = false;
+    let mut enabled = true;
     let mut git_metadata_read_only = false;
     let mut network = true;
     let mut declared = Vec::new();
@@ -61,10 +131,14 @@ pub(super) fn read(root: &Path, sources: &CatalogSources) -> Result<Option<Plan>
     if !enabled && !git_metadata_read_only {
         return Ok(None);
     }
-    let mut writable = vec![canonical(root)?, canonical(&std::env::temp_dir())?];
+    let (mut writable, canonical_temp) = initial_writable_roots(root)?;
     writable.extend(declared);
     writable.sort();
     writable.dedup();
+    let writable_overlaps_temp = writable
+        .iter()
+        .any(|grant| path_overlaps_scratch(grant, &canonical_temp));
+    let private_temp_parent = (!writable_overlaps_temp).then_some(canonical_temp.clone());
     if writable.iter().any(|path| path.parent().is_none()) {
         return Err("sandbox cannot make a filesystem root writable".into());
     }
@@ -80,6 +154,8 @@ pub(super) fn read(root: &Path, sources: &CatalogSources) -> Result<Option<Plan>
         binaries,
         root.join(".stateengine"),
     ]);
+    let protected_scratch_anchor =
+        maybe_protect_unix_scratch_anchor(&mut protected, &canonical_temp, writable_overlaps_temp)?;
     protected.extend(
         crate::dogfood::legacy_names::PROJECT_DIRECTORIES
             .iter()
@@ -126,9 +202,10 @@ pub(super) fn read(root: &Path, sources: &CatalogSources) -> Result<Option<Plan>
     }
     readable.sort();
     readable.dedup();
-    if readable.len() + writable.len() + protected.len() + denied.len() > 128 {
-        return Err("sandbox policy exceeds 128 paths".into());
-    }
+    check_path_budget(
+        readable.len() + writable.len() + protected.len() + denied.len(),
+        private_temp_parent.is_some(),
+    )?;
     Ok(Some(Plan {
         git_metadata_read_only,
         readable,
@@ -136,6 +213,8 @@ pub(super) fn read(root: &Path, sources: &CatalogSources) -> Result<Option<Plan>
         protected,
         denied,
         network,
+        private_temp_parent,
+        protected_scratch_anchor,
     }))
 }
 

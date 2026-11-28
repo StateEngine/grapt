@@ -17,6 +17,13 @@ impl crate::transport::Transport for HeldPeer {
         request: &crate::transport::WireRequest,
     ) -> Result<crate::transport::WireResponse, crate::transport::TransportError> {
         let body = match request.operation() {
+            crate::contract::Operation::SessionSnapshot => {
+                crate::double::page_snapshot(request, &self.page, 0).map_err(|error| {
+                    crate::transport::TransportError::Unavailable {
+                        reason: error.to_string(),
+                    }
+                })?
+            }
             crate::contract::Operation::MessageList => self.page.clone(),
             crate::contract::Operation::PermissionRequestList => self.permissions.clone(),
             _ => return self.inner.call(request),
@@ -26,14 +33,16 @@ impl crate::transport::Transport for HeldPeer {
 }
 impl crate::client::Connection for HeldPeer {
     fn subscribed(&self) -> bool {
-        true
+        self.inner.subscribed()
     }
     fn poll_frame(
         &mut self,
     ) -> Result<crate::transport::FramePoll, crate::transport::TransportError> {
-        Ok(crate::transport::FramePoll::Idle)
+        self.inner.poll_frame()
     }
-    fn resubscribe(&mut self) {}
+    fn resubscribe(&mut self) {
+        self.inner.resubscribe();
+    }
 }
 
 fn patch_input() -> serde_json::Value {
@@ -74,6 +83,10 @@ fn held_call(
     client.select_first_offer()?;
     let session = client.create_session()?;
     client.select(&session)?;
+    // The stream's positioned connect, then the snapshot it permits.
+    for _ in 0..2 {
+        client.pump()?;
+    }
     Ok(client)
 }
 

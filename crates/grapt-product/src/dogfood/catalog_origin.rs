@@ -161,3 +161,38 @@ fn fixture_spelling<'a>(path: &'a Path, root: &Path) -> Result<&'a Path, String>
 #[cfg(test)]
 #[path = "catalog_origin_tests.rs"]
 mod tests;
+
+/// Whether `path`, read as written rather than resolved, lies inside a
+/// repository checkout: a link inside a checkout that points out of it still
+/// belongs to the checkout.
+pub(super) fn written_inside_repository(
+    path: &Path,
+    ceiling: Option<&Path>,
+) -> Result<bool, String> {
+    let mut written = PathBuf::new();
+    for part in path.components() {
+        match part {
+            std::path::Component::ParentDir => {
+                written.pop();
+            }
+            std::path::Component::CurDir => {}
+            part => written.push(part),
+        }
+    }
+    for ancestor in written.ancestors().skip(1).take(MAX_ANCESTORS) {
+        match std::fs::symlink_metadata(ancestor.join(".git")) {
+            Ok(_) => return Ok(true),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => {
+                return Err(format!(
+                    "repository origin is unreadable: {:?}",
+                    error.kind()
+                ))
+            }
+        }
+        if ceiling == Some(ancestor) {
+            break;
+        }
+    }
+    Ok(false)
+}

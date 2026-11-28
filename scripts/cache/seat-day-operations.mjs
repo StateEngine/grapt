@@ -114,9 +114,17 @@ function failedSteps(facts, window) {
   return [...rows.values()].filter(row => inside(row.at, window));
 }
 
+export const INFRASTRUCTURE_FAILURE_REASONS = new Set([
+  'authority-unavailable',
+  'approval-unavailable',
+  'capture-failed',
+  'effect-unknown',
+  'infrastructure-failed',
+]);
+
 export async function operationalReport(events, reports, readArtifact, window = null) {
   const facts = index(events), groups = new Map(), failures = new Map(), missingDetails = new Map();
-  let count = 0, failed = 0, missingNames = 0;
+  let count = 0, failed = 0, infrastructureFailed = 0, missingNames = 0;
   const toolIDs = new Set([...facts.starts.keys(), ...facts.ends.keys()]);
   if (toolIDs.size > 32768) throw new Error('Operational report exceeds 32768 tool calls');
   for (const call of toolIDs) {
@@ -129,8 +137,16 @@ export async function operationalReport(events, reports, readArtifact, window = 
     if (name === null) missingNames++;
     const elapsed = duration(start?.started_ms, end?.ended_ms);
     if (elapsed !== null) group.durations.push(elapsed);
-    if (outcome === 'failed') {
+    if (outcome === 'result-missing') {
+      infrastructureFailed++;
+    } else if (outcome === 'failed') {
       failed++;
+      // Typed infrastructure failure classification only; never parse
+      // diagnostic prose so regular effect-failed tools are never miscounted
+      // and missing artifacts cannot hide infrastructure failures.
+      if (INFRASTRUCTURE_FAILURE_REASONS.has(end.outcome.reason)) {
+        infrastructureFailed++;
+      }
       const detail = end.outcome.detail ? await readArtifact(end.outcome.detail) : unavailable('detail-not-recorded');
       if (detail.status !== 'observed') missingDetails.set(detail.reason, (missingDetails.get(detail.reason) ?? 0) + 1);
       const message = detail.status === 'observed' ? normalizeFailure(detail.text) : null;
@@ -152,6 +168,8 @@ export async function operationalReport(events, reports, readArtifact, window = 
   const compactions = allCompactions.filter(row => inside(row.at, window));
   return {
     tool_calls: { count, failed, failure_percent: count ? 100 * failed / count : null,
+      infrastructure_failed: infrastructureFailed,
+      infrastructure_failure_percent: count ? 100 * infrastructureFailed / count : null,
       duplicate_start_copies: facts.duplicateCopies, missing_name_calls: missingNames,
       duration_samples: allDurations.length, duration_unavailable: count - allDurations.length,
       p50_ms: percentile(allDurations, 0.5), p95_ms: percentile(allDurations, 0.95),

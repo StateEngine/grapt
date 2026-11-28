@@ -15,6 +15,8 @@ const BYTE_CAP: usize = 4 * 1024 * 1024;
 const MAX_ROWS: usize = 1024;
 /// Catalogue modality lists are small; a longer list is not a model fact.
 const MAX_MODALITIES: usize = 8;
+/// The most reasoning levels one row may offer, as the model inventory bounds them.
+const MAX_REASONING_LEVELS: usize = 32;
 /// The output ceiling must fit both consumers: the model DTO carries it as an
 /// i64, and the request-budget reader as a u32. A larger report is unusable, so
 /// the field stays unknown rather than making the whole list unreadable.
@@ -71,7 +73,7 @@ async fn read_row(verified: &VerifiedKey, model: &str) -> Option<Value> {
 
 /// The catalogue fields one listing row states, each kept only when the
 /// endpoint actually reports it in a bounded, readable form.
-fn fields(row: &Value) -> Value {
+pub(super) fn fields(row: &Value) -> Value {
     let mut fields = json!({});
     if let Some(context) = row
         .get("context_length")
@@ -99,25 +101,64 @@ fn fields(row: &Value) -> Value {
             fields["supported_parameters"] = json!(parameters);
         }
     }
-    let architecture = row.get("architecture");
     for side in ["input", "output"] {
-        if let Some(modalities) = architecture
-            .and_then(|architecture| architecture.get(format!("{side}_modalities")))
-            .and_then(Value::as_array)
-        {
-            if !modalities.is_empty()
+        if let Some(modalities) = stated_modalities(row, side) {
+            fields[format!("{side}_modalities")] = json!(modalities);
+        }
+    }
+    if let Some(levels) = reasoning_levels(row) {
+        fields["supported_reasoning_levels"] = levels;
+    }
+    fields
+}
+
+/// The modalities a listing row states for one side ("input" or "output"),
+/// read one way wherever a row is judged: the row's own list first, as a local
+/// server states it, then the one under `architecture`. An empty list states
+/// nothing, and a malformed or oversized one is not a model fact, so the next
+/// candidate is read instead.
+pub fn stated_modalities<'a>(row: &'a Value, side: &str) -> Option<&'a Vec<Value>> {
+    let name = format!("{side}_modalities");
+    [
+        row.get(&name),
+        row.get("architecture")
+            .and_then(|architecture| architecture.get(&name)),
+    ]
+    .into_iter()
+    .flatten()
+    .find_map(|value| {
+        value.as_array().filter(|modalities| {
+            !modalities.is_empty()
                 && modalities.len() <= MAX_MODALITIES
                 && modalities.iter().all(|value| {
                     value
                         .as_str()
                         .is_some_and(|name| !name.is_empty() && name.len() <= 32)
                 })
-            {
-                fields[format!("{side}_modalities")] = json!(modalities);
-            }
+        })
+    })
+}
+
+/// The reasoning efforts a row offers, each once in the row's order, kept
+/// only when every level names one bounded effort.
+fn reasoning_levels(row: &Value) -> Option<Value> {
+    let levels = row.get("supported_reasoning_levels")?.as_array()?;
+    if levels.len() > MAX_REASONING_LEVELS {
+        return None;
+    }
+    let mut efforts = Vec::new();
+    for level in levels {
+        let effort = level["effort"]
+            .as_str()
+            .filter(|effort| !effort.is_empty() && effort.len() <= 32)?;
+        if !efforts.contains(&effort) {
+            efforts.push(effort);
         }
     }
-    fields
+    Some(json!(efforts
+        .into_iter()
+        .map(|effort| json!({ "effort": effort }))
+        .collect::<Vec<_>>()))
 }
 
 /// Copy the reported fields onto the verified listing's own row for `model`.

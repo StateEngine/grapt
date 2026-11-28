@@ -385,6 +385,28 @@ struct ProjectToolExecutor {
     attempt: Option<grapt_types::PhysicalAttemptId>,
 }
 
+#[derive(Clone, Default)]
+struct UnexecutedApprovals(Arc<Mutex<std::collections::HashSet<ToolCallId>>>);
+
+impl UnexecutedApprovals {
+    fn mark_pending(&self, call: &ToolCallId) {
+        lock(&self.0).insert(call.clone());
+    }
+
+    fn clear(&self, call: &ToolCallId) {
+        lock(&self.0).remove(call);
+    }
+
+    fn take_if_unexecuted(&self, call: &ToolCallId) -> bool {
+        lock(&self.0).remove(call)
+    }
+
+    #[cfg(test)]
+    fn is_empty(&self) -> bool {
+        lock(&self.0).is_empty()
+    }
+}
+
 #[allow(
     missing_debug_implementations,
     reason = "the runner owns an opaque authenticated principal"
@@ -428,6 +450,11 @@ pub(super) struct PermissionToolRunner {
     child_seam: super::subagent::ChildSeam,
     /// The trust level this Session's calls are decided under.
     policy: super::permission_preset::ResolvedPolicy,
+    /// Calls currently awaiting human approval that have NOT yet been dispatched
+    /// to an effect handler. Cleared immediately inside `consume_and_run` before
+    /// `governed.run_effect` begins, so a provider-aborted pending approval is
+    /// classified as `EffectFailed` while any dispatched call remains `EffectUnknown`.
+    unexecuted_approvals: UnexecutedApprovals,
 }
 
 /// A command prefix does not authorize startup profiles or another executable.
@@ -549,6 +576,7 @@ impl PermissionToolRunner {
         drop(inbox);
         drop(permissions);
         if guard.armed {
+            self.unexecuted_approvals.mark_pending(call);
             guard.wait = Some(
                 decision_wait::DecisionWait::begin(
                     &self.decision_waits,
@@ -647,6 +675,9 @@ impl ToolRunner for PermissionToolRunner {
     fn settle_attempt(&self) -> BoxFuture<'static, bool> {
         let workers = Arc::clone(&self.workers);
         Box::pin(async move { workers.settle().await })
+    }
+    fn known_unexecuted(&self, call: &ToolCallId) -> bool {
+        self.unexecuted_approvals.take_if_unexecuted(call)
     }
     fn run_with_nested(
         &self,
@@ -963,6 +994,7 @@ mod agent_interrupt;
 mod agent_message;
 mod agent_spawn;
 pub(super) mod agent_wait;
+mod call_repair;
 mod delegation;
 mod effects;
 pub(in crate::dogfood) mod read_history;

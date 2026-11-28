@@ -43,6 +43,9 @@ pub(crate) struct PromptDriver {
     mcp: Option<Arc<super::mcp::McpRegistry>>,
     /// The writer that builds the mailbox scan indexes once, after readiness.
     scan_indexes: Option<Arc<Mutex<grapt_inbox::Inbox>>>,
+    /// Post-readiness automatic resume for crash-interrupted turns.
+    auto_resume_app: Option<Arc<super::DogfoodApplication>>,
+    auto_resume_principal: Option<grapt_api::SealedPrincipal>,
     /// The hub whose window registry decides when a Session's last window is
     /// gone, and the stop applied when it is.
     close_grace: Option<CloseGraceDrive>,
@@ -157,6 +160,8 @@ impl PromptMailbox {
                 session_ends: None,
                 mcp: None,
                 scan_indexes: None,
+                auto_resume_app: None,
+                auto_resume_principal: None,
                 close_grace: None,
                 receiver,
                 admission,
@@ -268,6 +273,12 @@ impl PromptDriver {
     pub(super) fn attach_scan_indexes(&mut self, inbox: Arc<Mutex<grapt_inbox::Inbox>>) {
         self.scan_indexes = Some(inbox);
     }
+    pub(super) fn attach_auto_resume_app(&mut self, application: Arc<super::DogfoodApplication>) {
+        self.auto_resume_app = Some(application);
+    }
+    pub(crate) fn attach_auto_resume_principal(&mut self, principal: grapt_api::SealedPrincipal) {
+        self.auto_resume_principal = Some(principal);
+    }
     /// Drive the window registry: stop a turn when its last window is gone.
     pub(super) fn attach_close_grace(
         &mut self,
@@ -317,6 +328,15 @@ impl PromptDriver {
                 build_scan_indexes(&inbox)
             }));
         }
+        let auto_resume_task = match (
+            self.auto_resume_app.take(),
+            self.auto_resume_principal.take(),
+        ) {
+            (Some(application), Some(principal)) => Some(tokio::task::spawn(async move {
+                super::startup_recovery::auto_resume::drive(application, principal).await;
+            })),
+            _ => None,
+        };
         let mut stopping = super::lifecycle::StopReason::ServiceStopped;
         let native = self.native_mail.clone();
         let mut mail_drive = native
@@ -393,6 +413,11 @@ impl PromptDriver {
                 },
             }
         };
+        // Stop the startup auto-resume driver before closing admission.
+        if let Some(task) = auto_resume_task {
+            task.abort();
+            let _ = task.await;
+        }
         // Drop each session coordinator before joining native transport cleanup.
         drop(mail_drive);
         self.capacity.close();

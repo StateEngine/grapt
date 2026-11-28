@@ -195,3 +195,602 @@ test('seat-day estimate requires all settled window attempts, retaining the know
   }
   assert.equal(summarize([report([known, attempt('missing-cost', 10, 0)])]).totals.cost.usd, 0.25);
 });
+
+test('evaluateReleaseGates reports honest Criterion #3 and #5 verdicts', async () => {
+  const { evaluateReleaseGates } = await import('./seat-day-report.mjs');
+  const cacheOnly = evaluateReleaseGates(
+    {
+      totals: { read_share_percent: 98.8 },
+      operations: {
+        tool_calls: { count: 200, failed: 15, infrastructure_failed: 1 },
+        failure_detail_unavailable: {},
+        coverage: { unsupported_event_versions: {} },
+      },
+    },
+    { totals: { read_share_percent: 98.5 } },
+  );
+  assert.equal(cacheOnly.criterion_3.status, 'incomplete');
+  assert.equal(cacheOnly.criterion_3.reason, 'matched-task-metrics-missing');
+  assert.equal(cacheOnly.criterion_3.cache_share_status, 'pass');
+  assert.equal(cacheOnly.criterion_3.cache_share_delta_percent, 0.3);
+  assert.equal(cacheOnly.criterion_5.status, 'pass');
+  assert.equal(cacheOnly.criterion_5.infra_failure_rate_percent, 0.5);
+
+  const matchedPass = evaluateReleaseGates(
+    {
+      window: { from: '2026-11-28T00:00:00Z', until: '2026-11-29T00:00:00Z' },
+      model: 'gpt-6.1-sol',
+      totals: { read_share_percent: 98.8 },
+      operations: {
+        tool_calls: { count: 100, failed: 20, infrastructure_failed: 2 },
+        failure_detail_unavailable: {},
+        coverage: { unsupported_event_versions: {} },
+      },
+    },
+    {
+      codexReport: {
+        window: { from: '2026-11-28T00:00:00Z', until: '2026-11-29T00:00:00Z' },
+        model: 'gpt-6.1-sol',
+        totals: { read_share_percent: 98.5 },
+      },
+      matchedTasks: {
+        count: 3,
+        grapt_accepted_tasks: 3,
+        // Within 20% of Codex (0.70 >= 0.85 * 0.80 = 0.68; 16500 <= 14000 * 1.20 = 16800)
+        grapt_first_review_accept_rate: 0.7,
+        codex_first_review_accept_rate: 0.85,
+        grapt_tokens_per_accepted_task: 16500,
+        codex_tokens_per_accepted_task: 14000,
+      },
+    },
+  );
+  assert.equal(matchedPass.criterion_3.status, 'pass');
+  assert.equal(matchedPass.criterion_5.status, 'pass');
+
+  const mismatchedDay = evaluateReleaseGates(
+    {
+      window: { from: '2026-11-28T00:00:00Z', until: '2026-11-29T00:00:00Z' }, model: 'gpt-6.1-sol',
+      totals: { read_share_percent: 99.0 },
+      operations: { tool_calls: { count: 100, failed: 0, infrastructure_failed: 0 } },
+    },
+    {
+      codexReport: { window: { from: '2026-11-27T00:00:00Z', until: '2026-11-28T00:00:00Z' }, model: 'gpt-6.1-sol', totals: { read_share_percent: 98.5 } },
+      matchedTasks: {
+        count: 3, grapt_accepted_tasks: 3,
+        grapt_first_review_accept_rate: 0.9, codex_first_review_accept_rate: 0.9,
+        grapt_tokens_per_accepted_task: 10000, codex_tokens_per_accepted_task: 10000,
+      },
+    },
+  );
+  assert.equal(mismatchedDay.criterion_3.status, 'fail');
+  assert.equal(mismatchedDay.criterion_3.reason, 'mismatched-comparison-day');
+
+  const mismatchedModel = evaluateReleaseGates(
+    {
+      window: { from: '2026-11-28T00:00:00Z', until: '2026-11-29T00:00:00Z' }, model: 'gpt-6.1-sol',
+      totals: { read_share_percent: 99.0 },
+      operations: { tool_calls: { count: 100, failed: 0, infrastructure_failed: 0 } },
+    },
+    {
+      codexReport: { window: { from: '2026-11-28T00:00:00Z', until: '2026-11-29T00:00:00Z' }, model: 'other-model', totals: { read_share_percent: 98.5 } },
+      matchedTasks: {
+        count: 3, grapt_accepted_tasks: 3,
+        grapt_first_review_accept_rate: 0.9, codex_first_review_accept_rate: 0.9,
+        grapt_tokens_per_accepted_task: 10000, codex_tokens_per_accepted_task: 10000,
+      },
+    },
+  );
+  assert.equal(mismatchedModel.criterion_3.status, 'fail');
+  assert.equal(mismatchedModel.criterion_3.reason, 'mismatched-comparison-model');
+
+  const invalidBounds = evaluateReleaseGates(
+    {
+      window: { from: '2026-11-28T00:00:00Z', until: '2026-11-29T00:00:00Z' }, model: 'gpt-6.1-sol',
+      totals: { read_share_percent: 99.0 },
+      operations: { tool_calls: { count: 100, failed: 0, infrastructure_failed: 0 } },
+    },
+    {
+      codexReport: { window: { from: '2026-11-28T00:00:00Z', until: '2026-11-29T00:00:00Z' }, model: 'gpt-6.1-sol', totals: { read_share_percent: 98.5 } },
+      matchedTasks: {
+        count: 3, grapt_accepted_tasks: 3,
+        grapt_first_review_accept_rate: 1.5, codex_first_review_accept_rate: 0.9,
+        grapt_tokens_per_accepted_task: -500, codex_tokens_per_accepted_task: 10000,
+      },
+    },
+  );
+  assert.equal(invalidBounds.criterion_3.status, 'fail');
+  assert.equal(invalidBounds.criterion_3.reason, 'invalid-matched-task-metrics');
+
+  const singleTaskRejected = evaluateReleaseGates(
+    {
+      window: { from: '2026-11-28T00:00:00Z', until: '2026-11-29T00:00:00Z' }, model: 'gpt-6.1-sol',
+      totals: { read_share_percent: 99.0 },
+      operations: { tool_calls: { count: 100, failed: 0, infrastructure_failed: 0 } },
+    },
+    {
+      codexReport: { window: { from: '2026-11-28T00:00:00Z', until: '2026-11-29T00:00:00Z' }, model: 'gpt-6.1-sol', totals: { read_share_percent: 98.5 } },
+      matchedTasks: {
+        count: 1,
+        grapt_accepted_tasks: 1,
+        grapt_first_review_accept_rate: 1.0,
+        codex_first_review_accept_rate: 0.8,
+        grapt_tokens_per_accepted_task: 10000,
+        codex_tokens_per_accepted_task: 12000,
+      },
+    },
+  );
+  assert.equal(singleTaskRejected.criterion_3.status, 'fail');
+  assert.equal(singleTaskRejected.criterion_3.reason, 'insufficient-matched-tasks');
+
+  const unacceptedRejected = evaluateReleaseGates(
+    {
+      window: { from: '2026-11-28T00:00:00Z', until: '2026-11-29T00:00:00Z' }, model: 'gpt-6.1-sol',
+      totals: { read_share_percent: 99.0 },
+      operations: { tool_calls: { count: 100, failed: 0, infrastructure_failed: 0 } },
+    },
+    {
+      codexReport: { window: { from: '2026-11-28T00:00:00Z', until: '2026-11-29T00:00:00Z' }, model: 'gpt-6.1-sol', totals: { read_share_percent: 98.5 } },
+      matchedTasks: {
+        count: 3,
+        grapt_accepted_tasks: 2,
+        grapt_first_review_accept_rate: 1.0,
+        codex_first_review_accept_rate: 0.8,
+        grapt_tokens_per_accepted_task: 10000,
+        codex_tokens_per_accepted_task: 12000,
+      },
+    },
+  );
+  assert.equal(unacceptedRejected.criterion_3.status, 'fail');
+  assert.equal(unacceptedRejected.criterion_3.reason, 'unaccepted-matched-tasks');
+
+  const outsideMarginRejected = evaluateReleaseGates(
+    {
+      window: { from: '2026-11-28T00:00:00Z', until: '2026-11-29T00:00:00Z' }, model: 'gpt-6.1-sol',
+      totals: { read_share_percent: 99.0 },
+      operations: { tool_calls: { count: 100, failed: 0, infrastructure_failed: 0 } },
+    },
+    {
+      codexReport: { window: { from: '2026-11-28T00:00:00Z', until: '2026-11-29T00:00:00Z' }, model: 'gpt-6.1-sol', totals: { read_share_percent: 98.5 } },
+      matchedTasks: {
+        count: 3,
+        grapt_accepted_tasks: 3,
+        grapt_first_review_accept_rate: 0.9,
+        codex_first_review_accept_rate: 0.9,
+        grapt_tokens_per_accepted_task: 17000,
+        codex_tokens_per_accepted_task: 14000,
+      },
+    },
+  );
+  assert.equal(outsideMarginRejected.criterion_3.status, 'fail');
+
+  // Prove operationalReport classifies strictly by typed outcome/reason:
+  // 4 typed effect-unknown missing-terminal failures out of 100 = 4% (>3% FAIL),
+  // even when detail artifact is unavailable, while regular effect-failed prose
+  // is never miscounted as an infrastructure failure.
+  const { operationalReport } = await import('./seat-day-operations.mjs');
+  const events = [];
+  for (let i = 0; i < 100; i++) {
+    const call = `call_${i}`;
+    events.push({
+      id: `evt_s_${i}`, session: 'ses_1', seq: i * 2 + 1, created: 1000 + i,
+      type: 'session.tool.input.started.2', data: { callID: call, name: 'shell' },
+    });
+    const outcome = i < 4
+      ? { kind: 'failed', reason: 'effect-unknown', detail: { id: 'a'.repeat(64), length: 10, digest: 'b'.repeat(64) } }
+      : (i < 10
+          ? { kind: 'failed', reason: 'effect-failed', detail: { id: 'c'.repeat(64), length: 10, digest: 'd'.repeat(64) } }
+          : { kind: 'completed', output: null });
+    events.push({
+      id: `evt_e_${i}`, session: 'ses_1', seq: i * 2 + 2, created: 1001 + i,
+      type: 'session.tool.terminal.1', data: { attempt: 'att_1', call, outcome },
+    });
+  }
+  const ops = await operationalReport(
+    events,
+    [],
+    async () => ({ status: 'observed', text: 'tool execution ended without producing a terminal result', disposition: 'complete' }),
+  );
+  assert.equal(ops.tool_calls.infrastructure_failed, 4);
+  const missingTerminalGate = evaluateReleaseGates({
+    totals: { read_share_percent: 99.0 },
+    operations: { ...ops, coverage: { unsupported_event_versions: {} } },
+  });
+  assert.equal(missingTerminalGate.criterion_5.status, 'fail');
+  assert.equal(missingTerminalGate.criterion_5.infra_failure_rate_percent, 4);
+
+  const unreadableArtifact = evaluateReleaseGates({
+    totals: { read_share_percent: 99.0 },
+    operations: {
+      tool_calls: { count: 100, failed: 1, infrastructure_failed: 0 },
+      failure_detail_unavailable: { 'secret-bearing': 1 },
+      coverage: { unsupported_event_versions: {} },
+    },
+  });
+  assert.equal(unreadableArtifact.criterion_5.status, 'fail');
+  assert.equal(unreadableArtifact.criterion_5.unavailable_detail_artifacts, 1);
+
+  const skippedTerminalVersion = evaluateReleaseGates({
+    totals: { read_share_percent: 99.0 },
+    operations: {
+      tool_calls: { count: 100, failed: 0, infrastructure_failed: 0 },
+      failure_detail_unavailable: {},
+      coverage: { unsupported_event_versions: { 'session.tool.terminal.2': 1 } },
+    },
+  });
+  assert.equal(skippedTerminalVersion.criterion_5.status, 'fail');
+  assert.equal(skippedTerminalVersion.criterion_5.unsupported_terminal_versions, 1);
+
+  const failingInfraRate = evaluateReleaseGates({
+    totals: { read_share_percent: 99.0 },
+    operations: {
+      tool_calls: { count: 100, failed: 4, infrastructure_failed: 4 },
+      failure_detail_unavailable: {},
+      coverage: { unsupported_event_versions: {} },
+    },
+  });
+  assert.equal(failingInfraRate.criterion_3.status, 'unavailable');
+  assert.equal(failingInfraRate.criterion_5.status, 'fail');
+  assert.equal(failingInfraRate.criterion_5.infra_failure_rate_percent, 4);
+
+  // Matching exports using the `models` array shape both exporters actually emit must pass.
+  const modelsArrayPass = evaluateReleaseGates(
+    {
+      window: { from: '2026-11-28T00:00:00Z', until: '2026-11-29T00:00:00Z' },
+      models: [{ provider: 'openai', model: 'gpt-6.1-sol', requests: 10 }],
+      totals: { read_share_percent: 99.1 },
+      operations: {
+        tool_calls: { count: 100, failed: 1, infrastructure_failed: 1 },
+        failure_detail_unavailable: {},
+        coverage: { unsupported_event_versions: {} },
+      },
+    },
+    {
+      codexReport: {
+        window: { from: '2026-11-28T00:00:00Z', until: '2026-11-29T00:00:00Z' },
+        models: [{ provider: 'openai', model: 'gpt-6.1-sol', requests: 10 }],
+        totals: { read_share_percent: 98.5 },
+      },
+      matchedTasks: {
+        count: 3,
+        grapt_accepted_tasks: 3,
+        grapt_first_review_accept_rate: 0.9,
+        codex_first_review_accept_rate: 0.9,
+        grapt_tokens_per_accepted_task: 10000,
+        codex_tokens_per_accepted_task: 10000,
+      },
+    },
+  );
+  assert.equal(modelsArrayPass.criterion_3.status, 'pass');
+  assert.equal(modelsArrayPass.criterion_3.grapt_model, 'gpt-6.1-sol');
+  assert.equal(modelsArrayPass.criterion_3.codex_model, 'gpt-6.1-sol');
+
+  // Conflicting recorded dates must fail even when comparison labels claim the same day.
+  const conflictingDayLabelsFail = evaluateReleaseGates(
+    {
+      window: { from: '2026-11-28T00:00:00Z', until: '2026-11-29T00:00:00Z' },
+      models: [{ provider: 'openai', model: 'gpt-6.1-sol', requests: 10 }],
+      totals: { read_share_percent: 99.1 },
+      operations: { tool_calls: { count: 100, failed: 0, infrastructure_failed: 0 } },
+    },
+    {
+      codexReport: {
+        window: { from: '2026-11-27T00:00:00Z', until: '2026-11-28T00:00:00Z' },
+        models: [{ provider: 'openai', model: 'gpt-6.1-sol', requests: 10 }],
+        totals: { read_share_percent: 98.5 },
+      },
+      matchedTasks: {
+        grapt_day: '2026-11-28',
+        codex_day: '2026-11-28',
+        count: 3,
+        grapt_accepted_tasks: 3,
+        grapt_first_review_accept_rate: 0.9,
+        codex_first_review_accept_rate: 0.9,
+        grapt_tokens_per_accepted_task: 10000,
+        codex_tokens_per_accepted_task: 10000,
+      },
+    },
+  );
+  assert.equal(conflictingDayLabelsFail.criterion_3.status, 'fail');
+  assert.equal(conflictingDayLabelsFail.criterion_3.reason, 'mismatched-comparison-day');
+
+  // Conflicting recorded models must fail even when comparison labels claim the same model.
+  const conflictingModelLabelsFail = evaluateReleaseGates(
+    {
+      window: { from: '2026-11-28T00:00:00Z', until: '2026-11-29T00:00:00Z' },
+      models: [{ provider: 'openai', model: 'gpt-6.1-sol', requests: 10 }],
+      totals: { read_share_percent: 99.1 },
+      operations: { tool_calls: { count: 100, failed: 0, infrastructure_failed: 0 } },
+    },
+    {
+      codexReport: {
+        window: { from: '2026-11-28T00:00:00Z', until: '2026-11-29T00:00:00Z' },
+        models: [{ provider: 'openai', model: 'gpt-5.4', requests: 10 }],
+        totals: { read_share_percent: 98.5 },
+      },
+      matchedTasks: {
+        grapt_model: 'gpt-6.1-sol',
+        codex_model: 'gpt-6.1-sol',
+        count: 3,
+        grapt_accepted_tasks: 3,
+        grapt_first_review_accept_rate: 0.9,
+        codex_first_review_accept_rate: 0.9,
+        grapt_tokens_per_accepted_task: 10000,
+        codex_tokens_per_accepted_task: 10000,
+      },
+    },
+  );
+  assert.equal(conflictingModelLabelsFail.criterion_3.status, 'fail');
+  assert.equal(conflictingModelLabelsFail.criterion_3.reason, 'mismatched-comparison-model');
+
+  // Typed `infrastructure-failed` tool terminals count as infrastructure failures.
+  const infraOps = await operationalReport(
+    [
+      {
+        id: 'evt_inf_s', session: 'ses_inf', seq: 1, created: 1000,
+        type: 'session.tool.input.started.2', data: { callID: 'call_inf', name: 'codemode' },
+      },
+      {
+        id: 'evt_inf_e', session: 'ses_inf', seq: 2, created: 1001,
+        type: 'session.tool.terminal.1',
+        data: {
+          attempt: 'att_inf',
+          call: 'call_inf',
+          outcome: {
+            kind: 'failed',
+            reason: 'infrastructure-failed',
+            detail: { id: 'e'.repeat(64), length: 12, digest: 'f'.repeat(64) },
+          },
+        },
+      },
+    ],
+    [],
+    async () => ({ status: 'observed', text: 'CodeMode worker could not start', disposition: 'complete' }),
+  );
+  assert.equal(infraOps.tool_calls.infrastructure_failed, 1);
+
+  // Unwindowed equal-day exports (Grapt opened_ms + Codex reported_ms) must pass.
+  const unwindowedEqualDayPass = evaluateReleaseGates(
+    {
+      window: null,
+      models: [{ provider: 'openai', model: 'gpt-6.1-sol', requests: 2 }],
+      requests: [
+        { opened_ms: Date.parse('2026-11-28T09:15:00Z') },
+        { opened_ms: Date.parse('2026-11-28T16:45:00Z') },
+      ],
+      totals: { read_share_percent: 99.1 },
+      operations: {
+        tool_calls: { count: 100, failed: 0, infrastructure_failed: 0 },
+        failure_detail_unavailable: {},
+        coverage: { unsupported_event_versions: {} },
+      },
+    },
+    {
+      codexReport: {
+        window: null,
+        models: [{ provider: 'openai', model: 'gpt-6.1-sol', requests: 2 }],
+        requests: [
+          { reported_ms: Date.parse('2026-11-28T10:00:00Z') },
+          { reported_ms: Date.parse('2026-11-28T17:00:00Z') },
+        ],
+        totals: { read_share_percent: 98.5 },
+      },
+      matchedTasks: {
+        count: 3,
+        grapt_accepted_tasks: 3,
+        grapt_first_review_accept_rate: 0.9,
+        codex_first_review_accept_rate: 0.9,
+        grapt_tokens_per_accepted_task: 10000,
+        codex_tokens_per_accepted_task: 10000,
+      },
+    },
+  );
+  assert.equal(unwindowedEqualDayPass.criterion_3.status, 'pass');
+  assert.equal(unwindowedEqualDayPass.criterion_3.grapt_day, '2026-11-28');
+  assert.equal(unwindowedEqualDayPass.criterion_3.codex_day, '2026-11-28');
+
+  // Cross-day exports must fail even when day labels claim a single matching day.
+  const crossDayWindowFail = evaluateReleaseGates(
+    {
+      window: { from: '2026-11-28T00:00:00Z', until: '2026-11-30T00:00:00Z' },
+      models: [{ provider: 'openai', model: 'gpt-6.1-sol', requests: 2 }],
+      totals: { read_share_percent: 99.1 },
+      operations: { tool_calls: { count: 100, failed: 0, infrastructure_failed: 0 } },
+    },
+    {
+      codexReport: {
+        window: { from: '2026-11-28T00:00:00Z', until: '2026-11-29T00:00:00Z' },
+        models: [{ provider: 'openai', model: 'gpt-6.1-sol', requests: 2 }],
+        totals: { read_share_percent: 98.5 },
+      },
+      matchedTasks: {
+        grapt_day: '2026-11-28',
+        codex_day: '2026-11-28',
+        count: 3,
+        grapt_accepted_tasks: 3,
+        grapt_first_review_accept_rate: 0.9,
+        codex_first_review_accept_rate: 0.9,
+        grapt_tokens_per_accepted_task: 10000,
+        codex_tokens_per_accepted_task: 10000,
+      },
+    },
+  );
+  assert.equal(crossDayWindowFail.criterion_3.status, 'fail');
+  assert.equal(crossDayWindowFail.criterion_3.reason, 'mismatched-comparison-day');
+
+  const crossDayUnwindowedFail = evaluateReleaseGates(
+    {
+      window: null,
+      models: [{ provider: 'openai', model: 'gpt-6.1-sol', requests: 2 }],
+      requests: [
+        { opened_ms: Date.parse('2026-11-28T23:30:00Z') },
+        { opened_ms: Date.parse('2026-11-29T00:30:00Z') },
+      ],
+      totals: { read_share_percent: 99.1 },
+      operations: { tool_calls: { count: 100, failed: 0, infrastructure_failed: 0 } },
+    },
+    {
+      codexReport: {
+        window: null,
+        models: [{ provider: 'openai', model: 'gpt-6.1-sol', requests: 1 }],
+        requests: [{ reported_ms: Date.parse('2026-11-28T12:00:00Z') }],
+        totals: { read_share_percent: 98.5 },
+      },
+      matchedTasks: {
+        grapt_day: '2026-11-28',
+        codex_day: '2026-11-28',
+        count: 3,
+        grapt_accepted_tasks: 3,
+        grapt_first_review_accept_rate: 0.9,
+        codex_first_review_accept_rate: 0.9,
+        grapt_tokens_per_accepted_task: 10000,
+        codex_tokens_per_accepted_task: 10000,
+      },
+    },
+  );
+  assert.equal(crossDayUnwindowedFail.criterion_3.status, 'fail');
+  assert.equal(crossDayUnwindowedFail.criterion_3.reason, 'mismatched-comparison-day');
+
+  // Unequal windows sharing the same start date must fail.
+  const unequalWindowSameStartFail = evaluateReleaseGates(
+    {
+      window: { from: '2026-11-28T00:00:00Z', until: '2026-11-28T12:00:00Z' },
+      models: [{ provider: 'openai', model: 'gpt-6.1-sol', requests: 2 }],
+      totals: { read_share_percent: 99.1 },
+      operations: { tool_calls: { count: 100, failed: 0, infrastructure_failed: 0 } },
+    },
+    {
+      codexReport: {
+        window: { from: '2026-11-28T00:00:00Z', until: '2026-11-29T00:00:00Z' },
+        models: [{ provider: 'openai', model: 'gpt-6.1-sol', requests: 2 }],
+        totals: { read_share_percent: 98.5 },
+      },
+      matchedTasks: {
+        count: 3,
+        grapt_accepted_tasks: 3,
+        grapt_first_review_accept_rate: 0.9,
+        codex_first_review_accept_rate: 0.9,
+        grapt_tokens_per_accepted_task: 10000,
+        codex_tokens_per_accepted_task: 10000,
+      },
+    },
+  );
+  assert.equal(unequalWindowSameStartFail.criterion_3.status, 'fail');
+  assert.equal(unequalWindowSameStartFail.criterion_3.reason, 'mismatched-comparison-day');
+
+  // Missing recorded day metadata on either export must fail closed even when labels agree.
+  const missingRecordedDayFail = evaluateReleaseGates(
+    {
+      window: null,
+      models: [{ provider: 'openai', model: 'gpt-6.1-sol', requests: 0 }],
+      requests: [],
+      totals: { read_share_percent: 99.1 },
+      operations: { tool_calls: { count: 100, failed: 0, infrastructure_failed: 0 } },
+    },
+    {
+      codexReport: {
+        window: null,
+        models: [{ provider: 'openai', model: 'gpt-6.1-sol', requests: 1 }],
+        requests: [{ reported_ms: Date.parse('2026-11-28T12:00:00Z') }],
+        totals: { read_share_percent: 98.5 },
+      },
+      matchedTasks: {
+        grapt_day: '2026-11-28',
+        codex_day: '2026-11-28',
+        count: 3,
+        grapt_accepted_tasks: 3,
+        grapt_first_review_accept_rate: 0.9,
+        codex_first_review_accept_rate: 0.9,
+        grapt_tokens_per_accepted_task: 10000,
+        codex_tokens_per_accepted_task: 10000,
+      },
+    },
+  );
+  assert.equal(missingRecordedDayFail.criterion_3.status, 'fail');
+  assert.equal(missingRecordedDayFail.criterion_3.reason, 'mismatched-comparison-day');
+
+  // Pairing a windowed export with an unwindowed export on the same day must fail closed.
+  const windowedPlusUnwindowedFail = evaluateReleaseGates(
+    {
+      window: { from: '2026-11-28T00:00:00Z', until: '2026-11-29T00:00:00Z' },
+      models: [{ provider: 'openai', model: 'gpt-6.1-sol', requests: 1 }],
+      requests: [{ opened_ms: Date.parse('2026-11-28T12:00:00Z') }],
+      totals: { read_share_percent: 99.1 },
+      operations: { tool_calls: { count: 100, failed: 0, infrastructure_failed: 0 } },
+    },
+    {
+      codexReport: {
+        window: null,
+        models: [{ provider: 'openai', model: 'gpt-6.1-sol', requests: 1 }],
+        requests: [{ reported_ms: Date.parse('2026-11-28T12:00:00Z') }],
+        totals: { read_share_percent: 98.5 },
+      },
+      matchedTasks: {
+        count: 3,
+        grapt_accepted_tasks: 3,
+        grapt_first_review_accept_rate: 0.9,
+        codex_first_review_accept_rate: 0.9,
+        grapt_tokens_per_accepted_task: 10000,
+        codex_tokens_per_accepted_task: 10000,
+      },
+    },
+  );
+  assert.equal(windowedPlusUnwindowedFail.criterion_3.status, 'fail');
+  assert.equal(windowedPlusUnwindowedFail.criterion_3.reason, 'mismatched-comparison-day');
+
+  // Equal start dates with both `until` bounds missing must fail closed.
+  const bothMissingEndFail = evaluateReleaseGates(
+    {
+      window: { from: '2026-11-28T00:00:00Z' },
+      models: [{ provider: 'openai', model: 'gpt-6.1-sol', requests: 1 }],
+      totals: { read_share_percent: 99.1 },
+      operations: { tool_calls: { count: 100, failed: 0, infrastructure_failed: 0 } },
+    },
+    {
+      codexReport: {
+        window: { from: '2026-11-28T00:00:00Z' },
+        models: [{ provider: 'openai', model: 'gpt-6.1-sol', requests: 1 }],
+        totals: { read_share_percent: 98.5 },
+      },
+      matchedTasks: {
+        count: 3,
+        grapt_accepted_tasks: 3,
+        grapt_first_review_accept_rate: 0.9,
+        codex_first_review_accept_rate: 0.9,
+        grapt_tokens_per_accepted_task: 10000,
+        codex_tokens_per_accepted_task: 10000,
+      },
+    },
+  );
+  assert.equal(bothMissingEndFail.criterion_3.status, 'fail');
+  assert.equal(bothMissingEndFail.criterion_3.reason, 'mismatched-comparison-day');
+
+  // Unwindowed Grapt export paired with a non-object string `window` on the
+  // comparison export must fail closed rather than falling through as unwindowed.
+  const nonObjectWindowFail = evaluateReleaseGates(
+    {
+      window: null,
+      models: [{ provider: 'openai', model: 'gpt-6.1-sol', requests: 1 }],
+      requests: [{ opened_ms: Date.parse('2026-11-28T12:00:00Z') }],
+      totals: { read_share_percent: 99.1 },
+      operations: { tool_calls: { count: 100, failed: 0, infrastructure_failed: 0 } },
+    },
+    {
+      codexReport: {
+        window: '2026-11-28',
+        models: [{ provider: 'openai', model: 'gpt-6.1-sol', requests: 1 }],
+        requests: [{ reported_ms: Date.parse('2026-11-28T12:00:00Z') }],
+        totals: { read_share_percent: 98.5 },
+      },
+      matchedTasks: {
+        count: 3,
+        grapt_accepted_tasks: 3,
+        grapt_first_review_accept_rate: 0.9,
+        codex_first_review_accept_rate: 0.9,
+        grapt_tokens_per_accepted_task: 10000,
+        codex_tokens_per_accepted_task: 10000,
+      },
+    },
+  );
+  assert.equal(nonObjectWindowFail.criterion_3.status, 'fail');
+  assert.equal(nonObjectWindowFail.criterion_3.reason, 'mismatched-comparison-day');
+});

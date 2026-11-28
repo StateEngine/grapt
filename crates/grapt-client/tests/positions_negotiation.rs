@@ -1,4 +1,5 @@
-//! Real HTTP consumers negotiate positions and keep downgrade custody.
+//! Real HTTP consumers subscribe with positions and refuse a service that
+//! predates them.
 use grapt_client::{
     BasicCredential, Bounds, Connection, FramePoll, HttpConnection, TransportError,
 };
@@ -8,20 +9,17 @@ use std::{
     net::{SocketAddr, TcpListener, TcpStream},
     sync::{
         atomic::{AtomicBool, Ordering},
-        mpsc, Arc,
+        Arc,
     },
     time::Duration,
 };
 type TestResult<T = ()> = Result<T, Box<dyn std::error::Error + Send + Sync>>;
 const POSITIONED: &str =
     "id: epoch-1\ndata: {\"id\":\"evt_connected\",\"type\":\"server.connected\",\"data\":{}}\n\n";
-const LEGACY: &str =
-    "data: {\"id\":\"evt_connected\",\"type\":\"server.connected\",\"data\":{}}\n\n";
 type Worker = std::thread::JoinHandle<Result<Vec<String>, String>>;
 struct Peer {
     address: SocketAddr,
     stop: Arc<AtomicBool>,
-    close: mpsc::SyncSender<()>,
     worker: Option<Worker>,
 }
 fn read_request(stream: &mut TcpStream) -> Result<String, String> {
@@ -49,16 +47,12 @@ impl Peer {
         let address = listener.local_addr()?;
         let stop = Arc::new(AtomicBool::new(false));
         let stopping = Arc::clone(&stop);
-        let (close, closed) = mpsc::sync_channel(1);
         let worker = std::thread::spawn(move || -> Result<Vec<String>, String> {
             let mut replies = VecDeque::from(replies);
             let mut streams = Vec::new();
             let mut requests = Vec::new();
             let deadline = tokio::time::Instant::now() + Duration::from_secs(15);
             while !stopping.load(Ordering::Acquire) {
-                if closed.try_recv().is_ok() {
-                    streams.clear();
-                }
                 match listener.accept() {
                     Ok((mut stream, _)) => {
                         let request = read_request(&mut stream)?;
@@ -93,7 +87,6 @@ impl Peer {
         Ok(Self {
             address,
             stop,
-            close,
             worker: Some(worker),
         })
     }
@@ -158,16 +151,37 @@ fn frame(connection: &mut HttpConnection) -> TestResult<FramePoll> {
     Err("stream frame deadline".into())
 }
 #[test]
-fn both_builders_retry_exactly_one_400_without_positions() -> TestResult {
+fn both_builders_subscribe_with_positions() -> TestResult {
     for incremental in [false, true] {
-        let peer = Peer::start(vec![(400, ""), (200, LEGACY)])?;
+        let peer = Peer::start(vec![(200, POSITIONED)])?;
         let mut connection = peer.connection()?;
         subscribe(&mut connection, incremental)?;
-        assert!(matches!(frame(&mut connection)?, FramePoll::Frame(_)));
+        assert!(matches!(
+            frame(&mut connection)?,
+            FramePoll::Positioned { .. }
+        ));
         let requests = peer.finish()?;
-        assert_eq!(requests.len(), 2);
+        assert_eq!(requests.len(), 1);
         assert!(requests[0].contains("positions=1"));
-        assert!(!requests[1].contains("positions="));
+    }
+    Ok(())
+}
+#[test]
+fn both_builders_refuse_a_400_for_positions_as_a_server_too_old() -> TestResult {
+    for incremental in [false, true] {
+        let peer = Peer::start(vec![(400, "")])?;
+        let mut connection = peer.connection()?;
+        let refusal = subscribe(&mut connection, incremental);
+        assert!(
+            matches!(refusal, Err(TransportError::ServerTooOld { .. })),
+            "{refusal:?}"
+        );
+        if let Err(refusal) = refusal {
+            assert!(refusal.to_string().contains("Upgrade the Grapt server"));
+        }
+        let requests = peer.finish()?;
+        assert_eq!(requests.len(), 1, "no subscribe without positions");
+        assert!(requests[0].contains("positions=1"));
     }
     Ok(())
 }
@@ -186,48 +200,6 @@ fn both_builders_report_401_and_do_not_retry_other_refusals() -> TestResult {
             "status must be consumed once"
         );
         assert_eq!(peer.finish()?.len(), 1);
-        let peer = Peer::start(vec![(400, ""), (400, "")])?;
-        let mut connection = peer.connection()?;
-        assert!(matches!(
-            subscribe(&mut connection, incremental),
-            Err(TransportError::Status { status: 400 })
-        ));
-        assert_eq!(peer.finish()?.len(), 2, "the parameter retry must not loop");
-    }
-    Ok(())
-}
-#[test]
-fn both_builders_keep_legacy_until_the_installed_stream_is_lost() -> TestResult {
-    for incremental in [false, true] {
-        let peer = Peer::start(vec![(200, POSITIONED), (200, LEGACY), (200, POSITIONED)])?;
-        let mut connection = peer.connection()?;
-        subscribe(&mut connection, incremental)?;
-        assert!(matches!(
-            frame(&mut connection)?,
-            FramePoll::Positioned { .. }
-        ));
-        connection.refuse_positions();
-        assert_eq!(connection.poll_frame()?, FramePoll::Closed);
-        subscribe(&mut connection, incremental)?;
-        assert!(matches!(frame(&mut connection)?, FramePoll::Frame(_)));
-        peer.close.send(())?;
-        assert_eq!(frame(&mut connection)?, FramePoll::Closed);
-        subscribe(&mut connection, incremental)?;
-        assert!(matches!(
-            frame(&mut connection)?,
-            FramePoll::Positioned { .. }
-        ));
-        let requests = peer.finish()?;
-        assert_eq!(requests.len(), 3);
-        assert!(requests[0].contains("positions=1"));
-        assert!(
-            !requests[1].contains("positions="),
-            "retired closure cleared pending latch"
-        );
-        assert!(
-            requests[2].contains("positions=1"),
-            "installed legacy loss did not re-probe"
-        );
     }
     Ok(())
 }

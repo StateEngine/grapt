@@ -36,7 +36,7 @@ use super::usage::costed_usage_dto;
 use durable_history::DurableHistory;
 
 mod active;
-mod artifacts;
+pub(super) mod artifacts;
 use artifacts::open_artifacts;
 mod authorities;
 mod block_events;
@@ -247,6 +247,13 @@ impl LocationRuntime for LiveLocation {
             session: session.as_str().to_owned(),
             reason,
         })
+    }
+
+    fn notify_pending_inputs_changed(&self, session: &SessionId) {
+        self.hub.invalidate_session_because(
+            session,
+            &format!("session {session}: retired stale automatic resume input"),
+        );
     }
 
     #[expect(clippy::too_many_lines, reason = "legacy")]

@@ -140,14 +140,10 @@ impl SessionStatusEmitter {
         status: SessionStatusInfo,
         phase: Option<grapt_api::u3a::SessionStatusPhase>,
         frames: &mut Vec<DogfoodEvent>,
-    ) -> bool {
-        if frames.len() >= HYDRATION_CAP {
-            return false;
-        }
+    ) {
         if let Some(event) = self.build_info_phase(session, status, phase) {
             self.note_active(session);
             frames.push(event);
         }
-        true
     }
 }

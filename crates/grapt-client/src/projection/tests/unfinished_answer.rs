@@ -67,11 +67,12 @@ fn unfinished_answer() -> SessionView {
 /// The next turn's answer streams into a slice of its own, and the
 /// unfinished answer keeps exactly its own text.
 fn next_answer_streams_apart(view: &mut SessionView, what: &str) {
+    let mut placer = crate::double::Placer::default();
     for frame in [
         plain(EventMember::TextStarted),
         delta(EventMember::TextDelta, "next answer"),
     ] {
-        let applied = view.apply(&frame, bounds());
+        let applied = view.apply(&placer.place(frame), bounds());
         assert!(applied.is_ok(), "{what}: {applied:?}");
     }
     let texts: Vec<&str> = view

@@ -205,12 +205,7 @@ fn serve(
         ),
         Ok(crate::launch::Readiness::Loading) => (
             crate::launch::Readiness::Loading,
-            if config.session.is_none() {
-                "Loading models…; draft editable"
-            } else {
-                "Restoring saved choices; draft editable"
-            }
-            .to_owned(),
+            setup::loading_status(config.session.is_some()).to_owned(),
         ),
         Ok(readiness) => (readiness, "Connected".to_owned()),
         Err(error) => (
@@ -857,13 +852,13 @@ fn serve(
         if imports.busy() && submissions.command.is_some() {
             let _ = wake.try_send(());
         }
-        if startup == crate::launch::Readiness::Loading && !client.catalog_pending() {
-            startup = crate::launch::readiness(&client);
+        let resolved = (startup == crate::launch::Readiness::Loading)
+            .then(|| crate::launch::readiness(&client))
+            .filter(|readiness| *readiness != crate::launch::Readiness::Loading);
+        if let Some(readiness) = resolved {
+            startup = readiness;
             roster = setup::roster(&client);
-            if matches!(
-                status.as_str(),
-                "Restoring saved choices; draft editable" | "Loading models…; draft editable"
-            ) {
+            if status == setup::loading_status(config.session.is_some()) {
                 status = if startup == crate::launch::Readiness::Ready {
                     "Connected".to_owned()
                 } else {
@@ -884,6 +879,12 @@ fn serve(
             connection_status = next_connection;
             publish = true;
             status = match connection_status {
+                // A startup still loading keeps saying so until it resolves.
+                grapt_client::client::ConnectionStatus::Live
+                    if startup == crate::launch::Readiness::Loading =>
+                {
+                    setup::loading_status(config.session.is_some()).into()
+                }
                 grapt_client::client::ConnectionStatus::Live => "Connected".into(),
                 _ => "Service reconnecting; draft kept".into(),
             };

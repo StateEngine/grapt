@@ -7,6 +7,7 @@ const ORIGINAL: &str = "original\n";
 fn fixture(label: &str) -> TestResult<(PathBuf, PathBuf)> {
     let service = root(&format!("{label}-service"));
     prepare(&service, 45_000);
+    unattended(&service);
     let workspace = root(&format!("{label}-workspace"));
     process_fixture::cleanup(&workspace);
     fs::create_dir_all(&workspace)?;

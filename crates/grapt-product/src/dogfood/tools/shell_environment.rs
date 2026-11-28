@@ -139,6 +139,13 @@ impl Environment {
         Self::from_parent(std::env::vars_os(), &Policy::default(), cfg!(windows))
     }
 
+    /// Library unit tests run under `libtest` rather than the `grapt` binary,
+    /// so they cannot re-exec the product sandbox helper.
+    #[cfg(test)]
+    pub(in crate::dogfood::tools) fn without_sandbox(&mut self) {
+        self.1 = None;
+    }
+
     fn from_parent(
         parent: impl IntoIterator<Item = (OsString, OsString)>,
         policy: &Policy,
@@ -311,7 +318,7 @@ impl Environment {
         if plan.path_count() >= 128 || !self.3.is_empty() {
             return Err("Sandbox retry exceeds its path bound".into());
         }
-        plan.add_write_target(target.path());
+        plan.add_write_target(target.path())?;
         self.3.push(target);
         Ok(self)
     }

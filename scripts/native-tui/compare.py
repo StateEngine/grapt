@@ -416,6 +416,72 @@ def execution_failures(service_root: Path, sessions: list[str] | None) -> dict:
     return {"observed": True, "sessions": len(sessions), "failed": failed}
 
 
+DEFAULT_T5_STREAMING_MIN_TOK_PER_S = 200.0
+
+
+def measure_idle_cpu_delta(
+    pid: int,
+    window_seconds: float,
+    sampler=None,
+) -> float | None:
+    """Measure CPU seconds consumed across a quiet idle window while the live app
+    is running. Fails closed (returns None) if either sample is unobserved or if
+    the process-tree counter decreased (never clamps negative deltas to zero)."""
+    if window_seconds <= 0.0:
+        return None
+    probe = resources if sampler is None else sampler
+    before = probe(pid)
+    if (
+        not before.get("observed")
+        or before.get("processor_seconds") is None
+        or int(before.get("processes_without_counters", 0) or 0) != 0
+    ):
+        return None
+    time.sleep(window_seconds)
+    after = probe(pid)
+    if (
+        not after.get("observed")
+        or after.get("processor_seconds") is None
+        or int(after.get("processes_without_counters", 0) or 0) != 0
+    ):
+        return None
+    delta = float(after["processor_seconds"]) - float(before["processor_seconds"])
+    if delta < 0.0:
+        return None
+    return round(delta, 6)
+
+
+def is_quit_step(step: dict, label: str) -> bool:
+    """True when `step` terminates the client so idle CPU is sampled BEFORE quit.
+    Does not treat Control+c as quit because scenarios use Control+c to interrupt
+    an active turn before Control+q exits."""
+    if step.get("quit") is True:
+        return True
+    if "key" in step:
+        key, _ = resolve(step["key"], label)
+        if isinstance(key, str) and key.lower() in ("control+q", "ctrl+q"):
+            return True
+    return False
+
+
+def validate_t5_scenario(scenario: dict, steps: list[dict]) -> None:
+    """Refuse --enforce-t5-budgets on non-T5 scenarios that declare no streaming-echo probes."""
+    has_echo = any(step.get("t5_echo") is True or "echo" in step for step in steps)
+    rate = scenario.get("t5_streaming_tok_per_s")
+    if rate is None:
+        rates = [
+            float(step["streaming_tok_per_s"])
+            for step in steps
+            if step.get("streaming_tok_per_s") is not None
+        ]
+        rate = min(rates) if rates else None
+    if not has_echo or rate is None or float(rate) < DEFAULT_T5_STREAMING_MIN_TOK_PER_S:
+        raise HarnessError(
+            "--enforce-t5-budgets requires a T5 streaming-echo scenario declaring at least one "
+            "t5_echo/echo step and streaming rate >= 200 tok/s"
+        )
+
+
 def run_client(
     label: str,
     launch: dict,
@@ -424,6 +490,9 @@ def run_client(
     harness: Path,
     effect_root: Path,
     service_root: Path,
+    idle_window_seconds: float = 0.0,
+    stream_metrics_path: Path | None = None,
+    stream_scope: str | None = None,
 ) -> dict:
     # Which sessions already existed. Whatever appears while THIS client runs is
     # this client's, which is a launch fact rather than an inference from how
@@ -500,32 +569,57 @@ def run_client(
     timings: list[dict] = []
     failure: str | None = None
     usage = {"observed": False, "reason": "not sampled"}
+    idle_cpu_seconds = None
     try:
         for index, step in enumerate(steps, start=1):
-            at = time.monotonic()
-            # Sampled BEFORE each step, while the client is certainly alive.
-            # Sampling once at the end read nothing at all, because the last
-            # step of every journey is the quit key: the counters describe a
-            # process that no longer exists, and an unobserved resource figure
-            # beside a real one is worse than no figure.
+            # Sample idle CPU while the live app sits idle BEFORE executing any quit step.
+            if idle_cpu_seconds is None and idle_window_seconds > 0.0 and is_quit_step(step, label):
+                idle_cpu_seconds = measure_idle_cpu_delta(int(ready["pid"]), idle_window_seconds)
+            # Sampled BEFORE starting the step timer so PowerShell/OS resource
+            # probe overhead never inflates step or echo latency.
             sample = resources(int(ready["pid"]))
             if sample.get("observed"):
                 usage = sample
+            at = time.monotonic()
             kind, detail, shared = apply_step(
-                observer, step, label, effect_root, service_root, sessions_before
+                observer,
+                step,
+                label,
+                effect_root,
+                service_root,
+                sessions_before,
+                stream_metrics_path=stream_metrics_path,
+                stream_scope=step.get("stream_scope") or stream_scope,
             )
-            timings.append(
-                {
-                    "step": index,
-                    "kind": kind,
-                    "detail": detail,
-                    # Only steps both clients received identically are
-                    # comparable as like for like; the rest are the navigation
-                    # each client needs to reach the same place.
-                    "shared": shared,
-                    "seconds": round(time.monotonic() - at, 3),
-                }
-            )
+            elapsed_s = time.monotonic() - at
+            timing_row = {
+                "step": index,
+                "kind": kind,
+                "detail": detail,
+                # Only steps both clients received identically are
+                # comparable as like for like; the rest are the navigation
+                # each client needs to reach the same place.
+                "shared": shared,
+                "seconds": round(elapsed_s, 3),
+                "elapsed_ms": round(elapsed_s * 1000.0, 3),
+            }
+            if step.get("t5_echo") is True or kind == "echo":
+                timing_row["t5_echo"] = True
+                if isinstance(detail, dict) and detail.get("skipped") is not None:
+                    timing_row["skipped"] = True
+                    timing_row["elapsed_ms"] = None
+                else:
+                    if isinstance(detail, dict) and detail.get("echo_ms") is not None:
+                        timing_row["elapsed_ms"] = float(detail["echo_ms"])
+                    if isinstance(detail, dict) and detail.get("streaming_observed") is True:
+                        timing_row["streaming_observed"] = True
+                        if detail.get("observed_tok_per_s") is not None:
+                            timing_row["observed_tok_per_s"] = float(detail["observed_tok_per_s"])
+                if step.get("streaming_tok_per_s") is not None:
+                    timing_row["streaming_tok_per_s"] = float(step["streaming_tok_per_s"])
+            timings.append(timing_row)
+        if idle_cpu_seconds is None and idle_window_seconds > 0.0:
+            idle_cpu_seconds = measure_idle_cpu_delta(int(ready["pid"]), idle_window_seconds)
     except HarnessError as error:
         failure = str(error)
         sample = resources(int(ready["pid"]))
@@ -611,6 +705,7 @@ def run_client(
         "startup_seconds": startup,
         "steps": timings,
         "resources": usage,
+        "idle_cpu_seconds": idle_cpu_seconds,
         "failure": failure,
     }
 
@@ -716,6 +811,28 @@ def form_producer(service_root: Path, before: set[str] | None, declared: dict) -
     )
 
 
+def _read_stream_tokens(
+    state: object,
+    stream_metrics_path: Path | None,
+    stream_scope: str | None = None,
+) -> float | None:
+    """Read genuine assistant stream token count from the observer /state payload
+    or the staged loopback provider's scoped stream-metrics counter file. Never
+    reads a shared global counter across unrelated sockets."""
+    if isinstance(state, dict) and isinstance(state.get("stream_tokens"), (int, float)):
+        return float(state["stream_tokens"])
+    if stream_metrics_path is not None and stream_metrics_path.is_file() and stream_scope:
+        try:
+            payload = json.loads(stream_metrics_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return None
+        if isinstance(payload, dict) and isinstance(payload.get("scopes"), dict):
+            scoped = payload["scopes"].get(stream_scope, 0)
+            if isinstance(scoped, (int, float)):
+                return float(scoped)
+    return None
+
+
 def apply_step(
     observer: Observer,
     step: dict,
@@ -723,7 +840,56 @@ def apply_step(
     effect_root: Path,
     service_root: Path,
     sessions_before: set[str] | None,
+    stream_metrics_path: Path | None = None,
+    stream_scope: str | None = None,
 ) -> tuple[str, object, bool]:
+    if "echo" in step:
+        text, shared = resolve(step["echo"], label)
+        if text is None:
+            return "echo", {"skipped": "this client does not take this echo probe"}, shared
+        expect_text = step.get("expect", text)
+        before_state = observer.state()
+        before_screen = screen_text(before_state)
+        if expect_text in before_screen:
+            raise HarnessError(
+                f"[{label}] composer echo marker `{expect_text}` was already present on screen before input"
+            )
+        scope = step.get("stream_scope") or stream_scope
+        before_tokens = _read_stream_tokens(before_state, stream_metrics_path, scope)
+        echo_start = time.monotonic()
+        observer.action({"kind": "paste", "text": text})
+        polls = int(step.get("polls", EXPECT_POLLS))
+        for _ in range(polls):
+            after_state = observer.state()
+            after_screen = screen_text(after_state)
+            if expect_text in after_screen:
+                elapsed_s = max(time.monotonic() - echo_start, 1e-6)
+                echo_ms = round(elapsed_s * 1000.0, 3)
+                after_tokens = _read_stream_tokens(after_state, stream_metrics_path, scope)
+                # Populate concurrent streaming ONLY from genuine assistant stream
+                # token counters; never infer streaming from whole-screen text length,
+                # which would miscount static status repaints or pasted composer text.
+                if before_tokens is not None and after_tokens is not None:
+                    delta_tokens = max(0.0, after_tokens - before_tokens)
+                else:
+                    delta_tokens = 0.0
+                streaming_observed = delta_tokens > 0.0
+                observed_tok_per_s = (
+                    round(delta_tokens / elapsed_s, 3) if streaming_observed else 0.0
+                )
+                return "echo", {
+                    "text": text,
+                    "observed": True,
+                    "absent_before": True,
+                    "echo_ms": echo_ms,
+                    "streaming_observed": streaming_observed,
+                    "observed_tok_per_s": observed_tok_per_s,
+                    "stream_delta_tokens": round(delta_tokens, 3),
+                }, shared
+            time.sleep(0.002)
+        raise HarnessError(
+            f"[{label}] composer echo `{expect_text}` never rendered within {polls} polls"
+        )
     if "key" in step:
         key, shared = resolve(step["key"], label)
         if key is None:
@@ -932,6 +1098,128 @@ def apply_step(
     raise HarnessError(f"[{label}] unrecognised step {step!r}")
 
 
+DEFAULT_T5_ECHO_P95_MAX_MS = 16.0
+DEFAULT_T5_IDLE_CPU_MAX_SECONDS = 0.5
+
+
+def _percentile(values: list[float], fraction: float) -> float | None:
+    if not values:
+        return None
+    ordered = sorted(values)
+    index = max(0, min(len(ordered) - 1, int((len(ordered) * fraction) + 0.999999999) - 1))
+    return ordered[index]
+
+
+def _witnessed_streaming_rate(native: dict, steps: list[dict], t5_metrics: dict) -> float | None:
+    """Return observed concurrent streaming rate (tok/s) only from witnessed measurements.
+    Never treats a static declared scenario `streaming_tok_per_s` as witnessed streaming."""
+    witness = native.get("streaming_witness")
+    if not isinstance(witness, dict):
+        witness = t5_metrics.get("streaming_witness")
+    if isinstance(witness, dict) and witness.get("observed") is True and witness.get("tok_per_s") is not None:
+        return float(witness["tok_per_s"])
+    observed_rates: list[float] = []
+    for step in steps:
+        if not (step.get("t5_echo") is True or step.get("kind") == "echo"):
+            continue
+        detail = step.get("detail") if isinstance(step.get("detail"), dict) else {}
+        if step.get("skipped") is True or detail.get("skipped") is not None:
+            continue
+        if step.get("streaming_observed") is True and step.get("observed_tok_per_s") is not None:
+            observed_rates.append(float(step["observed_tok_per_s"]))
+        elif detail.get("streaming_observed") is True and detail.get("observed_tok_per_s") is not None:
+            observed_rates.append(float(detail["observed_tok_per_s"]))
+    return min(observed_rates) if observed_rates else None
+
+
+def evaluate_t5_budgets(
+    sides: list[dict],
+    echo_p95_max_ms: float = DEFAULT_T5_ECHO_P95_MAX_MS,
+    idle_cpu_max_seconds: float = DEFAULT_T5_IDLE_CPU_MAX_SECONDS,
+    streaming_min_tok_per_s: float = DEFAULT_T5_STREAMING_MIN_TOK_PER_S,
+) -> dict:
+    """Evaluate T5 smoothness budgets (streaming echo p95 <= 16 ms, witnessed concurrent
+    streaming >= 200 tok/s, true idle CPU ceiling) against explicit T5 measurements on the
+    native client. Fails closed when any tagged echo step was skipped, never substitutes
+    cumulative journey CPU for idle CPU, and never reports pass when any metric is unmeasured."""
+    native = next((side for side in sides if side.get("client") == "native"), None)
+    if native is None:
+        return {"status": "not-measured", "reason": "native-side-absent"}
+    steps = native.get("steps") or []
+    tagged_echo_steps = [
+        step for step in steps if step.get("t5_echo") is True or step.get("kind") == "echo"
+    ]
+    skipped_echo_steps = [
+        step
+        for step in tagged_echo_steps
+        if step.get("skipped") is True
+        or (isinstance(step.get("detail"), dict) and step["detail"].get("skipped") is not None)
+    ]
+    echo_samples = [
+        float(step["elapsed_ms"])
+        for step in tagged_echo_steps
+        if step.get("elapsed_ms") is not None
+        and step.get("skipped") is not True
+        and not (isinstance(step.get("detail"), dict) and step["detail"].get("skipped") is not None)
+    ]
+    echo_p95 = _percentile(echo_samples, 0.95)
+    if skipped_echo_steps:
+        echo_status = "fail"
+        echo_reason = "t5-echo-step-skipped"
+    elif echo_p95 is None:
+        echo_status = "not-measured"
+        echo_reason = None
+    else:
+        echo_status = "pass" if echo_p95 <= echo_p95_max_ms else "fail"
+        echo_reason = None
+    # Only accept an explicit idle-window CPU measurement; cumulative journey
+    # `resources.processor_seconds` is active work, never idle CPU.
+    t5_metrics = native.get("t5_metrics") if isinstance(native.get("t5_metrics"), dict) else {}
+    idle_cpu_seconds = native.get("idle_cpu_seconds")
+    if idle_cpu_seconds is None:
+        idle_cpu_seconds = t5_metrics.get("idle_cpu_seconds")
+    idle_status = (
+        "not-measured"
+        if idle_cpu_seconds is None
+        else ("pass" if float(idle_cpu_seconds) <= idle_cpu_max_seconds else "fail")
+    )
+    witnessed_tok_per_s = _witnessed_streaming_rate(native, steps, t5_metrics)
+    streaming_status = (
+        "not-measured"
+        if witnessed_tok_per_s is None
+        else ("pass" if witnessed_tok_per_s >= streaming_min_tok_per_s else "fail")
+    )
+    if echo_status == "fail" or idle_status == "fail" or streaming_status == "fail":
+        overall = "fail"
+    elif echo_status == "pass" and idle_status == "pass" and streaming_status == "pass":
+        overall = "pass"
+    else:
+        overall = "not-measured"
+    echo_report = {
+        "status": echo_status,
+        "observed": None if echo_p95 is None else round(echo_p95, 3),
+        "budget": echo_p95_max_ms,
+        "samples": len(echo_samples),
+        "skipped_samples": len(skipped_echo_steps),
+    }
+    if echo_reason is not None:
+        echo_report["reason"] = echo_reason
+    return {
+        "status": overall,
+        "echo_p95_ms": echo_report,
+        "concurrent_streaming_tok_per_s": {
+            "status": streaming_status,
+            "observed": None if witnessed_tok_per_s is None else round(witnessed_tok_per_s, 3),
+            "budget": streaming_min_tok_per_s,
+        },
+        "idle_cpu_seconds": {
+            "status": idle_status,
+            "observed": None if idle_cpu_seconds is None else round(float(idle_cpu_seconds), 3),
+            "budget": idle_cpu_max_seconds,
+        },
+    }
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--scenario", required=True, type=Path)
@@ -966,6 +1254,41 @@ def main() -> int:
         choices=["native", "retained"],
         help="run one side only; the receipt says which side is missing and why",
     )
+    parser.add_argument(
+        "--echo-p95-max-ms",
+        type=float,
+        default=DEFAULT_T5_ECHO_P95_MAX_MS,
+        help="T5 streaming/echo p95 latency budget in milliseconds (default: 16.0)",
+    )
+    parser.add_argument(
+        "--idle-cpu-max-seconds",
+        type=float,
+        default=DEFAULT_T5_IDLE_CPU_MAX_SECONDS,
+        help="T5 idle CPU processor-seconds ceiling (default: 0.5)",
+    )
+    parser.add_argument(
+        "--t5-idle-window-seconds",
+        type=float,
+        default=None,
+        help="quiet idle window (seconds) sampled after steps to measure idle_cpu_seconds",
+    )
+    parser.add_argument(
+        "--stream-metrics",
+        type=Path,
+        default=None,
+        help="path to the live loopback-provider scoped stream-tokens JSON counter for T5 streaming witness",
+    )
+    parser.add_argument(
+        "--stream-scope",
+        type=str,
+        default=None,
+        help="session/turn scope key attributing loopback-provider stream tokens to the measured terminal",
+    )
+    parser.add_argument(
+        "--enforce-t5-budgets",
+        action="store_true",
+        help="exit nonzero if T5 smoothness budgets fail or are unmeasured",
+    )
     arguments = parser.parse_args()
 
     if arguments.evidence.exists():
@@ -977,12 +1300,19 @@ def main() -> int:
     steps = scenario.get("steps")
     if not isinstance(steps, list) or not steps:
         raise HarnessError(f"{arguments.scenario} declares no steps")
+    if arguments.enforce_t5_budgets:
+        validate_t5_scenario(scenario, steps)
 
     store_root = arguments.store_root or arguments.service_root
     endpoint = read_endpoint(arguments.service_root)
     _, secret = credential(arguments.service_root)
     arguments.evidence.mkdir(parents=True)
 
+    idle_window = (
+        arguments.t5_idle_window_seconds
+        if arguments.t5_idle_window_seconds is not None
+        else (1.0 if arguments.enforce_t5_budgets else 0.0)
+    )
     sides = []
     if arguments.only != "retained":
         run = arguments.evidence / "native"
@@ -1000,6 +1330,9 @@ def main() -> int:
                 # recorded, rather than being inferred inside a step.
                 arguments.service_root,
                 store_root,
+                idle_window_seconds=idle_window,
+                stream_metrics_path=arguments.stream_metrics,
+                stream_scope=arguments.stream_scope,
             )
         )
     if arguments.only != "native":
@@ -1051,11 +1384,26 @@ def main() -> int:
             "poll interval and their figure is an upper bound."
         ),
         "sides": sides,
+        "t5_budgets": evaluate_t5_budgets(
+            sides,
+            echo_p95_max_ms=arguments.echo_p95_max_ms,
+            idle_cpu_max_seconds=arguments.idle_cpu_max_seconds,
+        ),
     }
     path = arguments.evidence / "comparison.json"
     path.write_text(json.dumps(receipt, indent=2), encoding="utf-8")
-    print(json.dumps({"comparison": str(path), "failures": [s["failure"] for s in sides]}, indent=2))
-    return 1 if any(side["failure"] for side in sides) else 0
+    print(
+        json.dumps(
+            {
+                "comparison": str(path),
+                "failures": [s["failure"] for s in sides],
+                "t5_budgets": receipt["t5_budgets"]["status"],
+            },
+            indent=2,
+        )
+    )
+    t5_failed = arguments.enforce_t5_budgets and receipt["t5_budgets"]["status"] != "pass"
+    return 1 if (any(side["failure"] for side in sides) or t5_failed) else 0
 
 
 if __name__ == "__main__":

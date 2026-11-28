@@ -4,6 +4,7 @@ use super::*;
 #[test]
 fn live_output_ignores_old_rows_reasoning_and_restarts_for_a_new_execution() {
     let mut view = SessionView::new(&sid(SESSION));
+    let mut placer = crate::double::Placer::default();
     let limits = small_bounds(8, 4);
     view.push_slice(SliceKind::Text, "old answer", limits);
     assert_eq!(view.streamed_text_bytes(), None);
@@ -15,7 +16,10 @@ fn live_output_ignores_old_rows_reasoning_and_restarts_for_a_new_execution() {
         plain(EventMember::TextStarted),
         delta(EventMember::TextDelta, "123456789"),
     ] {
-        assert_eq!(view.apply(&frame, limits), Ok(Applied::Changed));
+        assert_eq!(
+            view.apply(&placer.place(frame), limits),
+            Ok(Applied::Changed)
+        );
     }
     assert_eq!(view.streamed_text_bytes(), Some(9));
     assert_eq!(
@@ -28,7 +32,7 @@ fn live_output_ignores_old_rows_reasoning_and_restarts_for_a_new_execution() {
         "duplicate start retains observed progress"
     );
     assert_eq!(
-        view.apply(&plain(EventMember::TextEnded), limits),
+        view.apply(&placer.place(plain(EventMember::TextEnded)), limits),
         Ok(Applied::Changed)
     );
     assert_eq!(
@@ -54,11 +58,15 @@ fn live_output_ignores_old_rows_reasoning_and_restarts_for_a_new_execution() {
 #[test]
 fn live_output_unknown_start_and_stream_gap_never_invent_a_live_output_baseline() {
     let mut view = SessionView::new(&sid(SESSION));
+    let mut placer = crate::double::Placer::default();
     for frame in [
         plain(EventMember::TextStarted),
         delta(EventMember::TextDelta, "unattributed prose"),
     ] {
-        assert_eq!(view.apply(&frame, bounds()), Ok(Applied::Changed));
+        assert_eq!(
+            view.apply(&placer.place(frame), bounds()),
+            Ok(Applied::Changed)
+        );
     }
     assert_eq!(view.streamed_text_bytes(), None);
     assert_eq!(
@@ -66,13 +74,19 @@ fn live_output_unknown_start_and_stream_gap_never_invent_a_live_output_baseline(
         Ok(Applied::Changed)
     );
     assert_eq!(
-        view.apply(&delta(EventMember::TextDelta, "1234"), bounds()),
+        view.apply(
+            &placer.place(delta(EventMember::TextDelta, "1234")),
+            bounds()
+        ),
         Ok(Applied::Changed)
     );
     assert_eq!(view.streamed_text_bytes(), Some(4));
     view.invalidate_live_quiescence();
     assert_eq!(
-        view.apply(&delta(EventMember::TextDelta, "after gap"), bounds()),
+        view.apply(
+            &placer.place(delta(EventMember::TextDelta, "after gap")),
+            bounds()
+        ),
         Ok(Applied::Changed)
     );
     assert_eq!(view.streamed_text_bytes(), None);

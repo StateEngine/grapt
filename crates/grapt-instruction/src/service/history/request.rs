@@ -141,5 +141,6 @@ fn fold(conn: &Connection, session: &SessionId, mode: FoldMode) -> Result<Fold, 
     Ok(Fold {
         history: folded,
         skipped,
+        cleared: None,
     })
 }

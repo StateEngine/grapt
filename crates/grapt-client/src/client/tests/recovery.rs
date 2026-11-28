@@ -157,9 +157,10 @@ fn quiet_open_subscription_wakes_for_failed_history_then_returns_to_timerless_id
             Bounds::PRODUCTION,
         );
         client.select(&session)?;
+        // The snapshot waits for the stream's first frame, read at the poll.
         assert_eq!(
             client.recovery_wait_at(Duration::ZERO),
-            Some(Duration::ZERO)
+            Some(Duration::from_millis(10))
         );
         client.pump_at(Duration::ZERO)?;
         assert_eq!(client.recovery_wait_at(Duration::ZERO), None);
