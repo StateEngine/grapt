@@ -44,6 +44,61 @@ fn soon() -> Instant {
     Instant::now() + Duration::from_secs(5)
 }
 
+/// Another connection's write lock on the database, held by its own thread
+/// so that no SQLite transaction lives on the async runtime. Dropping it
+/// releases the lock and joins the thread.
+struct WriteLock {
+    release: Option<std::sync::mpsc::Sender<()>>,
+    holder: Option<std::thread::JoinHandle<rusqlite::Result<()>>>,
+}
+
+impl WriteLock {
+    /// Returns once the lock is held.
+    fn hold(path: &Path) -> Result<Self, Box<dyn Error + Send + Sync>> {
+        let path = path.to_owned();
+        let (acquired, ready) = std::sync::mpsc::channel();
+        let (release, wait) = std::sync::mpsc::channel::<()>();
+        let holder = std::thread::spawn(move || {
+            let blocker = rusqlite::Connection::open(path)?;
+            blocker.execute_batch("BEGIN IMMEDIATE")?;
+            let _ = acquired.send(());
+            // A message or a dropped sender both release the lock.
+            let _ = wait.recv();
+            blocker.execute_batch("ROLLBACK")
+        });
+        let lock = Self {
+            release: Some(release),
+            holder: Some(holder),
+        };
+        match ready.recv() {
+            Ok(()) => Ok(lock),
+            Err(_) => Err(lock
+                .release()
+                .err()
+                .unwrap_or_else(|| "the write lock was not taken".into())),
+        }
+    }
+
+    /// Release the lock and report how its thread ended.
+    fn release(mut self) -> TestResult {
+        self.release.take();
+        match self.holder.take().map(std::thread::JoinHandle::join) {
+            Some(Ok(ended)) => Ok(ended?),
+            Some(Err(_)) => Err("the write lock thread panicked".into()),
+            None => Ok(()),
+        }
+    }
+}
+
+impl Drop for WriteLock {
+    fn drop(&mut self) {
+        self.release.take();
+        if let Some(holder) = self.holder.take() {
+            let _ = holder.join();
+        }
+    }
+}
+
 /// Run `submit` while another connection holds the database's write lock and
 /// the clock is paused: the store's writer cannot answer before the idle
 /// runtime jumps past the reply deadline, so the outcome is always unknown.
@@ -52,12 +107,11 @@ async fn while_writer_locked<T>(
     path: &Path,
     submit: impl std::future::Future<Output = T>,
 ) -> Result<T, Box<dyn Error + Send + Sync>> {
-    let blocker = rusqlite::Connection::open(path)?;
-    blocker.execute_batch("BEGIN IMMEDIATE")?;
+    let lock = WriteLock::hold(path)?;
     tokio::time::pause();
     let outcome = submit.await;
     tokio::time::resume();
-    blocker.execute_batch("ROLLBACK")?;
+    lock.release()?;
     Ok(outcome)
 }
 
@@ -329,8 +383,7 @@ async fn an_unchecked_retry_without_a_keyed_record_stays_unsettled() -> TestResu
     let handle = actor.handle();
     // Another connection holds the write lock, so every writer batch aborts
     // before it reads any receipt.
-    let blocker = rusqlite::Connection::open(&path)?;
-    blocker.execute_batch("BEGIN IMMEDIATE")?;
+    let lock = WriteLock::hold(&path)?;
     tokio::time::pause();
     let unknown = handle.submit(key("start")?, Event::StartTurn).await;
     tokio::time::resume();
@@ -344,7 +397,7 @@ async fn an_unchecked_retry_without_a_keyed_record_stays_unsettled() -> TestResu
         "{blocked:?}"
     );
     assert!(matches!(actor.shutdown().await, Err(SpawnError::Unsettled)));
-    blocker.execute_batch("ROLLBACK")?;
+    lock.release()?;
     store.shutdown().await?;
     Ok(())
 }
