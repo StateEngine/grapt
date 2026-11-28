@@ -905,3 +905,46 @@ fn a_first_value_source_survives_compaction_rebuild_and_failed_refresh() -> Test
     assert!(compacted.updates.is_empty());
     Ok(())
 }
+
+#[test]
+fn a_baseline_value_is_recorded_only_with_the_first_history() -> TestResult {
+    let mut store = EventStore::open_in_memory()?;
+    let marker = key("core/marker")?;
+    let rule = key("core/rule")?;
+    let at_baseline = || SourceObservation::AtBaseline {
+        key: marker.clone(),
+        value: InstructionValue::Text("2".into()),
+    };
+    let fresh: SessionId = "ses_baseline_fresh".parse()?;
+    elect(&mut store, &fresh)?;
+    refresh(
+        &mut store,
+        "evt_baseline_a",
+        &fresh,
+        vec![],
+        vec![at_baseline()],
+    )?;
+    let older: SessionId = "ses_baseline_older".parse()?;
+    elect(&mut store, &older)?;
+    let rule_text = available(&rule, "rule");
+    refresh(
+        &mut store,
+        "evt_baseline_b",
+        &older,
+        vec![],
+        vec![rule_text],
+    )?;
+    refresh(
+        &mut store,
+        "evt_baseline_c",
+        &older,
+        vec![],
+        vec![at_baseline()],
+    )?;
+    let fresh = InstructionService::history(&store, &fresh)?.ok_or("history")?;
+    assert_eq!(fresh.initial[0].key, marker);
+    let older = InstructionService::history(&store, &older)?.ok_or("history")?;
+    assert!(older.initial.iter().all(|value| value.key != marker));
+    assert!(older.updates.is_empty());
+    Ok(())
+}

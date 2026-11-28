@@ -26,10 +26,21 @@ pub(super) enum Observed {
     Available {
         hash: InstructionHash,
         value: String,
-        once: bool,
+        retention: Retention,
     },
     Unavailable,
     Removed,
+}
+
+/// Which observed value a Session keeps for a key.
+#[derive(Debug, Clone, Copy)]
+pub(super) enum Retention {
+    /// The latest value replaces the previous one.
+    Latest,
+    /// The first value stays.
+    First,
+    /// Only a value observed with the Session's baseline is recorded.
+    Baseline,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -122,15 +133,20 @@ pub(super) fn decode_observations(
         .into_iter()
         .try_fold(BTreeMap::new(), |mut decoded, observation| {
             let key = observation.key().clone();
-            let once = matches!(observation, SourceObservation::AvailableOnce { .. });
+            let retention = match &observation {
+                SourceObservation::AvailableOnce { .. } => Retention::First,
+                SourceObservation::AtBaseline { .. } => Retention::Baseline,
+                _ => Retention::Latest,
+            };
             let value = match observation {
                 SourceObservation::Available { value, .. }
-                | SourceObservation::AvailableOnce { value, .. } => {
+                | SourceObservation::AvailableOnce { value, .. }
+                | SourceObservation::AtBaseline { value, .. } => {
                     let value = value.stored();
                     Observed::Available {
                         hash: hash_value(&value),
                         value,
-                        once,
+                        retention,
                     }
                 }
                 SourceObservation::Unavailable { .. } => Observed::Unavailable,

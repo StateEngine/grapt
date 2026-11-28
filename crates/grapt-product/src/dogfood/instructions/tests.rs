@@ -532,16 +532,11 @@ fn base_guidance_names_only_tools_the_catalog_offers() {
         grapt_provider::ProtocolFamily::AnthropicMessages,
         grapt_provider::ProtocolFamily::OpenAiCompatible,
     ] {
-        let offered = crate::dogfood::tools::offered_definitions(family);
-        for name in [
-            "glob",
-            "grep",
-            "list",
-            "read_lines",
-            "shell",
-            "edit",
-            "write",
-        ] {
+        let offered = crate::dogfood::tools::offered_definitions(
+            family,
+            crate::dogfood::instructions::BuiltinEpoch::Current,
+        );
+        for name in ["glob", "grep", "list", "read", "shell", "edit", "write"] {
             assert!(BASE.contains(name), "base guidance no longer names {name}");
             assert!(
                 offered.iter().any(|tool| tool.name == name),

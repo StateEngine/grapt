@@ -15,8 +15,8 @@ Inspect the project before changing it.
 
 Using tools:
 - Find and read code with the dedicated tools rather than the shell: glob finds files by name, \
-grep searches contents (regex=true for patterns), list shows one directory and read_lines reads \
-source with line numbers. Use shell for builds, tests, git and other programs.
+grep searches contents (regex=true for patterns), list shows one directory and read reads \
+files with line numbers. Use shell for builds, tests, git and other programs.
 - Read the part of a file you are about to change first. Use edit for one exact replacement, \
 with enough surrounding text in old_text to make it unique; use the offered patch tool for several changes or files \
 in one step; write to create a new file or to replace a whole file.
@@ -215,6 +215,8 @@ pub(super) struct EffectiveInstructions {
 
 pub(super) struct PreparedInstructions {
     pub(super) frozen_tools: Option<Vec<grapt_provider::ToolDefinition>>,
+    /// Which built-in tools this Session advertises.
+    pub(super) builtin_epoch: BuiltinEpoch,
     pub(super) current: Vec<CodexInputItem>,
     pub(super) initial: Vec<CodexInputItem>,
     pub(super) updates: Vec<grapt_instruction::InstructionUpdate>,
@@ -223,6 +225,8 @@ pub(super) struct PreparedInstructions {
     current_session_index: Option<usize>,
     subagent_context: Option<String>,
 }
+mod builtin_epoch;
+pub(in crate::dogfood) use builtin_epoch::BuiltinEpoch;
 mod epoch;
 mod refresh_error;
 pub(super) use refresh_error::RefreshError;
@@ -371,6 +375,7 @@ impl EffectiveInstructions {
                             value: InstructionValue::Text(entry_text),
                         },
                         skill_guidance,
+                        BuiltinEpoch::observation()?,
                     ];
                     if let Some((tools, failed)) = tools {
                         observations.extend(tool_epoch::observations(tools, failed)?);

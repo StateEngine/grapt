@@ -135,7 +135,11 @@ impl ProductPlan {
         let mut tools = if self.ephemeral {
             super::super::tools::ephemeral_definitions(self.family)
         } else {
-            super::super::tools::offered_definitions(self.family)
+            let epoch = instructions.as_ref().map_or(
+                crate::dogfood::instructions::BuiltinEpoch::Current,
+                |instructions| instructions.builtin_epoch,
+            );
+            super::super::tools::offered_definitions(self.family, epoch)
         };
         if let (Some(description), Some(tool)) = (
             &self.shell_description,

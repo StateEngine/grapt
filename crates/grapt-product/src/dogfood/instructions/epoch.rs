@@ -81,6 +81,12 @@ pub(super) fn prepare(
     let frozen_tools = frozen
         .map(|value| super::tool_epoch::decode(value))
         .transpose()?;
+    let builtin_epoch = super::BuiltinEpoch::recorded(
+        current
+            .iter()
+            .find(|(key, _)| key.as_str() == super::builtin_epoch::KEY)
+            .map(|(_, value)| value.as_str()),
+    );
     let current_tools = current
         .iter()
         .find(|(key, _)| key.as_str() == super::tool_epoch::CURRENT)
@@ -125,6 +131,7 @@ pub(super) fn prepare(
         current_session_index,
         subagent_context: None,
         frozen_tools,
+        builtin_epoch,
         initial,
         current,
         updates,

@@ -21,7 +21,7 @@ mod storage;
 
 use history::{
     check_cache, decode_observations, decode_required, fold_history, resolve_delta, resolve_map,
-    write_folded_state, CacheStatus, Observed,
+    write_folded_state, CacheStatus, Observed, Retention,
 };
 pub use projection::InstructionProjector;
 use storage::{decode_entry, ensure_tables, insert_blob, instruction_event_data, load_entry};
@@ -49,6 +49,13 @@ pub enum SourceObservation {
         key: InstructionKey,
         value: InstructionValue,
     },
+    /// Record this value only when the Session's baseline is created; a
+    /// Session that already has one never gains it. Marks a convention that
+    /// began after older Sessions started, so they keep the earlier one.
+    AtBaseline {
+        key: InstructionKey,
+        value: InstructionValue,
+    },
     Available {
         key: InstructionKey,
         value: InstructionValue,
@@ -66,6 +73,7 @@ impl SourceObservation {
         match self {
             Self::Available { key, .. }
             | Self::AvailableOnce { key, .. }
+            | Self::AtBaseline { key, .. }
             | Self::Unavailable { key }
             | Self::Removed { key } => key,
         }
@@ -283,8 +291,17 @@ impl InstructionService {
         let mut changed = BTreeMap::new();
         for (key, observation) in observations {
             match observation {
-                Observed::Available { hash, value, once } => {
-                    if next.get(&key) == Some(&hash) || (once && next.contains_key(&key)) {
+                Observed::Available {
+                    hash,
+                    value,
+                    retention,
+                } => {
+                    let kept = match retention {
+                        Retention::Latest => next.get(&key) == Some(&hash),
+                        Retention::First => next.contains_key(&key),
+                        Retention::Baseline => truth.is_some(),
+                    };
+                    if kept {
                         continue;
                     }
                     insert_blob(&tx, hash, &value)?;

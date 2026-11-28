@@ -21,8 +21,9 @@ struct StoredTool {
     grammar: Option<String>,
 }
 
+/// Tool records the request encodes itself, never shown as instructions.
 pub(super) fn metadata(key: &str) -> bool {
-    matches!(key, FROZEN | CURRENT)
+    matches!(key, FROZEN | CURRENT | super::builtin_epoch::KEY)
 }
 
 pub(super) fn observations(
