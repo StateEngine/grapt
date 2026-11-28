@@ -135,36 +135,77 @@ export function summarize(reports, window = null) {
   };
 }
 
-function isoDayOf(value) {
-  if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}/.test(value)) return value.slice(0, 10);
-  if (typeof value === 'number' && Number.isFinite(value)) return new Date(value).toISOString().slice(0, 10);
+function toEpochMs(value) {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}/.test(value)) {
+    const parsed = Date.parse(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
   return null;
 }
 
-function extractRecordedDay(report) {
-  const fromDay = isoDayOf(report?.window?.from);
-  if (fromDay !== null) return fromDay;
+function isoDayOf(value) {
+  const ms = toEpochMs(value);
+  return ms === null ? null : new Date(ms).toISOString().slice(0, 10);
+}
+
+function extractRecordedWindow(report) {
+  const hasWindow = report?.window !== null && report?.window !== undefined && typeof report.window === 'object';
+  let fromMs = null;
+  let untilMs = null;
+  let windowDay = null;
+  if (hasWindow) {
+    fromMs = toEpochMs(report.window.from);
+    if (fromMs === null) return { day: null, fromMs: null, untilMs: null, invalid: true };
+    windowDay = isoDayOf(fromMs);
+    if (report.window.until !== undefined && report.window.until !== null) {
+      untilMs = toEpochMs(report.window.until);
+      if (untilMs === null || untilMs <= fromMs) {
+        return { day: null, fromMs, untilMs, invalid: true };
+      }
+      // Half-open [from, until) must fall within a single UTC calendar day.
+      const endDay = isoDayOf(untilMs - 1);
+      if (endDay !== windowDay) {
+        return { day: null, fromMs, untilMs, invalid: true };
+      }
+    }
+  }
   if (Array.isArray(report?.requests) && report.requests.length > 0) {
     const days = new Set();
     for (const row of report.requests) {
-      const day = isoDayOf(row?.started_ms ?? row?.reported_ms ?? row?.at);
-      if (day === null) return null;
-      days.add(day);
+      const ts = toEpochMs(row?.opened_ms ?? row?.started_ms ?? row?.reported_ms ?? row?.at);
+      if (ts === null) return { day: null, fromMs, untilMs, invalid: true };
+      if (fromMs !== null && ts < fromMs) return { day: null, fromMs, untilMs, invalid: true };
+      if (untilMs !== null && ts >= untilMs) return { day: null, fromMs, untilMs, invalid: true };
+      days.add(isoDayOf(ts));
     }
-    return days.size === 1 ? [...days][0] : null;
+    if (days.size !== 1) return { day: null, fromMs, untilMs, invalid: true };
+    const reqDay = [...days][0];
+    if (windowDay !== null && reqDay !== windowDay) {
+      return { day: null, fromMs, untilMs, invalid: true };
+    }
+    return { day: windowDay ?? reqDay, fromMs, untilMs, invalid: false };
   }
-  return null;
+  return { day: windowDay, fromMs, untilMs, invalid: false };
 }
 
-function extractDay(report, explicitDay) {
+function extractDay(recordedWindow, explicitDay) {
+  if (recordedWindow.invalid) return null;
   const explicit = typeof explicitDay === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(explicitDay) ? explicitDay : null;
-  const recorded = extractRecordedDay(report);
-  if (recorded !== null) {
+  if (recordedWindow.day !== null) {
     // Never let a comparison label override the export's recorded date.
-    if (explicit !== null && explicit !== recorded) return null;
-    return recorded;
+    if (explicit !== null && explicit !== recordedWindow.day) return null;
+    return recordedWindow.day;
   }
   return explicit;
+}
+
+function windowsMatch(graptWindow, codexWindow) {
+  if (graptWindow.invalid || codexWindow.invalid) return false;
+  if (graptWindow.fromMs !== null && codexWindow.fromMs !== null) {
+    return graptWindow.fromMs === codexWindow.fromMs && graptWindow.untilMs === codexWindow.untilMs;
+  }
+  return true;
 }
 
 function extractRecordedModel(report) {
@@ -285,8 +326,10 @@ export function evaluateReleaseGates(graptReport, comparison = null) {
         cache_share_delta_percent: Number((graptShare - codexShare).toFixed(4)),
       };
     } else {
-      const graptDay = extractDay(graptReport, matchedTasks.grapt_day);
-      const codexDay = extractDay(codexReport, matchedTasks.codex_day);
+      const graptWindow = extractRecordedWindow(graptReport);
+      const codexWindow = extractRecordedWindow(codexReport);
+      const graptDay = extractDay(graptWindow, matchedTasks.grapt_day);
+      const codexDay = extractDay(codexWindow, matchedTasks.codex_day);
       const graptModel = extractModel(graptReport, matchedTasks.grapt_model);
       const codexModel = extractModel(codexReport, matchedTasks.codex_model);
       const validCounts = Number.isSafeInteger(matchedTasks.count) && matchedTasks.count > 0
@@ -303,7 +346,8 @@ export function evaluateReleaseGates(graptReport, comparison = null) {
         && matchedTasks.grapt_tokens_per_accepted_task > 0
         && Number.isFinite(matchedTasks.codex_tokens_per_accepted_task)
         && matchedTasks.codex_tokens_per_accepted_task > 0;
-      const sameDay = graptDay !== null && codexDay !== null && graptDay === codexDay;
+      const sameDay = graptDay !== null && codexDay !== null && graptDay === codexDay
+        && windowsMatch(graptWindow, codexWindow);
       const sameModel = graptModel !== null && codexModel !== null && graptModel === codexModel;
       const enoughTasks = matchedTasks.count >= CRITERION_3_MIN_MATCHED_TASKS;
       const allAccepted = matchedTasks.grapt_accepted_tasks === matchedTasks.count;

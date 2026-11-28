@@ -26,6 +26,10 @@ impl Drop for ApprovalGuard {
 }
 
 impl ToolRunner for ApprovalTools {
+    fn known_unexecuted(&self, _call: &ToolCallId) -> bool {
+        !self.executed.load(Ordering::SeqCst)
+    }
+
     fn run(
         &self,
         _call: ToolCallId,

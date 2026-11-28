@@ -547,4 +547,133 @@ test('evaluateReleaseGates reports honest Criterion #3 and #5 verdicts', async (
     async () => ({ status: 'observed', text: 'CodeMode worker could not start', disposition: 'complete' }),
   );
   assert.equal(infraOps.tool_calls.infrastructure_failed, 1);
+
+  // Unwindowed equal-day exports (Grapt opened_ms + Codex reported_ms) must pass.
+  const unwindowedEqualDayPass = evaluateReleaseGates(
+    {
+      window: null,
+      models: [{ provider: 'openai', model: 'gpt-6.1-sol', requests: 2 }],
+      requests: [
+        { opened_ms: Date.parse('2026-11-28T09:15:00Z') },
+        { opened_ms: Date.parse('2026-11-28T16:45:00Z') },
+      ],
+      totals: { read_share_percent: 99.1 },
+      operations: {
+        tool_calls: { count: 100, failed: 0, infrastructure_failed: 0 },
+        failure_detail_unavailable: {},
+        coverage: { unsupported_event_versions: {} },
+      },
+    },
+    {
+      codexReport: {
+        window: null,
+        models: [{ provider: 'openai', model: 'gpt-6.1-sol', requests: 2 }],
+        requests: [
+          { reported_ms: Date.parse('2026-11-28T10:00:00Z') },
+          { reported_ms: Date.parse('2026-11-28T17:00:00Z') },
+        ],
+        totals: { read_share_percent: 98.5 },
+      },
+      matchedTasks: {
+        count: 3,
+        grapt_accepted_tasks: 3,
+        grapt_first_review_accept_rate: 0.9,
+        codex_first_review_accept_rate: 0.9,
+        grapt_tokens_per_accepted_task: 10000,
+        codex_tokens_per_accepted_task: 10000,
+      },
+    },
+  );
+  assert.equal(unwindowedEqualDayPass.criterion_3.status, 'pass');
+  assert.equal(unwindowedEqualDayPass.criterion_3.grapt_day, '2026-11-28');
+  assert.equal(unwindowedEqualDayPass.criterion_3.codex_day, '2026-11-28');
+
+  // Cross-day exports must fail even when day labels claim a single matching day.
+  const crossDayWindowFail = evaluateReleaseGates(
+    {
+      window: { from: '2026-11-28T00:00:00Z', until: '2026-11-30T00:00:00Z' },
+      models: [{ provider: 'openai', model: 'gpt-6.1-sol', requests: 2 }],
+      totals: { read_share_percent: 99.1 },
+      operations: { tool_calls: { count: 100, failed: 0, infrastructure_failed: 0 } },
+    },
+    {
+      codexReport: {
+        window: { from: '2026-11-28T00:00:00Z', until: '2026-11-29T00:00:00Z' },
+        models: [{ provider: 'openai', model: 'gpt-6.1-sol', requests: 2 }],
+        totals: { read_share_percent: 98.5 },
+      },
+      matchedTasks: {
+        grapt_day: '2026-11-28',
+        codex_day: '2026-11-28',
+        count: 3,
+        grapt_accepted_tasks: 3,
+        grapt_first_review_accept_rate: 0.9,
+        codex_first_review_accept_rate: 0.9,
+        grapt_tokens_per_accepted_task: 10000,
+        codex_tokens_per_accepted_task: 10000,
+      },
+    },
+  );
+  assert.equal(crossDayWindowFail.criterion_3.status, 'fail');
+  assert.equal(crossDayWindowFail.criterion_3.reason, 'mismatched-comparison-day');
+
+  const crossDayUnwindowedFail = evaluateReleaseGates(
+    {
+      window: null,
+      models: [{ provider: 'openai', model: 'gpt-6.1-sol', requests: 2 }],
+      requests: [
+        { opened_ms: Date.parse('2026-11-28T23:30:00Z') },
+        { opened_ms: Date.parse('2026-11-29T00:30:00Z') },
+      ],
+      totals: { read_share_percent: 99.1 },
+      operations: { tool_calls: { count: 100, failed: 0, infrastructure_failed: 0 } },
+    },
+    {
+      codexReport: {
+        window: null,
+        models: [{ provider: 'openai', model: 'gpt-6.1-sol', requests: 1 }],
+        requests: [{ reported_ms: Date.parse('2026-11-28T12:00:00Z') }],
+        totals: { read_share_percent: 98.5 },
+      },
+      matchedTasks: {
+        grapt_day: '2026-11-28',
+        codex_day: '2026-11-28',
+        count: 3,
+        grapt_accepted_tasks: 3,
+        grapt_first_review_accept_rate: 0.9,
+        codex_first_review_accept_rate: 0.9,
+        grapt_tokens_per_accepted_task: 10000,
+        codex_tokens_per_accepted_task: 10000,
+      },
+    },
+  );
+  assert.equal(crossDayUnwindowedFail.criterion_3.status, 'fail');
+  assert.equal(crossDayUnwindowedFail.criterion_3.reason, 'mismatched-comparison-day');
+
+  // Unequal windows sharing the same start date must fail.
+  const unequalWindowSameStartFail = evaluateReleaseGates(
+    {
+      window: { from: '2026-11-28T00:00:00Z', until: '2026-11-28T12:00:00Z' },
+      models: [{ provider: 'openai', model: 'gpt-6.1-sol', requests: 2 }],
+      totals: { read_share_percent: 99.1 },
+      operations: { tool_calls: { count: 100, failed: 0, infrastructure_failed: 0 } },
+    },
+    {
+      codexReport: {
+        window: { from: '2026-11-28T00:00:00Z', until: '2026-11-29T00:00:00Z' },
+        models: [{ provider: 'openai', model: 'gpt-6.1-sol', requests: 2 }],
+        totals: { read_share_percent: 98.5 },
+      },
+      matchedTasks: {
+        count: 3,
+        grapt_accepted_tasks: 3,
+        grapt_first_review_accept_rate: 0.9,
+        codex_first_review_accept_rate: 0.9,
+        grapt_tokens_per_accepted_task: 10000,
+        codex_tokens_per_accepted_task: 10000,
+      },
+    },
+  );
+  assert.equal(unequalWindowSameStartFail.criterion_3.status, 'fail');
+  assert.equal(unequalWindowSameStartFail.criterion_3.reason, 'mismatched-comparison-day');
 });

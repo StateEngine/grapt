@@ -103,6 +103,13 @@ pub trait ToolRunner: Send + Sync + 'static {
     fn settle_attempt(&self) -> BoxFuture<'static, bool> {
         Box::pin(async { true })
     }
+    /// True only when the runner positively knows `call` never entered effect
+    /// dispatch (for example, it was still awaiting human approval). Defaults
+    /// to `false` (fail-closed) so already-dispatched tools missing a terminal
+    /// preserve `ToolFailureReason::EffectUnknown`.
+    fn known_unexecuted(&self, _call: &ToolCallId) -> bool {
+        false
+    }
     /// Trusted composition metadata, never a declaration supplied by a guest.
     fn is_composition(&self, _tool: &str) -> bool {
         false

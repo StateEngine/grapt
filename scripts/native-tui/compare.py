@@ -452,19 +452,14 @@ def measure_idle_cpu_delta(
 
 
 def is_quit_step(step: dict, label: str) -> bool:
-    """True when `step` terminates the client so idle CPU is sampled BEFORE quit."""
+    """True when `step` terminates the client so idle CPU is sampled BEFORE quit.
+    Does not treat Control+c as quit because scenarios use Control+c to interrupt
+    an active turn before Control+q exits."""
     if step.get("quit") is True:
         return True
     if "key" in step:
         key, _ = resolve(step["key"], label)
-        if isinstance(key, str) and key.lower() in (
-            "control+q",
-            "ctrl+q",
-            "control+c",
-            "ctrl+c",
-            "control+d",
-            "ctrl+d",
-        ):
+        if isinstance(key, str) and key.lower() in ("control+q", "ctrl+q"):
             return True
     return False
 
@@ -820,22 +815,44 @@ def apply_step(
         if text is None:
             return "echo", {"skipped": "this client does not take this echo probe"}, shared
         expect_text = step.get("expect", text)
-        before_screen = screen_text(observer.state())
+        before_state = observer.state()
+        before_screen = screen_text(before_state)
         if expect_text in before_screen:
             raise HarnessError(
                 f"[{label}] composer echo marker `{expect_text}` was already present on screen before input"
             )
+        before_non_echo = before_screen.replace(expect_text, "")
+        before_tokens = before_state.get("stream_tokens") if isinstance(before_state, dict) else None
         echo_start = time.monotonic()
         observer.action({"kind": "paste", "text": text})
         polls = int(step.get("polls", EXPECT_POLLS))
         for _ in range(polls):
-            if expect_text in screen_text(observer.state()):
-                echo_ms = round((time.monotonic() - echo_start) * 1000.0, 3)
+            after_state = observer.state()
+            after_screen = screen_text(after_state)
+            if expect_text in after_screen:
+                elapsed_s = max(time.monotonic() - echo_start, 1e-6)
+                echo_ms = round(elapsed_s * 1000.0, 3)
+                after_non_echo = after_screen.replace(expect_text, "")
+                delta_chars = max(0, len(after_non_echo) - len(before_non_echo))
+                after_tokens = (
+                    after_state.get("stream_tokens") if isinstance(after_state, dict) else None
+                )
+                if isinstance(before_tokens, (int, float)) and isinstance(after_tokens, (int, float)):
+                    delta_tokens = max(0.0, float(after_tokens) - float(before_tokens))
+                else:
+                    delta_tokens = delta_chars / 4.0
+                streaming_observed = delta_tokens > 0.0
+                observed_tok_per_s = (
+                    round(delta_tokens / elapsed_s, 3) if streaming_observed else 0.0
+                )
                 return "echo", {
                     "text": text,
                     "observed": True,
                     "absent_before": True,
                     "echo_ms": echo_ms,
+                    "streaming_observed": streaming_observed,
+                    "observed_tok_per_s": observed_tok_per_s,
+                    "stream_delta_chars": delta_chars,
                 }, shared
             time.sleep(0.002)
         raise HarnessError(

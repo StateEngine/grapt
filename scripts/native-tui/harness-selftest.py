@@ -836,9 +836,11 @@ def t5_budget_witnesses() -> None:
         f"got={partial_counters!r}",
     )
     check(
-        "is_quit_step identifies Control+q and Ctrl+c quit keys so idle CPU is sampled before quit",
+        "is_quit_step identifies quit/Control+q and never treats Control+c interrupt as quit",
         CMP.is_quit_step({"key": "Control+q"}, "native")
-        and CMP.is_quit_step({"key": "Ctrl+c"}, "native")
+        and CMP.is_quit_step({"quit": True}, "native")
+        and not CMP.is_quit_step({"key": "Control+c"}, "native")
+        and not CMP.is_quit_step({"key": "Ctrl+c"}, "native")
         and not CMP.is_quit_step({"key": "Enter"}, "native"),
     )
 
@@ -870,7 +872,9 @@ def t5_budget_witnesses() -> None:
         "echo step refuses when marker was already present on screen before input",
         already_present_rejected,
     )
-    kind, echo_detail, _ = CMP.apply_step(
+    # End-to-end runner path: quiet screen (no concurrent streaming) produces
+    # streaming_observed=False so evaluate_t5_budgets refuses pass.
+    quiet_kind, quiet_detail, _ = CMP.apply_step(
         _FakeObserver(["prompt > ", "prompt > FRESH_MARKER"]),
         {"echo": "FRESH_MARKER"},
         "native",
@@ -880,12 +884,66 @@ def t5_budget_witnesses() -> None:
     )
     check(
         "echo step succeeds when marker was absent before input and newly painted after",
-        kind == "echo"
-        and isinstance(echo_detail, dict)
-        and echo_detail.get("observed") is True
-        and echo_detail.get("absent_before") is True
-        and echo_detail.get("echo_ms") is not None,
-        f"got={echo_detail!r}",
+        quiet_kind == "echo"
+        and isinstance(quiet_detail, dict)
+        and quiet_detail.get("observed") is True
+        and quiet_detail.get("absent_before") is True
+        and quiet_detail.get("streaming_observed") is False
+        and quiet_detail.get("echo_ms") is not None,
+        f"got={quiet_detail!r}",
+    )
+    quiet_budget = CMP.evaluate_t5_budgets(
+        [
+            {
+                "client": "native",
+                "steps": [{"kind": quiet_kind, "t5_echo": True, "elapsed_ms": quiet_detail["echo_ms"], "detail": quiet_detail}],
+                "idle_cpu_seconds": 0.10,
+            }
+        ]
+    )
+    check(
+        "runner echo on quiet screen does not pass T5 without witnessed concurrent streaming",
+        quiet_budget["status"] == "not-measured"
+        and quiet_budget["concurrent_streaming_tok_per_s"]["status"] == "not-measured",
+        f"got={quiet_budget!r}",
+    )
+    # End-to-end runner path: concurrent streamed output alongside echo marker
+    # populates streaming_observed=True and observed_tok_per_s >= 200 so
+    # evaluate_t5_budgets passes through the real runner output shape.
+    streamed_chunk = "token " * 80
+    stream_kind, stream_detail, _ = CMP.apply_step(
+        _FakeObserver(["prompt > ", f"{streamed_chunk}prompt > STREAM_ECHO"]),
+        {"echo": "STREAM_ECHO"},
+        "native",
+        Path("."),
+        Path("."),
+        set(),
+    )
+    runner_budget = CMP.evaluate_t5_budgets(
+        [
+            {
+                "client": "native",
+                "steps": [
+                    {
+                        "kind": stream_kind,
+                        "t5_echo": True,
+                        "elapsed_ms": stream_detail["echo_ms"],
+                        "streaming_observed": stream_detail["streaming_observed"],
+                        "observed_tok_per_s": stream_detail["observed_tok_per_s"],
+                        "detail": stream_detail,
+                    }
+                ],
+                "idle_cpu_seconds": 0.10,
+            }
+        ]
+    )
+    check(
+        "runner echo with concurrent streaming populates observed_tok_per_s and passes T5 budgets",
+        stream_detail.get("streaming_observed") is True
+        and float(stream_detail.get("observed_tok_per_s", 0.0)) >= 200.0
+        and runner_budget["status"] == "pass"
+        and runner_budget["concurrent_streaming_tok_per_s"]["status"] == "pass",
+        f"detail={stream_detail!r} budget={runner_budget!r}",
     )
     non_t5_rejected = False
     try:
