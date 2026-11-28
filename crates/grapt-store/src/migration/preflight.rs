@@ -182,6 +182,9 @@ pub(crate) fn preflight_unfenced(path: &Path, validation: Validation) -> StoreRe
         Err(crate::log::LogError::Sqlite(error)) => {
             return StoreReadiness::Unreadable(Unreadable::Sqlite(error));
         }
+        Err(crate::log::LogError::Path(error)) => {
+            return StoreReadiness::Unreadable(Unreadable::Metadata(error));
+        }
         Err(crate::log::LogError::Decode(_)) => {
             return StoreReadiness::QuarantinedOrCorrupt(Obstruction::Integrity(
                 "event log rejected".into(),

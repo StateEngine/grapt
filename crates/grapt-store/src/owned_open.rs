@@ -371,6 +371,11 @@ impl EventStore {
         };
         driver.hook(OpenHook::AfterMigration, path)?;
         let ready_handle = Self::require_ready(path)?;
+        // The Ready store must be the file just migrated, not another ready
+        // store put in its place, or the writer would not match the backup.
+        if ready_handle.identity() != handle.identity() {
+            return Err(OwnedOpenError::PathIdentityChanged);
+        }
         driver.hook(OpenHook::BeforeFinalOpen, store_path.supplied)?;
         let store = Self::open_existing(store_path, &ready_handle, engine_version, ids)?;
         Ok(OwnedEventStore {
@@ -494,8 +499,10 @@ impl EventStore {
         }
     }
 
-    /// The one way an owned open hands over a store, after the caller's path
-    /// is checked to still lead to the bound file.
+    /// The one way an owned open hands over a store. The caller's path must
+    /// lead to the bound file before SQLite opens it and again once the store
+    /// is open and prepared, so a link changed meanwhile never hands over a
+    /// store for a file the caller no longer names.
     fn open_existing(
         store_path: &StorePath<'_>,
         handle: &DatabaseFileHandle,
@@ -504,7 +511,10 @@ impl EventStore {
     ) -> Result<EventStore, OwnedOpenError> {
         store_path.still_names(handle)?;
         match Self::open_existing_with_ids(&store_path.real, handle, engine_version, ids) {
-            Ok(store) => Ok(store),
+            Ok(store) => {
+                store_path.still_names(handle)?;
+                Ok(store)
+            }
             Err(ExistingOpenError::Identity(error)) => Err(OwnedOpenError::FileIdentity(error)),
             Err(ExistingOpenError::Replaced) => Err(OwnedOpenError::PathIdentityChanged),
             Err(ExistingOpenError::Sqlite(error)) => {
@@ -551,6 +561,8 @@ mod tests {
         ReplaceReady,
         CreateLegacy,
         ReplaceAfterReady,
+        /// Put a ready copy in place of the file just migrated.
+        ReplaceAfterMigration,
         /// Point the caller's link at another file before the migration writes.
         #[cfg(unix)]
         RetargetLinkBeforeMigration(PathBuf),
@@ -608,6 +620,9 @@ mod tests {
                 }
                 (Self::ReplaceAfterReady, OpenHook::BeforeFinalOpen) => {
                     replace_with_copy(path, "ready")?
+                }
+                (Self::ReplaceAfterMigration, OpenHook::AfterMigration) => {
+                    replace_with_copy(path, "migrated")?
                 }
                 #[cfg(unix)]
                 (Self::RetargetLinkBeforeMigration(target), OpenHook::BeforeMigration) => {
@@ -786,6 +801,14 @@ mod tests {
         assert!(matches!(
             preflight_read_only(&migrate),
             StoreReadiness::Ready
+        ));
+
+        let swapped = root.join("swapped.db");
+        legacy_database(&swapped)?;
+        assert_replacement_refused(open_with(
+            &swapped,
+            OwnedOpenAuthority::Migrate(plan(&swapped)),
+            &TestDriver::ReplaceAfterMigration,
         ));
 
         std::fs::remove_dir_all(root)?;
