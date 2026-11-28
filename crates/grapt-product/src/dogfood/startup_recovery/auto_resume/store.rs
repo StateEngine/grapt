@@ -191,8 +191,9 @@ pub(super) fn upsert_row(
 }
 
 #[allow(clippy::too_many_arguments, reason = "pending_resume row columns")]
-pub(super) fn upsert_row_with_input(
-    store: &mut EventStore,
+pub(super) fn upsert_row_within(
+    tx: &GovernedTransaction<'_>,
+    writer: grapt_store::FencedWriter,
     session: &SessionId,
     turn_origin_seq: u64,
     interrupted_execution_id: &str,
@@ -205,6 +206,93 @@ pub(super) fn upsert_row_with_input(
     let seq = i64::try_from(turn_origin_seq)
         .map_err(|_| "turn_origin_seq overflows SQLite INTEGER".to_owned())?;
     let attempts = i64::from(attempts);
+    let aggregate = grapt_store::AggregateId::Session(session.clone());
+    EventStore::verify_writer_within(tx, &aggregate, writer)
+        .map_err(|error| format!("pending_resume writer fence failed: {error}"))?;
+    tx.execute(
+        "INSERT INTO pending_resume (
+             session_id, turn_origin_seq, interrupted_execution_id,
+             attempts, state, reason, updated_at
+         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+         ON CONFLICT(session_id) DO UPDATE SET
+             turn_origin_seq = excluded.turn_origin_seq,
+             interrupted_execution_id = excluded.interrupted_execution_id,
+             attempts = excluded.attempts,
+             state = excluded.state,
+             reason = excluded.reason,
+             updated_at = excluded.updated_at",
+        rusqlite::params![
+            session.as_str(),
+            seq,
+            interrupted_execution_id,
+            attempts,
+            state.as_str(),
+            reason,
+            updated_at
+        ],
+    )
+    .map_err(|error| format!("pending_resume upsert failed: {error}"))?;
+    if let Some(input_id) = active_input {
+        grapt_inbox::Inbox::register_resume_input_within(
+            tx,
+            writer,
+            session,
+            input_id,
+            turn_origin_seq,
+        )
+        .map_err(|error| format!("resume input registration failed: {error}"))?;
+        Ok(0)
+    } else if matches!(state, ResumeState::Completed | ResumeState::Stopped) {
+        grapt_inbox::Inbox::retire_resume_inputs_within(tx, writer, session)
+            .map_err(|error| format!("resume input retirement failed: {error}"))
+    } else {
+        Ok(0)
+    }
+}
+
+/// True if `input` is a genuine human prompt (not `seat-startup`) admitted in
+/// `session` strictly after `after_seq`.
+pub(super) fn is_newer_human_input_within(
+    tx: &GovernedTransaction<'_>,
+    session: &SessionId,
+    input: &MessageId,
+    after_seq: u64,
+) -> Result<bool, String> {
+    let after_seq = i64::try_from(after_seq)
+        .map_err(|_| "turn_origin_seq overflows SQLite INTEGER".to_owned())?;
+    let found: Option<i64> = tx
+        .query_row(
+            "SELECT 1 FROM event
+             WHERE aggregate_family = 'session' AND aggregate_id = ?1
+               AND type = 'session.input.admitted.1'
+               AND seq > ?2
+               AND CASE WHEN json_valid(data)
+                   THEN json_extract(data, '$.inputID') = ?3
+                        AND COALESCE(json_extract(data, '$.input.type'), json_extract(data, '$.kind'), 'user') = 'user'
+                        AND COALESCE(json_extract(data, '$.input.data.metadata.origin'), '') != 'seat-startup'
+                   ELSE 0
+               END
+             LIMIT 1",
+            rusqlite::params![session.as_str(), after_seq, input.as_str()],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(|error| format!("human input ownership check failed: {error}"))?;
+    Ok(found.is_some())
+}
+
+#[allow(clippy::too_many_arguments, reason = "pending_resume row columns")]
+pub(super) fn upsert_row_with_input(
+    store: &mut EventStore,
+    session: &SessionId,
+    turn_origin_seq: u64,
+    interrupted_execution_id: &str,
+    attempts: u32,
+    state: ResumeState,
+    reason: Option<&str>,
+    updated_at: i64,
+    active_input: Option<&MessageId>,
+) -> Result<usize, String> {
     let aggregate = grapt_store::AggregateId::Session(session.clone());
     let (writer, elected_locally) = match store.fencing_token(&aggregate) {
         Ok(writer) => (writer, false),
@@ -223,47 +311,18 @@ pub(super) fn upsert_row_with_input(
         let tx = store
             .governed_transaction()
             .map_err(|error| format!("pending_resume transaction refused: {error}"))?;
-        EventStore::verify_writer_within(&tx, &aggregate, writer)
-            .map_err(|error| format!("pending_resume writer fence failed: {error}"))?;
-        tx.execute(
-            "INSERT INTO pending_resume (
-                 session_id, turn_origin_seq, interrupted_execution_id,
-                 attempts, state, reason, updated_at
-             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
-             ON CONFLICT(session_id) DO UPDATE SET
-                 turn_origin_seq = excluded.turn_origin_seq,
-                 interrupted_execution_id = excluded.interrupted_execution_id,
-                 attempts = excluded.attempts,
-                 state = excluded.state,
-                 reason = excluded.reason,
-                 updated_at = excluded.updated_at",
-            rusqlite::params![
-                session.as_str(),
-                seq,
-                interrupted_execution_id,
-                attempts,
-                state.as_str(),
-                reason,
-                updated_at
-            ],
-        )
-        .map_err(|error| format!("pending_resume upsert failed: {error}"))?;
-        let retired = if let Some(input_id) = active_input {
-            grapt_inbox::Inbox::register_resume_input_within(
-                &tx,
-                writer,
-                session,
-                input_id,
-                turn_origin_seq,
-            )
-            .map_err(|error| format!("resume input registration failed: {error}"))?;
-            0
-        } else if matches!(state, ResumeState::Completed | ResumeState::Stopped) {
-            grapt_inbox::Inbox::retire_resume_inputs_within(&tx, writer, session)
-                .map_err(|error| format!("resume input retirement failed: {error}"))?
-        } else {
-            0
-        };
+        let retired = upsert_row_within(
+            &tx,
+            writer,
+            session,
+            turn_origin_seq,
+            interrupted_execution_id,
+            attempts,
+            state,
+            reason,
+            updated_at,
+            active_input,
+        )?;
         tx.commit()
             .map_err(|error| format!("pending_resume commit failed: {error}"))?
             .discard();

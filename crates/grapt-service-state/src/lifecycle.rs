@@ -75,20 +75,22 @@ fn record(
         change,
         |_, _| Ok(()),
     )
+    .map(|(observation, ())| observation)
 }
 
 /// Commit an execution lifecycle fact and its service state together with a
-/// caller-owned transactional hook in the same governed transaction.
-pub fn record_with<F>(
+/// caller-owned transactional hook in the same governed transaction, returning
+/// the hook's result only after the transaction commits.
+pub fn record_with<T, F>(
     store: &mut EventStore,
     authorities: &DeterministicAuthorities<'_>,
     session: &SessionId,
     execution: &ExecutionId,
     change: Change,
     on_commit: F,
-) -> Result<Observation, String>
+) -> Result<(Observation, T), String>
 where
-    F: FnOnce(&GovernedTransaction<'_>, FencedWriter) -> Result<(), String>,
+    F: FnOnce(&GovernedTransaction<'_>, FencedWriter) -> Result<T, String>,
 {
     let state = match &change {
         Change::Start => State::observed(None, None),
@@ -118,7 +120,7 @@ where
             StatusChange::Finish,
         )?;
     }
-    on_commit(&tx, writer)?;
+    let extra = on_commit(&tx, writer)?;
     tx.commit().map_err(|error| error.to_string())?.discard();
-    Ok(observation)
+    Ok((observation, extra))
 }

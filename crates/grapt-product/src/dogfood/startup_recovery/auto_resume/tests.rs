@@ -1342,7 +1342,17 @@ fn custody_tied_terminal_settlement_ignores_unrelated_input_and_commits_atomical
     )?;
     let aggregate = AggregateId::Session(session.clone());
     let writer = store.fencing_token(&aggregate).map_err(|e| e.to_string())?;
-    // Unowned or unrelated input must NOT settle the running resume claim.
+    // Even if a newer human prompt is queued in the session, an unowned or
+    // unrelated completing input must NOT settle the running resume claim.
+    let _ = append_event(
+        &mut store,
+        &ids,
+        &clock,
+        &session,
+        "session.input.admitted",
+        1,
+        json!({"inputID": "msg_queued_human", "input": {"type": "user", "data": {"text": "later"}}}),
+    )?;
     {
         let tx = store.governed_transaction().map_err(|e| e.to_string())?;
         assert_eq!(

@@ -303,9 +303,9 @@ impl LiveExecutor {
         let input = self
             .principals
             .get(session)
+            .filter(|principal| principal.execution == *execution)
             .map(|principal| principal.input);
-        let mut retired_resume_inputs = 0usize;
-        let durable = {
+        let committed = {
             let mut inbox = match self.inbox.lock() {
                 Ok(held) => held,
                 Err(poisoned) => poisoned.into_inner(),
@@ -333,19 +333,23 @@ impl LiveExecutor {
                 change,
                 |tx, writer| {
                     if let Some(terminal_outcome) = outcome {
-                        retired_resume_inputs =
-                            super::super::startup_recovery::auto_resume::settle_for_execution_within(
-                                tx,
-                                writer,
-                                session,
-                                input.as_ref(),
-                                terminal_outcome,
-                                now_ms,
-                            )?;
+                        super::super::startup_recovery::auto_resume::settle_for_execution_within(
+                            tx,
+                            writer,
+                            session,
+                            input.as_ref(),
+                            terminal_outcome,
+                            now_ms,
+                        )
+                    } else {
+                        Ok(0)
                     }
-                    Ok(())
                 },
             )
+        };
+        let (durable, retired_resume_inputs) = match committed {
+            Ok((observation, retired)) => (Ok(observation), retired),
+            Err(error) => (Err(error), 0),
         };
         if retired_resume_inputs > 0 {
             self.hub.invalidate_session_because(

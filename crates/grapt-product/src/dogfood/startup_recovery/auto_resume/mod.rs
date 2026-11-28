@@ -556,8 +556,7 @@ pub(in crate::dogfood) fn settle_for_execution_within(
         synthetic_message_id(session, current.turn_origin_seq, current.attempts)?;
     let matches_resume = *input == expected_resume_id;
     let superseded_by_newer_human = !matches_resume
-        && latest_human_input_seq(tx, session)?
-            .is_some_and(|latest| latest > current.turn_origin_seq);
+        && store::is_newer_human_input_within(tx, session, input, current.turn_origin_seq)?;
     if !matches_resume && !superseded_by_newer_human {
         return Ok(0);
     }
@@ -574,36 +573,18 @@ pub(in crate::dogfood) fn settle_for_execution_within(
             }
         }
     };
-    let seq = i64::try_from(current.turn_origin_seq)
-        .map_err(|_| "turn_origin_seq overflows SQLite INTEGER".to_owned())?;
-    let aggregate = grapt_store::AggregateId::Session(session.clone());
-    EventStore::verify_writer_within(tx, &aggregate, writer)
-        .map_err(|error| format!("pending_resume writer fence failed: {error}"))?;
-    tx.execute(
-        "INSERT INTO pending_resume (
-             session_id, turn_origin_seq, interrupted_execution_id,
-             attempts, state, reason, updated_at
-         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
-         ON CONFLICT(session_id) DO UPDATE SET
-             turn_origin_seq = excluded.turn_origin_seq,
-             interrupted_execution_id = excluded.interrupted_execution_id,
-             attempts = excluded.attempts,
-             state = excluded.state,
-             reason = excluded.reason,
-             updated_at = excluded.updated_at",
-        rusqlite::params![
-            session.as_str(),
-            seq,
-            current.interrupted_execution_id,
-            i64::from(current.attempts),
-            next_state.as_str(),
-            reason,
-            now_ms
-        ],
+    store::upsert_row_within(
+        tx,
+        writer,
+        session,
+        current.turn_origin_seq,
+        &current.interrupted_execution_id,
+        current.attempts,
+        next_state,
+        Some(reason),
+        now_ms,
+        None,
     )
-    .map_err(|error| format!("pending_resume settle failed: {error}"))?;
-    grapt_inbox::Inbox::retire_resume_inputs_within(tx, writer, session)
-        .map_err(|error| format!("resume input retirement failed: {error}"))
 }
 
 /// Record a durable `Disconnected` status notice explaining that automatic
