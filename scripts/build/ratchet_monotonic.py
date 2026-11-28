@@ -168,17 +168,20 @@ def check_cycles_ratchet(base_doc, head_doc, live_configs=None):
                     )
     if not isinstance(base_doc.get('edges'), dict):
         return problems
+    base_config_set = set(base_configs) if isinstance(base_configs, list) else None
     base_cycles = base_doc.get('cycles', {})
     head_cycles = head_doc.get('cycles', {})
     base_edges = base_doc['edges']
     head_edges = head_doc.get('edges', {})
     for target, groups in sorted(head_cycles.items()):
-        prior = base_cycles.get(target, [])
+        lookup = module_cycles.baseline_key_for(target, base_config_set)
+        prior = base_cycles.get(lookup, [])
         for group in groups:
             if not any(set(group) <= set(old) for old in prior):
                 problems.append(f'{CYCLES_RATCHET}: {target} new or larger cycle {group} vs base')
     for target, edges in sorted(head_edges.items()):
-        prior_edges = {tuple(edge) for edge in base_edges.get(target, [])}
+        lookup = module_cycles.baseline_key_for(target, base_config_set)
+        prior_edges = {tuple(edge) for edge in base_edges.get(lookup, [])}
         for edge in edges:
             pair = tuple(edge)
             if pair not in prior_edges:

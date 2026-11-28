@@ -155,6 +155,136 @@ class RatchetMonotonicTests(unittest.TestCase):
         self.assertTrue(any('checked config grapt-product[feature:legacy-ui] was dropped' in p
                             for p in mono.check_cycles_ratchet(base, deleted_feature, live)))
 
+    def test_cycles_ratchet_new_feature_configs_inherit_base_target_only_when_new(self):
+        base = {
+            'deep': ['grapt_product::dogfood'],
+            'configs': [
+                'grapt-product',
+                'grapt-product[feature:existing]',
+                'grapt-release',
+            ],
+            'cycles': {
+                'grapt-product': [['c::a', 'c::b', 'c::d']],
+                'grapt-product[feature:existing]': [['c::a', 'c::b']],
+            },
+            'edges': {
+                'grapt-product': [['c::a', 'c::b'], ['c::b', 'c::d'], ['c::d', 'c::a']],
+                'grapt-product[feature:existing]': [['c::a', 'c::b'], ['c::b', 'c::a']],
+            },
+        }
+        live = {
+            'grapt-product',
+            'grapt-product[all-features]',
+            'grapt-product[feature:existing]',
+            'grapt-product[feature:frozen-fixture]',
+            'grapt-release',
+            'grapt-release[all-features]',
+        }
+
+        # (a) New [feature:...] and [all-features] configs whose cycles/edges are
+        # a subset of existing base_target pass cleanly.
+        added_clean = {
+            'deep': base['deep'],
+            'configs': sorted(live),
+            'cycles': {
+                **base['cycles'],
+                'grapt-product[all-features]': [['c::a', 'c::b', 'c::d']],
+                'grapt-product[feature:frozen-fixture]': [['c::a', 'c::b']],
+            },
+            'edges': {
+                **base['edges'],
+                'grapt-product[all-features]': base['edges']['grapt-product'],
+                'grapt-product[feature:frozen-fixture]': [['c::a', 'c::b']],
+            },
+        }
+        self.assertEqual(mono.check_cycles_ratchet(base, added_clean, live), [])
+
+        # (b) New [feature:...] / [all-features] config with even 1 extra cyclic
+        # edge or larger cycle beyond base_target fails.
+        extra_edge = {
+            'deep': base['deep'],
+            'configs': sorted(live),
+            'cycles': {
+                **base['cycles'],
+                'grapt-product[feature:frozen-fixture]': [['c::a', 'c::b', 'c::d']],
+            },
+            'edges': {
+                **base['edges'],
+                'grapt-product[feature:frozen-fixture]': base['edges']['grapt-product'] + [['c::a', 'c::d']],
+            },
+        }
+        problems_edge = mono.check_cycles_ratchet(base, extra_edge, live)
+        self.assertTrue(any(
+            'grapt-product[feature:frozen-fixture] new cyclic edge c::a -> c::d' in p
+            for p in problems_edge
+        ))
+
+        larger_cycle = {
+            'deep': base['deep'],
+            'configs': sorted(live),
+            'cycles': {
+                **base['cycles'],
+                'grapt-product[all-features]': [['c::a', 'c::b', 'c::d', 'c::e']],
+            },
+            'edges': {
+                **base['edges'],
+                'grapt-product[all-features]': base['edges']['grapt-product'],
+            },
+        }
+        problems_cycle = mono.check_cycles_ratchet(base, larger_cycle, live)
+        self.assertTrue(any(
+            'grapt-product[all-features] new or larger cycle' in p
+            for p in problems_cycle
+        ))
+
+        # (c) Existing [feature:...] config already in base_configs with fewer
+        # edges/smaller cycle than base_target FAILS if it tries to grow back up.
+        regrown_existing = {
+            'deep': base['deep'],
+            'configs': base['configs'],
+            'cycles': {
+                'grapt-product': [['c::a', 'c::b', 'c::d']],
+                'grapt-product[feature:existing]': [['c::a', 'c::b', 'c::d']],
+            },
+            'edges': {
+                'grapt-product': base['edges']['grapt-product'],
+                'grapt-product[feature:existing]': base['edges']['grapt-product'],
+            },
+        }
+        problems_regrown = mono.check_cycles_ratchet(base, regrown_existing, set(base['configs']))
+        self.assertTrue(any(
+            'grapt-product[feature:existing] new or larger cycle' in p
+            for p in problems_regrown
+        ))
+        self.assertTrue(any(
+            'grapt-product[feature:existing] new cyclic edge c::b -> c::d' in p
+            for p in problems_regrown
+        ))
+
+        # (d) Brand-new crate/target not in base_configs (even with [all-features])
+        # fails if it introduces any cycle or cyclic edge.
+        brand_new_crate = {
+            'deep': base['deep'],
+            'configs': sorted(set(base['configs']) | {'grapt-new', 'grapt-new[all-features]'}),
+            'cycles': {
+                **base['cycles'],
+                'grapt-new': [['n::x', 'n::y']],
+                'grapt-new[all-features]': [['n::x', 'n::y']],
+            },
+            'edges': {
+                **base['edges'],
+                'grapt-new': [['n::x', 'n::y'], ['n::y', 'n::x']],
+                'grapt-new[all-features]': [['n::x', 'n::y'], ['n::y', 'n::x']],
+            },
+        }
+        problems_new = mono.check_cycles_ratchet(
+            base,
+            brand_new_crate,
+            set(brand_new_crate['configs']),
+        )
+        self.assertTrue(any('grapt-new new or larger cycle' in p for p in problems_new))
+        self.assertTrue(any('grapt-new[all-features] new or larger cycle' in p for p in problems_new))
+
     def test_git_show_json_fails_closed_on_git_errors(self):
         from unittest.mock import patch
 

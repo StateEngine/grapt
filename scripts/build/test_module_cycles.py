@@ -129,6 +129,80 @@ class ModuleCycleTests(unittest.TestCase):
         self.assertEqual(found_cycles, {'c[feature:both]': [['c::a', 'c::b']]})
         self.assertEqual(found_edges, {'c[feature:both]': [['c::a', 'c::b'], ['c::b', 'c::a']]})
 
+    def test_record_allows_new_feature_config_matching_base_and_refuses_growth(self):
+        base_groups = [['c::a', 'c::b', 'c::d']]
+        base_edges = [['c::a', 'c::b'], ['c::b', 'c::d'], ['c::d', 'c::a']]
+        existing_feat_groups = [['c::a', 'c::b']]
+        existing_feat_edges = [['c::a', 'c::b'], ['c::b', 'c::a']]
+        initial = {
+            'configs': ['sample', 'sample[feature:existing]'],
+            'cycles': {'sample': base_groups, 'sample[feature:existing]': existing_feat_groups},
+            'edges': {'sample': base_edges, 'sample[feature:existing]': existing_feat_edges},
+        }
+
+        # (a) New [all-features] and [feature:frozen-fixture] matching base_target record cleanly.
+        with tempfile.TemporaryDirectory() as temporary:
+            baseline = Path(temporary) / 'baseline.json'
+            baseline.write_text(json.dumps(initial), encoding='utf-8')
+            measured_cycles = {
+                **initial['cycles'],
+                'sample[all-features]': base_groups,
+                'sample[feature:frozen-fixture]': base_groups,
+            }
+            measured_edges = {
+                **initial['edges'],
+                'sample[all-features]': base_edges,
+                'sample[feature:frozen-fixture]': base_edges,
+            }
+            measured_configs = [
+                'sample',
+                'sample[all-features]',
+                'sample[feature:existing]',
+                'sample[feature:frozen-fixture]',
+            ]
+            with patch.object(module_cycles, 'BASELINE', baseline), \
+                    patch.object(module_cycles.sys, 'argv', ['module_cycles.py', 'record']), \
+                    patch.object(module_cycles, 'tool', return_value='cargo-modules'), \
+                    patch.object(module_cycles, 'measure',
+                                 return_value=(measured_cycles, measured_edges, measured_configs)):
+                self.assertEqual(module_cycles.main(), 0)
+            recorded = json.loads(baseline.read_text(encoding='utf-8'))
+            self.assertEqual(recorded['configs'], measured_configs)
+
+        # (b) New feature config adding 1 extra cyclic edge is refused untouched.
+        with tempfile.TemporaryDirectory() as temporary:
+            baseline = Path(temporary) / 'baseline.json'
+            baseline.write_text(json.dumps(initial), encoding='utf-8')
+            before = baseline.read_bytes()
+            measured_cycles = {**initial['cycles'], 'sample[feature:frozen-fixture]': base_groups}
+            measured_edges = {
+                **initial['edges'],
+                'sample[feature:frozen-fixture]': base_edges + [['c::a', 'c::d']],
+            }
+            measured_configs = ['sample', 'sample[feature:existing]', 'sample[feature:frozen-fixture]']
+            with patch.object(module_cycles, 'BASELINE', baseline), \
+                    patch.object(module_cycles.sys, 'argv', ['module_cycles.py', 'record']), \
+                    patch.object(module_cycles, 'tool', return_value='cargo-modules'), \
+                    patch.object(module_cycles, 'measure',
+                                 return_value=(measured_cycles, measured_edges, measured_configs)):
+                self.assertNotEqual(module_cycles.main(), 0)
+            self.assertEqual(baseline.read_bytes(), before)
+
+        # (c) Existing feature config trying to grow back up to base_target is refused untouched.
+        with tempfile.TemporaryDirectory() as temporary:
+            baseline = Path(temporary) / 'baseline.json'
+            baseline.write_text(json.dumps(initial), encoding='utf-8')
+            before = baseline.read_bytes()
+            measured_cycles = {'sample': base_groups, 'sample[feature:existing]': base_groups}
+            measured_edges = {'sample': base_edges, 'sample[feature:existing]': base_edges}
+            with patch.object(module_cycles, 'BASELINE', baseline), \
+                    patch.object(module_cycles.sys, 'argv', ['module_cycles.py', 'record']), \
+                    patch.object(module_cycles, 'tool', return_value='cargo-modules'), \
+                    patch.object(module_cycles, 'measure',
+                                 return_value=(measured_cycles, measured_edges, initial['configs'])):
+                self.assertNotEqual(module_cycles.main(), 0)
+            self.assertEqual(baseline.read_bytes(), before)
+
 
 if __name__ == '__main__':
     unittest.main()

@@ -24,7 +24,28 @@ BASELINE = Path(__file__).with_name('module-cycles.json')
 VERSION = 'cargo-modules 0.27.0'
 NODE = re.compile(r'^\s*"([^"]+)" \[label="([^|"]*)\|')
 USES = re.compile(r'^\s*"([^"]+)" -> "([^"]+)" \[label="uses"')
+FEATURE_CONFIG_SUFFIX = re.compile(r'^(?P<base>.+)\[(?:all-features|feature:[^\[\]\s]+)\]$')
 MODULE_KINDS = {'crate', 'mod'}
+
+
+def baseline_key_for(target, base_configs):
+    """Return the baseline lookup key for `target` against `base_configs`.
+
+    - Existing configs in `base_configs` always compare strictly against
+      themselves (never falling back to a parent target).
+    - Newly added feature-variant configs (`<base>[all-features]` or
+      `<base>[feature:<name>]`) whose `<base>` target already exists in
+      `base_configs` inherit `<base>`'s baseline so adding a Cargo feature
+      passes iff it introduces zero new cycles or cyclic edges beyond `<base>`.
+    - Brand-new targets not in `base_configs` compare strictly against empty.
+    """
+    if base_configs is not None and target not in base_configs:
+        match = FEATURE_CONFIG_SUFFIX.match(target)
+        if match is not None:
+            base_target = match.group('base')
+            if base_target in base_configs:
+                return base_target
+    return target
 
 
 def tool():
@@ -212,18 +233,19 @@ def main():
     current_cycles, current_edges, checked_configs = measure(tool(), baseline)
     recorded_cycles = baseline.get('cycles', {})
     recorded_edges = baseline.get('edges', {})
+    recorded_configs = baseline.get('configs')
+    recorded_config_set = set(recorded_configs) if isinstance(recorded_configs, list) else None
     all_targets = sorted(set(current_cycles) | set(recorded_cycles) | set(current_edges) | set(recorded_edges))
     problems = [
         problem for name in all_targets
         for problem in differences(
             name,
             current_cycles.get(name, []),
-            recorded_cycles.get(name, []),
+            recorded_cycles.get(baseline_key_for(name, recorded_config_set), []),
             current_edges.get(name, []),
-            recorded_edges.get(name, []),
+            recorded_edges.get(baseline_key_for(name, recorded_config_set), []),
         )
     ]
-    recorded_configs = baseline.get('configs')
     if recorded_configs is not None and sorted(recorded_configs) != checked_configs:
         problems.append('module-cycles.json: checked config set drifted; run module_cycles.py record')
     growth = [problem for problem in problems if 'new or larger' in problem or 'new cyclic edge' in problem]
