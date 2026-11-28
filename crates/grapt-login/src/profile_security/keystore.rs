@@ -11,7 +11,7 @@
 //! only leads to a new key; nothing sealed earlier depends on the pointer.
 use super::entropy;
 use super::envelope::{ID_BYTES, KEY_BYTES};
-use std::fs::{self, OpenOptions};
+use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 use zeroize::Zeroizing;
@@ -39,14 +39,14 @@ pub(super) fn by_id(id: &[u8; ID_BYTES]) -> io::Result<Option<Key>> {
 /// The key that seals next on this machine, made now if there is none.
 pub(super) fn current() -> io::Result<Key> {
     let directory = directory()?;
-    // The directory is this user's alone, and never a link, before anything
-    // in it is trusted or written.
-    fs::create_dir_all(&directory)?;
-    super::protect_directory(&directory)?;
+    // The directory is this user's alone, and neither it nor the app's
+    // directory above it is a link, before anything in it is trusted or
+    // written.
+    prepare(&directory)?;
     if let Some(key) = pointed(&directory)? {
         return Ok(key);
     }
-    let lock = open_lock(&directory)?;
+    let lock = super::open_private_lock(&directory.join(LOCK)).map_err(io::Error::from)?;
     lock.lock()?;
     let key = match pointed(&directory) {
         Ok(Some(key)) => Ok(key),
@@ -73,21 +73,42 @@ fn pointed(directory: &Path) -> io::Result<Option<Key>> {
     }
 }
 
-/// The lock file, refused when it is a link or not the file that was opened.
-fn open_lock(directory: &Path) -> io::Result<fs::File> {
-    let path = directory.join(LOCK);
-    if fs::symlink_metadata(&path).is_ok_and(|metadata| !metadata.is_file()) {
-        return Err(io::Error::other(
-            "the credential key lock is not a regular file; it was left in place",
+/// Make the key directory and its app-owned parent, refusing either when it
+/// is a link or junction, and make the key directory private. The parent is
+/// checked again afterwards, so a parent swapped for a link meanwhile refuses.
+fn prepare(directory: &Path) -> io::Result<()> {
+    let parent = directory
+        .parent()
+        .ok_or_else(|| io::Error::other("the credential key directory has no parent"))?;
+    create_real_directory(parent)?;
+    create_real_directory(directory)?;
+    super::protect_directory(directory)?;
+    real_directory(parent)
+}
+
+fn create_real_directory(path: &Path) -> io::Result<()> {
+    match fs::create_dir(path) {
+        Ok(()) => {}
+        Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {}
+        Err(error) => return Err(error),
+    }
+    real_directory(path)
+}
+
+/// A directory itself, never a link, junction or other reparse point.
+fn real_directory(path: &Path) -> io::Result<()> {
+    let metadata = fs::symlink_metadata(path)?;
+    let reparse = {
+        use std::os::windows::fs::MetadataExt;
+        metadata.file_attributes() & 0x400 != 0
+    };
+    if !metadata.is_dir() || metadata.file_type().is_symlink() || reparse {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "a credential key directory is a link or not a directory; it was left in place",
         ));
     }
-    let lock = OpenOptions::new()
-        .create(true)
-        .truncate(false)
-        .write(true)
-        .open(&path)?;
-    super::verify_private_file(&path, &lock)?;
-    Ok(lock)
+    Ok(())
 }
 
 /// Holding the lock: write a key under a new name, read it back, then point
@@ -165,7 +186,9 @@ fn directory() -> io::Result<PathBuf> {
 /// so test runs never accumulate Credential Manager entries.
 #[cfg(any(test, feature = "loopback-testkit"))]
 fn directory() -> io::Result<PathBuf> {
-    Ok(std::env::temp_dir().join("grapt-login-test-keys"))
+    Ok(std::env::temp_dir()
+        .join("grapt-login-test")
+        .join("credential-keys"))
 }
 
 fn hex(bytes: &[u8]) -> String {

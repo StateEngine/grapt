@@ -16,6 +16,8 @@ mod private_read;
 pub use private_read::{read_owner_only_file, verify_owner_only_file};
 mod batch;
 pub use batch::ProtectionBatch;
+mod private_lock;
+pub(crate) use private_lock::{open_private_lock, LockFailure};
 mod replace;
 #[cfg(any(windows, test))]
 mod request_budget;

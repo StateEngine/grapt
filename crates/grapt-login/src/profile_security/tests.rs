@@ -172,3 +172,39 @@ fn child_failures_report_only_known_non_secret_codes() {
         assert!(!error.to_string().contains("secret-sentinel"));
     }
 }
+
+#[test]
+fn a_private_lock_is_made_exclusively_and_reopened_only_empty_and_unlinked() -> io::Result<()> {
+    let root = ScratchDir::new("private-lock")?;
+    protect_directory(&root.0)?;
+    let path = root.0.join("fixture.lock");
+    let created = open_private_lock(&path).map_err(io::Error::from)?;
+    created
+        .try_lock()
+        .map_err(|_| io::Error::other("fresh lock was not lockable"))?;
+    drop(created);
+    let reopened = open_private_lock(&path).map_err(io::Error::from)?;
+    drop(reopened);
+    std::fs::write(&path, b"not a lock")?;
+    assert!(matches!(
+        open_private_lock(&path),
+        Err(LockFailure::NotEmpty)
+    ));
+    assert_eq!(
+        std::fs::read(&path)?,
+        b"not a lock",
+        "a refused lock was changed"
+    );
+    #[cfg(unix)]
+    {
+        let target = root.0.join("elsewhere.lock");
+        std::fs::write(&target, b"")?;
+        let linked = root.0.join("linked.lock");
+        std::os::unix::fs::symlink(&target, &linked)?;
+        assert!(matches!(
+            open_private_lock(&linked),
+            Err(LockFailure::Open(_))
+        ));
+    }
+    Ok(())
+}
