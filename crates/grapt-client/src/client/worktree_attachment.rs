@@ -9,7 +9,6 @@ enum Phase {
     Agents,
     Models,
     Default,
-    Permissions,
     History,
     Subagents,
     Forms,
@@ -23,8 +22,9 @@ impl Phase {
             Self::Agents => Operation::AgentList,
             Self::Models => Operation::ModelList,
             Self::Default => Operation::ModelDefault,
-            Self::Permissions => Operation::PermissionRequestList,
-            Self::History => Operation::MessageList,
+            // The session's coherent snapshot, which also proves the service
+            // serves snapshots before the session goes live.
+            Self::History => Operation::SessionSnapshot,
             Self::Subagents => Operation::SessionSubagentModelGet,
             Self::Forms => Operation::SessionFormList,
             Self::Preset => Operation::SessionPresetGet,
@@ -36,8 +36,7 @@ impl Phase {
             Self::Project => Self::Agents,
             Self::Agents => Self::Models,
             Self::Models => Self::Default,
-            Self::Default => Self::Permissions,
-            Self::Permissions => Self::History,
+            Self::Default => Self::History,
             Self::History => Self::Subagents,
             Self::Subagents => Self::Forms,
             Self::Forms => Self::Preset,
@@ -57,8 +56,6 @@ pub(super) struct Attachment {
     agents: Vec<crate::wire::AgentRow>,
     models: Vec<ModelRow>,
     default: Option<ModelRow>,
-    permissions: Vec<u8>,
-    permission_revision: Option<u64>,
     history: Vec<u8>,
     subagents: Option<ModelRow>,
     forms: Vec<crate::wire::FormRow>,
@@ -85,8 +82,6 @@ impl Attachment {
             agents: Vec::new(),
             models: Vec::new(),
             default: None,
-            permissions: Vec::new(),
-            permission_revision: None,
             history: Vec::new(),
             subagents: None,
             forms: Vec::new(),
@@ -95,15 +90,8 @@ impl Attachment {
         })
     }
 
-    fn request(&self, windowed: bool) -> Result<WireRequest, ClientError> {
+    fn request(&self) -> Result<WireRequest, ClientError> {
         let operation = self.phase.operation();
-        if matches!(self.phase, Phase::History) {
-            return Ok(if windowed {
-                paged_history::window_request(&self.saved.id, None, true)?
-            } else {
-                WireRequest::new(operation, Some(&self.saved.id), None)?.with_query("order", "desc")
-            });
-        }
         let mut request = WireRequest::new(operation, Some(&self.saved.id), None)?;
         let directory = match self.phase {
             Phase::Project | Phase::LocationForms => Some(&self.directory),
@@ -171,13 +159,9 @@ impl Attachment {
                 self.check_catalog_location(dto.location().get())?;
                 self.default = crate::wire::decode_model_default(&bytes)?;
             }
-            Phase::Permissions => {
-                crate::wire::decode_permissions(&bytes)?;
-                self.permissions = bytes;
-            }
             Phase::History => {
-                let page = crate::wire::decode_messages(&bytes)?;
-                history::tail_window(&self.saved.id, &page, bounds)?;
+                let snapshot = super::snapshot::decode(&bytes)?;
+                history::tail_window(&self.saved.id, &snapshot.page, bounds)?;
                 self.history = bytes;
             }
             // Subagent/preset DTOs have no session identity member; requests are
@@ -266,23 +250,21 @@ impl<C: Connection> Client<C> {
             .take()
             .ok_or(ClientError::NoSelection)?;
         let operation = attachment.phase.operation();
-        if matches!(attachment.phase, Phase::Permissions) && !attachment.waiting {
-            attachment.permission_revision = Some(self.permission_revision);
-        }
         let response = if attachment.waiting {
-            self.connection.poll_operator()?
+            self.poll_operator()?
         } else {
             // Host-started I/O never coexists with a pending resume.
             self.abandon_resume();
-            self.connection
-                .begin_operator(&attachment.request(self.history_window.is_some())?)?
+            self.begin_operator(&attachment.request()?)?
         };
         let Some(response) = response else {
             attachment.waiting = true;
             self.worktree.attachment = Some(attachment);
             return Ok(None);
         };
-        let bytes = self.accept_response(operation, response)?;
+        // A missing snapshot route refuses the service here as on any read.
+        let accepted = self.accept_response(operation, response);
+        let bytes = accepted.map_err(|error| self.latch_too_old(error))?;
         if attachment.accept(bytes, self.bounds)? {
             match self.install_worktree_attachment(attachment) {
                 Ok(lines) => Ok(Some(lines)),
@@ -306,15 +288,9 @@ impl<C: Connection> Client<C> {
     ) -> Result<Vec<String>, ClientError> {
         let id = attachment.saved.id.clone();
         let location = attachment.location();
-        let page = crate::wire::decode_messages(&attachment.history)?;
         let preset = attachment.preset.take().ok_or(ClientError::InvalidInput(
             "Attachment preset was not acquired.",
         ))?;
-        // Global asks remain interactive while later attachment reads wait.
-        // A newer accepted refresh wins over this earlier staged snapshot.
-        if attachment.permission_revision == Some(self.permission_revision) {
-            self.accept_permissions(attachment.permissions)?;
-        }
         self.prepare_session_selection(&id)?;
         self.begin_tail();
         self.install_attachment_catalog(attachment.agents, attachment.models, attachment.default);
@@ -342,6 +318,17 @@ impl<C: Connection> Client<C> {
                 .cloned()
         });
         self.subagent_model = Some(attachment.subagents);
+        // Installed at the snapshot's committed position, never at zero. Its
+        // forms are older than the form list read after it, which installs
+        // next. Its asks are older than the list read once it is installed.
+        self.install_snapshot_sections(
+            &id,
+            &attachment.history,
+            super::snapshot::Sections {
+                permissions: false,
+                forms: false,
+            },
+        )?;
         self.forms = attachment
             .forms
             .into_iter()
@@ -362,8 +349,9 @@ impl<C: Connection> Client<C> {
         if self.preset.launch.is_none() {
             self.preset.job = None;
         }
-        self.quiescence_gen = self.quiescence_gen.saturating_add(1);
-        self.adopt_tail(&id, &page, attachment.history.len())?;
+        // Every open ask, the new Session's included, comes from one list the
+        // host reads after the install, fenced like any periodic read.
+        self.permissions_stale = true;
         self.request_queued_inputs(&id);
         self.draft_creation = creation::Draft::Inactive;
         self.sessions.retain(|row| row.id != id);

@@ -1,4 +1,4 @@
-//! Only the stream's first frame selects snapshot recovery; refusal keeps that mode.
+//! Only a positioned connect proves a stream; an incomplete snapshot is retried.
 use grapt_client::{
     double::ContractDouble,
     wire::{SessionWireId, Spelled},
@@ -15,8 +15,7 @@ struct Peer {
     frames: VecDeque<FramePoll>,
     snapshot: WireResponse,
     snapshots: usize,
-    legacy_reads: usize,
-    downgrades: usize,
+    page_reads: usize,
 }
 impl Transport for Peer {
     fn call(&mut self, request: &WireRequest) -> Result<WireResponse, TransportError> {
@@ -25,7 +24,7 @@ impl Transport for Peer {
             return Ok(self.snapshot.clone());
         }
         if request.operation() == Operation::MessageList {
-            self.legacy_reads += 1;
+            self.page_reads += 1;
         }
         self.inner.call(request)
     }
@@ -37,9 +36,6 @@ impl Connection for Peer {
     fn resubscribe(&mut self) {}
     fn subscribed(&self) -> bool {
         true
-    }
-    fn refuse_positions(&mut self) {
-        self.downgrades += 1;
     }
 }
 fn client(first: &'static str) -> TestResult<(Client<Peer>, SessionWireId)> {
@@ -67,8 +63,7 @@ fn client(first: &'static str) -> TestResult<(Client<Peer>, SessionWireId)> {
                 }))?,
             },
             snapshots: 0,
-            legacy_reads: 0,
-            downgrades: 0,
+            page_reads: 0,
         },
         Bounds::PRODUCTION,
     );
@@ -89,15 +84,14 @@ fn client(first: &'static str) -> TestResult<(Client<Peer>, SessionWireId)> {
 }
 
 #[test]
-fn snapshot_503_retries_in_positions_without_reading_legacy_history() -> TestResult {
+fn snapshot_503_retries_without_reading_a_message_page() -> TestResult {
     let (mut client, session) = client("server.connected")?;
     client.select(&session)?;
     for tick in 1..=5 {
         client.pump_at(Duration::from_secs(tick))?;
     }
     assert!(client.peer_mut().snapshots >= 2, "no bounded retry");
-    assert_eq!(client.peer_mut().legacy_reads, 0);
-    assert_eq!(client.peer_mut().downgrades, 0);
+    assert_eq!(client.peer_mut().page_reads, 0);
     let before = client.peer_mut().snapshots;
     client.peer_mut().snapshot.status = 200;
     for tick in 6..=15 {
@@ -108,16 +102,23 @@ fn snapshot_503_retries_in_positions_without_reading_legacy_history() -> TestRes
         client.view().is_some(),
         "a recovered snapshot never installed"
     );
-    assert_eq!(client.peer_mut().legacy_reads, 0);
-    assert_eq!(client.peer_mut().downgrades, 0);
+    assert_eq!(client.peer_mut().page_reads, 0);
     Ok(())
 }
 
 #[test]
-fn later_connected_frame_cannot_turn_a_legacy_first_frame_into_positions() -> TestResult {
+fn a_first_frame_that_is_not_the_connect_proves_nothing() -> TestResult {
     let (mut client, session) = client("server.heartbeat")?;
     client.select(&session)?;
-    assert_eq!(client.peer_mut().snapshots, 0);
-    assert!(client.peer_mut().legacy_reads > 0);
+    assert_eq!(
+        client.peer_mut().snapshots,
+        0,
+        "no read on an unproven stream"
+    );
+    assert_eq!(
+        client.peer_mut().page_reads,
+        0,
+        "and no message page instead"
+    );
     Ok(())
 }

@@ -9,7 +9,6 @@ use super::*;
 pub(super) struct PermissionCandidate {
     asks: Vec<PermissionAsk>,
     dropped: usize,
-    revision: u64,
 }
 
 impl<C: Connection> Client<C> {
@@ -24,6 +23,13 @@ impl<C: Connection> Client<C> {
             self.session_forms_dirty = true;
             self.session_form_hints = self.session_form_hints.wrapping_add(1);
         }
+    }
+
+    /// Consume the hint to re-read the open asks, raised when a session was
+    /// installed without a list of its own. The host reads them on its
+    /// periodic lane, whose answer an acknowledged reply fences out.
+    pub fn take_permission_refresh(&mut self) -> bool {
+        std::mem::take(&mut self.permissions_stale)
     }
 
     /// Consume a coalesced hint to re-read the selected Session forms.
@@ -93,56 +99,34 @@ impl<C: Connection> Client<C> {
         &mut self,
         rows: Vec<crate::wire::PermissionRow>,
     ) -> Result<(), ClientError> {
-        let candidate = self.permission_candidate(rows, Vec::new())?;
+        let candidate = self.permission_candidate(rows, Vec::new());
         self.commit_permissions(candidate);
         Ok(())
     }
 
     /// The open asks `rows` would publish, then `kept` (asks retained from
-    /// other sessions), within the bound and with the next revision, built
-    /// without touching the client.
+    /// other sessions), within the bound, built without touching the client.
     pub(super) fn permission_candidate(
         &self,
         rows: Vec<crate::wire::PermissionRow>,
         kept: Vec<PermissionAsk>,
-    ) -> Result<PermissionCandidate, ClientError> {
-        let revision = self
-            .permission_revision
-            .checked_add(1)
-            .ok_or(ClientError::InvalidInput(
-                "Permission refresh count exhausted.",
-            ))?;
+    ) -> PermissionCandidate {
         let mut dropped = self.diagnostics.permissions_dropped;
         let mut asks = Vec::new();
-        let offered = rows.into_iter().map(|row| PermissionAsk {
-            session_id: row.session_id,
-            request_id: row.id,
-            title: row.title,
-            subtitle: row.subtitle,
-            live: row.live,
-            allow_always: row.allow_always,
-            call: row.call,
-            preview: row.preview,
-        });
-        for ask in offered.chain(kept) {
+        for ask in rows.into_iter().map(ask).chain(kept) {
             if asks.len() >= self.bounds.max_retained_permissions {
                 dropped = dropped.saturating_add(1);
                 continue;
             }
             asks.push(ask);
         }
-        Ok(PermissionCandidate {
-            asks,
-            dropped,
-            revision,
-        })
+        PermissionCandidate { asks, dropped }
     }
 
     /// Publish a permission candidate; nothing here can fail.
     pub(super) fn commit_permissions(&mut self, candidate: PermissionCandidate) {
         self.permissions = candidate.asks;
         self.diagnostics.permissions_dropped = candidate.dropped;
-        self.permission_revision = candidate.revision;
     }
 
     /// Answer one permission ask through the complete typed reply vocabulary,
@@ -165,12 +149,6 @@ impl<C: Connection> Client<C> {
         request_id: &PermissionWireId,
         choice: crate::wire::PermissionReplyChoice,
     ) -> Result<(), ClientError> {
-        let revision = self
-            .permission_revision
-            .checked_add(1)
-            .ok_or(ClientError::InvalidInput(
-                "Permission refresh count exhausted.",
-            ))?;
         let body = crate::wire::encode_permission_reply(request_id, choice)?;
         self.ingest(
             Operation::SessionPermissionReply,
@@ -181,8 +159,9 @@ impl<C: Connection> Client<C> {
             None,
         )?;
         // The send-only API does not re-list, but its acknowledged settlement
-        // must invalidate earlier staged global snapshots too.
-        self.permission_revision = revision;
+        // answers this ask.
+        self.permissions
+            .retain(|ask| !(&ask.session_id == session && &ask.request_id == request_id));
         Ok(())
     }
 
@@ -257,5 +236,19 @@ impl<C: Connection> Client<C> {
             None,
         )?;
         self.refresh_forms()
+    }
+}
+
+/// One listed permission row as an open ask.
+fn ask(row: crate::wire::PermissionRow) -> PermissionAsk {
+    PermissionAsk {
+        session_id: row.session_id,
+        request_id: row.id,
+        title: row.title,
+        subtitle: row.subtitle,
+        live: row.live,
+        allow_always: row.allow_always,
+        call: row.call,
+        preview: row.preview,
     }
 }

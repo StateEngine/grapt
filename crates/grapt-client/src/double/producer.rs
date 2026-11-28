@@ -369,23 +369,10 @@ impl ContractDouble {
         }
         let data = serde_json::json!({"sessionID": spelled, "executionID": execution});
         self.append(session, EventMember::ExecutionSucceeded, data);
-        // A positioned double reports the settled state with its revision on
-        // the status frame; a legacy one keeps the bare idle status.
-        // The quiescence edge the engine reports at settle, in the order the
-        // engine emits it: the status frame first, then the retained
-        // vocabulary frame. AFTER the terminal on purpose — a pump that
-        // applies a terminal pauses later live frames until durable hydration,
-        // so a quiescence edge before the terminal would reach the view in the
-        // same pump and the terminal-hydration witnesses would see quiescence
-        // they are written to prove is absent.
-        if self.positions_enabled() {
-            self.observe_state(session, "completed", Some(execution));
-        } else {
-            self.live(
-                EventMember::SessionStatus,
-                serde_json::json!({"sessionID": spelled, "status": {"type": "idle"}}),
-            );
-        }
+        // The settled state with its revision, on the status frame the engine
+        // reports at settle, then the retained vocabulary frame: after the
+        // terminal, in the order the engine emits them.
+        self.observe_state(session, "completed", Some(execution));
         self.live(
             EventMember::SessionIdle,
             serde_json::json!({"sessionID": spelled}),

@@ -46,10 +46,7 @@ impl<C: Connection> Client<C> {
         let wire = WireRequest::new(Operation::SideQuestion, Some(&session), None)?
             .with_body(crate::wire::encode_side_question(prompt)?);
         self.side_session = Some(session);
-        let result = self
-            .connection
-            .begin_operator(&wire)
-            .map_err(ClientError::from);
+        let result = self.begin_operator(&wire);
         self.side_result(result)
     }
 
@@ -57,7 +54,7 @@ impl<C: Connection> Client<C> {
         if !self.side_question_pending() {
             return Ok(None);
         }
-        let result = self.connection.poll_operator().map_err(ClientError::from);
+        let result = self.poll_operator();
         self.side_result(result)
     }
 

@@ -8,6 +8,10 @@ impl<C: Connection> Client<C> {
         directory: &str,
         pending: bool,
     ) -> Result<bool, ClientError> {
+        if let Err(refusal) = self.refused() {
+            self.cancel_directory_offer();
+            return Err(refusal);
+        }
         let operation = Operation::ProjectCurrent;
         let response = if pending {
             self.connection.poll_read()

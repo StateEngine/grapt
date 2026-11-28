@@ -25,6 +25,7 @@ fn a_page_that_offers_a_cursor_is_followed_rather_than_read_as_a_prefix() {
     let Ok(()) = client.submit_prompt("hello") else {
         panic!("prompt")
     };
+    prove(&mut client);
     let Ok(()) = client.reconcile(&id) else {
         panic!("reconcile")
     };
@@ -57,6 +58,7 @@ fn the_transcript_is_read_in_reading_order_not_in_wire_order() {
     let Ok(()) = client.submit_prompt("hello") else {
         panic!("prompt")
     };
+    prove(&mut client);
     let Ok(()) = client.reconcile(&id) else {
         panic!("reconcile")
     };

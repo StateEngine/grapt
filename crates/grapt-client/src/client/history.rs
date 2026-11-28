@@ -239,30 +239,6 @@ impl<C: Connection> Client<C> {
         }
     }
 
-    /// Install a decoded newest page as the tail, and go live on it.
-    ///
-    /// Both reads use this: opening a session, and the re-read after a
-    /// terminal or a reconnect. The tail never waits on older history. When
-    /// the view being replaced holds scrollback strictly older than the new
-    /// tail, that scrollback stays on screen, and the walk toward older
-    /// history replaces it in one step when it stops.
-    pub(super) fn adopt_tail(
-        &mut self,
-        session: &SessionWireId,
-        page: &crate::wire::MessagePage,
-        bytes: usize,
-    ) -> Result<(), ClientError> {
-        let prepared = self.prepare_tail(session, page, bytes)?;
-        self.commit_tail(
-            session,
-            page,
-            bytes,
-            prepared,
-            history_install::Carry::Legacy,
-        );
-        Ok(())
-    }
-
     /// Everything a tail install can fail on, built without touching the
     /// client: the finished view, its paging step and the staged older view.
     pub(super) fn prepare_tail(
@@ -305,21 +281,13 @@ impl<C: Connection> Client<C> {
         page: &crate::wire::MessagePage,
         bytes: usize,
         prepared: PreparedTail,
-        carry: history_install::Carry,
     ) {
         let PreparedTail { view, step, staged } = prepared;
         let older = match &step {
             Step::Done(older) => older.clone(),
             Step::More(_) => OlderHistory::Loading,
         };
-        self.commit_history(
-            session,
-            view,
-            tail_terminal(page),
-            older,
-            page.unsupported,
-            carry,
-        );
+        self.commit_history(session, view, tail_terminal(page), older, page.unsupported);
         if self.selected.as_ref() == Some(session) {
             for (message, id) in page.messages.iter().zip(&page.ids).rev() {
                 if matches!(message, crate::wire::DurableMessage::User { .. })

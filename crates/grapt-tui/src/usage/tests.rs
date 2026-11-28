@@ -17,24 +17,33 @@ struct Peer {
     rows: Vec<grapt_api::u3a::SessionMessageInfoDto>,
     partial: bool,
 }
+impl Peer {
+    /// This peer's rows as one message page, newest first when asked.
+    fn page(&self, descending: bool) -> std::result::Result<Vec<u8>, TransportError> {
+        let mut rows = self.rows.clone();
+        if descending {
+            rows.reverse();
+        }
+        grapt_client::wire::encode_messages(rows, self.partial.then_some("older_cache_page"))
+            .map_err(|_| TransportError::NotConnected)
+    }
+}
 impl Transport for Peer {
     fn call(&mut self, request: &WireRequest) -> std::result::Result<WireResponse, TransportError> {
+        if request.operation() == Operation::SessionSnapshot {
+            let page = self.page(true)?;
+            let body = grapt_client::double::page_snapshot(request, &page, 0)
+                .map_err(|_| TransportError::NotConnected)?;
+            return Ok(WireResponse { status: 200, body });
+        }
         if request.operation() == Operation::MessageList {
-            let mut rows = self.rows.clone();
-            if request
+            let descending = request
                 .query()
                 .iter()
-                .any(|(k, v)| k == "order" && v == "desc")
-            {
-                rows.reverse();
-            }
+                .any(|(k, v)| k == "order" && v == "desc");
             return Ok(WireResponse {
                 status: 200,
-                body: grapt_client::wire::encode_messages(
-                    rows,
-                    self.partial.then_some("older_cache_page"),
-                )
-                .map_err(|_| TransportError::NotConnected)?,
+                body: self.page(descending)?,
             });
         }
         self.inner.call(request)
@@ -119,6 +128,10 @@ fn client(
         .ok_or("model")?;
     client.select_model(&model)?;
     client.create_session()?;
+    // The stream's positioned connect, then the snapshot it permits.
+    for _ in 0..2 {
+        client.pump()?;
+    }
     Ok(client)
 }
 pub(crate) fn measured() -> std::result::Result<Snapshot, Box<dyn std::error::Error>> {

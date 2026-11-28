@@ -26,17 +26,14 @@ impl<C: Connection> Client<C> {
             .with_query("location[directory]", &location.directory)
             .with_body(crate::wire::encode_claude_plugin(&request)?);
         self.claude_plugin.location = Some(location);
-        let response = self
-            .connection
-            .begin_operator(&wire)
-            .map_err(ClientError::from);
+        let response = self.begin_operator(&wire);
         self.claude_plugin_result(response)
     }
     pub fn poll_claude_plugin(&mut self) -> Result<Option<Vec<String>>, ClientError> {
         if !self.claude_plugin_pending() {
             return Ok(None);
         }
-        let response = self.connection.poll_operator().map_err(ClientError::from);
+        let response = self.poll_operator();
         self.claude_plugin_result(response)
     }
     fn claude_plugin_result(

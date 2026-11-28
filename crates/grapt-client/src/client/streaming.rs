@@ -67,10 +67,8 @@ impl<C: Connection> Client<C> {
     }
 
     pub fn pump_at(&mut self, now: std::time::Duration) -> Result<bool, ClientError> {
-        // A pump is its own epoch, shared by every frame it absorbs and by any history
-        // install it performs: an observation absorbed by THIS pump is therefore older
-        // than an install THIS pump performs, and newer than the previous one.
-        self.quiescence_gen = self.quiescence_gen.saturating_add(1);
+        // A refused service is asked nothing, so no owner below advances.
+        self.refused()?;
         let before = self.connection_status();
         // Before any frame: a certificate after the deadline is never read.
         let mut changed = self.expire_resume(now);
@@ -123,7 +121,7 @@ impl<C: Connection> Client<C> {
                     break;
                 }
                 FramePoll::Frame(payload) | FramePoll::Positioned { data: payload, .. } => {
-                    if !self.latch_mode(&payload, positioned) {
+                    if !self.latch_mode(&payload, positioned)? {
                         // A frame of the other position class: the stream broke
                         // its contract. Retire it; the reconnect subscribes afresh.
                         self.connection.retire_stream();
@@ -275,7 +273,6 @@ impl<C: Connection> Client<C> {
             for view in self.views.values_mut() {
                 view.invalidate_live_quiescence();
             }
-            self.quiescence_fact_epoch.clear();
             self.activity.clear();
             self.observations.clear();
             // A newly lost subscription needs fresh history even if
@@ -301,7 +298,7 @@ impl<C: Connection> Client<C> {
         let Ok(envelope) = EventEnvelope::decode(payload) else {
             // A positions stream's session-less resync (it carries no event
             // id): the stream is about to end and the session must be re-read.
-            if self.positions_mode() && super::snapshot::is_stream_resync(payload) {
+            if super::snapshot::is_stream_resync(payload) {
                 return Ok((self.live_data_refused(), Outcome::Refused));
             }
             // Global forms have a Form aggregate and sessionID="global", so
@@ -501,14 +498,12 @@ impl<C: Connection> Client<C> {
                 let Some(session) = envelope.session_id.clone() else {
                     return Ok((false, Outcome::Applied));
                 };
-                let mode = self.stream_mode();
                 let bounds = self.bounds;
                 let view = self
                     .views
                     .entry(session.clone())
                     .or_insert_with(|| SessionView::new(&session));
-                let pre_apply_terminal = view.terminal_created;
-                match view.apply_in(&envelope, bounds, mode) {
+                match view.apply(&envelope, bounds) {
                     Ok(_) => {
                         let mut outcome = Outcome::Applied;
                         if matches!(
@@ -521,45 +516,6 @@ impl<C: Connection> Client<C> {
                         ) {
                             *terminal_refresh = true;
                             outcome = Outcome::Reads;
-                        }
-                        // A live quiescence observation — a status edge, the frozen idle,
-                        // or the execution starting — is ordered by the epoch of this
-                        // pump against the terminals the installs carry.
-                        if matches!(
-                            envelope.member,
-                            Some(
-                                crate::contract::EventMember::SessionStatus
-                                    | crate::contract::EventMember::SessionIdle
-                                    | crate::contract::EventMember::ExecutionStarted
-                            )
-                        ) {
-                            self.quiescence_fact_epoch
-                                .insert(session.clone(), self.quiescence_gen);
-                        }
-                        // A live terminal newer than the one the view
-                        // already held is the newest terminal this client
-                        // knows, first known at THIS observation: an
-                        // observation after this epoch survives its
-                        // relists, an observation before it yields
-                        //.
-                        if matches!(
-                            envelope.member,
-                            Some(
-                                crate::contract::EventMember::ExecutionSucceeded
-                                    | crate::contract::EventMember::ExecutionFailed
-                                    | crate::contract::EventMember::ExecutionInterrupted
-                            )
-                        ) {
-                            if let Some(stamp) = envelope.created {
-                                let newer = match pre_apply_terminal {
-                                    None => true,
-                                    Some(previous) => stamp > previous,
-                                };
-                                if newer {
-                                    self.quiescence_terminal_epoch
-                                        .insert(session.clone(), self.quiescence_gen);
-                                }
-                            }
                         }
                         if envelope.kind_raw == "session.input.promoted" {
                             let input: grapt_api::u3a::InputPromotedData =
@@ -577,13 +533,12 @@ impl<C: Connection> Client<C> {
                             self.request_queued_inputs(&session);
                             outcome = Outcome::Reads;
                         }
-                        // On a positions stream what is shown comes from the
-                        // session's typed pair, never from the frame's fold; a
-                        // newer lifecycle frame replaces the pair only now that
-                        // the reducer accepted it.
+                        // What is shown comes from the session's typed pair,
+                        // never from the frame's fold; a newer lifecycle frame
+                        // replaces the pair only now that the reducer accepted it.
                         if let super::observation::Lifecycle::Newer(seq) = lifecycle {
                             self.commit_lifecycle(&envelope, seq);
-                        } else if self.positions_mode() {
+                        } else {
                             self.present(&session);
                         }
                         Ok((true, outcome))

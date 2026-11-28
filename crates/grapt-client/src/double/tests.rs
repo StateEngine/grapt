@@ -411,3 +411,57 @@ fn each_session_and_kind_places_its_own_blocks_from_zero() {
         "the witness needs the reused message id"
     );
 }
+
+#[test]
+fn a_page_is_cut_exactly_where_the_products_two_anchor_page_bytes_cut_it(
+) -> Result<(), crate::wire::WireError> {
+    // The product frames the page it measures with both cursor anchors, each
+    // the unpadded URL-safe base64 of {"id","order","direction"} on the first
+    // and last kept rows. Rows here fill the bound exactly under that framing,
+    // so one byte more must move the last row to the next page.
+    let bound = grapt_api::u3a::U3A_PRODUCTION_LIMITS.page_bytes;
+    let limits = crate::wire::limits()?;
+    let row = |index: usize, len: usize| {
+        crate::wire::assistant_message(
+            &format!("msg_{index:012x}"),
+            &[crate::wire::MessageItem::Text("x".repeat(len))],
+            Some(crate::wire::DurableFinish::Stop),
+            None,
+            None,
+        )
+    };
+    let base64 = |bytes: usize| (bytes * 4).div_ceil(3);
+    let previous = r#"{"id":"msg_000000000000","order":"desc","direction":"previous"}"#.len();
+    let next = r#"{"id":"msg_000000000000","order":"desc","direction":"next"}"#.len();
+    let framing =
+        r#"{"data":[],"cursor":{"previous":"","next":""}}"#.len() + base64(previous) + base64(next);
+    let overhead = grapt_api::u3a::encode_page(&row(0, 0)?, limits)?.len();
+    let count = 100usize;
+    // count rows and their count - 1 commas fill exactly bound - framing.
+    let rows_total = bound - framing - (count - 1);
+    let (each, extra) = (rows_total / count - overhead, rows_total % count);
+    let sized = |grow_last: usize| {
+        (0..count)
+            .map(|index| {
+                row(
+                    index,
+                    each + usize::from(index < extra)
+                        + if index == count - 1 { grow_last } else { 0 },
+                )
+            })
+            .collect::<Result<Vec<_>, _>>()
+    };
+    let rows = sized(0)?;
+    assert_eq!(
+        history_pages::rows_within_page_bytes(&rows, false)?,
+        count,
+        "every row that fits exactly stays on the page"
+    );
+    let rows = sized(1)?;
+    assert_eq!(
+        history_pages::rows_within_page_bytes(&rows, false)?,
+        count - 1,
+        "one byte over the two-anchor bound moves the last row on"
+    );
+    Ok(())
+}

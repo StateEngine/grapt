@@ -48,7 +48,6 @@ pub(super) enum Outcome {
 #[derive(Debug)]
 pub(super) struct SuspendedLive {
     views: BTreeMap<SessionWireId, crate::projection::LiveQuiescence>,
-    fact_epoch: std::collections::HashMap<SessionWireId, u64>,
     activity: BTreeMap<SessionWireId, activity::Observation>,
     observations: BTreeMap<SessionWireId, observation::Presented>,
 }
@@ -227,7 +226,6 @@ impl<C: Connection> Client<C> {
             .collect();
         self.resume.suspended = Some(SuspendedLive {
             views,
-            fact_epoch: std::mem::take(&mut self.quiescence_fact_epoch),
             activity: std::mem::take(&mut self.activity),
             observations: std::mem::take(&mut self.observations),
         });
@@ -243,7 +241,7 @@ impl<C: Connection> Client<C> {
     /// abandons; an answer that is not a `server.connected` is also a gap.
     pub(super) fn answer_resume(&mut self, id: Option<&str>, payload: &str) -> bool {
         let certificate = self.resume.frontier.as_ref().is_some_and(|frontier| {
-            self.positions_mode()
+            self.positions.proven
                 && id == Some(frontier.id.as_str())
                 && self.connection.stream_binding().as_ref() == Some(&frontier.binding)
         });
@@ -254,7 +252,6 @@ impl<C: Connection> Client<C> {
                         view.restore_live_quiescence(facts);
                     }
                 }
-                self.quiescence_fact_epoch = held.fact_epoch;
                 self.activity = held.activity;
                 self.observations = held.observations;
             }

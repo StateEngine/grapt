@@ -65,7 +65,6 @@ impl HttpConnection {
             pending_tools: None,
             pending_operator: None,
             identity_pending: false,
-            legacy: recovery::LegacyLatch::Off,
             refusal: None,
             resume: None,
             stream_binding: None,

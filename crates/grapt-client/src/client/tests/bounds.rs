@@ -146,6 +146,7 @@ fn a_row_this_client_cannot_draw_does_not_cost_it_liveness() {
         panic!("prompt")
     };
     client.peer_mut().set_fault(Fault::UnrenderableRow);
+    prove(&mut client);
     if let Err(error) = client.reconcile(&id) {
         panic!("reconcile must succeed: {error}")
     }

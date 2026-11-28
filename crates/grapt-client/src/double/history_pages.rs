@@ -60,6 +60,79 @@ fn parse(token: &str) -> Option<(bool, usize)> {
     Some((ascending, from.parse().ok()?))
 }
 
+/// How many of a page's rows, in reading order, fit the product's page byte
+/// bound, counted as the product counts them: each row's encoded bytes, a
+/// comma between rows, and the empty page framed with the cursor that page
+/// would carry, its two encoded anchors on the first and last kept rows. A
+/// first row that cannot fit alone is refused, as the product refuses it.
+pub(super) fn rows_within_page_bytes(
+    rows: &[grapt_api::u3a::SessionMessageInfoDto],
+    ascending: bool,
+) -> Result<usize, crate::wire::WireError> {
+    let bound = grapt_api::u3a::U3A_PRODUCTION_LIMITS.page_bytes;
+    let limits = crate::wire::limits()?;
+    let order = if ascending { "asc" } else { "desc" };
+    let mut row_bytes = 0usize;
+    let mut kept = 0usize;
+    let mut first = None;
+    for row in rows {
+        let Ok(raw) = grapt_api::u3a::encode_page(row, limits) else {
+            break;
+        };
+        let id = message_id(&raw)?;
+        let first = first.get_or_insert_with(|| id.clone());
+        let framing = page_framing(
+            anchor_len(first, order, "previous")?,
+            anchor_len(&id, order, "next")?,
+        );
+        let bytes = row_bytes
+            .saturating_add(raw.len())
+            .saturating_add(kept)
+            .saturating_add(framing);
+        if bytes > bound {
+            break;
+        }
+        row_bytes += raw.len();
+        kept += 1;
+    }
+    if kept == 0 && !rows.is_empty() {
+        return Err(crate::wire::WireError::Invalid {
+            what: "message page",
+            value: "a row exceeds the page byte bound".to_owned(),
+        });
+    }
+    Ok(kept)
+}
+
+/// The id of one encoded history row.
+fn message_id(raw: &[u8]) -> Result<String, crate::wire::WireError> {
+    serde_json::from_slice::<serde_json::Value>(raw)
+        .ok()
+        .and_then(|row| row["id"].as_str().map(str::to_owned))
+        .ok_or_else(|| crate::wire::WireError::Invalid {
+            what: "message page",
+            value: "a row has no message identity".to_owned(),
+        })
+}
+
+/// The length of the JSON a product cursor anchor encodes: the row it
+/// anchors on, the page order and the direction it continues in.
+fn anchor_len(id: &str, order: &str, direction: &str) -> Result<usize, crate::wire::WireError> {
+    serde_json::to_vec(&serde_json::json!({"id": id, "order": order, "direction": direction}))
+        .map(|text| text.len())
+        .map_err(|error| crate::wire::WireError::Invalid {
+            what: "message page",
+            value: error.to_string(),
+        })
+}
+
+/// The empty page with both anchors, each unpadded URL-safe base64 of its
+/// JSON, as the product frames the page it measures.
+fn page_framing(previous: usize, next: usize) -> usize {
+    let base64 = |bytes: usize| (bytes * 4).div_ceil(3);
+    r#"{"data":[],"cursor":{"previous":"","next":""}}"#.len() + base64(previous) + base64(next)
+}
+
 impl ContractDouble {
     /// Message pages read so far.
     pub fn message_list_calls(&self) -> usize {
@@ -304,7 +377,7 @@ impl ContractDouble {
             None => self.sessions.get(session).map_or(0, |e| e.messages.len()),
         };
         // This page's history indices, in reading order.
-        let indices: Vec<usize> = if ascending {
+        let mut indices: Vec<usize> = if ascending {
             let start = from.unwrap_or(0);
             (start..total.min(start.saturating_add(limit))).collect()
         } else {
@@ -327,6 +400,13 @@ impl ContractDouble {
                     }
                 }
             }
+        }
+        // The product keeps rows in reading order while the page fits its
+        // byte bound, and its cursor continues after the last kept.
+        if rows.len() == indices.len() {
+            let kept = rows_within_page_bytes(&rows, ascending)?;
+            rows.truncate(kept);
+            indices.truncate(kept);
         }
         let order = if ascending { "asc" } else { "desc" };
         let continues = match (ascending, indices.last()) {

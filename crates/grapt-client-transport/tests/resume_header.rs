@@ -118,7 +118,7 @@ fn a_subscribe_under_the_tokens_binding_carries_its_id() -> TestResult {
 }
 
 #[test]
-fn another_session_or_position_class_never_carries_the_id() -> TestResult {
+fn another_session_never_carries_the_id() -> TestResult {
     let mut service = service()?;
     service.connection.watch_session(Some("ses_first".parse()?));
     service.subscribe()?;
@@ -133,22 +133,6 @@ fn another_session_or_position_class_never_carries_the_id() -> TestResult {
     let other_session = service.subscribe()?;
     assert_eq!(resume_id(&other_session), None, "another Session");
 
-    let mut legacy = self::service()?;
-    legacy.connection.watch_session(Some("ses_first".parse()?));
-    legacy.subscribe()?;
-    let token = ResumeToken {
-        id: "e1-8".into(),
-        binding: legacy.connection.stream_binding().ok_or("bound")?,
-    };
-    legacy.connection.resume_from(Some(token));
-    legacy.connection.refuse_positions();
-    let without_positions = legacy.subscribe()?;
-    assert!(!without_positions.contains("positions=1"));
-    assert_eq!(
-        resume_id(&without_positions),
-        None,
-        "another position class"
-    );
     Ok(())
 }
 

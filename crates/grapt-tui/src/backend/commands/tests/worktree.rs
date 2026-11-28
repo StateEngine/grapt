@@ -11,7 +11,16 @@ struct WorktreePeer {
     commit_before_reply: bool,
     lost: bool,
     release_create: bool,
-    fail_history: bool,
+    /// The status and body the attachment's snapshot read is refused with.
+    history_refusal: Option<(u16, &'static [u8])>,
+    /// Raise a form and an ask on the target Session right after its snapshot
+    /// is served, so both are newer than the snapshot.
+    raise_after_snapshot: bool,
+    /// The target Session, once its snapshot was served.
+    snapshot_served: Option<grapt_client::wire::SessionWireId>,
+    /// An ask raised on the target Session as it is created, so the staged
+    /// list and snapshot both carry it.
+    ask_on_create: Option<&'static str>,
     held: Option<WireRequest>,
     release_reads: bool,
     nonblocking_only: bool,
@@ -89,6 +98,9 @@ impl Connection for WorktreePeer {
             let id = grapt_client::wire::decode_session(&response.body)
                 .map_err(|_| TransportError::NotConnected)?
                 .id;
+            if let Some(title) = self.ask_on_create {
+                self.inner.ask_permission(&id, title);
+            }
             // Actual product application_port::session_create reads the committed
             // record and calls the same session_response as session_get;
             // session_info includes placement.directory and saved agent/model.
@@ -109,14 +121,31 @@ impl Connection for WorktreePeer {
             return Ok(None);
         }
         let request = self.held.take().ok_or(TransportError::NotConnected)?;
-        if self.fail_history && operation == Operation::MessageList {
+        if let Some((status, body)) = self
+            .history_refusal
+            .filter(|_| operation == Operation::SessionSnapshot)
+        {
             return Ok(Some(WireResponse {
-                status: 400,
-                body: br#"{"_tag":"InvalidRequestError","message":"History attachment failed"}"#
-                    .to_vec(),
+                status,
+                body: body.to_vec(),
             }));
         }
-        self.inner.call(&request).map(Some)
+        let response = self.inner.call(&request)?;
+        if operation == Operation::SessionSnapshot {
+            let session = request
+                .path()
+                .split('/')
+                .find(|segment| segment.starts_with("ses_"))
+                .and_then(|segment| grapt_client::wire::session_id(segment).ok())
+                .ok_or(TransportError::NotConnected)?;
+            if self.raise_after_snapshot {
+                self.inner.raise_form(&session, "raised after the snapshot");
+                self.inner
+                    .ask_permission(&session, "asked after the snapshot");
+            }
+            self.snapshot_served = Some(session);
+        }
+        Ok(Some(response))
     }
     fn cancel_operator(&mut self) {
         self.reply = None;
@@ -156,7 +185,10 @@ fn prepared() -> TestResult<Client<WorktreePeer>> {
             commit_before_reply: false,
             lost: false,
             release_create: false,
-            fail_history: false,
+            history_refusal: None,
+            raise_after_snapshot: false,
+            snapshot_served: None,
+            ask_on_create: None,
             held: None,
             release_reads: false,
             nonblocking_only: false,
@@ -677,7 +709,7 @@ fn worktree_open_creates_a_new_session_and_keeps_its_completion() -> TestResult 
             .peer_mut()
             .held
             .as_ref()
-            .is_some_and(|request| request.operation() == Operation::MessageList)
+            .is_some_and(|request| request.operation() == Operation::SessionSnapshot)
         {
             break;
         }
@@ -688,7 +720,7 @@ fn worktree_open_creates_a_new_session_and_keeps_its_completion() -> TestResult 
         .peer_mut()
         .held
         .as_ref()
-        .is_some_and(|request| request.operation() == Operation::MessageList));
+        .is_some_and(|request| request.operation() == Operation::SessionSnapshot));
     client.peer_mut().release_reads = false;
     let ask = client
         .peer_mut()
@@ -758,7 +790,10 @@ fn worktree_open_creates_a_new_session_and_keeps_its_completion() -> TestResult 
     let mut submissions = Submissions::default();
     let text = format!("/worktree open {}", serde_json::to_string(&directory)?);
     submissions.submit(&mut client, text, false, CommandId::TEST);
-    client.peer_mut().fail_history = true;
+    client.peer_mut().history_refusal = Some((
+        400,
+        br#"{"_tag":"InvalidRequestError","message":"History attachment failed"}"#,
+    ));
     client.peer_mut().nonblocking_only = true;
     client.peer_mut().release_create = true;
     client.peer_mut().release_reads = true;
@@ -779,6 +814,37 @@ fn worktree_open_creates_a_new_session_and_keeps_its_completion() -> TestResult 
     );
     assert_eq!(client.peer_mut().inner.session_count(), 2);
     assert_eq!(client.peer_mut().mutations(), 1);
+
+    // A service too old for snapshots answers the read with a bare 404: the
+    // attachment is refused naming the upgrade, and the source stays.
+    let mut client = prepared()?;
+    let source = client.selected().cloned();
+    let mut submissions = Submissions::default();
+    let text = format!("/worktree open {}", serde_json::to_string(&directory)?);
+    submissions.submit(&mut client, text, false, CommandId::TEST);
+    client.peer_mut().history_refusal = Some((404, b""));
+    client.peer_mut().nonblocking_only = true;
+    client.peer_mut().release_create = true;
+    client.peer_mut().release_reads = true;
+    assert!(submissions.advance(&mut client).is_none());
+    finish_attachment(&mut submissions, &mut client)?;
+    let done = submissions
+        .command
+        .take()
+        .map(|(_, done)| done)
+        .ok_or("too-old attachment")?;
+    assert!(
+        done.notice.contains("Upgrade the Grapt server"),
+        "{}",
+        done.notice
+    );
+    assert_eq!(client.selected(), source.as_ref());
+    // The refusal is terminal: nothing wakes the client and the pump keeps
+    // the refusal.
+    assert_eq!(client.recovery_wait(), None, "no wakeup after the refusal");
+    assert!(client
+        .pump()
+        .is_err_and(|error| error.to_string().contains("Upgrade")));
 
     let mut client = prepared()?;
     let source = client.selected().cloned().ok_or("source")?;
@@ -804,7 +870,7 @@ fn worktree_open_creates_a_new_session_and_keeps_its_completion() -> TestResult 
             .peer_mut()
             .held
             .as_ref()
-            .is_some_and(|request| request.operation() == Operation::MessageList)
+            .is_some_and(|request| request.operation() == Operation::SessionSnapshot)
         {
             break;
         }
@@ -815,7 +881,7 @@ fn worktree_open_creates_a_new_session_and_keeps_its_completion() -> TestResult 
         .peer_mut()
         .held
         .as_ref()
-        .is_some_and(|request| request.operation() == Operation::MessageList));
+        .is_some_and(|request| request.operation() == Operation::SessionSnapshot));
     client.peer_mut().nonblocking_only = false; // Explicit send-only public API, not attachment I/O.
     client.send_permission_reply(
         &source,
@@ -875,4 +941,148 @@ fn worktree_open_creates_a_new_session_and_keeps_its_completion() -> TestResult 
     );
     assert_eq!(client.peer_mut().mutations(), 1);
     Ok(())
+}
+
+#[test]
+fn a_staged_snapshot_never_overwrites_newer_forms_or_target_asks() -> TestResult {
+    let mut client = prepared()?;
+    let source_directory = client.project().ok_or("project")?.worktree.clone();
+    client.offer_directory(&source_directory)?;
+    let directory = client
+        .projects()
+        .iter()
+        .find(|project| project.worktree != source_directory)
+        .ok_or("other offered directory")?
+        .worktree
+        .clone();
+    let mut submissions = Submissions::default();
+    let text = format!("/worktree open {}", serde_json::to_string(&directory)?);
+    submissions.submit(&mut client, text, false, CommandId::TEST);
+    client.peer_mut().raise_after_snapshot = true;
+    client.peer_mut().nonblocking_only = true;
+    client.peer_mut().release_create = true;
+    client.peer_mut().release_reads = true;
+    for _ in 0..32 {
+        if client.peer_mut().snapshot_served.is_some() {
+            break;
+        }
+        client.pump()?;
+        assert!(submissions.advance(&mut client).is_none());
+    }
+    let target = client
+        .peer_mut()
+        .snapshot_served
+        .clone()
+        .ok_or("snapshot never served")?;
+    // A refresh accepted after the snapshot's read holds the newer ask.
+    client.peer_mut().nonblocking_only = false;
+    client.refresh_permissions()?;
+    client.peer_mut().nonblocking_only = true;
+    finish_attachment(&mut submissions, &mut client)?;
+    assert_eq!(client.selected(), Some(&target));
+    assert!(
+        client
+            .forms()
+            .iter()
+            .any(|form| form.title == "raised after the snapshot"),
+        "the earlier snapshot overwrote the newer form list"
+    );
+    assert!(
+        client
+            .permissions()
+            .iter()
+            .any(|ask| ask.session_id == target),
+        "the earlier snapshot overwrote a newer permission refresh"
+    );
+    Ok(())
+}
+
+/// Open a worktree whose new Session has an ask, run `interfere` once its
+/// snapshot is staged, and check the target's ask is open after the install.
+fn staged_target_asks_survive(
+    interfere: impl FnOnce(&mut Client<WorktreePeer>, &grapt_client::wire::SessionWireId) -> TestResult,
+) -> TestResult {
+    let mut client = prepared()?;
+    let source = client.selected().cloned().ok_or("source session")?;
+    client
+        .peer_mut()
+        .inner
+        .ask_permission(&source, "source ask");
+    client.refresh_permissions()?;
+    let source_directory = client.project().ok_or("project")?.worktree.clone();
+    client.offer_directory(&source_directory)?;
+    let directory = client
+        .projects()
+        .iter()
+        .find(|project| project.worktree != source_directory)
+        .ok_or("other offered directory")?
+        .worktree
+        .clone();
+    let mut submissions = Submissions::default();
+    let text = format!("/worktree open {}", serde_json::to_string(&directory)?);
+    submissions.submit(&mut client, text, false, CommandId::TEST);
+    client.peer_mut().ask_on_create = Some("target ask");
+    client.peer_mut().nonblocking_only = true;
+    client.peer_mut().release_create = true;
+    client.peer_mut().release_reads = true;
+    for _ in 0..32 {
+        if client.peer_mut().snapshot_served.is_some() {
+            break;
+        }
+        client.pump()?;
+        assert!(submissions.advance(&mut client).is_none());
+    }
+    let target = client
+        .peer_mut()
+        .snapshot_served
+        .clone()
+        .ok_or("snapshot never served")?;
+    client.peer_mut().nonblocking_only = false;
+    interfere(&mut client, &source)?;
+    client.peer_mut().nonblocking_only = true;
+    finish_attachment(&mut submissions, &mut client)?;
+    assert_eq!(client.selected(), Some(&target));
+    // The installed session's asks come from the list the host reads after
+    // it, on the hint the install raised.
+    assert!(
+        client.take_permission_refresh(),
+        "no fresh list was asked for"
+    );
+    client.peer_mut().nonblocking_only = false;
+    client.refresh_permissions()?;
+    assert!(
+        client
+            .permissions()
+            .iter()
+            .any(|ask| ask.session_id == target && ask.title == "target ask"),
+        "an earlier refresh of another session hid the target's ask"
+    );
+    Ok(())
+}
+
+#[test]
+fn a_source_reply_during_attachment_keeps_the_targets_staged_asks() -> TestResult {
+    staged_target_asks_survive(|client, source| {
+        let ask = client
+            .permissions()
+            .iter()
+            .find(|ask| &ask.session_id == source)
+            .ok_or("source ask")?
+            .request_id
+            .clone();
+        client.send_permission_reply(
+            source,
+            &ask,
+            grapt_client::wire::PermissionReplyChoice::Once,
+        )?;
+        Ok(())
+    })
+}
+
+#[test]
+fn an_old_selection_snapshot_during_attachment_keeps_the_targets_staged_asks() -> TestResult {
+    staged_target_asks_survive(|client, source| {
+        client.reconcile(source)?;
+        Ok(())
+    })
 }

@@ -283,8 +283,6 @@ pub struct HttpConnection {
     pending_tools: Option<pending::PendingHttp>,
     pending_operator: Option<pending::PendingHttp>,
     identity_pending: bool,
-    /// Whether subscribes omit `positions`, after a snapshot 404 (B3 S2c-1b).
-    legacy: recovery::LegacyLatch,
     /// A subscribe refusal the next `poll_frame` reports, so it is never
     /// mistaken for "not subscribed".
     refusal: Option<TransportError>,
@@ -398,9 +396,6 @@ impl HttpConnection {
 
     fn closed(&mut self) -> Result<FramePoll, TransportError> {
         self.stream = None;
-        // Losing an installed legacy stream ends the latch: the next
-        // subscribe probes positions again.
-        self.legacy.stream_lost();
         self.identity_pending = self.expected_product.is_some();
         // The reconnect attempt verifies the pinned product before opening a
         // new subscription. A slow health response must not block key input.
@@ -589,7 +584,7 @@ impl HttpConnection {
         head.push_str("\r\nAccept: application/json\r\nConnection: close\r\n");
         if method == Method::Get && path == "/api/event" {
             head.push_str("X-Grapt-Approver: *\r\n");
-            if let Some(id) = self.resume_header(query) {
+            if let Some(id) = self.resume_header() {
                 head.push_str(&format!("Last-Event-ID: {id}\r\n"));
             }
         }

@@ -104,7 +104,7 @@ pub enum Operation {
     MessageList,
     /// One coherent snapshot at a committed position: rows, permissions,
     /// forms, execution and open live text. Not in the frozen record; an
-    /// older service answers 404 and the client keeps its legacy reads.
+    /// older service answers 404, which the client refuses as too old.
     SessionSnapshot,
     /// `v2.event.subscribe` — volatile SSE, no replay cursor.
     EventSubscribe,

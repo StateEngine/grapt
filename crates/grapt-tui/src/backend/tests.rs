@@ -24,7 +24,12 @@ struct Peer {
 }
 impl Transport for Peer {
     fn call(&mut self, request: &WireRequest) -> Result<WireResponse, TransportError> {
-        if self.fail_history && request.operation() == Operation::MessageList {
+        if self.fail_history
+            && matches!(
+                request.operation(),
+                Operation::MessageList | Operation::SessionSnapshot
+            )
+        {
             return Ok(WireResponse {
                 status: 503,
                 body: Vec::new(),
@@ -40,8 +45,15 @@ impl Transport for Peer {
 }
 impl Connection for Peer {
     fn poll_frame(&mut self) -> Result<FramePoll, TransportError> {
+        // The double's own stream opens with its positioned connect first.
+        if !self.inner.subscribed() {
+            return self.inner.poll_frame();
+        }
+        if let Some(connect) = self.inner.connect() {
+            return Ok(connect);
+        }
         if let Some(frame) = self.frame.take() {
-            return Ok(frame);
+            return Ok(self.inner.serve(frame));
         }
         if self.hold {
             return Ok(FramePoll::Idle);
@@ -90,14 +102,16 @@ fn selected_activity_derivation_routes_escape_without_touching_a_hidden_session_
         "selection is outside picker page"
     );
     assert_eq!(client.selected(), Some(&session));
-    assert_eq!(client.view().ok_or("view")?.idle, None);
     assert_eq!(selected_activity(&client), None, "cold idle is unreported");
     assert!(
         !selected_running(&client),
         "absent idle falls back to idle execution"
     );
-    // The stream proves its mode and the session is read before the turn.
+    // The stream proves itself and the session's snapshot is read before the
+    // turn: it reports the new session idle.
     client.pump()?;
+    assert_eq!(client.view().ok_or("view")?.idle, Some(true));
+    assert_eq!(selected_activity(&client), Some(false));
 
     client.submit_prompt("hold this execution")?;
     client.pump()?;
@@ -311,11 +325,18 @@ fn selecting_a_busy_child_keeps_its_observed_activity() -> TestResult {
     client.peer_mut().frame = Some(FramePoll::Frame(
         serde_json::json!({
             "id":"evt_busy_child", "type":"session.status", "created":1_791_695_003_000_u64,
-            "data":{"sessionID":child.spelled(), "status":{"type":"busy"}}
+            "data":{"sessionID":child.spelled(), "status":{"type":"busy"},
+                "state":{"type":"running","revision":1_000,"executionID":"exe_busy_child"}}
         })
         .to_string(),
     ));
+    // The connect, then the busy edge.
     client.pump()?;
+    client.pump()?;
+    assert_eq!(
+        client.observed_activity(&child),
+        Some(grapt_client::client::SessionActivity::Running)
+    );
     client.select(&child)?;
     assert_eq!(selected_activity(&client), Some(true));
     assert!(

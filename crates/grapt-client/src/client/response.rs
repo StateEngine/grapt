@@ -8,6 +8,15 @@ impl<C: Connection> Client<C> {
         response: WireResponse,
     ) -> Result<Vec<u8>, ClientError> {
         if !response.is_success() {
+            // A snapshot route the service never registered answers a bare
+            // 404; a session it cannot find answers a typed one, kept as is.
+            if operation == Operation::SessionSnapshot && response.status == 404 {
+                if let Some(refusal) =
+                    super::snapshot::missing(&response.body, self.bounds.max_response_bytes)
+                {
+                    return Err(refusal);
+                }
+            }
             // A 400 that speaks the frozen error shape is READ before it is
             // refused: the product's message says what the config fault is,
             // and a client that dropped it would leave the user a status
