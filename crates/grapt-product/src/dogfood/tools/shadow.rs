@@ -126,6 +126,14 @@ impl Dispatch {
         }
     }
 
+    pub(super) fn repaired(&self, repair: call_repair::Repair) {
+        self.record("input_repaired", repair.label());
+    }
+
+    pub(super) fn hinted(&self, hint: call_repair::Hint) {
+        self.record("recovery_hint", hint.label());
+    }
+
     pub(super) fn prepared(&self, target: &EffectTarget) {
         self.record("prepared", shape(target));
     }

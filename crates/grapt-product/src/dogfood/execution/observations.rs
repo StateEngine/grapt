@@ -303,32 +303,19 @@ impl LiveExecutor {
         let input = self
             .principals
             .get(session)
+            .filter(|principal| principal.execution == *execution)
             .map(|principal| principal.input);
-        let durable = {
+        let committed = {
             let mut inbox = match self.inbox.lock() {
                 Ok(held) => held,
                 Err(poisoned) => poisoned.into_inner(),
             };
             let authorities = DeterministicAuthorities::new(&*self.clock, &*self.ids);
-            match outcome {
-                None => grapt_service_state::lifecycle::begin(
-                    inbox.store_mut(),
-                    &authorities,
-                    session,
-                    execution,
-                ),
-                Some(Outcome::Failed) => grapt_service_state::lifecycle::settle_failed(
-                    inbox.store_mut(),
-                    &authorities,
-                    session,
-                    execution,
-                    failure.clone(),
-                ),
-                Some(Outcome::Interrupted) => grapt_service_state::lifecycle::settle_interrupted(
-                    inbox.store_mut(),
-                    &authorities,
-                    session,
-                    execution,
+            let change = match outcome {
+                None => grapt_session::execution::Change::Start,
+                Some(Outcome::Succeeded) => grapt_session::execution::Change::Succeeded,
+                Some(Outcome::Failed) => grapt_session::execution::Change::Failed(failure.clone()),
+                Some(Outcome::Interrupted) => grapt_session::execution::Change::Interrupted(
                     self.active
                         .shutdown_reason(session, Some(execution))
                         .map_or(
@@ -336,15 +323,40 @@ impl LiveExecutor {
                             |reason| reason.durable(),
                         ),
                 ),
-                Some(outcome) => grapt_service_state::lifecycle::settle(
-                    inbox.store_mut(),
-                    &authorities,
-                    session,
-                    execution,
-                    outcome,
-                ),
-            }
+            };
+            let now_ms = authorities.now().as_millis();
+            grapt_service_state::lifecycle::record_with(
+                inbox.store_mut(),
+                &authorities,
+                session,
+                execution,
+                change,
+                |tx, writer| {
+                    if let Some(terminal_outcome) = outcome {
+                        super::super::startup_recovery::auto_resume::settle_for_execution_within(
+                            tx,
+                            writer,
+                            session,
+                            input.as_ref(),
+                            terminal_outcome,
+                            now_ms,
+                        )
+                    } else {
+                        Ok(0)
+                    }
+                },
+            )
         };
+        let (durable, retired_resume_inputs) = match committed {
+            Ok((observation, retired)) => (Ok(observation), retired),
+            Err(error) => (Err(error), 0),
+        };
+        if retired_resume_inputs > 0 {
+            self.hub.invalidate_session_because(
+                session,
+                &format!("session {session}: retired settled automatic resume input"),
+            );
+        }
         if let (Some(input), Some(Outcome::Interrupted)) = (input, outcome) {
             self.record_interrupted_turn(session, execution, &input);
         }

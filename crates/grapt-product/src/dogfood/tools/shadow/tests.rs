@@ -156,3 +156,33 @@ fn incomplete_quotes_and_continuations_stay_opaque() {
         assert_eq!(command_shape(command), "git_status");
     }
 }
+
+#[test]
+fn repairs_and_hints_record_only_their_closed_labels() -> TestResult {
+    let (ledger, receive) = capture()?;
+    let session = "ses_shadow_fixture".parse()?;
+    let secret = "PRIVATE_SHADOW_PAYLOAD_51077";
+    let dispatch = ledger
+        .dispatch(&session, None, Origin::Direct, secret)
+        .ok_or("observation missing")?;
+    dispatch.repaired(call_repair::Repair::AliasAndCoercion);
+    dispatch.hinted(call_repair::Hint::UnknownParameter);
+    dispatch.finish(&ToolTerminalOutcome::Completed { output: None });
+    let rows = (0..4)
+        .map(|_| row(&receive))
+        .collect::<Result<Vec<_>, _>>()?;
+    let labels: Vec<_> = rows
+        .iter()
+        .map(|row| (row["phase"].as_str(), row["shape"].as_str()))
+        .collect();
+    assert_eq!(
+        labels[1],
+        (Some("input_repaired"), Some("alias_and_coercion"))
+    );
+    assert_eq!(
+        labels[2],
+        (Some("recovery_hint"), Some("unknown_parameter"))
+    );
+    assert!(rows.iter().all(|row| !row.to_string().contains(secret)));
+    Ok(())
+}

@@ -273,28 +273,38 @@ pub struct ServerHello {
     pub capabilities: Option<Vec<String>>,
 }
 
-/// One request.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+/// One request. Only clients write it, so it is not decoded.
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct IpcEnvelope {
     pub version: Version,
     pub request_id: u64,
     pub generation: u64,
     /// Always `null`: the request inherits the connection's owner authority.
     pub authority: Option<Value>,
+    /// Which project an owner request acts in; it never widens authority.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cli_selections: Option<CliSelections>,
     pub request: Request,
 }
 
-/// What a request asks for. This client sends only operations.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(
-    tag = "kind",
-    content = "input",
-    rename_all = "snake_case",
-    deny_unknown_fields
-)]
+/// The routing an owner connection adds to a project-scoped request: owner
+/// authority starts at the registry, so the host needs the project first.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CliSelections {
+    #[serde(with = "crate::ids")]
+    pub project: grapt_stateengine_api::ProjectId,
+}
+
+/// What a request asks for.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(tag = "kind", content = "input", rename_all = "snake_case")]
 pub enum Request {
     Operation(Operation),
+    /// External-seat turn state.
+    External(crate::activity::ExternalRequest),
+    /// A push event stream, on a connection of its own.
+    Subscribe(crate::events::SubscribeRequest),
 }
 
 /// One registered operation, with the idempotency key every mutation carries.

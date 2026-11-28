@@ -172,3 +172,49 @@ fn public_preview_refuses_missing_owner_evidence() -> Result {
     ));
     Ok(())
 }
+
+#[test]
+fn public_preview_accepts_process_loss_disconnection_before_successor_execution() -> Result {
+    let mut store = store()?;
+    let ids = Ids::default();
+    let session = seed(&mut store, &ids, "ses_process_loss", None, 10)?;
+    let clock = Clock(20);
+    let authorities = DeterministicAuthorities::new(&clock, &ids);
+    let exec_1 = ExecutionId::new("exe_cut_by_crash").ok_or("exec_1")?;
+    let exec_2 = ExecutionId::new("exe_successor").ok_or("exec_2")?;
+    grapt_service_state::lifecycle::begin(&mut store, &authorities, &session, &exec_1)?;
+    // Pre-existing ProcessLoss recovery records `disconnected/process-loss`
+    // without an execution terminal before a successor execution starts.
+    grapt_service_state::record(
+        &mut store,
+        &authorities,
+        &session,
+        &exec_1,
+        grapt_service_state::State::described(
+            grapt_service_state::Kind::Disconnected,
+            grapt_service_state::Reason::ProcessLoss,
+            "restarted",
+            Some(grapt_service_state::Action::FollowUp),
+        ),
+        grapt_service_state::Change::Recover,
+    )?;
+    grapt_service_state::lifecycle::begin(&mut store, &authorities, &session, &exec_2)?;
+    grapt_service_state::lifecycle::settle(
+        &mut store,
+        &authorities,
+        &session,
+        &exec_2,
+        execution::Outcome::Succeeded,
+    )?;
+    let report = command(&[])?.preview(store.connection())?;
+    let decision = report
+        .sessions
+        .iter()
+        .find(|row| row.session == session)
+        .ok_or("session missing from cleanup report")?;
+    assert!(
+        matches!(decision.disposition, CleanupDisposition::Retained(_)),
+        "expected conservative retention without overlapping-start refusal: {decision:?}"
+    );
+    Ok(())
+}

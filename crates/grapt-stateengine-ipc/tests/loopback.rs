@@ -4,8 +4,10 @@
 #![cfg(target_os = "linux")]
 use grapt_stateengine_ipc::wire::StartIdentity;
 use grapt_stateengine_ipc::{
-    connect, discover, observe_self, read_frame, write_frame, Capabilities, Connection, Endpoint,
-    HandshakeOptions, IdempotencyKey, IpcError, PeerBinding, Principal, VerifiedPeer,
+    connect, discover, observe_self, read_frame, write_frame, Activity, AgentId, AgentSelector,
+    Capabilities, CommitState, Connection, Endpoint, EventCursor, EventKind, HandshakeOptions,
+    IdempotencyKey, IpcError, PeerBinding, Principal, ProjectId, PublishTurn, SessionId,
+    StreamFrame, SubscribeRequest, TurnModel, TurnRole, VerifiedPeer,
 };
 use serde_json::{json, Value};
 use std::os::unix::fs::PermissionsExt;
@@ -480,4 +482,213 @@ async fn an_endpoint_outside_its_rules_is_refused() -> TestResult {
     std::os::unix::fs::symlink(state.join("credential"), &path)?;
     assert!(discover(state, &fixture.principal).is_err());
     Ok(())
+}
+
+const LIVE: [&str; 4] = [
+    "ipc.capabilities",
+    "events.subscribe",
+    "session.publish_turn",
+    "session.activity",
+];
+
+/// A verified, negotiated connection to a host that offers `offered`, and
+/// the host's end after its hello.
+async fn negotiated(
+    fixture: &Fixture,
+    offered: &[&str],
+) -> TestResult<(Connection<UnixStream>, UnixStream)> {
+    let (peer, mut host) = fixture.pair().await?;
+    let metadata =
+        json!({"package_version": "0.1.3", "store_id": "store_fixture", "capabilities": offered});
+    let host_side = async {
+        challenge_and_check(fixture, &mut host, &SECRET)
+            .await?
+            .ok_or("proof refused")?;
+        send(&mut host, &server_hello(fixture, metadata)).await
+    };
+    let offer = Capabilities::Offer(LIVE.iter().map(|name| (*name).to_owned()).collect());
+    let (host_result, opened) = tokio::join!(host_side, fixture.open(peer, options(offer, None)));
+    host_result?;
+    Ok((opened?, host))
+}
+
+fn output(request: &Value, schema: &str, value: Value) -> Value {
+    json!({"version": {"major": 1, "minor": 0}, "request_id": request["request_id"], "generation": 2,
+        "result": {"state": "output", "value": {"schema": schema, "value": value, "window": null}}})
+}
+
+fn turn(key: &str) -> TestResult<PublishTurn> {
+    Ok(PublishTurn {
+        idempotency_key: IdempotencyKey(key.into()),
+        target_agent_id: Some(AgentId("agent-fixture".into())),
+        session_id: Some(SessionId("ses_fixture".into())),
+        conversation_id: "conversation-fixture".into(),
+        harness: "harness-fixture".into(),
+        model: TurnModel {
+            provider: "provider-fixture".into(),
+            model: "model-fixture".into(),
+        },
+        vendor_turn_id: "turn-1".into(),
+        occurred_at_us: 1,
+        role: TurnRole::Assistant,
+        body_text: Some("done".into()),
+        body_omitted_bytes: 0,
+        content_sha256: grapt_stateengine_ipc::Sha256Hex([7; 32]),
+        usage: None,
+        diff_summary: None,
+        decision: None,
+        nesting: None,
+    })
+}
+
+#[tokio::test]
+async fn a_host_without_a_capability_never_receives_its_request() -> TestResult {
+    let fixture = Fixture::new("unoffered")?;
+    let (mut connection, mut host) = negotiated(&fixture, &["ipc.capabilities"]).await?;
+    let refused = connection.publish_turn(&project(), &turn("key-a")?).await;
+    assert!(matches!(
+        refused,
+        Err(IpcError::Unsupported("session.publish_turn"))
+    ));
+    let refused = connection
+        .report_activity(&selector(), &project(), Activity::Busy)
+        .await;
+    assert!(matches!(
+        refused,
+        Err(IpcError::Unsupported("session.activity"))
+    ));
+    // Nothing reached the host: its first request is still request 1.
+    let (asked, queried) = tokio::join!(
+        answer(&mut host, 2),
+        connection.query("project.status", json!({}))
+    );
+    queried?;
+    assert_eq!(asked?["request_id"], 1);
+    let refused = connection.subscribe(subscribed_request()).await;
+    assert!(matches!(
+        refused,
+        Err(IpcError::Unsupported("events.subscribe"))
+    ));
+    Ok(())
+}
+
+#[tokio::test]
+async fn turns_and_activity_carry_their_keys_and_typed_receipts() -> TestResult {
+    let fixture = Fixture::new("publish")?;
+    let (mut connection, mut host) = negotiated(&fixture, &LIVE).await?;
+    let host_side = async {
+        let published = receive(&mut host).await?;
+        let receipt = json!({"schema": "se.publish-turn-receipt/v1", "agent_id": "agent-fixture",
+            "session_id": "ses_fixture", "vendor_turn_id": "turn-1", "cursor": 9, "body_stored": true,
+            "content_sha256_stored": true, "content_verified": true, "maintenance_pending": false,
+            "commit": {"state": "replayed", "event_id": "ev_fixture", "recorded_at": "t",
+                "idempotency_key": "key-a", "writer": {}}});
+        send(
+            &mut host,
+            &output(&published, "se.publish-turn-receipt/v1", receipt),
+        )
+        .await?;
+        let reported = receive(&mut host).await?;
+        let state = json!({"project_id": "prj_fixture", "agent_id": "agent-fixture",
+            "session_id": "ses_fixture", "state": "idle", "turn_ended": true});
+        send(
+            &mut host,
+            &output(&reported, "se.session-activity/v1", state),
+        )
+        .await?;
+        TestResult::Ok((published, reported))
+    };
+    let client_side = async {
+        let receipt = connection.publish_turn(&project(), &turn("key-a")?).await?;
+        let activity = connection
+            .report_activity(&selector(), &project(), Activity::Idle)
+            .await?;
+        TestResult::Ok((receipt, activity))
+    };
+    let (host_result, client_result) = tokio::join!(host_side, client_side);
+    let (published, reported) = host_result?;
+    let (receipt, activity) = client_result?;
+    let input = &published["request"]["input"];
+    assert_eq!(input["name"], "session.publish_turn");
+    // Owner authority starts at the registry: the project routes the turn.
+    assert_eq!(
+        published["cli_selections"],
+        json!({"project": "prj_fixture"})
+    );
+    assert_eq!(
+        (&input["key"], &input["arguments"]["idempotency_key"]),
+        (&json!("key-a"), &json!("key-a"))
+    );
+    assert_eq!(input["arguments"]["content_sha256"], "07".repeat(32));
+    assert_eq!(
+        (receipt.cursor, receipt.commit.state),
+        (9, CommitState::Replayed)
+    );
+    assert_eq!(
+        reported["request"],
+        json!({"kind": "external", "input": {"op": "session_activity", "project": "prj_fixture",
+            "agent": "agent-fixture", "state": "idle"}})
+    );
+    assert!(activity.turn_ended && activity.state == Activity::Idle);
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_subscription_asks_for_its_filter_and_reads_the_first_frame() -> TestResult {
+    let fixture = Fixture::new("subscribe")?;
+    let (connection, mut host) = negotiated(&fixture, &LIVE).await?;
+    let after = EventCursor::parse("evcur_v1_a").ok_or("cursor")?;
+    let request = SubscribeRequest {
+        project_id: Some(project()),
+        after_cursor: Some(after.clone()),
+        filter: vec![EventKind::MailNotice, EventKind::AgentState],
+        ..subscribed_request()
+    };
+    let (subscribed, stream) = tokio::join!(receive(&mut host), connection.subscribe(request));
+    let (subscribed, mut stream) = (subscribed?, stream?);
+    let input = &subscribed["request"]["input"];
+    assert_eq!(subscribed["request"]["kind"], "subscribe");
+    assert_eq!(
+        (&input["filter"], &input["after_cursor"]),
+        (&json!(["mail.notice", "agent.state"]), &json!("evcur_v1_a"))
+    );
+    assert_eq!(stream.resume_cursor(), Some(&after));
+    let heartbeat = json!({"kind": "heartbeat", "head_cursor": "evcur_v1_b"});
+    send(
+        &mut host,
+        &output(&subscribed, "se.event-stream/v1", heartbeat),
+    )
+    .await?;
+    assert!(matches!(
+        stream.next().await?,
+        StreamFrame::Heartbeat { .. }
+    ));
+    let (connection, _host) = negotiated(&fixture, &LIVE).await?;
+    let small = SubscribeRequest {
+        max_batch_bytes: 4095,
+        ..subscribed_request()
+    };
+    assert!(matches!(
+        connection.subscribe(small).await,
+        Err(IpcError::Invalid(_))
+    ));
+    Ok(())
+}
+
+fn project() -> ProjectId {
+    ProjectId("prj_fixture".into())
+}
+
+fn selector() -> AgentSelector {
+    AgentSelector::Id(AgentId("agent-fixture".into()))
+}
+
+fn subscribed_request() -> SubscribeRequest {
+    SubscribeRequest {
+        project_id: None,
+        agent_id: None,
+        after_cursor: None,
+        filter: vec![EventKind::MailNotice],
+        max_batch_bytes: 65_536,
+    }
 }

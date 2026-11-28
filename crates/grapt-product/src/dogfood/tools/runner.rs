@@ -158,6 +158,9 @@ impl PermissionToolRunner {
                 runner
                     .shadow
                     .dispatch(&runner.session, None, shadow::Origin::PluginHost, &tool);
+            if let Some(refused) = runner.repeated_key(&tool, &input, observation.as_deref()) {
+                return finished(observation, refused.await);
+            }
             let outcome = runner
                 .run_prepared(
                     None,
@@ -173,10 +176,7 @@ impl PermissionToolRunner {
                     None,
                 )
                 .await;
-            if let Some(observation) = observation {
-                observation.finish(&outcome);
-            }
-            outcome
+            finished(observation, outcome)
         })
     }
 
@@ -201,6 +201,15 @@ impl PermissionToolRunner {
                 runner
                     .shadow
                     .dispatch(&runner.session, attempt.as_ref(), origin, &tool);
+            if let Some(refused) = runner.repeated_key(&tool, &input, observation.as_deref()) {
+                return finished(observation, refused.await);
+            }
+            // Before hooks, preparation and permissions: every later check
+            // sees the repaired call.
+            let (input, repair) = call_repair::repair(&tool, input);
+            if let (Some(repair), Some(observation)) = (repair, &observation) {
+                observation.repaired(repair);
+            }
             let outcome = runner
                 .apply_input_callbacks(
                     attempt,
@@ -216,10 +225,7 @@ impl PermissionToolRunner {
                     nested,
                 )
                 .await;
-            if let Some(observation) = observation {
-                observation.finish(&outcome);
-            }
-            outcome
+            finished(observation, outcome)
         })
     }
 
@@ -700,4 +706,69 @@ pub(super) fn refusal_detail(receipt: Option<&sandbox::Receipt>, detail: &str) -
         || detail.to_owned(),
         |receipt| native_failure::format(SHELL_TOOL, false, &receipt.error(detail), &[]),
     )
+}
+
+impl PermissionToolRunner {
+    /// Refuse a model's call that does not fit, before preparation or any
+    /// permission work, recording the hint its refusal shows.
+    pub(super) fn screened(
+        &self,
+        tool: &str,
+        input: &BoundedToolInput,
+        options: &ToolRunOptions,
+    ) -> Option<BoxFuture<'static, ToolTerminalOutcome>> {
+        if options.hook.input.is_some() {
+            return None;
+        }
+        let refusal = call_repair::screen(tool, input, || self.serves(tool))?;
+        Some(self.refuse(tool, refusal, options.observation.as_deref()))
+    }
+
+    /// Refuse a builtin call that repeats a JSON key before any plugin
+    /// callback, hook or rewrite reads it as a value and keeps one repeat.
+    pub(super) fn repeated_key(
+        &self,
+        tool: &str,
+        input: &BoundedToolInput,
+        observation: Option<&shadow::Dispatch>,
+    ) -> Option<BoxFuture<'static, ToolTerminalOutcome>> {
+        let refusal = call_repair::repeated(tool, input)?;
+        Some(self.refuse(tool, refusal, observation))
+    }
+
+    fn refuse(
+        &self,
+        tool: &str,
+        refusal: call_repair::Refusal,
+        observation: Option<&shadow::Dispatch>,
+    ) -> BoxFuture<'static, ToolTerminalOutcome> {
+        if let Some(observation) = observation {
+            observation.hinted(refusal.hint);
+        }
+        self.early_failure(tool, ToolFailureReason::EffectFailed, refusal.detail)
+    }
+
+    /// Whether any builtin, internal effect, published MCP route or plugin
+    /// route answers for `tool` in this execution.
+    fn serves(&self, tool: &str) -> bool {
+        catalog::BUILTIN_TOOL_NAMES.contains(&tool)
+            || tool == EXECUTE_TOOL
+            || tool == INTEGRATION_COMMAND_TOOL
+            || self.published.routes.contains_key(tool)
+            || self.plugin_generation.as_deref().is_some_and(|generation| {
+                super::super::plugins::PluginRuntime::route(generation, &self.published, tool)
+                    .is_some()
+            })
+    }
+}
+
+/// A dispatch's outcome, after its shadow observation records it.
+fn finished(
+    observation: Option<Arc<shadow::Dispatch>>,
+    outcome: ToolTerminalOutcome,
+) -> ToolTerminalOutcome {
+    if let Some(observation) = observation {
+        observation.finish(&outcome);
+    }
+    outcome
 }

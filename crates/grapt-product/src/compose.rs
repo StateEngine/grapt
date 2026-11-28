@@ -243,6 +243,18 @@ async fn run_ready_on_listener_inner(
         .as_ref()
         .map(|composition| Arc::clone(&composition.hub));
     let service = product_service(&limits, &credential, pid, &config, dogfood)?;
+    if let Some(driver) = prompt_driver.as_mut() {
+        use base64::Engine as _;
+        let encoded = base64::engine::general_purpose::STANDARD
+            .encode(format!("{}:{}", credential.username, probe_secret));
+        let presented = grapt_api::PresentedCredential::new(format!("Basic {encoded}"));
+        match service.authenticate_credential(&presented) {
+            Ok(principal) => driver.attach_auto_resume_principal(principal),
+            Err(error) => crate::server_log::warn(format_args!(
+                "startup warning reason=auto-resume-principal-refused detail={error:?}"
+            )),
+        }
+    }
     let host = PreparedApiHost::new(
         listener,
         service,
