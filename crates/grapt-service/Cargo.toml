@@ -9,6 +9,11 @@ description = "Owns service attribution and registration control, plus IA0-1R's 
 # The controller remains rooted in `grapt-types`. IA0-1R adds serde for the
 # private wire mirror and narrowly-featured tokio for one bounded TCP probe;
 # there is still no edge to `grapt-api` and no second canonical DTO owner.
+[features]
+# Tests that read the external frozen fixture corpus (`SECODE_FIXTURES`). The
+# gates enable it; without it those tests are reported as ignored.
+frozen-fixture = []
+
 [[test]]
 name = "integration"
 path = "tests/integration/main.rs"

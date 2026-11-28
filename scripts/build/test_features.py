@@ -3,13 +3,16 @@
 FEATURES = {
     "grapt-cli": ("loopback-testkit",),
     "grapt-connections": ("loopback-testkit",),
+    "grapt-instruction": ("frozen-fixture",),
     "grapt-login": ("loopback-testkit",),
     "grapt-mcp-client": ("loopback-testkit",),
     "grapt-plugin": ("loopback-testkit",),
-    "grapt-product": ("checkpoint-fixture", "handover-crash-fixture",
+    "grapt-product": ("checkpoint-fixture", "frozen-fixture", "handover-crash-fixture",
                        "loopback-provider-testkit"),
-    "grapt-provider": ("deterministic-testkit", "loopback-testkit"),
+    "grapt-provider": ("deterministic-testkit", "frozen-fixture", "loopback-testkit"),
+    "grapt-release": ("frozen-fixture",),
     "grapt-runtime": ("loopback-testkit",),
+    "grapt-service": ("frozen-fixture",),
 }
 
 

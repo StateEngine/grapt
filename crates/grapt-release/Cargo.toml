@@ -6,6 +6,11 @@ edition.workspace = true
 license.workspace = true
 description = "R6 database migration, rollback rehearsal, and unified-cutover handoff operator."
 
+[features]
+# Tests that read the external frozen fixture corpus (`SECODE_FIXTURES`). The
+# gates enable it; without it those tests are reported as ignored.
+frozen-fixture = []
+
 [[bin]]
 name = "grapt-migrate"
 path = "src/bin/grapt-migrate.rs"

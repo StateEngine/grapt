@@ -8,6 +8,9 @@ description = "Rust product composition root with authenticated health, bounded 
 
 [features]
 default = []
+# Tests that read the external frozen fixture corpus (`SECODE_FIXTURES`). The
+# gates enable it; without it those tests are reported as ignored.
+frozen-fixture = []
 handover-crash-fixture = []
 loopback-provider-testkit = ["grapt-provider/loopback-testkit", "grapt-login/loopback-testkit", "grapt-connections/loopback-testkit", "grapt-runtime/loopback-testkit"]
 checkpoint-fixture = []

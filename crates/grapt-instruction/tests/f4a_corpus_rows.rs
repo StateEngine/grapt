@@ -81,6 +81,10 @@ fn i64_at(value: &Value, key: &str) -> Result<i64, Box<dyn std::error::Error>> {
 
 // ---- fork-lineage-capped-reference -------------------------------------
 
+#[cfg_attr(
+    not(feature = "frozen-fixture"),
+    ignore = "reads the frozen fixture corpus: set SECODE_FIXTURES and enable frozen-fixture"
+)]
 #[test]
 fn the_capped_fork_row_rebuilds_its_declared_ancestry_and_exclusions() -> TestResult {
     let row = fixtures_root().join("fork-lineage-capped-reference");
@@ -189,6 +193,10 @@ fn the_capped_fork_row_rebuilds_its_declared_ancestry_and_exclusions() -> TestRe
     Ok(())
 }
 
+#[cfg_attr(
+    not(feature = "frozen-fixture"),
+    ignore = "reads the frozen fixture corpus: set SECODE_FIXTURES and enable frozen-fixture"
+)]
 #[test]
 fn the_capped_fork_row_durable_log_matches_the_declared_boundary() -> TestResult {
     let row = fixtures_root().join("fork-lineage-capped-reference");
@@ -312,6 +320,10 @@ fn parts_from(declared: &Value) -> Result<CompactionDescriptorParts, Box<dyn std
     })
 }
 
+#[cfg_attr(
+    not(feature = "frozen-fixture"),
+    ignore = "reads the frozen fixture corpus: set SECODE_FIXTURES and enable frozen-fixture"
+)]
 #[test]
 fn the_no_progress_row_reproduces_every_declared_outcome() -> TestResult {
     let row = fixtures_root().join("compaction-no-progress-typed-outcome");
@@ -388,6 +400,10 @@ fn the_no_progress_row_reproduces_every_declared_outcome() -> TestResult {
     Ok(())
 }
 
+#[cfg_attr(
+    not(feature = "frozen-fixture"),
+    ignore = "reads the frozen fixture corpus: set SECODE_FIXTURES and enable frozen-fixture"
+)]
 #[test]
 fn the_no_progress_row_commits_no_durable_fact() -> TestResult {
     let row = fixtures_root().join("compaction-no-progress-typed-outcome");

@@ -492,6 +492,10 @@ fn schema_matches(schema: &Value, value: &Value) -> bool {
         })
 }
 
+#[cfg_attr(
+    not(feature = "frozen-fixture"),
+    ignore = "reads the frozen fixture corpus: set SECODE_FIXTURES and enable frozen-fixture"
+)]
 #[test]
 fn acceptance_corpus_is_schema_valid_closed_and_executable() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
