@@ -112,6 +112,24 @@ impl Ui {
         }
     }
 
+    /// Settle the outstanding page request. A completed move places the
+    /// view; one a quit discarded leaves the scroll and its anchor as they are.
+    pub fn settle_navigation(
+        &mut self,
+        movement: Option<(grapt_client::client::HistoryMove, bool)>,
+        dropped: bool,
+    ) -> bool {
+        if let Some((movement, changed)) = movement {
+            self.navigation
+                .complete(movement, changed, &mut self.transcript);
+            return true;
+        }
+        if dropped {
+            self.navigation.failed();
+        }
+        dropped
+    }
+
     pub fn new(light: bool) -> Self {
         let mut composer = TextArea::default();
         composer.set_max_histories(128);
@@ -822,6 +840,19 @@ fn center(area: Rect, width: u16, height: u16) -> Rect {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_page_request_a_quit_discarded_leaves_the_view_where_it_was() {
+        use grapt_client::client::HistoryMove;
+        let mut ui = Ui::new(false);
+        ui.transcript.from_top = false;
+        ui.transcript.scroll = 37;
+        // Ctrl+Home asks for the beginning; a refused quit then discards it.
+        ui.navigation.jump(HistoryMove::Beginning);
+        assert!(ui.settle_navigation(None, true));
+        assert!(!ui.navigation.loading());
+        assert_eq!((ui.transcript.from_top, ui.transcript.scroll), (false, 37));
+    }
     use crate::activity::Phase;
     use grapt_client::projection::feedback::Feedback;
 

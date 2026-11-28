@@ -3,7 +3,7 @@
 //! terminal stays open.
 use super::{commands::Completion, view::Ledger, Command, CommandId, Outcome};
 use crate::bridge::Bridge;
-use grapt_client::{client::HistoryMove, wire::AgentRow, Client};
+use grapt_client::{wire::AgentRow, Client};
 
 const NOT_SENT: &str = "Closing; not sent";
 
@@ -12,13 +12,14 @@ pub(super) struct Holders<'a> {
     pub(super) ledger: &'a mut Ledger,
     /// The newest Select a view answers.
     pub(super) selection: &'a mut Option<CommandId>,
-    pub(super) navigation: &'a mut Option<(HistoryMove, bool)>,
+    /// A page request was discarded.
+    pub(super) navigation_dropped: &'a mut bool,
     pub(super) roster: &'a mut Option<Vec<AgentRow>>,
 }
 
 /// Settle every discarded command. A Select is answered as the view's
-/// selection, never replacing a newer one; a history move as not taken; an
-/// agent choice by offering the roster again.
+/// selection, never replacing a newer one; a history move as dropped, which
+/// leaves the view where it is; an agent choice by offering the roster again.
 pub(super) fn refuse(
     discarded: Vec<(CommandId, Command)>,
     client: &Client<Bridge>,
@@ -27,7 +28,7 @@ pub(super) fn refuse(
     let Holders {
         ledger,
         selection,
-        navigation,
+        navigation_dropped,
         roster,
     } = holders;
     for (id, command) in discarded {
@@ -71,8 +72,8 @@ pub(super) fn refuse(
                 *selection = (*selection).max(Some(id));
                 continue;
             }
-            Command::Browse(movement) => {
-                *navigation = Some((movement, false));
+            Command::Browse(_) => {
+                *navigation_dropped = true;
                 continue;
             }
             Command::ChooseAgent(_) => {

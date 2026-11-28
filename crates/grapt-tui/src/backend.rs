@@ -233,6 +233,7 @@ fn serve(
     let mut imports = import::Import::default();
     let mut stops = interrupt::Stops::default();
     let mut navigation = None;
+    let mut navigation_dropped = false;
     let mut models = None;
     let mut models_requested = false;
     let mut connections_refresh = false;
@@ -427,6 +428,7 @@ fn serve(
                 patches: delta.patches,
                 history_edges: client.history_edges(),
                 navigation: navigation.take(),
+                navigation_dropped: std::mem::take(&mut navigation_dropped),
                 browsing: client.browsing_history(),
                 model: client.model().cloned(),
                 models: models.take(),
@@ -470,7 +472,7 @@ fn serve(
         let holders = closing::Holders {
             ledger: &mut ledger,
             selection: &mut selection,
-            navigation: &mut navigation,
+            navigation_dropped: &mut navigation_dropped,
             roster: &mut roster,
         };
         let mut batch = lane.next(&commands, updates, (&client, holders));

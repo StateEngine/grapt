@@ -681,11 +681,7 @@ fn run(config: Config, access: &grapt_console::Access) -> Result<(), String> {
                         if !obsolete_history {
                             ui.navigation.edges = update.history_edges;
                         }
-                        if let Some((movement, changed)) = update.navigation {
-                            ui.navigation
-                                .complete(movement, changed, &mut ui.transcript);
-                            dirty = true;
-                        }
+                        dirty |= ui.settle_navigation(update.navigation, update.navigation_dropped);
                     }
                 }
                 Err(error) => {

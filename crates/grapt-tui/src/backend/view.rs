@@ -54,6 +54,8 @@ pub struct Update {
     pub patches: Vec<(usize, Slice)>,
     pub history_edges: (bool, bool),
     pub navigation: Option<(grapt_client::client::HistoryMove, bool)>,
+    /// A page request a quit discarded: it settles without moving the view.
+    pub navigation_dropped: bool,
     pub browsing: bool,
     pub model: Option<grapt_client::wire::ModelRow>,
     pub models: Option<Vec<grapt_client::wire::ModelRow>>,
