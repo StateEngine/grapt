@@ -183,6 +183,10 @@ fn copied_cli_connects_an_absent_profile_then_changes_and_removes_the_live_conne
     }
     let mut process = RestartProcess(
         grapt_service::launcher_environment::command(&product)
+            .env(
+                grapt_login::profile_security::TEST_KEYSTORE_VARIABLE,
+                grapt_login::profile_security::isolate_test_keystore()?,
+            )
             .args(["serve-terminal", "--service"])
             .arg(&profile)
             .args(["--port", "0"])

@@ -107,6 +107,10 @@ fn fresh_profile_chatgpt_oauth_cancels_without_installing_then_activates_in_plac
     reset(&root);
     let profile = root.join("profile");
     let initialized = Command::new(shipped_cli::product_binary())
+        .env(
+            grapt_login::profile_security::TEST_KEYSTORE_VARIABLE,
+            grapt_login::profile_security::isolate_test_keystore()?,
+        )
         .args(["init-profile", "--service"])
         .arg(&profile)
         .output()?;
@@ -125,6 +129,10 @@ fn fresh_profile_chatgpt_oauth_cancels_without_installing_then_activates_in_plac
         .encoded()?;
     let mut process = RestartProcess(
         grapt_service::launcher_environment::command(shipped_cli::product_binary())
+            .env(
+                grapt_login::profile_security::TEST_KEYSTORE_VARIABLE,
+                grapt_login::profile_security::isolate_test_keystore()?,
+            )
             .args([
                 "serve-terminal",
                 "--profile-approval",
