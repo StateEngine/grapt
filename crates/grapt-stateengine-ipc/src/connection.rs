@@ -220,6 +220,13 @@ impl<S: AsyncRead + AsyncWrite + Unpin> Connection<S> {
             request,
         };
         let payload = encode(&envelope)?;
+        // Refused before any byte is written, so the connection stays usable.
+        if payload.len() > MAX_FRAME_BYTES as usize {
+            return Err(IpcError::OutgoingFrame {
+                length: payload.len(),
+                limit: MAX_FRAME_BYTES,
+            });
+        }
         self.broken = true;
         write_frame(&mut self.stream, &payload, MAX_FRAME_BYTES).await?;
         Ok(request_id)

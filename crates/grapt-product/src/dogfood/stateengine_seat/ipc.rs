@@ -13,6 +13,9 @@ pub(super) struct IpcSeatHost {
     config: SeatConfig,
     #[cfg(target_os = "linux")]
     connection: Option<grapt_stateengine_ipc::Connection<tokio::net::UnixStream>>,
+    /// This process's own identity, hashed once: its image cannot change.
+    #[cfg(target_os = "linux")]
+    binding: Option<grapt_stateengine_ipc::PeerBinding>,
 }
 
 impl IpcSeatHost {
@@ -21,6 +24,8 @@ impl IpcSeatHost {
             config,
             #[cfg(target_os = "linux")]
             connection: None,
+            #[cfg(target_os = "linux")]
+            binding: None,
         }
     }
 }
@@ -45,8 +50,9 @@ const UNSUPPORTED: &str =
 mod linux {
     use super::*;
     use grapt_stateengine_ipc::{
-        connect, discover, observe_self, verify_binary, Capabilities, Connection, HandshakeOptions,
-        IdempotencyKey, PublishTurn, TurnModel, TurnRole, DEFAULT_REPLY_BYTES,
+        connect, discover, observe_self, verify_binary, Capabilities, Connection, Endpoint,
+        HandshakeOptions, IdempotencyKey, IpcError, PeerBinding, PublishTurn, TurnModel, TurnRole,
+        DEFAULT_REPLY_BYTES,
     };
     use std::time::Duration;
     use tokio::net::UnixStream;
@@ -61,13 +67,27 @@ mod linux {
     ];
 
     impl IpcSeatHost {
-        async fn open(&self) -> Result<Connection<UnixStream>, String> {
-            let binding = observe_self(MAX_IMAGE_BYTES).map_err(|error| error.to_string())?;
-            let endpoint = discover(&self.config.home, &binding.principal)
-                .map_err(|error| error.to_string())?;
+        async fn open(&mut self) -> Result<Connection<UnixStream>, String> {
+            let (home, binary) = (self.config.home.clone(), self.config.binary.clone());
+            let known = self.binding.clone();
+            // Hashing images and reading the endpoint block, so they run off
+            // this thread and the call budget can still end the attempt.
+            let (binding, endpoint) = tokio::task::spawn_blocking(
+                move || -> Result<(PeerBinding, Endpoint), IpcError> {
+                    let binding = match known {
+                        Some(binding) => binding,
+                        None => observe_self(MAX_IMAGE_BYTES)?,
+                    };
+                    let endpoint = discover(&home, &binding.principal)?;
+                    verify_binary(&binary, &endpoint.file().image_sha256, MAX_IMAGE_BYTES)?;
+                    Ok((binding, endpoint))
+                },
+            )
+            .await
+            .map_err(|_| "the StateEngine endpoint check did not finish".to_owned())?
+            .map_err(|error| error.to_string())?;
+            self.binding = Some(binding.clone());
             let pin = endpoint.file().image_sha256;
-            verify_binary(&self.config.binary, &pin, MAX_IMAGE_BYTES)
-                .map_err(|error| error.to_string())?;
             let peer = connect(&endpoint, &binding.principal, &pin, MAX_IMAGE_BYTES)
                 .await
                 .map_err(|error| error.to_string())?;
@@ -152,18 +172,32 @@ mod linux {
                 Body::Omitted(bytes) => published.body_omitted_bytes = *bytes,
             }
             // A body the host's prose bound refuses travels by size alone.
-            if let (Err(_), Some(text)) = (published.check(), published.body_text.take()) {
-                published.body_omitted_bytes = text.len() as u64;
+            if published.check().is_err() {
+                omit_body(&mut published);
             }
             let project = self.config.project.clone();
             self.with(async move |connection| {
-                connection
-                    .publish_turn(&project, &published)
-                    .await
-                    .map(drop)
-                    .map_err(|error| error.to_string())
+                let mut outcome = connection.publish_turn(&project, &published).await;
+                // So does one whose whole request would not fit in a frame.
+                if matches!(outcome, Err(IpcError::OutgoingFrame { .. }))
+                    && omit_body(&mut published)
+                {
+                    outcome = connection.publish_turn(&project, &published).await;
+                }
+                outcome.map(drop).map_err(|error| error.to_string())
             })
             .await
+        }
+    }
+
+    /// Send the body by its size alone; whether there was text to drop.
+    fn omit_body(turn: &mut PublishTurn) -> bool {
+        match turn.body_text.take() {
+            Some(text) => {
+                turn.body_omitted_bytes = text.len() as u64;
+                true
+            }
+            None => false,
         }
     }
 }

@@ -1,8 +1,7 @@
-//! The seat a user names in their own configuration. A repository document
-//! can never start one: the seat speaks with the owner's authority.
-use super::super::catalog_config::{
-    user_owned, CatalogDocument, CatalogEnvironment, CatalogSources,
-};
+//! The seat a user names in their own configuration. Only the user's own
+//! documents are read, and one that turns out to belong to a repository is
+//! refused: the seat speaks with the owner's authority.
+use crate::dogfood::catalog_config::{user_documents, user_owned, CatalogDocument};
 use grapt_config::ConfigValue;
 use grapt_stateengine_ipc::{AgentId, AgentSelector, ProjectId};
 use std::path::{Path, PathBuf};
@@ -23,13 +22,13 @@ pub(super) struct SeatConfig {
 /// The seat the service's user configuration names. Without a configured
 /// catalog home there is no user configuration, so there is no seat.
 pub(super) fn read(service_root: &Path) -> Result<Option<SeatConfig>, String> {
-    let Some(environment) = CatalogEnvironment::configured(service_root)? else {
-        return Ok(None);
-    };
-    from_documents(&CatalogSources::read(service_root, environment)?.documents)
+    match user_documents(service_root)? {
+        Some(documents) => from_documents(&documents),
+        None => Ok(None),
+    }
 }
 
-/// The last user-owned declaration wins; a repository declaration refuses.
+/// The last declaration wins; one in a repository's document refuses.
 pub(super) fn from_documents(documents: &[CatalogDocument]) -> Result<Option<SeatConfig>, String> {
     let mut selected = None;
     for document in documents {

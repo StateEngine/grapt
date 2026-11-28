@@ -242,6 +242,9 @@ async fn run_ready_on_listener_inner(
     let shutdown_hub = dogfood
         .as_ref()
         .map(|composition| Arc::clone(&composition.hub));
+    let seat = dogfood
+        .as_mut()
+        .and_then(|composition| composition.seat.take());
     let service = product_service(&limits, &credential, pid, &config, dogfood)?;
     if let Some(driver) = prompt_driver.as_mut() {
         use base64::Engine as _;
@@ -353,6 +356,10 @@ async fn run_ready_on_listener_inner(
     };
     if let Some(hub) = &shutdown_hub {
         hub.shutdown();
+    }
+    // The seat's last idle report may wait on StateEngine; not on this runtime.
+    if let Some(seat) = seat {
+        let _stopped = tokio::task::spawn_blocking(move || drop(seat)).await;
     }
     let exit = drain_host(host).await;
     crate::diagnostics::report(format!("service listener stopped outcome={exit:?}"));

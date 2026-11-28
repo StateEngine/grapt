@@ -1,7 +1,8 @@
-//! Committed hub frames as seat commands. The seat is busy while any session
+//! Committed hub frames as seat reports. The seat is busy while any session
 //! is busy, and a succeeded execution becomes one turn with the text it
-//! produced. Failed and interrupted executions publish nothing.
-use super::publisher::{Body, Command, SeatTurn};
+//! produced. Failed and interrupted executions publish nothing, and neither
+//! does one whose start this subscription did not see: its text is partial.
+use super::publisher::{Body, SeatTurn};
 use grapt_stateengine_ipc::{Activity, Sha256Hex};
 use ring::digest::{Context, SHA256};
 use serde_json::Value;
@@ -19,7 +20,16 @@ pub(super) struct Tracker {
     turns: HashMap<String, Draft>,
 }
 
+/// What the hub's committed events say the seat should report.
+#[derive(Debug, Clone, PartialEq)]
+pub(super) enum Report {
+    Activity(Activity),
+    Turn(SeatTurn),
+}
+
 struct Draft {
+    /// The execution whose committed start opened this draft.
+    execution: String,
     provider: String,
     model: String,
     text: Option<String>,
@@ -33,58 +43,54 @@ struct Draft {
 }
 
 impl Tracker {
-    pub(super) fn observe(&mut self, frame: &[u8]) -> Vec<Command> {
-        let Some(event) = event(frame) else {
-            return Vec::new();
-        };
+    pub(super) fn observe(&mut self, frame: &[u8]) -> Option<Report> {
+        let event = event(frame)?;
         let data = &event["data"];
-        let Some(session) = data["sessionID"].as_str().map(str::to_owned) else {
-            return Vec::new();
-        };
-        match event["type"].as_str() {
-            Some("session.status") => self.status(session, data["status"]["type"].as_str()),
-            Some("session.step.started") => {
-                if let Some(draft) = self.draft(&session) {
-                    draft.provider = text(&data["model"]["providerID"]);
-                    draft.model = text(&data["model"]["id"]);
+        let session = data["sessionID"].as_str()?.to_owned();
+        let execution = data["executionID"].as_str();
+        match event["type"].as_str()? {
+            "session.status" => self.status(session, data["status"]["type"].as_str()),
+            "session.execution.started" => {
+                if self.turns.len() < MAX_SESSIONS || self.turns.contains_key(&session) {
+                    let draft = Draft::new(execution?.to_owned());
+                    self.turns.insert(session, draft);
                 }
-                Vec::new()
+                None
             }
-            Some("session.text.ended") => {
-                if let Some(draft) = self.draft(&session) {
-                    draft.slice(data);
+            "session.step.started" => {
+                let draft = self.turns.get_mut(&session)?;
+                draft.provider = text(&data["model"]["providerID"]);
+                draft.model = text(&data["model"]["id"]);
+                None
+            }
+            "session.text.ended" => {
+                self.turns.get_mut(&session)?.slice(data);
+                None
+            }
+            "session.execution.succeeded" => {
+                let draft = self.turns.remove(&session)?;
+                if execution != Some(draft.execution.as_str()) {
+                    return None;
                 }
-                Vec::new()
+                draft
+                    .finish(session, committed_us(&event["created"])?)
+                    .map(Report::Turn)
             }
-            Some("session.execution.succeeded") => {
-                let vendor = data["executionID"].as_str().map(str::to_owned);
-                let committed = committed_us(&event["created"]);
-                let draft = self.turns.remove(&session);
-                match (vendor, committed, draft) {
-                    (Some(vendor), Some(committed), Some(draft)) => draft
-                        .finish(session, vendor, committed)
-                        .map(Command::Turn)
-                        .into_iter()
-                        .collect(),
-                    _ => Vec::new(),
-                }
-            }
-            Some("session.execution.failed" | "session.execution.interrupted") => {
+            "session.execution.failed" | "session.execution.interrupted" => {
                 self.turns.remove(&session);
-                Vec::new()
+                None
             }
-            _ => Vec::new(),
+            _ => None,
         }
     }
 
-    /// The idle report a busy seat owes when its event feed ends: without it
-    /// the host keeps holding the seat's mail.
-    pub(super) fn release(&mut self) -> Option<Command> {
+    /// Forget every session, saying whether any was busy.
+    pub(super) fn release(&mut self) -> bool {
         self.turns.clear();
-        (!std::mem::take(&mut self.busy).is_empty()).then_some(Command::Activity(Activity::Idle))
+        !std::mem::take(&mut self.busy).is_empty()
     }
 
-    fn status(&mut self, session: String, status: Option<&str>) -> Vec<Command> {
+    fn status(&mut self, session: String, status: Option<&str>) -> Option<Report> {
         let was_busy = !self.busy.is_empty();
         match status {
             Some("idle") => {
@@ -96,27 +102,17 @@ impl Tracker {
             _ => {}
         }
         match (was_busy, self.busy.is_empty()) {
-            (false, false) => vec![Command::Activity(Activity::Busy)],
-            (true, true) => vec![Command::Activity(Activity::Idle)],
-            _ => Vec::new(),
+            (false, false) => Some(Report::Activity(Activity::Busy)),
+            (true, true) => Some(Report::Activity(Activity::Idle)),
+            _ => None,
         }
-    }
-
-    fn draft(&mut self, session: &str) -> Option<&mut Draft> {
-        if !self.turns.contains_key(session) && self.turns.len() >= MAX_SESSIONS {
-            return None;
-        }
-        Some(
-            self.turns
-                .entry(session.to_owned())
-                .or_insert_with(Draft::new),
-        )
     }
 }
 
 impl Draft {
-    fn new() -> Self {
+    fn new(execution: String) -> Self {
         Self {
+            execution,
             provider: String::new(),
             model: String::new(),
             text: Some(String::new()),
@@ -160,12 +156,7 @@ impl Draft {
     }
 
     /// The turn, or `None` when it produced no text or its digest is unknown.
-    fn finish(
-        self,
-        conversation: String,
-        vendor_turn: String,
-        occurred_at_us: i64,
-    ) -> Option<SeatTurn> {
+    fn finish(self, conversation: String, occurred_at_us: i64) -> Option<SeatTurn> {
         if self.slices == 0 || self.unknowable {
             return None;
         }
@@ -182,7 +173,7 @@ impl Draft {
         };
         Some(SeatTurn {
             conversation,
-            vendor_turn,
+            vendor_turn: self.execution,
             occurred_at_us,
             provider: self.provider,
             model: self.model,

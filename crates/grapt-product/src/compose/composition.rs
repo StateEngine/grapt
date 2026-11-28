@@ -7,6 +7,8 @@ pub(crate) struct DogfoodComposition {
     pub(crate) installer: Option<Arc<dyn grapt_api::u3a::ClaudePluginApplicationPort>>,
     pub(crate) hub: Arc<DogfoodEventHub>,
     pub(crate) driver: Option<ServiceDriver>,
+    /// Reports to a StateEngine seat until dropped, after the hub shuts down.
+    pub(crate) seat: Option<crate::dogfood::stateengine_seat::Seat>,
 }
 
 impl DogfoodComposition {
@@ -22,6 +24,7 @@ impl DogfoodComposition {
             installer: None,
             hub,
             driver: driver.map(ServiceDriver::Ready),
+            seat: None,
         }
     }
 }
