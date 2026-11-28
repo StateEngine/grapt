@@ -43,6 +43,8 @@
 
 mod attempt_loop;
 mod nested;
+#[cfg(test)]
+pub(crate) mod reservation_probe;
 mod task_drivers;
 pub use nested::{NestedCallError, NestedTools};
 
@@ -94,6 +96,12 @@ pub type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 pub trait ProviderReader: Send + 'static {
     /// Next normalized fragment, or `None` at end of stream.
     fn next(&mut self) -> impl Future<Output = Option<AttemptFragment>> + Send;
+
+    /// Test builds only: observes this reader's full-channel reservations.
+    #[cfg(test)]
+    fn reservation_probe(&self) -> Option<reservation_probe::ReservationProbe> {
+        None
+    }
 }
 
 /// Runs one local tool call.
@@ -304,6 +312,8 @@ struct SharedDiagnostics {
     tools_peak_concurrent: AtomicUsize,
     tools_running: AtomicUsize,
     tool_permit_waits: AtomicUsize,
+    #[cfg(test)]
+    reservation_probe: std::sync::OnceLock<reservation_probe::ReservationProbe>,
 }
 
 /// Runs one physical attempt to its single terminal fact.

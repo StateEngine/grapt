@@ -633,7 +633,8 @@ async fn a_pre_output_retry_settles_both_receipts_at_the_one_step_terminal() {
     assert_eq!(harness.source.ledger().held(), 0);
 }
 
-#[tokio::test]
+// Paused time fires the interrupt only once the driver idles in its backoff.
+#[tokio::test(start_paused = true)]
 async fn an_interrupt_during_backoff_settles_the_reserved_receipt_truthfully() {
     let registry = ModelRegistry::install(catalog("u2-rt-interrupt"));
     let failing = ScriptBuilder::new().fail(

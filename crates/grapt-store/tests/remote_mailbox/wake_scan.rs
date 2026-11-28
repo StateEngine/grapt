@@ -43,10 +43,24 @@ fn a_wake_scan_never_decodes_consumed_history() -> TestResult {
         }
         settled(&mut store, "open")?;
     }
-    // A scan that decoded any consumed row would now refuse it.
+    // A scan that decoded any consumed row would now refuse it. One hostile
+    // transaction corrupts them all.
+    let mut hostile = rusqlite::Connection::open(db.path())?;
+    let corrupting = hostile.transaction()?;
     for id in &consumed {
-        mutate(&db.path(), id.as_str(), |bytes| bytes.push(0))?;
+        let mut bytes: Vec<u8> = corrupting.query_row(
+            "SELECT record_bytes FROM mailbox_message WHERE message_id=?1",
+            [id.as_str()],
+            |row| row.get(0),
+        )?;
+        bytes.push(0);
+        corrupting.execute(
+            "UPDATE mailbox_message SET record_bytes=?1 WHERE message_id=?2",
+            rusqlite::params![bytes, id.as_str()],
+        )?;
     }
+    corrupting.commit()?;
+    drop(hostile);
     let store = db.open()?;
     let scan = store.prepare_recent_remote_mail_wake(
         &session()?,
