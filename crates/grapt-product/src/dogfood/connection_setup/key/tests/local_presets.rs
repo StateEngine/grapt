@@ -11,13 +11,33 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 type TestResult = Result<(), Box<dyn std::error::Error>>;
 
-/// An Ollama-shaped loopback server: it lists two models, loads the model a
+/// What the Ollama-shaped server lists and how it answers.
+#[derive(Debug)]
+struct Server {
+    /// The `/v1/models` rows.
+    listing: Value,
+    /// Models whose completion is refused, as an embedding model's is.
+    refused: Vec<String>,
+    /// Models a completion loaded.
+    loaded: Vec<String>,
+    /// Whether `/api/ps` reports loaded models' windows.
+    windows: bool,
+}
+
+type Shared = Arc<Mutex<Server>>;
+
+/// An Ollama-shaped loopback server: it lists its models, loads the model a
 /// completion names, and reports a window only for loaded models.
-async fn ollama() -> Result<(String, Arc<Mutex<Vec<String>>>), std::io::Error> {
+async fn ollama(listing: Value) -> Result<(String, Shared), std::io::Error> {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
     let base = format!("http://{}/v1", listener.local_addr()?);
-    let loaded = Arc::new(Mutex::new(Vec::<String>::new()));
-    let state = Arc::clone(&loaded);
+    let shared = Arc::new(Mutex::new(Server {
+        listing,
+        refused: Vec::new(),
+        loaded: Vec::new(),
+        windows: true,
+    }));
+    let state = Arc::clone(&shared);
     tokio::spawn(async move {
         while let Ok((mut socket, _)) = listener.accept().await {
             let mut head = Vec::new();
@@ -41,41 +61,62 @@ async fn ollama() -> Result<(String, Arc<Mutex<Vec<String>>>), std::io::Error> {
                 return;
             }
             let path = head.split(' ').nth(1).unwrap_or_default().to_owned();
-            let reply = match path.as_str() {
-                "/v1/models" => json!({"data":[{"id":"qwen:latest"},{"id":"llama:latest"}]}),
-                "/v1/chat/completions" => {
-                    let request: Value = serde_json::from_slice(&body).unwrap_or_default();
-                    if let (Some(model), Ok(mut loaded)) = (request["model"].as_str(), state.lock())
-                    {
-                        loaded.push(model.to_owned());
-                    }
-                    json!({"choices":[{"message":{"role":"assistant","content":"Hi"},"finish_reason":"stop"}]})
+            let reply = respond(&state, &path, &body);
+            let reply = match reply {
+                Some(reply) => {
+                    let body = reply.to_string();
+                    format!(
+                        "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                        body.len()
+                    )
                 }
-                "/api/ps" => {
-                    let loaded = state
-                        .lock()
-                        .map(|loaded| loaded.clone())
-                        .unwrap_or_default();
-                    json!({"models": loaded.iter().map(|name| json!({"name":name,"context_length":65536})).collect::<Vec<_>>()})
+                None => {
+                    "HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+                        .to_owned()
                 }
-                _ => Value::Null,
-            };
-            let reply = if reply.is_null() {
-                "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
-                    .to_owned()
-            } else {
-                let body = reply.to_string();
-                format!(
-                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
-                    body.len()
-                )
             };
             if socket.write_all(reply.as_bytes()).await.is_err() {
                 return;
             }
         }
     });
-    Ok((base, loaded))
+    Ok((base, shared))
+}
+
+/// The server's answer to one request; the lock never spans an await.
+fn respond(state: &Shared, path: &str, body: &[u8]) -> Option<Value> {
+    let mut server = state.lock().ok()?;
+    match path {
+        "/v1/models" => Some(server.listing.clone()),
+        "/v1/chat/completions" => {
+            let request: Value = serde_json::from_slice(body).unwrap_or_default();
+            let model = request["model"].as_str().unwrap_or_default().to_owned();
+            if server.refused.contains(&model) {
+                return None;
+            }
+            server.loaded.push(model);
+            Some(
+                json!({"choices":[{"message":{"role":"assistant","content":"Hi"},"finish_reason":"stop"}]}),
+            )
+        }
+        "/api/ps" if server.windows => Some(json!({"models": server
+            .loaded
+            .iter()
+            .map(|name| json!({"name":name,"context_length":65536}))
+            .collect::<Vec<_>>()})),
+        _ => None,
+    }
+}
+
+fn two_models() -> Value {
+    json!({"data":[{"id":"qwen:latest"},{"id":"llama:latest"}]})
+}
+
+fn profile() -> Result<(tempfile::TempDir, std::path::PathBuf), Box<dyn std::error::Error>> {
+    let temporary = tempfile::tempdir()?;
+    let root = temporary.path().join("profile");
+    crate::dogfood::first_use::initialize_empty_profile(&root)?;
+    Ok((temporary, root))
 }
 
 async fn connect(root: &std::path::Path, custom: Value) -> TestResult {
@@ -122,10 +163,8 @@ fn installed(root: &std::path::Path) -> Result<(Value, String), Box<dyn std::err
 #[tokio::test]
 async fn a_preset_without_a_model_offers_every_served_model_and_moves_an_unrunnable_default(
 ) -> TestResult {
-    let temporary = tempfile::tempdir()?;
-    let root = temporary.path().join("profile");
-    crate::dogfood::first_use::initialize_empty_profile(&root)?;
-    let (base, loaded) = ollama().await?;
+    let (_temporary, root) = profile()?;
+    let (base, server) = ollama(two_models()).await?;
 
     connect(&root, json!({"endpoint": base})).await?;
     let (listing, default) = installed(&root)?;
@@ -137,7 +176,11 @@ async fn a_preset_without_a_model_offers_every_served_model_and_moves_an_unrunna
 
     // The server unloads the first model; connecting the second by name
     // must not leave the default on a model that now has no window.
-    loaded.lock().map_err(|_| "fixture state poisoned")?.clear();
+    server
+        .lock()
+        .map_err(|_| "fixture state poisoned")?
+        .loaded
+        .clear();
     connect(&root, json!({"endpoint": base, "model": "llama:latest"})).await?;
     let (listing, default) = installed(&root)?;
     assert_eq!(listing["data"][0]["id"], "llama:latest");
@@ -147,10 +190,68 @@ async fn a_preset_without_a_model_offers_every_served_model_and_moves_an_unrunna
 }
 
 #[tokio::test]
+async fn a_listed_model_that_cannot_complete_gives_way_to_the_next() -> TestResult {
+    let (_temporary, root) = profile()?;
+    let (base, server) =
+        ollama(json!({"data":[{"id":"embed:latest"},{"id":"qwen:latest"}]})).await?;
+    server
+        .lock()
+        .map_err(|_| "fixture state poisoned")?
+        .refused
+        .push("embed:latest".into());
+    connect(&root, json!({"endpoint": base})).await?;
+    let (listing, default) = installed(&root)?;
+    assert_eq!(default, "qwen:latest");
+    assert_eq!(listing["data"][0]["id"], "qwen:latest");
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_reconnect_moves_a_default_whose_tools_the_live_listing_dropped() -> TestResult {
+    let (_temporary, root) = profile()?;
+    let tools = json!(["tools", "temperature"]);
+    let (base, server) = ollama(json!({"data":[
+        {"id":"qwen:latest","supported_parameters":tools},
+        {"id":"llama:latest","supported_parameters":tools},
+    ]}))
+    .await?;
+    connect(&root, json!({"endpoint": base})).await?;
+    connect(&root, json!({"endpoint": base, "model": "llama:latest"})).await?;
+    assert_eq!(
+        installed(&root)?.1,
+        "qwen:latest",
+        "a runnable default stays"
+    );
+    // The live listing now says the default takes no tools.
+    {
+        let mut server = server.lock().map_err(|_| "fixture state poisoned")?;
+        server.listing = json!({"data":[
+            {"id":"qwen:latest","supported_parameters":["temperature"]},
+            {"id":"llama:latest","supported_parameters":tools},
+        ]});
+    }
+    connect(&root, json!({"endpoint": base, "model": "llama:latest"})).await?;
+    assert_eq!(installed(&root)?.1, "llama:latest");
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_refusal_never_repeats_a_model_identity_the_endpoint_returned() -> TestResult {
+    let (_temporary, root) = profile()?;
+    let (base, server) = ollama(json!({"data":[{"id":"endpoint-chosen-name"}]})).await?;
+    server.lock().map_err(|_| "fixture state poisoned")?.windows = false;
+    let refusal = match connect(&root, json!({"endpoint": base})).await {
+        Err(refusal) => refusal.to_string(),
+        Ok(()) => return Err("a model with no window was connected".into()),
+    };
+    assert!(refusal.contains("no context window"), "{refusal}");
+    assert!(!refusal.contains("endpoint-chosen-name"), "{refusal}");
+    Ok(())
+}
+
+#[tokio::test]
 async fn a_window_without_a_model_is_refused_before_any_request() -> TestResult {
-    let temporary = tempfile::tempdir()?;
-    let root = temporary.path().join("profile");
-    crate::dogfood::first_use::initialize_empty_profile(&root)?;
+    let (_temporary, root) = profile()?;
     let outcome = connect(
         &root,
         json!({"endpoint": "http://127.0.0.1:9/v1", "context_window": 65536}),

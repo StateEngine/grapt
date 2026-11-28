@@ -114,7 +114,17 @@ pub(super) async fn default_profile(limits: CliLimits) -> Result<ApiClient, Fail
         ) => {}
         Err(error) => return Err((ExitClass::Discovery, error.to_string())),
     }
-    super::embedded_client(product_binary()?, root, limits).await
+    match super::embedded_client(product_binary()?, root, limits).await {
+        Ok(client) => Ok(client),
+        // Another command may have won the profile's election between the
+        // discovery above and this launch: borrow its service. Attribution is
+        // repeated once; there is no launch retry.
+        Err(original) => match discovery.discover().await {
+            Ok(service) => ApiClient::from_discovered(&service, limits)
+                .map_err(|error| (ExitClass::Protocol, error.to_string())),
+            Err(_) => Err(original),
+        },
+    }
 }
 
 fn product_binary() -> Result<PathBuf, Failure> {

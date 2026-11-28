@@ -8,8 +8,10 @@
 use super::*;
 use serde_json::{json, Value};
 
-/// Whole-request bound for each optional server read.
-const PROBE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
+/// Whole-request bound for each optional read. These reads go only to the
+/// user's own machine and run together, so a server that ignores one costs
+/// a connect at most this long.
+const PROBE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(3);
 const BYTE_CAP: usize = 4 * 1024 * 1024;
 const MAX_ROWS: usize = 1024;
 /// A window above this is not a window any request budget can use.
@@ -26,15 +28,24 @@ pub enum ServedError {
     NoWindow,
 }
 
-/// The model a connect that names none checks first: the first listed model
-/// with a stated window, else the first listed model.
-pub fn first_model(listing: &[u8]) -> Option<String> {
-    let rows = rows(listing).ok()?;
-    rows.iter()
-        .find(|row| listed_window(row).is_some())
-        .or_else(|| rows.first())
-        .and_then(|row| row["id"].as_str())
-        .map(str::to_owned)
+/// How many listed models a connect that names none tries before it stops.
+/// Each try is a completion, which loads the model on a local server.
+const MAX_CANDIDATES: usize = 4;
+
+/// The models a connect that names none tries, in order: listed models with
+/// a stated window first, then the rest, as the listing orders them.
+pub fn candidate_models(listing: &[u8]) -> Vec<String> {
+    let Ok(rows) = rows(listing) else {
+        return Vec::new();
+    };
+    let (windowed, rest): (Vec<_>, Vec<_>) =
+        rows.iter().partition(|row| listed_window(row).is_some());
+    windowed
+        .into_iter()
+        .chain(rest)
+        .filter_map(|row| row["id"].as_str().map(str::to_owned))
+        .take(MAX_CANDIDATES)
+        .collect()
 }
 
 /// The verified listing as one row per served model, `model` first. A local
@@ -112,7 +123,7 @@ fn window(value: Option<&Value>) -> Option<u64> {
 
 /// The scheme, host and port of a literal loopback HTTP base. Server-specific
 /// reads stay on the user's own machine; a remote endpoint gets none.
-fn loopback_origin(base: &str) -> Option<String> {
+pub(super) fn loopback_origin(base: &str) -> Option<String> {
     let url = reqwest::Url::parse(base).ok()?;
     let host: std::net::IpAddr = url.host_str()?.trim_matches(['[', ']']).parse().ok()?;
     (url.scheme() == "http" && host.is_loopback()).then(|| url.origin().ascii_serialization())
@@ -126,33 +137,67 @@ async fn loaded_windows(
     origin: &str,
     single: Option<&str>,
 ) -> std::collections::BTreeMap<String, u64> {
+    let (ps, v1, v0, props_url) = (
+        format!("{origin}/api/ps"),
+        format!("{origin}/api/v1/models"),
+        format!("{origin}/api/v0/models"),
+        format!("{origin}/props"),
+    );
+    let (ollama, studio, studio_v0, props) = tokio::join!(
+        read(verified, &ps),
+        read(verified, &v1),
+        read(verified, &v0),
+        async {
+            match single {
+                Some(_) => read(verified, &props_url).await,
+                None => None,
+            }
+        },
+    );
     let mut windows = std::collections::BTreeMap::new();
     // Ollama: each running model and the window it was loaded with.
-    if let Some(body) = read(verified, &format!("{origin}/api/ps")).await {
-        for row in body["models"].as_array().into_iter().flatten() {
-            if let (Some(id), Some(window)) =
-                (row["name"].as_str(), window(row.get("context_length")))
-            {
-                windows.insert(id.to_owned(), window);
-            }
+    for row in ollama
+        .iter()
+        .flat_map(|body| body["models"].as_array().into_iter().flatten())
+    {
+        if let (Some(id), Some(window)) = (row["name"].as_str(), window(row.get("context_length")))
+        {
+            windows.insert(id.to_owned(), window);
         }
     }
-    // LM Studio: each model, with a window only while it is loaded.
-    if let Some(body) = read(verified, &format!("{origin}/api/v0/models")).await {
-        for row in body["data"].as_array().into_iter().flatten() {
-            if let (Some(id), Some(window)) =
-                (row["id"].as_str(), window(row.get("loaded_context_length")))
+    // LM Studio: each loaded instance and the window it was loaded with,
+    // under the instance id and the model key.
+    for model in studio
+        .iter()
+        .flat_map(|body| body["models"].as_array().into_iter().flatten())
+    {
+        for instance in model["loaded_instances"].as_array().into_iter().flatten() {
+            let Some(window) = window(instance["config"].get("context_length")) else {
+                continue;
+            };
+            for id in [instance["id"].as_str(), model["key"].as_str()]
+                .into_iter()
+                .flatten()
             {
                 windows.entry(id.to_owned()).or_insert(window);
             }
         }
     }
+    // An older LM Studio: each model, with a window only while it is loaded.
+    for row in studio_v0
+        .iter()
+        .flat_map(|body| body["data"].as_array().into_iter().flatten())
+    {
+        if let (Some(id), Some(window)) =
+            (row["id"].as_str(), window(row.get("loaded_context_length")))
+        {
+            windows.entry(id.to_owned()).or_insert(window);
+        }
+    }
     // llama.cpp: its one served model and the per-request slot window.
-    if let Some(id) = single.filter(|id| !windows.contains_key(*id)) {
-        if let Some(body) = read(verified, &format!("{origin}/props")).await {
-            if let Some(window) = window(body["default_generation_settings"].get("n_ctx")) {
-                windows.insert(id.to_owned(), window);
-            }
+    if let (Some(id), Some(body)) = (single, props) {
+        if let Some(window) = window(body["default_generation_settings"].get("n_ctx")) {
+            windows.entry(id.to_owned()).or_insert(window);
         }
     }
     windows

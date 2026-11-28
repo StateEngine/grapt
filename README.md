@@ -21,15 +21,15 @@ guide as `QUICKSTART.md` beside its binaries. The
 
 ## Build from source
 
-With [Rust](https://rustup.rs) installed, build both binaries from a checkout.
+With [Rust](https://rustup.rs) installed, build the binaries from a checkout.
 The toolchain pinned in `rust-toolchain.toml` installs itself on first use.
 
 ```sh
-cargo build --locked --release -p grapt-cli -p grapt-product
+cargo build --locked --release -p grapt-cli -p grapt-product -p grapt-tui
 ```
 
-This writes `grapt` and `grapt-server` to `target/release/`. Keep the two binaries
-in the same directory and put that directory on your `PATH`.
+This writes `grapt`, `grapt-server` and `grapt-tui` to `target/release/`. Keep the
+three binaries in the same directory and put that directory on your `PATH`.
 
 ## Connect a model
 

@@ -14,6 +14,16 @@ use serde_json::Value;
 
 mod compose;
 mod reasoning;
+
+/// The reasoning variants a listing row offers for one model of a catalog
+/// provider: what a run of that model may select.
+pub fn offered_variants(
+    provider: &str,
+    model: &str,
+    row: &Value,
+) -> Result<Vec<grapt_types::ModelVariantId>, String> {
+    reasoning::offered(provider, model, row)
+}
 mod thinking;
 pub use thinking::AnthropicThinkingMode;
 mod chatgpt_window;

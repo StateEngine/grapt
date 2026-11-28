@@ -612,12 +612,18 @@ fn runnable(models: &Value, row: &Value) -> bool {
     let context = model["limit"]["context"]
         .as_u64()
         .or_else(|| row["max_model_len"].as_u64());
-    let text = model["modalities"]["output"]
+    // What the live row states about its request surface and output wins
+    // over the bundled catalogue, as the model inventory reads it.
+    let output = row["output_modalities"]
         .as_array()
-        .is_none_or(|items| items.iter().any(|item| item.as_str() == Some("text")));
-    context.is_some_and(|context| context > 0)
-        && text
-        && model["tool_call"].as_bool() != Some(false)
+        .filter(|items| !items.is_empty())
+        .or_else(|| model["modalities"]["output"].as_array());
+    let text = output.is_none_or(|items| items.iter().any(|item| item.as_str() == Some("text")));
+    let tools = match row["supported_parameters"].as_array() {
+        Some(names) => names.iter().any(|name| name.as_str() == Some("tools")),
+        None => model["tool_call"].as_bool() != Some(false),
+    };
+    context.is_some_and(|context| context > 0) && text && tools
 }
 
 fn validate_listing(bytes: &[u8]) -> Result<(), String> {

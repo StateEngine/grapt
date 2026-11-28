@@ -5,7 +5,8 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 type TestResult = Result<(), Box<dyn std::error::Error>>;
 
 /// A loopback server that answers each path from `routes` and 404 otherwise,
-/// recording every requested path.
+/// recording every requested path. A route whose body is `HANG` never
+/// answers. Each connection is served on its own task.
 async fn local_server(
     routes: &'static [(&'static str, &'static str)],
 ) -> Result<(String, tokio::sync::mpsc::Receiver<String>), std::io::Error> {
@@ -13,30 +14,44 @@ async fn local_server(
     let base = format!("http://{}/v1", listener.local_addr()?);
     let (seen, paths) = tokio::sync::mpsc::channel(16);
     tokio::spawn(async move {
-        while let Ok((mut socket, _)) = listener.accept().await {
-            let mut head = Vec::new();
-            while !head.ends_with(b"\r\n\r\n") && head.len() <= 8192 {
-                let Ok(byte) = socket.read_u8().await else {
-                    return;
-                };
-                head.push(byte);
-            }
-            let head = String::from_utf8_lossy(&head).into_owned();
-            let path = head.split(' ').nth(1).unwrap_or_default().to_owned();
-            let reply = match routes.iter().find(|(route, _)| *route == path) {
-                Some((_, body)) => format!(
-                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
-                    body.len()
-                ),
-                None => "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
-                    .to_owned(),
-            };
-            if seen.send(path).await.is_err() || socket.write_all(reply.as_bytes()).await.is_err() {
-                return;
-            }
+        while let Ok((socket, _)) = listener.accept().await {
+            tokio::spawn(answer(socket, routes, seen.clone()));
         }
     });
     Ok((base, paths))
+}
+
+async fn answer(
+    mut socket: tokio::net::TcpStream,
+    routes: &'static [(&'static str, &'static str)],
+    seen: tokio::sync::mpsc::Sender<String>,
+) {
+    let mut head = Vec::new();
+    while !head.ends_with(b"\r\n\r\n") && head.len() <= 8192 {
+        let Ok(byte) = socket.read_u8().await else {
+            return;
+        };
+        head.push(byte);
+    }
+    let head = String::from_utf8_lossy(&head).into_owned();
+    let path = head.split(' ').nth(1).unwrap_or_default().to_owned();
+    let route = routes.iter().find(|(route, _)| *route == path);
+    if seen.send(path).await.is_err() {
+        return;
+    }
+    let reply = match route {
+        Some((_, "HANG")) => {
+            tokio::time::sleep(std::time::Duration::from_secs(60)).await;
+            return;
+        }
+        Some((_, body)) => format!(
+            "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+            body.len()
+        ),
+        None => "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+            .to_owned(),
+    };
+    let _ = socket.write_all(reply.as_bytes()).await;
 }
 
 fn verified(listing: &str, base: &str) -> Result<VerifiedKey, Box<dyn std::error::Error>> {
@@ -62,7 +77,7 @@ async fn every_listed_model_is_offered_with_the_window_the_listing_serves() -> T
         r#"{"data":[{"id":"small","max_model_len":65536},{"id":"large","max_model_len":131072}]}"#,
         &base,
     )?;
-    assert_eq!(first_model(verified.listing()).as_deref(), Some("small"));
+    assert_eq!(candidate_models(verified.listing()), ["small", "large"]);
     let listing = served_listing(&verified, "large").await?;
     let rows = served_rows(&listing)?;
     assert_eq!(rows.len(), 2);
@@ -169,5 +184,46 @@ async fn a_remote_endpoint_gets_no_server_specific_reads() -> TestResult {
         loopback_origin("http://[::1]:11434/v1").as_deref(),
         Some("http://[::1]:11434")
     );
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_loaded_lm_studio_instance_reports_its_window_through_the_v1_list() -> TestResult {
+    let (base, _paths) = local_server(&[(
+        "/api/v1/models",
+        r#"{"models":[{"type":"llm","key":"google/gemma","loaded_instances":[{"id":"google/gemma","config":{"context_length":65536}}],"max_context_length":262144},{"type":"llm","key":"phi","loaded_instances":[],"max_context_length":131072}]}"#,
+    )])
+    .await?;
+    let listing = served_listing(
+        &verified(r#"{"data":[{"id":"google/gemma"},{"id":"phi"}]}"#, &base)?,
+        "google/gemma",
+    )
+    .await?;
+    let rows = served_rows(&listing)?;
+    assert_eq!(
+        rows[0]["max_model_len"], 65536,
+        "the loaded window, not the maximum"
+    );
+    assert!(rows[1].get("max_model_len").is_none());
+    Ok(())
+}
+
+#[tokio::test]
+async fn server_reads_that_never_answer_hold_a_connect_only_briefly() -> TestResult {
+    let (base, _paths) = local_server(&[
+        ("/api/ps", "HANG"),
+        ("/api/v1/models", "HANG"),
+        ("/api/v0/models", "HANG"),
+        ("/props", "HANG"),
+    ])
+    .await?;
+    let verified = verified(r#"{"data":[{"id":"only"}]}"#, &base)?;
+    // Four silent reads, each bounded and run together: well under the sum.
+    let outcome = tokio::time::timeout(
+        std::time::Duration::from_secs(6),
+        served_listing(&verified, "only"),
+    )
+    .await?;
+    assert_eq!(outcome, Err(ServedError::NoWindow));
     Ok(())
 }

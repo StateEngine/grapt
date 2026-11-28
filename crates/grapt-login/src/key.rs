@@ -7,7 +7,7 @@ mod cohere;
 mod endpoint_metadata;
 pub use endpoint_metadata::enrich_listing;
 mod served_models;
-pub use served_models::{first_model, served_listing, ServedError};
+pub use served_models::{candidate_models, served_listing, ServedError};
 mod google;
 pub use cohere::verify_cohere_completion;
 mod vertex;
@@ -111,13 +111,15 @@ impl VerifiedKey {
 
     /// Public model lists do not authenticate a key. Complete a small request
     /// against the selected model before publishing a compatible connection.
+    /// The key is kept whatever the outcome, so a connect can try the
+    /// endpoint's next listed model after a refusal.
     #[expect(clippy::too_many_lines, reason = "legacy")]
     pub async fn check_model(
-        self,
+        &self,
         api_base: &str,
         protocol: KeyProtocol,
         model: &str,
-    ) -> Result<Self, KeyError> {
+    ) -> Result<(), KeyError> {
         let path = match protocol {
             KeyProtocol::Responses => "responses",
             KeyProtocol::Messages | KeyProtocol::BearerMessages => "messages",
@@ -135,6 +137,13 @@ impl VerifiedKey {
         let client = crate::chatgpt::bounded_client(api_base.starts_with("https://"))
             .map_err(|_| KeyError::Unreachable)?;
         let request = client.post(&url);
+        // A server on this machine may load the model from disk on its first
+        // request; that is a slow answer, not an unreachable one.
+        let request = if served_models::loopback_origin(api_base).is_some() {
+            request.timeout(LOCAL_LOAD_ALLOWANCE)
+        } else {
+            request
+        };
         // The session-routed gateway refuses a request without a Session and
         // asks a client to name itself; the check is its own conversation.
         let request = if session_routed(api_base) {
@@ -220,12 +229,16 @@ impl VerifiedKey {
             }
         };
         if value["error"].is_null() && completed {
-            Ok(self)
+            Ok(())
         } else {
             Err(KeyError::Completion)
         }
     }
 }
+
+/// How long a completion check waits on a loopback server, which may be
+/// loading the model before it answers.
+pub const LOCAL_LOAD_ALLOWANCE: std::time::Duration = std::time::Duration::from_secs(120);
 
 /// A session-routed gateway: its compatible chat route refuses a request that
 /// names no Session.
@@ -257,16 +270,16 @@ pub async fn verify_model_listing(
     }
     let binding =
         DestinationBinding::key(ApiDestination::parse(api_base).map_err(|_| KeyError::Invalid)?);
-    VerifiedKey {
+    let verified = VerifiedKey {
         watsonx_project: None,
         base: api_base.to_owned(),
         secret,
         binding,
         listing,
         cloudflare: None,
-    }
-    .check_model(api_base, protocol, model)
-    .await
+    };
+    verified.check_model(api_base, protocol, model).await?;
+    Ok(verified)
 }
 
 /// Accept HTTPS or a literal loopback HTTP fixture; never follow a redirect or

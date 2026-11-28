@@ -273,6 +273,12 @@ impl ApiClient {
 
     /// Transfer the one owned child for explicit shutdown. Its stdin pipe
     /// stays open until shutdown starts, including across client clones.
+    /// Whether this client owns the service it talks to: a child this
+    /// command started, which inherited this command's environment.
+    pub(crate) fn owns_service(&self) -> bool {
+        self.embedded.is_some()
+    }
+
     pub(crate) async fn take_embedded_child(&self) -> Option<tokio::process::Child> {
         let embedded = self.embedded.as_ref()?;
         embedded.child.lock().await.take()

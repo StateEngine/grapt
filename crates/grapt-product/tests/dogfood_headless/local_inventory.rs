@@ -104,10 +104,13 @@ fn sc_fr01_missing_context_fails_startup_before_any_provider_request(
             String::from_utf8_lossy(&output.stdout),
             String::from_utf8_lossy(&output.stderr)
         );
-        assert!(diagnostic.contains("account-models.json"), "{diagnostic}");
-        if !missing_listing {
-            assert!(diagnostic.contains("context limit"), "{diagnostic}");
+        if missing_listing {
+            assert!(diagnostic.contains("account-models.json"), "{diagnostic}");
+        } else {
+            // A local server preset names the login that reads the window.
+            assert!(diagnostic.contains("context window"), "{diagnostic}");
             assert!(diagnostic.contains("vllm/qwen3.8-27b"), "{diagnostic}");
+            assert!(diagnostic.contains("grapt login vllm"), "{diagnostic}");
         }
         assert!(!root.join("serve-ready.json").exists());
         assert!(locked(&provider.bodies).is_empty());

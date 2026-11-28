@@ -6,6 +6,11 @@ use grapt_api::u3a::{
     IntegrationOAuthStatusResponseDto,
 };
 
+/// The service's own provider checks bound a connect: its model list and the
+/// completion check on a loading local model, with room for the reads after.
+const CONNECT_ALLOWANCE: std::time::Duration =
+    grapt_login::key::LOCAL_LOAD_ALLOWANCE.saturating_add(std::time::Duration::from_secs(60));
+
 impl ApiClient {
     pub(crate) async fn authentication_status(
         &self,
@@ -27,8 +32,12 @@ impl ApiClient {
                 maximum: self.limits.values().stdin_bytes,
             });
         }
+        // A connect checks a completion on the provider before it answers,
+        // and a server on this machine may load the model first: the
+        // ordinary request allowance would cut that answer off.
         let mut request = self
             .request(Method::POST, path)?
+            .timeout(CONNECT_ALLOWANCE)
             .header(reqwest::header::CONTENT_TYPE, "application/json")
             .body(bytes);
         if let Some(connection) = connection {

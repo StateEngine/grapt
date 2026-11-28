@@ -35,7 +35,9 @@ pub use integration::{
     IntegrationConnection, IntegrationCredentialAuthority, IntegrationCredentialOwner,
     IntegrationCredentialRefusal, IntegrationOAuthWrite, ResolvedIntegrationCredential,
 };
-pub use model_inventory::{AnthropicThinkingMode, ConnectedModel, ModelInventory};
+pub use model_inventory::{
+    offered_variants, AnthropicThinkingMode, ConnectedModel, ModelInventory,
+};
 pub use provider_inputs::{PreparedProviderInputs, ProviderInputParts};
 pub use store::{FirstContactKind, PlatformFirstContact, PlatformStoreRefusal};
 

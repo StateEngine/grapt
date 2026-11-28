@@ -247,9 +247,11 @@ async fn operate(
                 None => Optional::absent(),
             };
             // An explicit key source wins. With none, the provider's own
-            // standard variable is used when it is set, before any prompt.
+            // standard variable is used when it is set, before any prompt,
+            // but only by a service this command started: a service already
+            // running did not inherit this shell's environment, so it asks.
             let key = match key {
-                KeyInput::Terminal => match ambient_variable(provider)? {
+                KeyInput::Terminal if client.owns_service() => match ambient_variable(provider)? {
                     Some(name) => {
                         super::emit(
                             format!("Using {name} from the environment; pass --key-stdin to enter a different key."),

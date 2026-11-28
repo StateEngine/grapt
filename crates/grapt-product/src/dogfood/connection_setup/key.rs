@@ -282,7 +282,14 @@ impl ConnectionSetup {
                 .await
                 .map_err(|_| invalid("Vertex authorization failed; check the service-account key, project permissions, model location and system clock, then retry Connect"))?,
                 (None, None, SecretInput::ApiKey(secret)) if setup.is_some() => match setup {
-                    Some(setup) => setup.verify(provider, &base, secret, id.as_str()).await?,
+                    Some(setup) => {
+                        let (verified, checked) =
+                            setup.verify(provider, &base, secret, id.as_str()).await?;
+                        // The checked model's wire, which a discovered model
+                        // may select, is the wire the connection installs.
+                        provider = checked;
+                        verified
+                    }
                     None => return Err(invalid("enter the API base URL")),
                 },
                 (None, None, SecretInput::ApiKey(secret)) => {
@@ -353,7 +360,8 @@ impl ConnectionSetup {
                     verified
                         .check_model(&base, protocol, &model)
                         .await
-                        .map_err(|error| verification_failed(id.as_str(), error))?
+                        .map_err(|error| verification_failed(id.as_str(), error))?;
+                    verified
                 } else {
                     verified
                 }
