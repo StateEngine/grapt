@@ -138,45 +138,103 @@ export function summarize(reports, window = null) {
 export const CRITERION_5_MAX_INFRA_FAILURE_PERCENT = 3.0;
 
 /**
- * Evaluate RELEASE-0.1.md Criteria #3 (cache read share >= comparison baseline)
- * and #5 (infrastructure tool failure rate <= 3% and zero unnamed terminal failures).
+ * Evaluate RELEASE-0.1.md Criteria #3 (matched tasks: first-review ACCEPT rate,
+ * tokens/accepted task, and cache read share vs Codex baseline) and #5
+ * (infrastructure tool failure rate <= 3%, zero unavailable/unreadable failure
+ * detail artifacts, and zero skipped/unsupported tool terminal event versions).
  */
-export function evaluateReleaseGates(graptReport, codexReport = null) {
+export function evaluateReleaseGates(graptReport, comparison = null) {
   const ops = graptReport?.operations;
   const toolCount = ops?.tool_calls?.count ?? 0;
-  const failedCount = ops?.tool_calls?.failed ?? 0;
-  const unnamedCount = ops?.failure_detail_unavailable?.['detail-not-recorded'] ?? 0;
-  const infraRatePercent = toolCount > 0 ? (100 * failedCount) / toolCount : null;
-  const criterion_5 = toolCount > 0
-    ? {
-        status: infraRatePercent <= CRITERION_5_MAX_INFRA_FAILURE_PERCENT && unnamedCount === 0 ? 'pass' : 'fail',
-        tool_calls: toolCount,
-        failed_tool_calls: failedCount,
-        infra_failure_rate_percent: Number(infraRatePercent.toFixed(4)),
-        max_infra_failure_rate_percent: CRITERION_5_MAX_INFRA_FAILURE_PERCENT,
-        unnamed_terminal_failures: unnamedCount,
-      }
-    : {
-        status: 'unavailable',
-        reason: 'no-tool-calls-observed',
-        unnamed_terminal_failures: unnamedCount,
-      };
+  const infraFailedCount = ops?.tool_calls?.infrastructure_failed ?? null;
+  const unavailableEntries = Object.entries(ops?.failure_detail_unavailable ?? {});
+  const unavailableDetailCount = unavailableEntries.reduce((sum, [, count]) => sum + Number(count || 0), 0);
+  const unnamedCount = Number(ops?.failure_detail_unavailable?.['detail-not-recorded'] ?? 0);
+  const unsupportedVersions = ops?.coverage?.unsupported_event_versions ?? {};
+  const unsupportedTerminalVersions = Object.entries(unsupportedVersions)
+    .filter(([eventType]) => eventType.startsWith('session.tool.terminal.'))
+    .reduce((sum, [, count]) => sum + Number(count || 0), 0);
 
+  let criterion_5;
+  if (toolCount <= 0) {
+    criterion_5 = {
+      status: 'unavailable',
+      reason: 'no-tool-calls-observed',
+      unnamed_terminal_failures: unnamedCount,
+      unavailable_detail_artifacts: unavailableDetailCount,
+      unsupported_terminal_versions: unsupportedTerminalVersions,
+    };
+  } else if (infraFailedCount === null) {
+    criterion_5 = {
+      status: 'unavailable',
+      reason: 'infrastructure-failure-count-unavailable',
+      unnamed_terminal_failures: unnamedCount,
+      unavailable_detail_artifacts: unavailableDetailCount,
+      unsupported_terminal_versions: unsupportedTerminalVersions,
+    };
+  } else {
+    const infraRatePercent = (100 * infraFailedCount) / toolCount;
+    const passed = infraRatePercent <= CRITERION_5_MAX_INFRA_FAILURE_PERCENT
+      && unavailableDetailCount === 0
+      && unsupportedTerminalVersions === 0;
+    criterion_5 = {
+      status: passed ? 'pass' : 'fail',
+      tool_calls: toolCount,
+      infrastructure_failed_tool_calls: infraFailedCount,
+      infra_failure_rate_percent: Number(infraRatePercent.toFixed(4)),
+      max_infra_failure_rate_percent: CRITERION_5_MAX_INFRA_FAILURE_PERCENT,
+      unnamed_terminal_failures: unnamedCount,
+      unavailable_detail_artifacts: unavailableDetailCount,
+      unsupported_terminal_versions: unsupportedTerminalVersions,
+    };
+  }
+
+  const codexReport = comparison && 'codexReport' in comparison ? comparison.codexReport : comparison;
+  const matchedTasks = comparison && 'matchedTasks' in comparison ? comparison.matchedTasks : null;
   const graptShare = graptReport?.totals?.read_share_percent ?? null;
   const codexShare = codexReport?.totals?.read_share_percent ?? null;
-  const criterion_3 = graptShare !== null && codexShare !== null
-    ? {
-        status: graptShare >= codexShare ? 'pass' : 'fail',
+
+  let criterion_3;
+  if (graptShare === null || codexShare === null) {
+    criterion_3 = {
+      status: 'unavailable',
+      reason: codexReport ? 'cache-read-share-unavailable' : 'comparison-baseline-not-provided',
+      grapt_read_share_percent: graptShare === null ? null : Number(graptShare.toFixed(4)),
+      codex_read_share_percent: codexShare === null ? null : Number(codexShare.toFixed(4)),
+    };
+  } else {
+    const cacheShareOk = graptShare >= codexShare;
+    const hasMatchedTasks = matchedTasks !== null
+      && Number.isSafeInteger(matchedTasks.count) && matchedTasks.count > 0
+      && typeof matchedTasks.grapt_first_review_accept_rate === 'number'
+      && typeof matchedTasks.codex_first_review_accept_rate === 'number'
+      && typeof matchedTasks.grapt_tokens_per_accepted_task === 'number'
+      && typeof matchedTasks.codex_tokens_per_accepted_task === 'number';
+    if (!hasMatchedTasks) {
+      criterion_3 = {
+        status: cacheShareOk ? 'incomplete' : 'fail',
+        reason: 'matched-task-metrics-missing',
+        cache_share_status: cacheShareOk ? 'pass' : 'fail',
         grapt_read_share_percent: Number(graptShare.toFixed(4)),
         codex_read_share_percent: Number(codexShare.toFixed(4)),
         cache_share_delta_percent: Number((graptShare - codexShare).toFixed(4)),
-      }
-    : {
-        status: 'unavailable',
-        reason: codexReport ? 'cache-read-share-unavailable' : 'comparison-baseline-not-provided',
-        grapt_read_share_percent: graptShare === null ? null : Number(graptShare.toFixed(4)),
-        codex_read_share_percent: codexShare === null ? null : Number(codexShare.toFixed(4)),
       };
+    } else {
+      const acceptOk = matchedTasks.grapt_first_review_accept_rate >= matchedTasks.codex_first_review_accept_rate;
+      const tokensOk = matchedTasks.grapt_tokens_per_accepted_task <= matchedTasks.codex_tokens_per_accepted_task;
+      criterion_3 = {
+        status: cacheShareOk && acceptOk && tokensOk ? 'pass' : 'fail',
+        matched_tasks: matchedTasks.count,
+        grapt_read_share_percent: Number(graptShare.toFixed(4)),
+        codex_read_share_percent: Number(codexShare.toFixed(4)),
+        cache_share_delta_percent: Number((graptShare - codexShare).toFixed(4)),
+        grapt_first_review_accept_rate: matchedTasks.grapt_first_review_accept_rate,
+        codex_first_review_accept_rate: matchedTasks.codex_first_review_accept_rate,
+        grapt_tokens_per_accepted_task: matchedTasks.grapt_tokens_per_accepted_task,
+        codex_tokens_per_accepted_task: matchedTasks.codex_tokens_per_accepted_task,
+      };
+    }
+  }
 
   return { criterion_3, criterion_5 };
 }

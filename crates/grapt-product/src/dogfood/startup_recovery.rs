@@ -21,6 +21,7 @@
 use super::*;
 
 pub(super) fn recover(
+    service_root: &Path,
     store: &mut grapt_store::EventStore,
     ids: &Arc<OsRandomIds>,
     clock: &Arc<SystemClock>,
@@ -29,7 +30,7 @@ pub(super) fn recover(
     let runtime_ids = execution::RuntimeEventIds(Arc::clone(ids));
     let runtime_clock = execution::RuntimeClock(Arc::clone(clock));
     let mut first = |store: &mut grapt_store::EventStore, session: &SessionId| {
-        settle_lost_tool_runs(store, session, &runtime_ids, &runtime_clock)
+        settle_lost_tool_runs(service_root, store, session, &runtime_ids, &runtime_clock)
     };
     let attempts = recover_process_loss_attempts(
         store,
@@ -66,6 +67,7 @@ pub(super) fn recover(
 /// corrupt or larger than reconciliation may settle, is reported and does not
 /// hold the Session's marks back, since no later start could settle it either.
 fn settle_lost_tool_runs(
+    service_root: &Path,
     store: &mut grapt_store::EventStore,
     session: &SessionId,
     ids: &execution::RuntimeEventIds,
@@ -87,8 +89,24 @@ fn settle_lost_tool_runs(
     if orphans.is_empty() {
         return Ok(());
     }
-    grapt_runtime::reconcile_orphaned_nested(store, session, &orphans, ids, clock)
-        .map_err(|reason| format!("its lost tool runs could not be recorded: {reason}"))?;
+    let artifacts = match execution::artifacts::open_artifacts(service_root) {
+        Ok(store) => Some(store),
+        Err(error) => {
+            crate::server_log::warn(format_args!(
+                "startup warning reason=lost-tool-runs-artifact-store-unavailable detail=session {session}: {error}"
+            ));
+            None
+        }
+    };
+    grapt_runtime::reconcile_orphaned_nested_with_artifacts(
+        store,
+        session,
+        &orphans,
+        ids,
+        clock,
+        artifacts.as_ref(),
+    )
+    .map_err(|reason| format!("its lost tool runs could not be recorded: {reason}"))?;
     crate::server_log::info(format_args!(
         "session {session}: recorded {} tool runs lost at restart as unknown",
         orphans.len()

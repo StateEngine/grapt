@@ -683,16 +683,16 @@ def t5_budget_witnesses() -> None:
             {
                 "client": "native",
                 "steps": [
-                    {"kind": "type", "elapsed_ms": 8.0},
-                    {"kind": "key", "elapsed_ms": 12.5},
+                    {"kind": "type", "t5_echo": True, "elapsed_ms": 8.0},
+                    {"kind": "key", "t5_echo": True, "elapsed_ms": 12.5},
                     {"kind": "echo", "elapsed_ms": 15.9},
                 ],
-                "resources": {"processor_seconds": 0.12},
+                "idle_cpu_seconds": 0.12,
             }
         ]
     )
     check(
-        "t5 smoothness budgets pass within 16ms echo p95 and idle CPU ceiling",
+        "t5 smoothness budgets pass within 16ms echo p95 and explicit idle CPU ceiling",
         passing["status"] == "pass"
         and passing["echo_p95_ms"]["status"] == "pass"
         and passing["idle_cpu_seconds"]["status"] == "pass",
@@ -703,7 +703,7 @@ def t5_budget_witnesses() -> None:
             {
                 "client": "native",
                 "steps": [{"kind": "echo", "elapsed_ms": 22.0}],
-                "resources": {"processor_seconds": 0.8},
+                "t5_metrics": {"idle_cpu_seconds": 0.8},
             }
         ]
     )
@@ -713,6 +713,36 @@ def t5_budget_witnesses() -> None:
         and failing["echo_p95_ms"]["status"] == "fail"
         and failing["idle_cpu_seconds"]["status"] == "fail",
         f"got={failing!r}",
+    )
+    missing_echo = CMP.evaluate_t5_budgets(
+        [
+            {
+                "client": "native",
+                "steps": [{"kind": "type", "seconds": 0.01}],
+                "idle_cpu_seconds": 0.05,
+            }
+        ]
+    )
+    check(
+        "t5 smoothness budgets refuse pass when echo samples are absent",
+        missing_echo["status"] == "not-measured"
+        and missing_echo["echo_p95_ms"]["status"] == "not-measured",
+        f"got={missing_echo!r}",
+    )
+    cumulative_only = CMP.evaluate_t5_budgets(
+        [
+            {
+                "client": "native",
+                "steps": [{"kind": "echo", "elapsed_ms": 5.0}],
+                "resources": {"processor_seconds": 0.05},
+            }
+        ]
+    )
+    check(
+        "t5 smoothness budgets never treat cumulative journey CPU as idle CPU",
+        cumulative_only["status"] == "not-measured"
+        and cumulative_only["idle_cpu_seconds"]["status"] == "not-measured",
+        f"got={cumulative_only!r}",
     )
     unmeasured = CMP.evaluate_t5_budgets([{"client": "retained", "steps": []}])
     check(

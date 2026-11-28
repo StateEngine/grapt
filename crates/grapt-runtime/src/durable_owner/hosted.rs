@@ -30,4 +30,28 @@ impl<A: ArtifactStore, S: CommittedFactSink> DurableAttemptOwner<'_, A, S> {
                 reason: "hosted output capture disposition disagrees".into(),
             })
     }
+
+    pub(super) fn capture_diagnostic(
+        &mut self,
+        text: &str,
+    ) -> Result<grapt_types::ToolTerminalArtifact, OwnerError> {
+        let bound = CaptureBound::new(2048, 2048).ok_or_else(|| OwnerError {
+            reason: "diagnostic detail capture bound is invalid".into(),
+        })?;
+        let captured = self
+            .artifacts
+            .capture(
+                text.as_bytes(),
+                bound,
+                ArtifactKind::Diagnostic,
+                Sensitivity::Ordinary,
+            )
+            .map_err(|error| OwnerError {
+                reason: format!("diagnostic detail artifact capture failed: {error}"),
+            })?;
+        grapt_types::ToolTerminalArtifact::new(captured.reference().clone(), captured.disposition())
+            .ok_or_else(|| OwnerError {
+                reason: "diagnostic detail capture disposition disagrees".into(),
+            })
+    }
 }

@@ -514,6 +514,7 @@ def run_client(
             kind, detail, shared = apply_step(
                 observer, step, label, effect_root, service_root, sessions_before
             )
+            elapsed_s = time.monotonic() - at
             timings.append(
                 {
                     "step": index,
@@ -523,7 +524,8 @@ def run_client(
                     # comparable as like for like; the rest are the navigation
                     # each client needs to reach the same place.
                     "shared": shared,
-                    "seconds": round(time.monotonic() - at, 3),
+                    "seconds": round(elapsed_s, 3),
+                    "elapsed_ms": round(elapsed_s * 1000.0, 3),
                 }
             )
     except HarnessError as error:
@@ -949,8 +951,9 @@ def evaluate_t5_budgets(
     echo_p95_max_ms: float = DEFAULT_T5_ECHO_P95_MAX_MS,
     idle_cpu_max_seconds: float = DEFAULT_T5_IDLE_CPU_MAX_SECONDS,
 ) -> dict:
-    """Evaluate T5 smoothness budgets (streaming echo p95 <= 16 ms, idle CPU ceiling)
-    against the native client's recorded step timings and OS resource counters."""
+    """Evaluate T5 smoothness budgets (streaming echo p95 <= 16 ms, true idle CPU ceiling)
+    against explicit T5 measurements on the native client. Never substitutes cumulative
+    journey CPU for idle CPU and never reports pass when either metric is unmeasured."""
     native = next((side for side in sides if side.get("client") == "native"), None)
     if native is None:
         return {"status": "not-measured", "reason": "native-side-absent"}
@@ -959,7 +962,7 @@ def evaluate_t5_budgets(
         float(step["elapsed_ms"])
         for step in steps
         if step.get("elapsed_ms") is not None
-        and (step.get("t5_echo") is True or step.get("kind") in ("type", "key", "echo"))
+        and (step.get("t5_echo") is True or step.get("kind") == "echo")
     ]
     echo_p95 = _percentile(echo_samples, 0.95)
     echo_status = (
@@ -967,18 +970,23 @@ def evaluate_t5_budgets(
         if echo_p95 is None
         else ("pass" if echo_p95 <= echo_p95_max_ms else "fail")
     )
-    cpu_seconds = (native.get("resources") or {}).get("processor_seconds")
+    # Only accept an explicit idle-window CPU measurement; cumulative journey
+    # `resources.processor_seconds` is active work, never idle CPU.
+    t5_metrics = native.get("t5_metrics") if isinstance(native.get("t5_metrics"), dict) else {}
+    idle_cpu_seconds = native.get("idle_cpu_seconds")
+    if idle_cpu_seconds is None:
+        idle_cpu_seconds = t5_metrics.get("idle_cpu_seconds")
     idle_status = (
         "not-measured"
-        if cpu_seconds is None
-        else ("pass" if float(cpu_seconds) <= idle_cpu_max_seconds else "fail")
+        if idle_cpu_seconds is None
+        else ("pass" if float(idle_cpu_seconds) <= idle_cpu_max_seconds else "fail")
     )
-    statuses = [s for s in (echo_status, idle_status) if s != "not-measured"]
-    overall = (
-        "not-measured"
-        if not statuses
-        else ("fail" if "fail" in statuses else "pass")
-    )
+    if echo_status == "fail" or idle_status == "fail":
+        overall = "fail"
+    elif echo_status == "pass" and idle_status == "pass":
+        overall = "pass"
+    else:
+        overall = "not-measured"
     return {
         "status": overall,
         "echo_p95_ms": {
@@ -989,7 +997,7 @@ def evaluate_t5_budgets(
         },
         "idle_cpu_seconds": {
             "status": idle_status,
-            "observed": None if cpu_seconds is None else round(float(cpu_seconds), 3),
+            "observed": None if idle_cpu_seconds is None else round(float(idle_cpu_seconds), 3),
             "budget": idle_cpu_max_seconds,
         },
     }
@@ -1149,7 +1157,7 @@ def main() -> int:
             indent=2,
         )
     )
-    t5_failed = arguments.enforce_t5_budgets and receipt["t5_budgets"]["status"] == "fail"
+    t5_failed = arguments.enforce_t5_budgets and receipt["t5_budgets"]["status"] != "pass"
     return 1 if (any(side["failure"] for side in sides) or t5_failed) else 0
 
 

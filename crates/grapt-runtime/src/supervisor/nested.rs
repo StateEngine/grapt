@@ -245,11 +245,19 @@ impl NestedState {
         call: &ToolCallId,
     ) -> Result<(), OwnerError> {
         if self.open.contains_key(call) {
-            let detail = owner
-                .capture_hosted_output(
-                    "nested tool execution was abandoned before producing a terminal result; external effect state is unknown",
-                )
-                .ok();
+            let detail = match owner.capture_diagnostic_detail(
+                "nested tool execution was abandoned before producing a terminal result; external effect state is unknown",
+            ) {
+                Ok(detail) => Some(detail),
+                Err(error) => {
+                    grapt_diagnostics::report(format!(
+                        "nested failure diagnostic detail capture degraded for call {}: {}",
+                        call.as_str(),
+                        error.reason
+                    ));
+                    None
+                }
+            };
             commit(
                 owner,
                 DurableFact::ToolTerminal {

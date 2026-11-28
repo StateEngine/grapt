@@ -388,6 +388,13 @@ impl<O: AttemptOwner> AttemptOwner for StepSettlementOwner<O> {
         self.inner.capture_hosted_output(text)
     }
 
+    fn capture_diagnostic_detail(
+        &mut self,
+        text: &str,
+    ) -> Result<grapt_types::ToolTerminalArtifact, OwnerError> {
+        self.inner.capture_diagnostic_detail(text)
+    }
+
     fn timing_context(&self) -> Option<grapt_types::timing::TimingContext> {
         self.inner.timing_context()
     }

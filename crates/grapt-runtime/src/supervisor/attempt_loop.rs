@@ -538,31 +538,7 @@ where
         if settled_tools.contains_key(key.as_str()) {
             continue;
         }
-        let outcome = if !effects_settled {
-            ToolOutcome::Failed {
-                reason: ToolFailureReason::EffectUnknown,
-                detail: owner
-                    .capture_hosted_output(
-                        "tool execution did not settle before attempt ended; external effect state is unknown",
-                    )
-                    .ok(),
-            }
-        } else {
-            match cancelled {
-                Some(AttemptCancelCause::Interrupted { by }) => cancelled_tool_outcome(by),
-                Some(AttemptCancelCause::NoProgress) => {
-                    cancelled_tool_outcome(InterruptionSource::ManagedShutdown)
-                }
-                None => ToolOutcome::Failed {
-                    reason: ToolFailureReason::EffectFailed,
-                    detail: owner
-                        .capture_hosted_output(
-                            "tool execution ended without producing a terminal result",
-                        )
-                        .ok(),
-                },
-            }
-        };
+        let outcome = unsettled_tool_outcome(&mut owner, effects_settled, cancelled);
         settled_tools.insert(key.clone(), outcome.clone());
         if !refused {
             if let Err(error) = commit(
@@ -670,6 +646,46 @@ where
             provider_failure,
         },
     )
+}
+
+fn unsettled_tool_outcome<O: AttemptOwner>(
+    owner: &mut O,
+    effects_settled: bool,
+    cancelled: Option<AttemptCancelCause>,
+) -> ToolOutcome {
+    let capture_cause = |owner: &mut O, text: &str| match owner.capture_diagnostic_detail(text) {
+        Ok(detail) => Some(detail),
+        Err(error) => {
+            grapt_diagnostics::report(format!(
+                "tool failure diagnostic detail capture degraded: {}",
+                error.reason
+            ));
+            None
+        }
+    };
+    if !effects_settled {
+        ToolOutcome::Failed {
+            reason: ToolFailureReason::EffectUnknown,
+            detail: capture_cause(
+                owner,
+                "tool execution did not settle before attempt ended; external effect state is unknown",
+            ),
+        }
+    } else {
+        match cancelled {
+            Some(AttemptCancelCause::Interrupted { by }) => cancelled_tool_outcome(by),
+            Some(AttemptCancelCause::NoProgress) => {
+                cancelled_tool_outcome(InterruptionSource::ManagedShutdown)
+            }
+            None => ToolOutcome::Failed {
+                reason: ToolFailureReason::EffectFailed,
+                detail: capture_cause(
+                    owner,
+                    "tool execution ended without producing a terminal result",
+                ),
+            },
+        }
+    }
 }
 
 #[cfg(test)]

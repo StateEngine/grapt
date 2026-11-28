@@ -370,25 +370,43 @@ where
     ) -> BoxFuture<'static, ToolTerminalOutcome> {
         let artifacts = Arc::clone(&self.artifacts);
         Box::pin(async move {
-            let detail = CaptureBound::new(2048, 2048).and_then(|bound| {
-                artifacts
-                    .capture(
-                        std::io::Cursor::new(
-                            b"tool execution refused: governed tool authority is unavailable"
-                                .as_slice(),
-                        ),
-                        bound,
-                        ArtifactKind::CapturedOutput,
-                        Sensitivity::Ordinary,
-                    )
-                    .ok()
-                    .and_then(|captured| {
-                        ToolTerminalArtifact::new(
+            let detail = match CaptureBound::new(2048, 2048) {
+                Some(bound) => match artifacts.capture(
+                    std::io::Cursor::new(
+                        b"tool execution refused: governed tool authority is unavailable"
+                            .as_slice(),
+                    ),
+                    bound,
+                    ArtifactKind::Diagnostic,
+                    Sensitivity::Ordinary,
+                ) {
+                    Ok(captured) => {
+                        let artifact = ToolTerminalArtifact::new(
                             captured.reference().clone(),
                             captured.disposition(),
-                        )
-                    })
-            });
+                        );
+                        if artifact.is_none() {
+                            grapt_diagnostics::report(
+                                "governed tool refusal diagnostic artifact disposition mismatch"
+                                    .to_owned(),
+                            );
+                        }
+                        artifact
+                    }
+                    Err(error) => {
+                        grapt_diagnostics::report(format!(
+                            "governed tool refusal diagnostic artifact capture failed: {error}"
+                        ));
+                        None
+                    }
+                },
+                None => {
+                    grapt_diagnostics::report(
+                        "governed tool refusal diagnostic capture bound invalid".to_owned(),
+                    );
+                    None
+                }
+            };
             ToolTerminalOutcome::Failed {
                 reason: ToolFailureReason::AuthorityUnavailable,
                 detail,

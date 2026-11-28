@@ -210,6 +210,18 @@ pub trait AttemptOwner {
         })
     }
 
+    /// Capture a bounded, ordinary-sensitivity diagnostic note through the
+    /// artifact owner so runtime-synthesized tool failures carry a readable
+    /// named cause rather than a secret-bearing payload.
+    fn capture_diagnostic_detail(
+        &mut self,
+        _text: &str,
+    ) -> Result<grapt_types::ToolTerminalArtifact, OwnerError> {
+        Err(OwnerError {
+            reason: "attempt owner has no diagnostic detail capture".into(),
+        })
+    }
+
     fn timing_context(&self) -> Option<grapt_types::timing::TimingContext> {
         None
     }

@@ -57,23 +57,41 @@ pub fn reconcile_orphaned_nested_with_artifacts<A: grapt_artifact::ArtifactStore
         return Ok(());
     }
     let detail = artifacts.and_then(|artifact_store| {
-        let bound = grapt_artifact::CaptureBound::new(2048, 2048)?;
+        let Some(bound) = grapt_artifact::CaptureBound::new(2048, 2048) else {
+            grapt_diagnostics::report(
+                "nested reconciliation diagnostic capture bound invalid".to_owned(),
+            );
+            return None;
+        };
         let message =
             b"nested tool run was interrupted by process loss and reconciled as unknown effect";
-        artifact_store
-            .capture(
-                std::io::Cursor::new(message.as_slice()),
-                bound,
-                grapt_artifact::ArtifactKind::CapturedOutput,
-                grapt_artifact::Sensitivity::Ordinary,
-            )
-            .ok()
-            .and_then(|captured| {
-                grapt_types::ToolTerminalArtifact::new(
+        match artifact_store.capture(
+            std::io::Cursor::new(message.as_slice()),
+            bound,
+            grapt_artifact::ArtifactKind::Diagnostic,
+            grapt_artifact::Sensitivity::Ordinary,
+        ) {
+            Ok(captured) => {
+                let artifact = grapt_types::ToolTerminalArtifact::new(
                     captured.reference().clone(),
                     captured.disposition(),
-                )
-            })
+                );
+                if artifact.is_none() {
+                    grapt_diagnostics::report(format!(
+                        "nested reconciliation diagnostic artifact disposition mismatch for session {}",
+                        session.as_str()
+                    ));
+                }
+                artifact
+            }
+            Err(error) => {
+                grapt_diagnostics::report(format!(
+                    "nested reconciliation diagnostic artifact capture failed for session {}: {error}",
+                    session.as_str()
+                ));
+                None
+            }
+        }
     });
     let writer = store
         .fencing_token(&AggregateId::Session(session.clone()))

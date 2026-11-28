@@ -196,46 +196,80 @@ test('seat-day estimate requires all settled window attempts, retaining the know
   assert.equal(summarize([report([known, attempt('missing-cost', 10, 0)])]).totals.cost.usd, 0.25);
 });
 
-test('evaluateReleaseGates reports explicit Criterion #3 and #5 pass/fail verdicts', async () => {
+test('evaluateReleaseGates reports honest Criterion #3 and #5 verdicts', async () => {
   const { evaluateReleaseGates } = await import('./seat-day-report.mjs');
-  const passing = evaluateReleaseGates(
+  const cacheOnly = evaluateReleaseGates(
     {
       totals: { read_share_percent: 98.8 },
       operations: {
-        tool_calls: { count: 200, failed: 1 },
+        tool_calls: { count: 200, failed: 15, infrastructure_failed: 1 },
         failure_detail_unavailable: {},
+        coverage: { unsupported_event_versions: {} },
       },
     },
     { totals: { read_share_percent: 98.5 } },
   );
-  assert.equal(passing.criterion_3.status, 'pass');
-  assert.equal(passing.criterion_3.cache_share_delta_percent, 0.3);
-  assert.equal(passing.criterion_5.status, 'pass');
-  assert.equal(passing.criterion_5.unnamed_terminal_failures, 0);
+  assert.equal(cacheOnly.criterion_3.status, 'incomplete');
+  assert.equal(cacheOnly.criterion_3.reason, 'matched-task-metrics-missing');
+  assert.equal(cacheOnly.criterion_3.cache_share_status, 'pass');
+  assert.equal(cacheOnly.criterion_3.cache_share_delta_percent, 0.3);
+  assert.equal(cacheOnly.criterion_5.status, 'pass');
+  assert.equal(cacheOnly.criterion_5.infra_failure_rate_percent, 0.5);
 
-  const failingUnnamed = evaluateReleaseGates(
+  const matchedPass = evaluateReleaseGates(
     {
-      totals: { read_share_percent: 97.7 },
+      totals: { read_share_percent: 98.8 },
       operations: {
-        tool_calls: { count: 350, failed: 1 },
-        failure_detail_unavailable: { 'detail-not-recorded': 1 },
+        tool_calls: { count: 100, failed: 20, infrastructure_failed: 2 },
+        failure_detail_unavailable: {},
+        coverage: { unsupported_event_versions: {} },
       },
     },
-    { totals: { read_share_percent: 98.7 } },
+    {
+      codexReport: { totals: { read_share_percent: 98.5 } },
+      matchedTasks: {
+        count: 10,
+        grapt_first_review_accept_rate: 0.9,
+        codex_first_review_accept_rate: 0.85,
+        grapt_tokens_per_accepted_task: 12000,
+        codex_tokens_per_accepted_task: 14000,
+      },
+    },
   );
-  assert.equal(failingUnnamed.criterion_3.status, 'fail');
-  assert.equal(failingUnnamed.criterion_3.cache_share_delta_percent, -1);
-  assert.equal(failingUnnamed.criterion_5.status, 'fail');
-  assert.equal(failingUnnamed.criterion_5.unnamed_terminal_failures, 1);
+  assert.equal(matchedPass.criterion_3.status, 'pass');
+  assert.equal(matchedPass.criterion_5.status, 'pass');
 
-  const failingRate = evaluateReleaseGates({
+  const unreadableArtifact = evaluateReleaseGates({
     totals: { read_share_percent: 99.0 },
     operations: {
-      tool_calls: { count: 100, failed: 4 },
-      failure_detail_unavailable: {},
+      tool_calls: { count: 100, failed: 1, infrastructure_failed: 0 },
+      failure_detail_unavailable: { 'secret-bearing': 1 },
+      coverage: { unsupported_event_versions: {} },
     },
   });
-  assert.equal(failingRate.criterion_3.status, 'unavailable');
-  assert.equal(failingRate.criterion_5.status, 'fail');
-  assert.equal(failingRate.criterion_5.infra_failure_rate_percent, 4);
+  assert.equal(unreadableArtifact.criterion_5.status, 'fail');
+  assert.equal(unreadableArtifact.criterion_5.unavailable_detail_artifacts, 1);
+
+  const skippedTerminalVersion = evaluateReleaseGates({
+    totals: { read_share_percent: 99.0 },
+    operations: {
+      tool_calls: { count: 100, failed: 0, infrastructure_failed: 0 },
+      failure_detail_unavailable: {},
+      coverage: { unsupported_event_versions: { 'session.tool.terminal.2': 1 } },
+    },
+  });
+  assert.equal(skippedTerminalVersion.criterion_5.status, 'fail');
+  assert.equal(skippedTerminalVersion.criterion_5.unsupported_terminal_versions, 1);
+
+  const failingInfraRate = evaluateReleaseGates({
+    totals: { read_share_percent: 99.0 },
+    operations: {
+      tool_calls: { count: 100, failed: 4, infrastructure_failed: 4 },
+      failure_detail_unavailable: {},
+      coverage: { unsupported_event_versions: {} },
+    },
+  });
+  assert.equal(failingInfraRate.criterion_3.status, 'unavailable');
+  assert.equal(failingInfraRate.criterion_5.status, 'fail');
+  assert.equal(failingInfraRate.criterion_5.infra_failure_rate_percent, 4);
 });

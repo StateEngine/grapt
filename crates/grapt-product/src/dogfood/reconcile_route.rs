@@ -36,7 +36,15 @@ impl DogfoodApplication {
         let artifacts = if orphans.is_empty() {
             None
         } else {
-            execution::artifacts::open_artifacts(&self.service_root).ok()
+            match execution::artifacts::open_artifacts(&self.service_root) {
+                Ok(store) => Some(store),
+                Err(error) => {
+                    crate::server_log::warn(format_args!(
+                        "reconcile warning reason=artifact-store-unavailable detail=session {session}: {error}"
+                    ));
+                    None
+                }
+            }
         };
         grapt_runtime::reconcile_orphaned_nested_with_artifacts(
             inbox.store_mut(),
