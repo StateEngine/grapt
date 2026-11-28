@@ -19,16 +19,13 @@ fn protected_storage_round_trips_binary_input_with_independent_plaintext_bound()
     assert!(stored.len() <= stored_bound(secret.len()));
     assert_eq!(open(&stored, secret.len())?, secret);
     assert!(open(&stored, secret.len() - 1).is_err());
-    #[cfg(windows)]
-    {
-        assert!(is_protected(&stored));
-        assert!(!stored.windows(14).any(|bytes| bytes == b"fixture-access"));
-        let mut corrupt = stored;
-        if let Some(last) = corrupt.last_mut() {
-            *last ^= 1;
-        }
-        assert!(open(&corrupt, 4096).is_err());
+    assert!(is_keystore_sealed(&stored));
+    assert!(!stored.windows(14).any(|bytes| bytes == b"fixture-access"));
+    let mut corrupt = stored;
+    if let Some(last) = corrupt.last_mut() {
+        *last ^= 1;
     }
+    assert!(open(&corrupt, 4096).is_err());
     Ok(())
 }
 
@@ -46,7 +43,6 @@ fn a_dpapi_credential_opens_and_is_resealed_under_the_keystore() -> io::Result<(
     Ok(())
 }
 
-#[cfg(windows)]
 #[test]
 fn a_credential_whose_key_is_gone_names_that_reason() -> io::Result<()> {
     let orphan = fixtures::sealed_with_missing_key(b"fixture-orphan")?;
@@ -55,6 +51,40 @@ fn a_credential_whose_key_is_gone_names_that_reason() -> io::Result<()> {
         .ok_or_else(|| io::Error::other("opened"))?;
     assert!(is_key_missing(&error));
     assert_eq!(error.to_string(), KEY_MISSING);
+    Ok(())
+}
+
+/// With no keystore to reach, a new credential is stored as it is, with the
+/// warning, and plaintext stored that way is sealed once the keystore is back.
+#[cfg(not(windows))]
+#[test]
+fn without_a_keystore_a_new_credential_is_stored_owner_only_with_a_warning() -> io::Result<()> {
+    let secret = b"fixture-headless-secret";
+    let stored = {
+        let _headless = TestKeystoreUnavailable::now();
+        seal(secret)?
+    };
+    assert_eq!(stored, secret);
+    let warning = keystore_fallback().ok_or_else(|| io::Error::other("no fallback warning"))?;
+    assert_eq!(warning.warning, KEYSTORE_FALLBACK);
+    assert!(!warning.detail.is_empty() && !warning.step.is_empty());
+    let resealed = seal(&open(&stored, secret.len())?)?;
+    assert!(is_keystore_sealed(&resealed));
+    assert_eq!(open(&resealed, secret.len())?, secret);
+    Ok(())
+}
+
+/// A sealed credential is never read another way while its keystore is away.
+#[cfg(not(windows))]
+#[test]
+fn a_sealed_credential_waits_for_its_keystore() -> io::Result<()> {
+    let sealed = seal(b"fixture-sealed-secret")?;
+    let _headless = TestKeystoreUnavailable::now();
+    let error = open(&sealed, 4096)
+        .err()
+        .ok_or_else(|| io::Error::other("opened without its keystore"))?;
+    assert!(is_keystore_unavailable(&error));
+    assert!(!is_key_missing(&error));
     Ok(())
 }
 

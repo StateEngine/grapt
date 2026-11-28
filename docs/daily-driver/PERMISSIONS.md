@@ -70,8 +70,7 @@ Legacy ChatGPT upgrades prepare both protected files before publishing either.
 Their exact originals remain in the private `.chatgpt-protection-upgrade` slot
 until the pair commits. A failed publication restores both originals; after a
 process interruption, restart the new build so it completes recovery before
-downgrading. Leave that recovery directory intact. Unix sign-in persistence is
-unchanged.
+downgrading. Leave that recovery directory intact.
 
 If an earlier failed upgrade left only some files sealed, the new build can read
 that mixed state under the owning Windows account. To restore an older build's
@@ -88,6 +87,30 @@ The script uses DPAPI locally, makes no provider request and retains encrypted
 originals in private `recovery-sealed` files. It imports Windows PowerShell's
 bundled modules explicitly, so a `PSModulePath` inherited from PowerShell
 7 cannot redirect `Get-Acl` module loading.
+
+
+## macOS and Linux credential sealing
+
+Provider keys and ChatGPT tokens are sealed the same way, with AES-256-GCM in the
+existing profile files, under a key that the macOS Keychain or the Linux Secret
+Service (for example GNOME Keyring or KeePassXC) holds, as a `grapt-credential-key`
+entry. Linux reaches the Secret Service over D-Bus without any C library. The
+pointer naming the next key lives in a private directory: `~/Library/Application
+Support/grapt/credential-keys` on macOS, `$XDG_DATA_HOME/grapt/credential-keys`
+(or `~/.local/share/grapt/credential-keys`) on Linux, mode 0700 with the pointer
+at 0600, and neither it nor its `grapt` parent may be a link. Credentials stored
+earlier as owner-only plaintext stay readable and are sealed when next written.
+
+When no keystore can be reached, such as on a server over SSH without a Secret
+Service, a new credential is stored as an owner-only (0600) file without
+sealing, as before this change. Grapt says so once per process: a JSON line on
+standard error with `"warning":"credential-keystore-unavailable"`, the reason,
+and the step that seals it (start a Secret Service, or unlock the login
+Keychain, then sign in or add the credential again). A credential that is
+already sealed is never read, overwritten or downgraded while its keystore is
+unavailable: reading it reports that the keystore is unavailable, writing over
+it refuses, and removing the connection still works. A sealed credential whose
+key is gone says so, and can be replaced or removed.
 
 ## The default is `maintainer`
 

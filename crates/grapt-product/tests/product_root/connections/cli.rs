@@ -136,11 +136,7 @@ fn copied_cli_connects_an_absent_profile_then_changes_and_removes_the_live_conne
     assert_eq!(response["connections"][0]["status"], "ok");
     assert_eq!(
         response["connections"][0]["backend"],
-        if cfg!(windows) {
-            "windows-current-user-encryption"
-        } else {
-            "owner-only-legacy-plaintext"
-        }
+        "system-keystore-encryption"
     );
     let (ok, response, error) = cli(
         &binary,

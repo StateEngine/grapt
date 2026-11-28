@@ -280,9 +280,6 @@
     "crates/grapt-login/src/key/cloudflare.rs": {
       "fn verify :: clippy::too_many_lines": 1
     },
-    "crates/grapt-login/src/vault/tests.rs": {
-      "fn stored_credentials_keep_connection_destination_and_payload_purpose :: clippy::cognitive_complexity": 1
-    },
     "crates/grapt-mail-transport/src/http/decode.rs": {
       "fn binding :: clippy::too_many_lines": 1,
       "fn message :: clippy::too_many_lines": 1

@@ -724,6 +724,11 @@ fn read_bounded(path: &Path, cap: usize) -> Result<Option<Vec<u8>>, SignInError>
     let failed = |error: std::io::Error| {
         if crate::profile_security::is_key_missing(&error) {
             SignInError::Store(format!("{name}: {}", crate::profile_security::KEY_MISSING))
+        } else if crate::profile_security::is_keystore_unavailable(&error) {
+            SignInError::Store(format!(
+                "{name} is sealed with the system keystore, which is unavailable; start it and \
+                 try again, or sign in again to replace it"
+            ))
         } else {
             SignInError::Store(format!("{name} is unreadable: {:?}", error.kind()))
         }

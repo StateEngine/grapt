@@ -57,8 +57,20 @@ pub fn read(
     Ok(result)
 }
 
+/// How a credential file is protected, read from its own bytes.
+fn stored_kind(stored: &[u8]) -> &'static str {
+    backend(if profile_security::is_keystore_sealed(stored) {
+        BackendKind::SystemKeystoreEncryption
+    } else if profile_security::is_protected(stored) {
+        BackendKind::WindowsCurrentUserEncryption
+    } else {
+        BackendKind::OwnerOnlyLegacyPlaintext
+    })
+}
+
 fn backend(kind: BackendKind) -> &'static str {
     match kind {
+        BackendKind::SystemKeystoreEncryption => "system-keystore-encryption",
         BackendKind::WindowsCurrentUserEncryption => "windows-current-user-encryption",
         BackendKind::OwnerOnlyLegacyPlaintext => "owner-only-legacy-plaintext",
     }
@@ -130,11 +142,7 @@ fn describe(
             )
             .map_err(|error| error.to_string())?,
         );
-        let kind = if profile_security::is_protected(&stored) {
-            "windows-current-user-encryption"
-        } else {
-            "owner-only-legacy-plaintext"
-        };
+        let kind = stored_kind(&stored);
         return Ok((kind, None, expiry(tokens.expires_at, now)));
     }
     let stored = Zeroizing::new(
@@ -144,11 +152,7 @@ fn describe(
         )
         .map_err(|error| error.to_string())?,
     );
-    let kind = if profile_security::is_protected(&stored) {
-        "windows-current-user-encryption"
-    } else {
-        "owner-only-legacy-plaintext"
-    };
+    let kind = stored_kind(&stored);
     let plaintext =
         Zeroizing::new(profile_security::open(&stored, 4096).map_err(|error| error.to_string())?);
     let value = std::str::from_utf8(&plaintext)

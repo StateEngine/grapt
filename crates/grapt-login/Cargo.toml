@@ -42,6 +42,13 @@ libc = "0.2"
 [target.'cfg(windows)'.dependencies]
 keyring = { version = "=3.6.3", default-features = false, features = ["windows-native"] }
 
+# The Secret Service over pure-Rust zbus: no libdbus, libsecret or OpenSSL.
+[target.'cfg(target_os = "linux")'.dependencies]
+keyring = { version = "=3.6.3", default-features = false, features = ["async-secret-service", "crypto-rust", "async-io"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+keyring = { version = "=3.6.3", default-features = false, features = ["apple-native"] }
+
 [dev-dependencies]
 tokio = { version = "1", default-features = false, features = ["io-util", "macros", "net", "rt-multi-thread", "sync", "test-util", "time"] }
 
