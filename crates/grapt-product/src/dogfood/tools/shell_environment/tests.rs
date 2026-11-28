@@ -407,12 +407,13 @@ async fn prepared_shell_uses_project_policy_and_keeps_the_snapshot() -> Result<(
     .map_err(|e| e.to_string())?;
     let EffectTarget::Shell {
         program,
-        environment,
+        mut environment,
         ..
     } = effect.target
     else {
         return Err("wrong shell target".into());
     };
+    environment.without_sandbox();
     assert!(environment.names().contains(&"SC_ENV_MARKER".into()));
     let output = run_shell(
         &scratch.0,
@@ -474,9 +475,10 @@ async fn agent_commands_default_to_noninteractive_and_allow_explicit_overrides(
                 &session,
                 false,
             )?;
-            let EffectTarget::TerminalExec(spec) = prepared.target else {
+            let EffectTarget::TerminalExec(mut spec) = prepared.target else {
                 return Err("wrong terminal target".into());
             };
+            spec.environment.without_sandbox();
             let operation =
                 grapt_types::OperationId::new(format!("op_agent_env_{tty}_{overridden}"))
                     .ok_or("invalid operation")?;

@@ -7,7 +7,7 @@ const INSTRUCTION_FILES: [&str; 2] = ["AGENTS.md", "AGENTS.override.md"];
 
 #[expect(clippy::too_many_lines, reason = "legacy")]
 pub(super) fn read(root: &Path, sources: &CatalogSources) -> Result<Option<Plan>, String> {
-    let mut enabled = false;
+    let mut enabled = true;
     let mut git_metadata_read_only = false;
     let mut network = true;
     let mut declared = Vec::new();

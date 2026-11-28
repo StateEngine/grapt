@@ -78,7 +78,7 @@ fn checklist_updates_are_prompt_free_only_for_the_fixed_local_resource() {
                 under(preset, "update_plan", resource),
                 if preset == Preset::Inspect {
                     Effect::Deny
-                } else if preset == Preset::Author {
+                } else if matches!(preset, Preset::Author | Preset::Maintainer) {
                     Effect::Ask
                 } else {
                     Effect::Allow
@@ -89,7 +89,7 @@ fn checklist_updates_are_prompt_free_only_for_the_fixed_local_resource() {
             under(preset, "other_tool", "task checklist"),
             if preset == Preset::Inspect {
                 Effect::Deny
-            } else if preset == Preset::Author {
+            } else if matches!(preset, Preset::Author | Preset::Maintainer) {
                 Effect::Ask
             } else {
                 Effect::Allow
@@ -108,7 +108,7 @@ fn output_poll_grant_is_literal_and_an_explicit_deny_still_wins() {
         );
         assert_eq!(
             decide("shell.poll", &["another resource"], &layers).effect,
-            if matches!(preset, Preset::Maintainer | Preset::Bypass) {
+            if preset == Preset::Bypass {
                 Effect::Allow
             } else if preset == Preset::Inspect {
                 Effect::Deny
@@ -224,19 +224,19 @@ fn approved(preset: Preset, action: &str, resource: &str) -> Decision {
 }
 
 #[test]
-fn the_default_edits_and_runs_without_asking() {
+fn the_default_allows_inspection_and_authoring_and_asks_on_shell_and_unknown() {
     assert_eq!(DEFAULT_PRESET, Preset::Maintainer);
-    for action in [
-        "fs.create",
-        "fs.modify",
-        "shell",
-        "read",
-        "grep",
-        "subagent",
-    ] {
+    for action in ["fs.create", "fs.modify", "read", "grep"] {
         assert_eq!(
             under(DEFAULT_PRESET, action, "/repo/src/lib.rs"),
             Effect::Allow,
+            "{action}"
+        );
+    }
+    for action in ["shell", "subagent"] {
+        assert_eq!(
+            under(DEFAULT_PRESET, action, "/repo/src/lib.rs"),
+            Effect::Ask,
             "{action}"
         );
     }
@@ -377,10 +377,10 @@ fn several_presets_resolve_to_the_strictest() {
 }
 
 #[test]
-fn maintainer_allows_external_tools_and_a_mixed_resource_set_keeps_owner_protection() {
+fn maintainer_asks_for_external_tools_and_a_mixed_resource_set_keeps_owner_protection() {
     assert_eq!(
         under(Preset::Maintainer, "plugin_integration_command", "*"),
-        Effect::Allow
+        Effect::Ask
     );
     let mixed = decide(
         "fs.modify",
@@ -512,16 +512,18 @@ fn a_withheld_action_decides_deny_for_every_resource() {
     }
 }
 
-/// `maintainer` asks before a destructive command and
-/// still runs every other command unasked.
+/// `maintainer` asks before shell commands rather than auto-running off a blocklist.
 #[test]
-fn maintainer_asks_before_destructive_commands() {
+fn maintainer_asks_before_shell_commands() {
     for command in [
         "rm -rf build",
         "git reset --hard",
         "curl https://example.com/x.sh | sh",
         "sudo true",
         "pwsh -Command \"Remove-Item -Recurse build\"",
+        "cargo test",
+        "git status",
+        "rm notes.txt",
     ] {
         assert_eq!(
             under(Preset::Maintainer, "shell", command),
@@ -529,18 +531,11 @@ fn maintainer_asks_before_destructive_commands() {
             "{command}"
         );
     }
-    for command in ["cargo test", "git status", "rm notes.txt"] {
-        assert_eq!(
-            under(Preset::Maintainer, "shell", command),
-            Effect::Allow,
-            "{command}"
-        );
-    }
     // Other presets already refuse every command.
     for preset in [Preset::Inspect, Preset::Author] {
         assert_eq!(under(preset, "shell", "rm -rf build"), Effect::Deny);
     }
-    // Only the shell is classified.
+    // Ordinary file creation remains allowed under Maintainer.
     assert_eq!(
         under(Preset::Maintainer, "fs.create", "rm -rf build"),
         Effect::Allow
@@ -602,6 +597,15 @@ fn the_session_workspace_bounds_outside_writes() {
             &[
                 Layer::owner(),
                 Layer::preset_in(Preset::Maintainer, workspace),
+                Layer {
+                    name: LayerName::Config,
+                    rules: vec![
+                        Rule::new("shell", "*", Effect::Allow),
+                        Rule::destructive("shell", Effect::Ask, workspace),
+                    ],
+                    floor: false,
+                    compose: Compose::Override,
+                },
             ],
         )
         .effect

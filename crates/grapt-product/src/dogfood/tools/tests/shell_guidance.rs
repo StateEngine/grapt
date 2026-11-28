@@ -67,11 +67,12 @@ async fn guided_run(scratch: &Scratch, command: &str) -> Result<Vec<u8>, String>
     let EffectTarget::Shell {
         command,
         program,
-        environment,
+        mut environment,
     } = prepared.target
     else {
         return Err("shell preparation changed effect class".to_owned());
     };
+    environment.without_sandbox();
     run_shell(
         &scratch.0,
         &command,

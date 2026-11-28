@@ -158,6 +158,9 @@ fn protected_paths_and_file_parents_refuse_before_any_effect() -> Result<(), Str
         ".stateengine/config",
         ".codex/config",
         "AGENTS.md",
+        "AGENTS.override.md",
+        "nested/AGENTS.md",
+        "nested/AGENTS.override.md",
         "CLAUDE.md",
     ] {
         let input=input(&format!("*** Begin Patch\n*** Add File: safe-first\n+safe\n*** Add File: {requested}\n+bad\n*** End Patch"))?;

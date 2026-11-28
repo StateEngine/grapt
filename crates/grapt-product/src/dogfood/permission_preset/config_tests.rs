@@ -44,10 +44,14 @@ fn planning_edits_only_markdown_documents_in_the_literal_plan_directory() -> Res
     ));
     assert!(policy.withholds("exec_command"));
     assert!(!policy.withholds(crate::dogfood::tools::WRITE_TOOL));
-    for action in ["fs.create", "fs.modify", "fs.overwrite"] {
+    for (action, expected) in [
+        ("fs.create", Effect::Allow),
+        ("fs.modify", Effect::Allow),
+        ("fs.overwrite", Effect::Ask),
+    ] {
         assert_eq!(
             decide(&policy, action, "/repo/weird?*/plans/design.md"),
-            Effect::Allow
+            expected
         );
         for path in [
             "/repo/main.rs",

@@ -692,11 +692,7 @@ impl Runner {
                     .flatten()
                     .filter_map(serde_json::Value::as_str)
                     .collect();
-                let reason = if row["metadata"]["policy"]["ownerFloor"] == true {
-                    "changes to permission settings require an explicit decision"
-                } else {
-                    "automatic approval will not remove files or approve an unclassified request"
-                };
+                let reason = auto_reject_reason(action, row.get("metadata"));
                 let refusal = format!(
                     "refused {action} ({}): {reason}. Approve it interactively.",
                     resources.join(", ")
@@ -960,10 +956,28 @@ pub(crate) fn auto_reply_for(
         return "reject";
     };
     let removes = matches!(action, "fs.delete" | "fs.move") || removal;
-    if owner_floor || (removes && auto == crate::AutoReply::Auto) {
+    let lowers_containment = action.starts_with("sandbox.");
+    if owner_floor || lowers_containment || (removes && auto == crate::AutoReply::Auto) {
         "reject"
     } else {
         "once"
+    }
+}
+
+pub(crate) fn auto_reject_reason(
+    action: &str,
+    metadata: Option<&serde_json::Value>,
+) -> &'static str {
+    if metadata
+        .and_then(|value| value.get("policy"))
+        .and_then(|value| value.get("ownerFloor"))
+        == Some(&serde_json::Value::Bool(true))
+    {
+        "changes to permission settings require an explicit decision"
+    } else if action.starts_with("sandbox.") {
+        "lowering or expanding sandbox containment requires explicit interactive consent"
+    } else {
+        "automatic approval will not remove files or approve an unclassified request"
     }
 }
 

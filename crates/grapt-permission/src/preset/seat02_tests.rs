@@ -10,11 +10,16 @@ fn effect(preset: Preset, action: &str, resource: &str) -> Effect {
 }
 
 #[test]
-fn seat02_maintainer_allows_ordinary_project_and_external_tool_work() {
+fn seat02_maintainer_allows_ordinary_authoring_and_asks_for_destructive_or_external_tools() {
     assert_eq!(DEFAULT_PRESET, Preset::Maintainer);
+    for action in ["fs.create", "fs.modify"] {
+        assert_eq!(
+            effect(Preset::Maintainer, action, "/repo/file.txt"),
+            Effect::Allow,
+            "{action}"
+        );
+    }
     for action in [
-        "fs.create",
-        "fs.modify",
         "fs.overwrite",
         "fs.move",
         "fs.delete",
@@ -23,7 +28,7 @@ fn seat02_maintainer_allows_ordinary_project_and_external_tool_work() {
     ] {
         assert_eq!(
             effect(Preset::Maintainer, action, "/repo/file.txt"),
-            Effect::Allow,
+            Effect::Ask,
             "{action}"
         );
     }
@@ -38,23 +43,19 @@ fn seat02_maintainer_allows_ordinary_project_and_external_tool_work() {
 }
 
 #[test]
-fn seat02_maintainer_destructive_shell_exception_includes_recursive_deletes() {
+fn seat02_maintainer_asks_before_shell_commands() {
     for command in [
         "rm -rf build",
         "rm --recursive build",
         "git reset --hard",
         "echo x > /outside/file",
+        "cargo test",
+        "echo x > /repo/file",
+        "mv /repo/a /repo/b",
     ] {
         assert_eq!(
             effect(Preset::Maintainer, "shell", command),
             Effect::Ask,
-            "{command}"
-        );
-    }
-    for command in ["cargo test", "echo x > /repo/file", "mv /repo/a /repo/b"] {
-        assert_eq!(
-            effect(Preset::Maintainer, "shell", command),
-            Effect::Allow,
             "{command}"
         );
     }
@@ -98,8 +99,12 @@ fn seat02_maintainer_owner_floor_keeps_authority_edits_attended() {
         }
     }
     assert_eq!(
-        effect(Preset::Maintainer, "fs.overwrite", "/repo/ordinary.json"),
+        effect(Preset::Maintainer, "fs.modify", "/repo/ordinary.json"),
         Effect::Allow
+    );
+    assert_eq!(
+        effect(Preset::Maintainer, "fs.overwrite", "/repo/ordinary.json"),
+        Effect::Ask
     );
 }
 

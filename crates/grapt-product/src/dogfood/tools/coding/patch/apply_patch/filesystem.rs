@@ -42,6 +42,7 @@ impl<'a> Planner<'a> {
         let first = relative.components().next().ok_or("patch path is empty")?;
         let top = path_text(&self.root.join(first));
         if crate::dogfood::tools::paths::profile_path(&relative)
+            || crate::dogfood::tools::paths::instruction_path(&relative)
             || protected_paths(self.root).iter().any(|protected| {
                 protected.as_canonical().is_some_and(|path| {
                     if cfg!(windows) {
@@ -106,6 +107,9 @@ impl<'a> Planner<'a> {
             )?;
         }
         let target = current.join(relative.file_name().ok_or("patch path has no filename")?);
+        if crate::dogfood::tools::paths::is_instruction_symlink_target(self.root, &target) {
+            return Err("tool path names protected control metadata".into());
+        }
         if let Some((known, _)) = self
             .files
             .iter()

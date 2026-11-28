@@ -139,6 +139,13 @@ impl Environment {
         Self::from_parent(std::env::vars_os(), &Policy::default(), cfg!(windows))
     }
 
+    /// Library unit tests run under `libtest` rather than the `grapt` binary,
+    /// so they cannot re-exec the product sandbox helper.
+    #[cfg(test)]
+    pub(in crate::dogfood::tools) fn without_sandbox(&mut self) {
+        self.1 = None;
+    }
+
     fn from_parent(
         parent: impl IntoIterator<Item = (OsString, OsString)>,
         policy: &Policy,

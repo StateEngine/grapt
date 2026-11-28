@@ -23,8 +23,25 @@ pub(super) mod windows;
 fn backend() -> &'static str {
     if cfg!(target_os = "linux") {
         "bwrap"
+    } else if cfg!(target_os = "macos") {
+        "seatbelt"
     } else {
         "mxc"
+    }
+}
+
+#[cfg(not(any(windows, target_os = "linux")))]
+pub(super) fn unsupported_platform_refusal() -> String {
+    if cfg!(target_os = "macos") {
+        refusal(
+            &degraded("macOS Seatbelt shell containment is not wired into this build"),
+            "macOS Seatbelt sandbox unavailable; no command ran; set \"sandbox\": {\"enabled\": false} in user grapt.json to opt out",
+        )
+    } else {
+        refusal(
+            &degraded("OS shell containment is unavailable on this platform"),
+            "sandbox unavailable; no command ran; set \"sandbox\": {\"enabled\": false} in user grapt.json to opt out",
+        )
     }
 }
 
@@ -177,7 +194,10 @@ pub(in crate::dogfood) fn receipt(raw: &str) -> Option<serde_json::Value> {
     match enforcement.get("kind")?.as_str()? {
         "harness_only" => {}
         "platform_sandbox" | "degraded"
-            if matches!(enforcement.get("backend")?.as_str()?, "mxc" | "bwrap") => {}
+            if matches!(
+                enforcement.get("backend")?.as_str()?,
+                "mxc" | "bwrap" | "seatbelt"
+            ) => {}
         _ => return None,
     }
     value.get("ran")?;

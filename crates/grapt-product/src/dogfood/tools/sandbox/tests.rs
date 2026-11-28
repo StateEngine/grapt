@@ -2,6 +2,44 @@ use super::*;
 use crate::dogfood::catalog_config::CatalogEnvironment;
 
 #[test]
+fn isolation_defaults_on_and_user_disable_turns_it_off() -> Result<(), String> {
+    let root = std::env::temp_dir().join(format!(
+        "grapt-sandbox-default-{}-{:?}",
+        std::process::id(),
+        std::thread::current().id()
+    ));
+    std::fs::create_dir(&root).map_err(|e| e.to_string())?;
+    let result = (|| {
+        let workspace = root.join("work");
+        for path in [&workspace, &root.join("config")] {
+            std::fs::create_dir(path).map_err(|e| e.to_string())?;
+        }
+        let sources = || CatalogSources::read(&workspace, CatalogEnvironment::isolated(&root));
+        let default_plan =
+            Plan::read(&workspace, &sources()?)?.ok_or("sandbox did not default on")?;
+        assert!(default_plan.network);
+        std::fs::write(
+            workspace.join("grapt.json"),
+            br#"{"sandbox":{"enabled":false}}"#,
+        )
+        .map_err(|e| e.to_string())?;
+        assert!(
+            Plan::read(&workspace, &sources()?)?.is_some(),
+            "repository config disabled default sandbox"
+        );
+        std::fs::write(
+            root.join("config/grapt.json"),
+            br#"{"sandbox":{"enabled":false}}"#,
+        )
+        .map_err(|e| e.to_string())?;
+        assert!(Plan::read(&workspace, &sources()?)?.is_none());
+        Ok(())
+    })();
+    let _ = std::fs::remove_dir_all(&root);
+    result
+}
+
+#[test]
 #[cfg_attr(windows, expect(clippy::cognitive_complexity, reason = "legacy"))]
 #[expect(clippy::too_many_lines, reason = "legacy")]
 fn isolation_defaults_off_and_repository_settings_cannot_widen_a_user_policy() -> Result<(), String>
@@ -23,7 +61,7 @@ fn isolation_defaults_off_and_repository_settings_cannot_widen_a_user_policy() -
             std::fs::create_dir(path).map_err(|e| e.to_string())?;
         }
         let sources = || CatalogSources::read(&workspace, CatalogEnvironment::isolated(&root));
-        assert!(Plan::read(&workspace, &sources()?)?.is_none());
+        assert!(Plan::read(&workspace, &sources()?)?.is_some());
         std::fs::write(root.join("config/grapt.json"), serde_json::json!({"sandbox":{"enabled":true,"writable_roots":[granted],"network":true}}).to_string()).map_err(|e| e.to_string())?;
         std::fs::write(workspace.join("grapt.json"), serde_json::json!({"sandbox":{"enabled":false,"writable_roots":[outside],"network":false}}).to_string()).map_err(|e| e.to_string())?;
         let plan = Plan::read(&workspace, &sources()?)?.ok_or("user sandbox policy disappeared")?;
@@ -233,6 +271,30 @@ fn callback_output_cannot_replace_native_receipts_or_change_interpolation_bytes(
     assert!(bounded.len() as u64 <= grapt_runtime::TOOL_ARTIFACT_MAX_BYTES);
     assert!(Receipt::parse(std::str::from_utf8(&bounded).map_err(|e| e.to_string())?).is_some());
     assert!(actual.output(oversized, true, true).is_err());
+    let seatbelt_started = Receipt::started(RealizedEnforcement::PlatformSandbox {
+        backend: "seatbelt".into(),
+    });
+    let seatbelt_out = seatbelt_started.output(b"ok".to_vec(), true, false)?;
+    let parsed_started =
+        Receipt::parse(std::str::from_utf8(&seatbelt_out).map_err(|e| e.to_string())?)
+            .ok_or("seatbelt platform_sandbox receipt was rejected")?;
+    assert_eq!(parsed_started.enforcement, seatbelt_started.enforcement);
+    assert_eq!(parsed_started.ran, Some(true));
+    let seatbelt_refusal = refusal(
+        &RealizedEnforcement::Degraded {
+            backend: "seatbelt".into(),
+            reason: "macOS Seatbelt shell containment is not wired into this build".into(),
+        },
+        "macOS Seatbelt sandbox unavailable; no command ran; set \"sandbox\": {\"enabled\": false} in user grapt.json to opt out",
+    );
+    let parsed_degraded =
+        Receipt::parse(&seatbelt_refusal).ok_or("seatbelt degraded receipt was rejected")?;
+    assert_eq!(parsed_degraded.ran, Some(false));
+    let preserved = parsed_degraded.error(&seatbelt_refusal);
+    assert!(
+        preserved.contains("opt out") && preserved.contains("seatbelt"),
+        "seatbelt degraded refusal lost opt-out detail: {preserved}"
+    );
     Ok(())
 }
 

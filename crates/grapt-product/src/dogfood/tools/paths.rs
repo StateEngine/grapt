@@ -30,13 +30,14 @@ pub(super) fn filesystem_capability(
 
 /// Workspace entries an agent may not write. Both project directory names
 /// are listed whichever one the repository uses.
-const PROTECTED: [&str; 7] = [
+const PROTECTED: [&str; 8] = [
     ".git",
     PROJECT_DIRECTORIES[0],
     PROJECT_DIRECTORIES[1],
     ".stateengine",
     ".codex",
     "AGENTS.md",
+    "AGENTS.override.md",
     "CLAUDE.md",
 ];
 
@@ -51,6 +52,57 @@ pub(super) fn profile_path(relative: &Path) -> bool {
     relative.components().any(|component| {
         matches!(component, Component::Normal(name) if name.to_str().is_some_and(is_project_directory))
     })
+}
+
+/// Instruction files are loaded from nested subdirectories as well as the
+/// workspace root, so native write and patch tools must protect them at any
+/// depth and across case-insensitive filesystems (APFS/NTFS).
+pub(super) fn instruction_path(relative: &Path) -> bool {
+    relative
+        .file_name()
+        .and_then(|name| name.to_str())
+        .is_some_and(|name| {
+            ["AGENTS.md", "AGENTS.override.md"]
+                .iter()
+                .any(|protected| name.eq_ignore_ascii_case(protected))
+        })
+}
+
+/// True if `target` is the resolved target of an in-scope `AGENTS.md` or
+/// `AGENTS.override.md` symlink between `target`'s parent and `root`.
+pub(super) fn is_instruction_symlink_target(root: &Path, target: &Path) -> bool {
+    let Ok(canonical_root) = std::fs::canonicalize(root) else {
+        return false;
+    };
+    let canonical_target = std::fs::canonicalize(target).unwrap_or_else(|_| target.to_path_buf());
+    let mut current = canonical_target.parent();
+    for _ in 0..64 {
+        let Some(dir) = current else {
+            break;
+        };
+        if !dir.starts_with(&canonical_root) {
+            break;
+        }
+        for name in ["AGENTS.md", "AGENTS.override.md"] {
+            let candidate = dir.join(name);
+            if std::fs::symlink_metadata(&candidate).is_ok_and(|meta| meta.is_symlink())
+                && std::fs::canonicalize(&candidate).is_ok_and(|resolved| {
+                    if cfg!(windows) {
+                        path_text(&resolved).eq_ignore_ascii_case(&path_text(&canonical_target))
+                    } else {
+                        resolved == canonical_target
+                    }
+                })
+            {
+                return true;
+            }
+        }
+        if dir == canonical_root {
+            break;
+        }
+        current = dir.parent();
+    }
+    false
 }
 
 pub(super) fn resolve_existing(
@@ -89,7 +141,7 @@ pub(super) fn resolve_existing(
                 )
             ))
         });
-        if protected {
+        if protected || instruction_path(relative) || is_instruction_symlink_target(root, &target) {
             return Err("tool path names protected control metadata".to_owned());
         }
     }

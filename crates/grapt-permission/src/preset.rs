@@ -248,14 +248,19 @@ const AUTHOR: &[Builtin] = &concat::<20>(&[
     ],
 ]);
 
-// Decided 2026-10-20: allow ordinary work, with a short explicit exception list.
-const MAINTAINER: &[Builtin] = &[
-    rule("*", "*", Effect::Allow),
-    rule(crate::SANDBOX_WRITE_ACTION, "*", Effect::Ask),
-    rule(crate::SANDBOX_MSYS_ACTION, "*", Effect::Ask),
-    destructive("shell", Effect::Ask),
-    rule("external_directory", "*", Effect::Ask),
-];
+// Default Ask with explicit read-only inspection and authoring allowances;
+// shell commands, external directories, and unknown tools ask unless approved.
+const MAINTAINER: &[Builtin] = &concat::<21>(&[
+    &[rule("*", "*", Effect::Ask)],
+    &inspection!(),
+    &authoring!(),
+    &[
+        rule(crate::SANDBOX_WRITE_ACTION, "*", Effect::Ask),
+        rule(crate::SANDBOX_MSYS_ACTION, "*", Effect::Ask),
+        destructive("shell", Effect::Ask),
+        rule("external_directory", "*", Effect::Ask),
+    ],
+]);
 
 const BYPASS: &[Builtin] = &[rule("*", "*", Effect::Allow)];
 

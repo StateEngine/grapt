@@ -498,15 +498,18 @@ fn write_target(root: &Path, requested: &str) -> Result<WriteTarget, String> {
     }
     let target = parent.join(name);
     // Apply the existing control-metadata policy even when the target does not exist.
-    if protected_paths(root).iter().any(|protected| {
-        protected.as_canonical().is_some_and(|protected| {
-            if cfg!(windows) {
-                protected.eq_ignore_ascii_case(&path_text(&target))
-            } else {
-                protected == path_text(&target)
-            }
+    if crate::dogfood::tools::paths::instruction_path(&target)
+        || crate::dogfood::tools::paths::is_instruction_symlink_target(root, &target)
+        || protected_paths(root).iter().any(|protected| {
+            protected.as_canonical().is_some_and(|protected| {
+                if cfg!(windows) {
+                    protected.eq_ignore_ascii_case(&path_text(&target))
+                } else {
+                    protected == path_text(&target)
+                }
+            })
         })
-    }) {
+    {
         return Err("tool path names protected control metadata".into());
     }
     match std::fs::symlink_metadata(&target) {
