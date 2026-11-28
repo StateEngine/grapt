@@ -102,7 +102,7 @@ impl<H: SeatHost> Publisher<H> {
 
     pub(super) async fn apply(&mut self, command: Command) {
         let outcome = match command {
-            Command::Reconcile => self.reconcile().await.map(drop),
+            Command::Reconcile => self.sync_activity().await.map(drop),
             Command::Turn(turn) => self.publish(&turn).await,
         };
         match outcome {
@@ -141,7 +141,7 @@ impl<H: SeatHost> Publisher<H> {
 
     /// Report the desired state unless the host already holds it, and name
     /// the session it belongs to.
-    async fn reconcile(&mut self) -> Result<Option<SeatSession>, String> {
+    async fn sync_activity(&mut self) -> Result<Option<SeatSession>, String> {
         let Some(desired) = self.desired.get() else {
             return Ok(None);
         };
@@ -164,7 +164,7 @@ impl<H: SeatHost> Publisher<H> {
         let mut attempts = 0;
         loop {
             attempts += 1;
-            let session = self.reconcile().await?.ok_or(
+            let session = self.sync_activity().await?.ok_or(
                 "no StateEngine seat session is known; the turn was not published".to_owned(),
             )?;
             self.waited()?;

@@ -274,7 +274,10 @@ fn the_observer_restates_before_deciding_waits_for_room_and_stops_idle() -> Test
     };
     drop(held);
     let first = subscribed(&stop, None)?;
-    hub.reconcile();
+    hub.reconcile_because(
+        grapt_api::u3a::ReconcileReason::UnpublishedAdvisoryNotice,
+        "fixture",
+    );
     // A reconciliation ends the stream; the next subscription restates the
     // busy session before the seat's state is decided, so idle is never sent.
     subscribed(&stop, Some(&first))?;
