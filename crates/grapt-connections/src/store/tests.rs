@@ -11,6 +11,7 @@ impl Profile {
         ));
         std::fs::create_dir(&path)?;
         profile_security::protect_directory(&path)?;
+        profile_security::isolate_test_keystore()?;
         Ok(Self(path))
     }
 }

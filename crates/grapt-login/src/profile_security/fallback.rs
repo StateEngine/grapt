@@ -3,8 +3,10 @@
 //! Off Windows a machine may have no keystore to reach, such as a server
 //! reached over SSH with no Secret Service. A new credential is then stored
 //! owner-only (0600), as it was before sealing, and this says so: once on
-//! standard error as one JSON line, and to any caller that asks.
+//! standard error as one JSON line, and to any caller that asks. A file that
+//! is already sealed is never replaced that way.
 use std::io;
+use std::path::Path;
 use std::sync::OnceLock;
 
 /// The warning's stable code.
@@ -25,7 +27,8 @@ pub struct KeystoreFallback {
 }
 
 #[cfg(target_os = "macos")]
-const STEP: &str = "unlock the login Keychain, then sign in or add the credential again to seal it";
+const STEP: &str =
+    "restore a default Keychain, then sign in or add the credential again to seal it";
 #[cfg(not(target_os = "macos"))]
 const STEP: &str =
     "start a Secret Service such as GNOME Keyring or KeePassXC, then sign in or add \
@@ -39,9 +42,57 @@ pub fn keystore_fallback() -> Option<KeystoreFallback> {
     NOTED.get().cloned()
 }
 
+/// Allow `target` to be written unsealed because the keystore is absent, or
+/// return `absent` when `target` holds a sealed credential or cannot be read.
+#[cfg_attr(windows, expect(dead_code, reason = "Windows always has its keystore"))]
+pub(super) fn permit(target: &Path, absent: io::Error) -> io::Result<()> {
+    match sealed(target) {
+        Ok(false) => {
+            note(&absent);
+            Ok(())
+        }
+        Ok(true) => Err(absent),
+        Err(error) => Err(error),
+    }
+}
+
+/// Whether `target` holds a sealed credential. Only its first bytes are read;
+/// a missing file holds none, and anything but a regular file refuses.
+#[cfg_attr(windows, expect(dead_code, reason = "Windows always has its keystore"))]
+fn sealed(target: &Path) -> io::Result<bool> {
+    use std::io::Read;
+    match std::fs::symlink_metadata(target) {
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(false),
+        Err(error) => return Err(error),
+        Ok(metadata) if !metadata.is_file() => {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "a credential file is not a regular file; it was left in place",
+            ))
+        }
+        Ok(_) => {}
+    }
+    let mut options = std::fs::OpenOptions::new();
+    options.read(true);
+    #[cfg(unix)]
+    std::os::unix::fs::OpenOptionsExt::custom_flags(
+        &mut options,
+        libc::O_NOFOLLOW | libc::O_NONBLOCK,
+    );
+    let mut head = Vec::new();
+    let limit = super::KEYSTORE_ENVELOPE
+        .len()
+        .max(super::DPAPI_ENVELOPE.len());
+    options
+        .open(target)?
+        .take(u64::try_from(limit).unwrap_or(u64::MAX))
+        .read_to_end(&mut head)?;
+    Ok(super::is_protected(&head))
+}
+
 /// Record the fallback, and say it on standard error the first time.
 #[cfg_attr(windows, expect(dead_code, reason = "Windows always has its keystore"))]
-pub(super) fn note(error: &io::Error) {
+fn note(error: &io::Error) {
     let mut detail = error.to_string();
     if detail.len() > DETAIL_BYTES {
         let mut end = DETAIL_BYTES;

@@ -17,17 +17,62 @@ use std::io;
 use std::path::{Path, PathBuf};
 use zeroize::Zeroizing;
 
-/// The operating system's keystore.
-#[cfg(any(windows, not(any(test, feature = "loopback-testkit"))))]
+#[cfg(any(test, feature = "loopback-testkit"))]
+mod isolation;
 mod os;
-#[cfg(any(windows, not(any(test, feature = "loopback-testkit"))))]
-use os as store;
-/// Tests off Windows keep keys in files, so no test needs a running Secret
-/// Service or touches the user's Keychain.
+/// Tests off Windows that configure a test keystore keep keys in files, so
+/// no test needs a running Secret Service or touches the user's Keychain.
 #[cfg(all(not(windows), any(test, feature = "loopback-testkit")))]
 pub(super) mod test_store;
-#[cfg(all(not(windows), any(test, feature = "loopback-testkit")))]
-use test_store as store;
+#[cfg(any(test, feature = "loopback-testkit"))]
+pub use isolation::{isolate_test_keystore, TEST_KEYSTORE_VARIABLE};
+
+/// Where keys are kept: the system keystore under its release names, or the
+/// test keystore a test configured explicitly.
+enum Backend {
+    System,
+    #[cfg(any(test, feature = "loopback-testkit"))]
+    Test(PathBuf),
+}
+
+impl Backend {
+    fn configured() -> io::Result<Self> {
+        #[cfg(any(test, feature = "loopback-testkit"))]
+        if let Some(root) = isolation::root()? {
+            return Ok(Self::Test(root));
+        }
+        Ok(Self::System)
+    }
+
+    /// The directory of the pointer and its lock.
+    fn directory(&self) -> io::Result<PathBuf> {
+        match self {
+            Self::System => system_directory(),
+            #[cfg(any(test, feature = "loopback-testkit"))]
+            Self::Test(root) => Ok(root.join("credential-keys")),
+        }
+    }
+
+    fn get(&self, name: &str) -> io::Result<Option<Zeroizing<Vec<u8>>>> {
+        match self {
+            Self::System => os::get(os::SERVICE, name),
+            #[cfg(all(windows, any(test, feature = "loopback-testkit")))]
+            Self::Test(_) => os::get(os::TEST_SERVICE, name),
+            #[cfg(all(not(windows), any(test, feature = "loopback-testkit")))]
+            Self::Test(root) => test_store::get(root, name),
+        }
+    }
+
+    fn set(&self, name: &str, secret: &[u8]) -> io::Result<()> {
+        match self {
+            Self::System => os::set(os::SERVICE, name, secret),
+            #[cfg(all(windows, any(test, feature = "loopback-testkit")))]
+            Self::Test(_) => os::set(os::TEST_SERVICE, name, secret),
+            #[cfg(all(not(windows), any(test, feature = "loopback-testkit")))]
+            Self::Test(root) => test_store::set(root, name, secret),
+        }
+    }
+}
 
 /// Marks a keystore that cannot be reached, as on a machine with no Secret
 /// Service: a different fact from a key that is missing or a keystore that
@@ -43,13 +88,6 @@ impl std::fmt::Display for Unavailable {
 
 impl std::error::Error for Unavailable {}
 
-#[cfg_attr(
-    all(not(windows), not(test), feature = "loopback-testkit"),
-    expect(
-        dead_code,
-        reason = "a testkit build's file keystore is always reachable"
-    )
-)]
 fn unavailable(detail: String) -> io::Error {
     io::Error::other(Unavailable(detail))
 }
@@ -72,24 +110,25 @@ pub(super) struct Key {
 
 /// The key an envelope names, if the keystore still holds it.
 pub(super) fn by_id(id: &[u8; ID_BYTES]) -> io::Result<Option<Key>> {
-    read(*id)
+    read(&Backend::configured()?, *id)
 }
 
 /// The key that seals next on this machine, made now if there is none.
 pub(super) fn current() -> io::Result<Key> {
-    let directory = directory()?;
+    let backend = Backend::configured()?;
+    let directory = backend.directory()?;
     // The directory is this user's alone, and neither it nor the app's
     // directory above it is a link, before anything in it is trusted or
     // written.
     prepare(&directory)?;
-    if let Some(key) = pointed(&directory)? {
+    if let Some(key) = pointed(&backend, &directory)? {
         return Ok(key);
     }
     let lock = super::open_private_lock(&directory.join(LOCK)).map_err(io::Error::from)?;
     lock.lock()?;
-    let key = match pointed(&directory) {
+    let key = match pointed(&backend, &directory) {
         Ok(Some(key)) => Ok(key),
-        Ok(None) => create(&directory),
+        Ok(None) => create(&backend, &directory),
         Err(error) => Err(error),
     };
     // Closing the handle releases the lock even if this unlock fails.
@@ -99,7 +138,7 @@ pub(super) fn current() -> io::Result<Key> {
 
 /// The key the pointer names, or `None` when there is no usable pointer or
 /// the keystore no longer holds its key.
-fn pointed(directory: &Path) -> io::Result<Option<Key>> {
+fn pointed(backend: &Backend, directory: &Path) -> io::Result<Option<Key>> {
     // A link or an oversized file in place of the pointer refuses.
     let bytes = match super::read_owner_only_file(&directory.join(POINTER), ID_BYTES * 2) {
         Ok(bytes) => bytes,
@@ -107,7 +146,7 @@ fn pointed(directory: &Path) -> io::Result<Option<Key>> {
         Err(error) => return Err(error),
     };
     match std::str::from_utf8(&bytes).ok().and_then(parse) {
-        Some(id) => read(id),
+        Some(id) => read(backend, id),
         None => Ok(None),
     }
 }
@@ -158,19 +197,19 @@ fn real_directory(path: &Path) -> io::Result<()> {
 
 /// Holding the lock: write a key under a new name, read it back, then point
 /// at it. A crash before the pointer moves leaves an unused entry only.
-fn create(directory: &Path) -> io::Result<Key> {
+fn create(backend: &Backend, directory: &Path) -> io::Result<Key> {
     let mut id = [0; ID_BYTES];
     entropy::fill(&mut id)?;
     let mut secret = Zeroizing::new([0; KEY_BYTES]);
     entropy::fill(&mut *secret)?;
     let name = hex(&id);
-    if store::get(&name)?.is_some() {
+    if backend.get(&name)?.is_some() {
         return Err(io::Error::other(
             "a new credential key identity is already in use",
         ));
     }
-    store::set(&name, &*secret)?;
-    let stored = read(id)?
+    backend.set(&name, &*secret)?;
+    let stored = read(backend, id)?
         .ok_or_else(|| io::Error::other("the new credential sealing key could not be read back"))?;
     if *stored.secret != *secret {
         return Err(io::Error::other(
@@ -182,8 +221,8 @@ fn create(directory: &Path) -> io::Result<Key> {
     Ok(stored)
 }
 
-fn read(id: [u8; ID_BYTES]) -> io::Result<Option<Key>> {
-    let Some(secret) = store::get(&hex(&id))? else {
+fn read(backend: &Backend, id: [u8; ID_BYTES]) -> io::Result<Option<Key>> {
+    let Some(secret) = backend.get(&hex(&id))? else {
         return Ok(None);
     };
     let key: [u8; KEY_BYTES] = secret.as_slice().try_into().map_err(|_| {
@@ -200,25 +239,21 @@ fn read(id: [u8; ID_BYTES]) -> io::Result<Option<Key>> {
 
 /// A directory of its own in the user's local application data, never a
 /// roaming or temporary place.
-#[cfg(all(windows, not(any(test, feature = "loopback-testkit"))))]
-fn directory() -> io::Result<PathBuf> {
+#[cfg(windows)]
+fn system_directory() -> io::Result<PathBuf> {
     absolute_variable("LOCALAPPDATA").map(|path| path.join("grapt").join("credential-keys"))
 }
 
 /// The user's data directory: `$XDG_DATA_HOME`, or `~/.local/share`.
-#[cfg(all(
-    not(windows),
-    not(target_os = "macos"),
-    not(any(test, feature = "loopback-testkit"))
-))]
-fn directory() -> io::Result<PathBuf> {
+#[cfg(all(not(windows), not(target_os = "macos")))]
+fn system_directory() -> io::Result<PathBuf> {
     absolute_variable("XDG_DATA_HOME")
         .or_else(|_| absolute_variable("HOME").map(|home| home.join(".local").join("share")))
         .map(|path| path.join("grapt").join("credential-keys"))
 }
 
-#[cfg(all(target_os = "macos", not(any(test, feature = "loopback-testkit"))))]
-fn directory() -> io::Result<PathBuf> {
+#[cfg(target_os = "macos")]
+fn system_directory() -> io::Result<PathBuf> {
     absolute_variable("HOME").map(|home| {
         home.join("Library")
             .join("Application Support")
@@ -227,7 +262,6 @@ fn directory() -> io::Result<PathBuf> {
     })
 }
 
-#[cfg(not(any(test, feature = "loopback-testkit")))]
 fn absolute_variable(name: &str) -> io::Result<PathBuf> {
     std::env::var_os(name)
         .map(PathBuf::from)
@@ -238,26 +272,6 @@ fn absolute_variable(name: &str) -> io::Result<PathBuf> {
                 format!("{name} is unknown, so no credential key can be chosen"),
             )
         })
-}
-
-/// One test key per account, shared by every test process through the lock,
-/// so test runs never accumulate keystore entries.
-#[cfg(any(test, feature = "loopback-testkit"))]
-fn directory() -> io::Result<PathBuf> {
-    Ok(test_root().join("credential-keys"))
-}
-
-/// Where tests keep keystore state. Off Windows it is a fixed place rather
-/// than the process's temporary directory, because a real keystore does not
-/// change with the environment, and a child process started with a cleared
-/// environment must find the keys its parent made.
-#[cfg(any(test, feature = "loopback-testkit"))]
-fn test_root() -> PathBuf {
-    #[cfg(unix)]
-    let base = PathBuf::from("/tmp");
-    #[cfg(not(unix))]
-    let base = std::env::temp_dir();
-    base.join("grapt-login-test")
 }
 
 fn hex(bytes: &[u8]) -> String {

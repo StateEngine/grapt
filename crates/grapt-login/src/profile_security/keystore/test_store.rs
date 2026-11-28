@@ -1,10 +1,11 @@
-//! A keystore in files, for tests off Windows. It keeps keys across processes
-//! as a real keystore does, so a shipped binary under test and the test that
-//! reads its output share keys, and a test can make it unavailable on its own
-//! thread, as a machine without a Secret Service is.
+//! A keystore in files, for tests off Windows that configured one. It keeps
+//! keys across processes as a real keystore does, so a shipped binary under
+//! test and the test that reads its output share keys when the test gives the
+//! child its directory, and a test can make it unavailable on its own thread,
+//! as a machine without a Secret Service is.
 use std::fs::{self, OpenOptions};
 use std::io::{self, Write};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use zeroize::Zeroizing;
 
 #[cfg(test)]
@@ -42,14 +43,14 @@ fn reachable() -> io::Result<()> {
     Ok(())
 }
 
-fn directory() -> PathBuf {
-    super::test_root().join("keystore")
+fn directory(root: &Path) -> PathBuf {
+    root.join("keystore")
 }
 
 /// The secret stored under `name`, or `None` when there is no such entry.
-pub(super) fn get(name: &str) -> io::Result<Option<Zeroizing<Vec<u8>>>> {
+pub(super) fn get(root: &Path, name: &str) -> io::Result<Option<Zeroizing<Vec<u8>>>> {
     reachable()?;
-    match fs::read(directory().join(name)) {
+    match fs::read(directory(root).join(name)) {
         Ok(secret) => Ok(Some(Zeroizing::new(secret))),
         Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(None),
         Err(error) => Err(error),
@@ -57,9 +58,9 @@ pub(super) fn get(name: &str) -> io::Result<Option<Zeroizing<Vec<u8>>>> {
 }
 
 /// Store `secret` under a `name` no entry has yet.
-pub(super) fn set(name: &str, secret: &[u8]) -> io::Result<()> {
+pub(super) fn set(root: &Path, name: &str, secret: &[u8]) -> io::Result<()> {
     reachable()?;
-    let directory = directory();
+    let directory = directory(root);
     fs::create_dir_all(&directory)?;
     let mut options = OpenOptions::new();
     options.write(true).create_new(true);

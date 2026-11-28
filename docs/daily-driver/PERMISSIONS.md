@@ -101,16 +101,18 @@ Support/grapt/credential-keys` on macOS, `$XDG_DATA_HOME/grapt/credential-keys`
 at 0600, and neither it nor its `grapt` parent may be a link. Credentials stored
 earlier as owner-only plaintext stay readable and are sealed when next written.
 
-When no keystore can be reached, such as on a server over SSH without a Secret
-Service, a new credential is stored as an owner-only (0600) file without
-sealing, as before this change. Grapt says so once per process: a JSON line on
-standard error with `"warning":"credential-keystore-unavailable"`, the reason,
-and the step that seals it (start a Secret Service, or unlock the login
-Keychain, then sign in or add the credential again). A credential that is
-already sealed is never read, overwritten or downgraded while its keystore is
-unavailable: reading it reports that the keystore is unavailable, writing over
-it refuses, and removing the connection still works. A sealed credential whose
-key is gone says so, and can be replaced or removed.
+When no keystore is present at all (on Linux, no D-Bus session or no Secret
+Service on it, as on a server over SSH; on macOS, no keychain), a new
+credential is stored as an owner-only (0600) file without sealing, as before
+this change. Grapt says so once per process: a JSON line on standard error with
+`"warning":"credential-keystore-unavailable"`, the reason, and the step that
+seals it. A keystore that is present but refuses, because it is locked, a
+prompt was dismissed or the keychain is read-only, fails the write instead;
+nothing is stored unsealed. A credential that is already sealed is never read,
+overwritten or downgraded while its keystore is unavailable: reading it reports
+that the keystore is unavailable, writing over it refuses, and removing the
+connection still works. A sealed credential whose key is gone says so, and can
+be replaced or removed.
 
 ## The default is `maintainer`
 

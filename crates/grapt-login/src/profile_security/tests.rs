@@ -62,7 +62,10 @@ fn without_a_keystore_a_new_credential_is_stored_owner_only_with_a_warning() -> 
     let secret = b"fixture-headless-secret";
     let stored = {
         let _headless = TestKeystoreUnavailable::now();
-        seal(secret)?
+        seal_for(
+            secret,
+            std::path::Path::new("/nonexistent/grapt-fixture.credential"),
+        )?
     };
     assert_eq!(stored, secret);
     let warning = keystore_fallback().ok_or_else(|| io::Error::other("no fallback warning"))?;
@@ -71,6 +74,26 @@ fn without_a_keystore_a_new_credential_is_stored_owner_only_with_a_warning() -> 
     let resealed = seal(&open(&stored, secret.len())?)?;
     assert!(is_keystore_sealed(&resealed));
     assert_eq!(open(&resealed, secret.len())?, secret);
+    Ok(())
+}
+
+/// Without a keystore, a sealed file is never replaced by an unsealed one, and
+/// only a caller naming the file it replaces may store anything unsealed.
+#[cfg(not(windows))]
+#[test]
+fn without_a_keystore_a_sealed_file_is_never_replaced_unsealed() -> io::Result<()> {
+    let scratch = ScratchDir::new("login-fallback-target")?;
+    let sealed = scratch.0.join("sealed.credential");
+    std::fs::write(&sealed, seal(b"fixture-sealed")?)?;
+    let plain = scratch.0.join("plain.credential");
+    std::fs::write(&plain, b"fixture-plain")?;
+    let _headless = TestKeystoreUnavailable::now();
+    let refused = seal_for(b"fixture-next", &sealed)
+        .err()
+        .ok_or_else(|| io::Error::other("a sealed file was replaced unsealed"))?;
+    assert!(is_keystore_unavailable(&refused));
+    assert!(seal(b"fixture-next").is_err());
+    assert_eq!(seal_for(b"fixture-next", &plain)?, b"fixture-next");
     Ok(())
 }
 

@@ -2194,12 +2194,15 @@ dependencies = [
  "rustls",
  "rustls-platform-verifier",
  "same-file",
+ "secret-service",
+ "security-framework 3.7.0",
  "serde",
  "serde_json",
  "sha2 0.10.9",
  "subtle",
  "thiserror 2.0.20",
  "tokio",
+ "zbus",
  "zeroize",
 ]
 

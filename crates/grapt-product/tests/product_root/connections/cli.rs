@@ -26,6 +26,10 @@ fn cli_status(
         .arg("--profile")
         .arg(profile)
         .env("GRAPT_LIVE_HEADLESS_LOOPBACK", provider)
+        .env(
+            grapt_login::profile_security::TEST_KEYSTORE_VARIABLE,
+            grapt_login::profile_security::isolate_test_keystore()?,
+        )
         .env("OPENAI_API_KEY", "fixture-valid-export-only")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())

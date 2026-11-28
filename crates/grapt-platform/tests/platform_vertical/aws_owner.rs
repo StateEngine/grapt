@@ -11,6 +11,7 @@ use grapt_types::Timestamp;
 fn runtime_aws_owner_retains_destination_and_refuses_dispatch_after_disconnect() -> TestResult {
     let root = scratch("aws-owner-disconnect")?;
     grapt_login::profile_security::protect_directory(&root)?;
+    grapt_login::profile_security::isolate_test_keystore()?;
     let config = config("open-ready", "aws-owner", &[], None);
     std::fs::write(root.join("grapt.jsonc"), &config)?;
     let binding = DestinationBinding::key(ApiDestination::parse(

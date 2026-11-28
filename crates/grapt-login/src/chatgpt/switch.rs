@@ -142,9 +142,15 @@ pub(super) fn stage(
         }
         write_new(&journal.join(file.name(spelling)), file.bytes())?;
     }
-    let state = crate::profile_security::seal(&super::encode(tokens))?;
+    // Staged files are published over the profile's own, so each is sealed
+    // as a replacement for the file it will become.
+    let seal = |bytes: &[u8], name: &str| match journal.parent() {
+        Some(profile) => crate::profile_security::seal_for(bytes, &profile.join(name)),
+        None => crate::profile_security::seal(bytes),
+    };
+    let state = seal(&super::encode(tokens), super::STATE_FILE)?;
     write_new(&journal.join(super::STATE_FILE), state.as_slice())?;
-    let credential = crate::profile_security::seal(tokens.access.as_bytes())?;
+    let credential = seal(tokens.access.as_bytes(), super::CREDENTIAL_FILE)?;
     write_new(&journal.join(super::CREDENTIAL_FILE), credential.as_slice())?;
     super::sync_directory(journal);
     if commit {

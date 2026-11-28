@@ -230,7 +230,8 @@ impl CredentialVault for SealedFileVault {
             return Err(VaultError::InvalidInput);
         }
         let stored = Zeroizing::new(
-            profile_security::seal(&plaintext).map_err(unavailable(StorageOperation::Seal))?,
+            profile_security::seal_for(&plaintext, &self.root.join(&key.file))
+                .map_err(unavailable(StorageOperation::Seal))?,
         );
         self.check_root()?;
         profile_security::replace_private_file(&self.root, &key.file, &stored)

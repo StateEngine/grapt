@@ -706,6 +706,30 @@ fn an_oversized_or_foreign_credential_is_replaced_by_the_generation() {
     assert_eq!(profile.read(CREDENTIAL_FILE), tokens.access);
 }
 
+/// While the keystore is away, neither a save nor a projection replaces a
+/// sealed sign-in with an unsealed one.
+#[cfg(not(windows))]
+#[test]
+fn a_sealed_sign_in_is_never_replaced_unsealed_without_its_keystore(
+) -> Result<(), Box<dyn std::error::Error>> {
+    let profile = Profile::new("sealed-outage");
+    save(&profile.0, &signed_in(NOW + HOUR))?;
+    let stored = || -> std::io::Result<Vec<Vec<u8>>> {
+        [STATE_FILE, CREDENTIAL_FILE]
+            .iter()
+            .map(|name| std::fs::read(profile.0.join(name)))
+            .collect()
+    };
+    let before = stored()?;
+    let next = signed_in(NOW + 2 * HOUR);
+    let headless = crate::profile_security::TestKeystoreUnavailable::now();
+    assert!(save(&profile.0, &next).is_err());
+    assert!(project(&profile.0, &next).is_err());
+    drop(headless);
+    assert_eq!(stored()?, before);
+    Ok(())
+}
+
 fn write_config(profile: &std::path::Path, credential_version: &str) {
     let config =
         serde_json::json!({"provider": {"id": "openai", "credential_version": credential_version}});

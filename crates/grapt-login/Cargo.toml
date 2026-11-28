@@ -45,9 +45,14 @@ keyring = { version = "=3.6.3", default-features = false, features = ["windows-n
 # The Secret Service over pure-Rust zbus: no libdbus, libsecret or OpenSSL.
 [target.'cfg(target_os = "linux")'.dependencies]
 keyring = { version = "=3.6.3", default-features = false, features = ["async-secret-service", "crypto-rust", "async-io"] }
+# Named only to tell an absent Secret Service from one that refused.
+secret-service = { version = "=4.0.0", default-features = false }
+zbus = { version = "=4.4.0", default-features = false }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 keyring = { version = "=3.6.3", default-features = false, features = ["apple-native"] }
+# Named only to tell an absent keychain from one that refused.
+security-framework = { version = "=3.7.0", default-features = false }
 
 [dev-dependencies]
 tokio = { version = "1", default-features = false, features = ["io-util", "macros", "net", "rt-multi-thread", "sync", "test-util", "time"] }

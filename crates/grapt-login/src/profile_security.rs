@@ -44,6 +44,8 @@ mod keystore;
 /// Makes this thread's test keystore unavailable while held.
 #[cfg(all(test, not(windows)))]
 pub(crate) use keystore::test_store::Unavailable as TestKeystoreUnavailable;
+#[cfg(any(test, feature = "loopback-testkit"))]
+pub use keystore::{isolate_test_keystore, TEST_KEYSTORE_VARIABLE};
 
 /// The earlier Windows format, still opened so existing credentials migrate.
 const DPAPI_ENVELOPE: &[u8] = b"secode.dpapi.current-user.v1\n";
@@ -104,20 +106,34 @@ pub const fn stored_bound(plaintext_bound: usize) -> usize {
     plaintext_bound.saturating_add(1024)
 }
 
-/// Protect bytes before the existing atomic writer creates its temporary file.
-///
-/// Off Windows, when the keystore cannot be reached, the bytes are returned
-/// as they are for the owner-only file, and [`keystore_fallback`] reports it.
+/// Protect bytes with the system keystore. Nothing is stored another way:
+/// when the keystore cannot seal them, this refuses.
 pub fn seal(bytes: &[u8]) -> io::Result<Vec<u8>> {
-    let key = match keystore::current() {
-        Ok(key) => key,
+    seal_with(&keystore::current()?, bytes)
+}
+
+/// Protect bytes that will be written as `target`.
+///
+/// Off Windows, when no keystore is present at all, the bytes are returned as
+/// they are for the owner-only file and [`keystore_fallback`] reports it, but
+/// only while `target` holds no sealed credential: a sealed file is never
+/// replaced by an unsealed one, so that case refuses as keystore unavailable.
+pub fn seal_for(bytes: &[u8], target: &Path) -> io::Result<Vec<u8>> {
+    match keystore::current() {
+        Ok(key) => seal_with(&key, bytes),
         #[cfg(not(windows))]
         Err(error) if keystore::is_unavailable(&error) => {
-            fallback::note(&error);
-            return Ok(bytes.to_vec());
+            fallback::permit(target, error)?;
+            Ok(bytes.to_vec())
         }
-        Err(error) => return Err(error),
-    };
+        Err(error) => {
+            let _ = target;
+            Err(error)
+        }
+    }
+}
+
+fn seal_with(key: &keystore::Key, bytes: &[u8]) -> io::Result<Vec<u8>> {
     let mut nonce = [0; envelope::NONCE_BYTES];
     entropy::fill(&mut nonce)?;
     envelope::seal(&key.id, &key.secret, nonce, bytes)

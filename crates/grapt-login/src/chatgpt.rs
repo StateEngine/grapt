@@ -801,7 +801,7 @@ fn same_file(_before: &std::fs::Metadata, _opened: &std::fs::Metadata) -> bool {
 /// Write `name` in `directory` through a private temporary file and an
 /// atomic rename, so a reader sees the old bytes or the new, never a mix.
 fn replace(directory: &Path, name: &str, bytes: &[u8]) -> Result<(), SignInError> {
-    let protected = crate::profile_security::seal(bytes)
+    let protected = crate::profile_security::seal_for(bytes, &directory.join(name))
         .map_err(|error| write_failure(name, "protected", &error))?;
     write_replacing(directory, name, protected.as_slice())
 }

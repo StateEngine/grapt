@@ -198,6 +198,7 @@ async fn three_oauth_installs_retire_the_old_opener_and_refuse_an_interleaved_re
     );
     std::fs::create_dir(&profile.0)?;
     grapt_login::profile_security::protect_directory(&profile.0)?;
+    grapt_login::profile_security::isolate_test_keystore()?;
     std::fs::write(
         profile.0.join("grapt.jsonc"),
         br#"{"store":{"authority":"open-ready"},"product":{"build":"oauth-generation-test"}}"#,

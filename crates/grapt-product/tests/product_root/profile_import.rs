@@ -33,6 +33,7 @@ impl Fixture {
         let source = fixture.source();
         fs::create_dir(&source)?;
         profile_security::protect_directory(&source)?;
+        profile_security::isolate_test_keystore()?;
         fixture.write(
             "grapt.jsonc",
             &serde_json::to_vec(&json!({"provider":{
@@ -113,6 +114,10 @@ impl Fixture {
             .arg("--from")
             .arg(self.source())
             .env("SYNTHETIC_IMPORT_ENV_KEY", ENVIRONMENT)
+            .env(
+                profile_security::TEST_KEYSTORE_VARIABLE,
+                profile_security::isolate_test_keystore()?,
+            )
             .stdin(Stdio::null())
             .output()?)
     }
@@ -407,6 +412,10 @@ fn managed_import_refuses_busy_writers_and_renewals_then_releases_ownership() ->
     released(&fixture.source(), record)?;
     let before = fs::read(fixture.target().join("basic.credential"))?;
     let output = Command::new(shipped_cli::cli_binary())
+        .env(
+            profile_security::TEST_KEYSTORE_VARIABLE,
+            profile_security::isolate_test_keystore()?,
+        )
         .args(["code", "--profile"])
         .arg(fixture.target())
         .arg("--setup")
@@ -526,6 +535,10 @@ fn legacy_api_key_and_first_use_refusal_keep_source_and_destination_ownership() 
     let target = fixture.0.join("refused-first-use");
     fixture.write("connections.json", b"SYNTHETIC_IMPORT_KEY_NOT_VALID {")?;
     let output = Command::new(shipped_cli::cli_binary())
+        .env(
+            profile_security::TEST_KEYSTORE_VARIABLE,
+            profile_security::isolate_test_keystore()?,
+        )
         .args(["code", "--profile"])
         .arg(&target)
         .arg("--setup")
