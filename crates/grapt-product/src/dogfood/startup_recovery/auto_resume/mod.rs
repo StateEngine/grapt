@@ -34,7 +34,8 @@ use self::store::{
     has_active_or_lost_subagent_child, has_ambiguous_process_loss_step,
     has_pending_approval_or_form, has_unresolved_or_quarantined_attempt,
     interrupted_turn_origin_seq, is_child_session, latest_human_input_seq, list_runnable_after,
-    load_row, synthetic_input_started, synthetic_message_id, upsert_row, PendingRow, ResumeState,
+    load_row, synthetic_input_progress, synthetic_message_id, upsert_row, upsert_row_with_input,
+    PendingRow, ResumeState, SyntheticProgress,
 };
 
 /// Maximum automatic resume attempts for a single user turn (`turn_origin_seq`).
@@ -382,6 +383,45 @@ enum ClaimOutcome {
     Skip,
 }
 
+fn claim_next_attempt(
+    application: &DogfoodApplication,
+    store: &mut EventStore,
+    session: &SessionId,
+    current: &store::StoredRow,
+    now_ms: i64,
+) -> Result<ClaimOutcome, String> {
+    if current.attempts >= MAX_AUTO_RESUME_ATTEMPTS {
+        upsert_row(
+            store,
+            session,
+            current.turn_origin_seq,
+            &current.interrupted_execution_id,
+            current.attempts,
+            ResumeState::Stopped,
+            Some("max_auto_resume_attempts_exceeded"),
+            now_ms,
+        )?;
+        record_cap_status(store, &application.clock, &application.ids, session)?;
+        return Ok(ClaimOutcome::Skip);
+    }
+    let next_attempt = current.attempts.saturating_add(1);
+    let msg_id = synthetic_message_id(session, current.turn_origin_seq, next_attempt)?;
+    upsert_row_with_input(
+        store,
+        session,
+        current.turn_origin_seq,
+        &current.interrupted_execution_id,
+        next_attempt,
+        ResumeState::Running,
+        None,
+        now_ms,
+        Some(&msg_id),
+    )?;
+    Ok(ClaimOutcome::Launch {
+        attempt: next_attempt,
+    })
+}
+
 fn claim_row(
     application: &DogfoodApplication,
     store: &mut EventStore,
@@ -416,59 +456,45 @@ fn claim_row(
     }
     match current.state {
         ResumeState::Pending => {
-            if current.attempts >= MAX_AUTO_RESUME_ATTEMPTS {
-                upsert_row(
-                    store,
-                    &row.session,
-                    current.turn_origin_seq,
-                    &current.interrupted_execution_id,
-                    current.attempts,
-                    ResumeState::Stopped,
-                    Some("max_auto_resume_attempts_exceeded"),
-                    now_ms,
-                )?;
-                record_cap_status(store, &application.clock, &application.ids, &row.session)?;
-                return Ok(ClaimOutcome::Skip);
-            }
-            let next_attempt = current.attempts.saturating_add(1);
-            upsert_row(
-                store,
-                &row.session,
-                current.turn_origin_seq,
-                &current.interrupted_execution_id,
-                next_attempt,
-                ResumeState::Running,
-                None,
-                now_ms,
-            )?;
-            Ok(ClaimOutcome::Launch {
-                attempt: next_attempt,
-            })
+            claim_next_attempt(application, store, &row.session, &current, now_ms)
         }
         ResumeState::Running => {
-            // Crash-recovery for the window between claiming `Running` (or
-            // admitting the synthetic input) and starting its execution: if
-            // the deterministic synthetic MessageId has not yet been promoted
-            // or started, re-drive it with the same attempt count rather than
-            // stranding the turn.
             let msg_id =
                 synthetic_message_id(&row.session, current.turn_origin_seq, current.attempts)?;
-            if synthetic_input_started(store.connection(), &row.session, &msg_id)? {
-                upsert_row(
-                    store,
-                    &row.session,
-                    current.turn_origin_seq,
-                    &current.interrupted_execution_id,
-                    current.attempts,
-                    ResumeState::Completed,
-                    Some("already_started"),
-                    now_ms,
-                )?;
-                return Ok(ClaimOutcome::Skip);
+            match synthetic_input_progress(store.connection(), &row.session, &msg_id)? {
+                SyntheticProgress::Started => {
+                    upsert_row(
+                        store,
+                        &row.session,
+                        current.turn_origin_seq,
+                        &current.interrupted_execution_id,
+                        current.attempts,
+                        ResumeState::Completed,
+                        Some("already_started"),
+                        now_ms,
+                    )?;
+                    Ok(ClaimOutcome::Skip)
+                }
+                SyntheticProgress::NotPromoted => {
+                    upsert_row_with_input(
+                        store,
+                        &row.session,
+                        current.turn_origin_seq,
+                        &current.interrupted_execution_id,
+                        current.attempts,
+                        ResumeState::Running,
+                        None,
+                        now_ms,
+                        Some(&msg_id),
+                    )?;
+                    Ok(ClaimOutcome::Launch {
+                        attempt: current.attempts,
+                    })
+                }
+                SyntheticProgress::PromotedNotStarted => {
+                    claim_next_attempt(application, store, &row.session, &current, now_ms)
+                }
             }
-            Ok(ClaimOutcome::Launch {
-                attempt: current.attempts,
-            })
         }
         ResumeState::Completed | ResumeState::Stopped => Ok(ClaimOutcome::Skip),
     }

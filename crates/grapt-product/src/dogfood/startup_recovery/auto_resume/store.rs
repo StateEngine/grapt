@@ -64,7 +64,14 @@ pub(super) fn ensure_schema_within(tx: &GovernedTransaction<'_>) -> Result<(), S
                 updated_at INTEGER NOT NULL
             );
             CREATE INDEX IF NOT EXISTS idx_pending_resume_state_session
-                ON pending_resume (state, session_id);",
+                ON pending_resume (state, session_id);
+            CREATE TABLE IF NOT EXISTS pending_resume_input (
+                session_id TEXT NOT NULL,
+                input_id TEXT NOT NULL,
+                turn_origin_seq INTEGER NOT NULL,
+                active INTEGER NOT NULL,
+                PRIMARY KEY (session_id, input_id)
+            );",
     )
     .map_err(|error| format!("pending_resume schema failed: {error}"))
 }
@@ -73,7 +80,9 @@ pub(super) fn ensure_schema_within(tx: &GovernedTransaction<'_>) -> Result<(), S
 /// it; fresh stores install it in `schemas::install_fresh` and steady restarts
 /// perform zero writes.
 pub(super) fn ensure_schema_if_missing(store: &mut EventStore) -> Result<(), String> {
-    if table_exists(store.connection(), "pending_resume")? {
+    if table_exists(store.connection(), "pending_resume")?
+        && table_exists(store.connection(), "pending_resume_input")?
+    {
         return Ok(());
     }
     let tx = store
@@ -175,6 +184,31 @@ pub(super) fn upsert_row(
     reason: Option<&str>,
     updated_at: i64,
 ) -> Result<(), String> {
+    upsert_row_with_input(
+        store,
+        session,
+        turn_origin_seq,
+        interrupted_execution_id,
+        attempts,
+        state,
+        reason,
+        updated_at,
+        None,
+    )
+}
+
+#[allow(clippy::too_many_arguments, reason = "pending_resume row columns")]
+pub(super) fn upsert_row_with_input(
+    store: &mut EventStore,
+    session: &SessionId,
+    turn_origin_seq: u64,
+    interrupted_execution_id: &str,
+    attempts: u32,
+    state: ResumeState,
+    reason: Option<&str>,
+    updated_at: i64,
+    active_input: Option<&MessageId>,
+) -> Result<(), String> {
     let seq = i64::try_from(turn_origin_seq)
         .map_err(|_| "turn_origin_seq overflows SQLite INTEGER".to_owned())?;
     let attempts = i64::from(attempts);
@@ -204,6 +238,32 @@ pub(super) fn upsert_row(
         ],
     )
     .map_err(|error| format!("pending_resume upsert failed: {error}"))?;
+    if table_exists(&tx, "pending_resume_input")? {
+        if let Some(input_id) = active_input {
+            tx.execute(
+                "UPDATE pending_resume_input SET active = 0
+                 WHERE session_id = ?1 AND input_id != ?2 AND active != 0",
+                rusqlite::params![session.as_str(), input_id.as_str()],
+            )
+            .map_err(|error| format!("pending_resume_input deactivate failed: {error}"))?;
+            tx.execute(
+                "INSERT INTO pending_resume_input (session_id, input_id, turn_origin_seq, active)
+                 VALUES (?1, ?2, ?3, 1)
+                 ON CONFLICT(session_id, input_id) DO UPDATE SET
+                     turn_origin_seq = excluded.turn_origin_seq,
+                     active = 1",
+                rusqlite::params![session.as_str(), input_id.as_str(), seq],
+            )
+            .map_err(|error| format!("pending_resume_input register failed: {error}"))?;
+        } else if matches!(state, ResumeState::Completed | ResumeState::Stopped) {
+            tx.execute(
+                "UPDATE pending_resume_input SET active = 0
+                 WHERE session_id = ?1 AND active != 0",
+                [session.as_str()],
+            )
+            .map_err(|error| format!("pending_resume_input retire failed: {error}"))?;
+        }
+    }
     tx.commit()
         .map_err(|error| format!("pending_resume commit failed: {error}"))?
         .discard();
@@ -263,70 +323,73 @@ struct AdmittedInputOrigin {
     seq: i64,
     input_type: Option<String>,
     user_origin: Option<String>,
-    synth_kind: Option<String>,
-    synth_turn_origin: Option<i64>,
 }
 
-fn latest_admitted_input_in_window(
+fn admitted_input_by_id(
     conn: &rusqlite::Connection,
     session: &SessionId,
-    after_seq: i64,
-    up_to_seq: i64,
+    input_id: &str,
 ) -> Result<Option<AdmittedInputOrigin>, String> {
-    let sql = if table_exists(conn, "session_pending")? {
+    conn.query_row(
         "SELECT seq,
                 CASE WHEN json_valid(data) THEN COALESCE(json_extract(data, '$.input.type'), json_extract(data, '$.kind'), 'user') END,
-                CASE WHEN json_valid(data) THEN COALESCE(json_extract(data, '$.input.data.metadata.origin'), '') END,
-                CASE WHEN json_valid(data) THEN json_extract(data, '$.input.data.metadata.kind') END,
-                CASE WHEN json_valid(data) THEN json_extract(data, '$.input.data.metadata.turnOriginSeq') END
+                CASE WHEN json_valid(data) THEN COALESCE(json_extract(data, '$.input.data.metadata.origin'), '') END
          FROM event
          WHERE aggregate_family = 'session' AND aggregate_id = ?1
            AND type = 'session.input.admitted.1'
-           AND seq > ?2 AND seq <= ?3
            AND CASE WHEN json_valid(data)
-               THEN COALESCE(json_extract(data, '$.inputID'), '') NOT IN (
-                   SELECT id FROM session_pending WHERE session_id = ?1
-               )
+               THEN json_extract(data, '$.inputID') = ?2
                ELSE 0
            END
-         ORDER BY seq DESC
-         LIMIT 1"
-    } else {
-        "SELECT seq,
-                CASE WHEN json_valid(data) THEN COALESCE(json_extract(data, '$.input.type'), json_extract(data, '$.kind'), 'user') END,
-                CASE WHEN json_valid(data) THEN COALESCE(json_extract(data, '$.input.data.metadata.origin'), '') END,
-                CASE WHEN json_valid(data) THEN json_extract(data, '$.input.data.metadata.kind') END,
-                CASE WHEN json_valid(data) THEN json_extract(data, '$.input.data.metadata.turnOriginSeq') END
-         FROM event
-         WHERE aggregate_family = 'session' AND aggregate_id = ?1
-           AND type = 'session.input.admitted.1'
-           AND seq > ?2 AND seq <= ?3
-         ORDER BY seq DESC
-         LIMIT 1"
-    };
-    conn.query_row(
-        sql,
-        rusqlite::params![session.as_str(), after_seq, up_to_seq],
+         ORDER BY seq ASC
+         LIMIT 1",
+        rusqlite::params![session.as_str(), input_id],
         |row| {
             Ok(AdmittedInputOrigin {
                 seq: row.get(0)?,
                 input_type: row.get(1)?,
                 user_origin: row.get(2)?,
-                synth_kind: row.get(3)?,
-                synth_turn_origin: row.get(4)?,
             })
         },
     )
     .optional()
-    .map_err(|error| format!("interrupted turn origin lookup failed: {error}"))
+    .map_err(|error| format!("admitted input lookup failed: {error}"))
+}
+
+fn owner_issued_resume_origin(
+    conn: &rusqlite::Connection,
+    session: &SessionId,
+    input_id: &str,
+) -> Result<Option<u64>, String> {
+    if !table_exists(conn, "pending_resume_input")? {
+        return Ok(None);
+    }
+    let origin: Option<i64> = conn
+        .query_row(
+            "SELECT turn_origin_seq FROM pending_resume_input
+             WHERE session_id = ?1 AND input_id = ?2",
+            rusqlite::params![session.as_str(), input_id],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(|error| format!("pending_resume_input lineage lookup failed: {error}"))?;
+    match origin.filter(|value| *value > 0) {
+        Some(value) => u64::try_from(value)
+            .map(Some)
+            .map_err(|_| "pending_resume_input turn_origin_seq negative".to_owned()),
+        None => Ok(None),
+    }
 }
 
 /// Identify the durable human prompt `seq` that originated `execution`.
 ///
-/// Fails closed (`Ok(None)`) if `execution` has no matching
-/// `session.execution.started.1` event, or if the input that started
-/// `execution` (since the previous execution terminal) was a `seat-startup`
-/// input or an unrelated non-resume synthetic execution.
+/// Looks up the `session.input.promoted.1` event that opened `execution` (so
+/// human prompts queued during a previous execution and promoted later retain
+/// their true admission `seq`), and proves synthetic auto-resume lineage solely
+/// through the owner-issued `pending_resume_input` binding rather than
+/// caller-writable metadata. Fails closed (`Ok(None)`) when `execution` has no
+/// matching start, no promoted input, or was started by `seat-startup` or an
+/// unrelated synthetic input.
 pub(super) fn interrupted_turn_origin_seq(
     conn: &rusqlite::Connection,
     session: &SessionId,
@@ -365,8 +428,25 @@ pub(super) fn interrupted_turn_origin_seq(
         )
         .map_err(|error| format!("previous execution terminal lookup failed: {error}"))?;
 
-    let Some(origin) = latest_admitted_input_in_window(conn, session, prev_terminal, exec_start)?
-    else {
+    let promoted_input_id: Option<String> = conn
+        .query_row(
+            "SELECT CASE WHEN json_valid(data) THEN json_extract(data, '$.inputID') END
+             FROM event
+             WHERE aggregate_family = 'session' AND aggregate_id = ?1
+               AND type = 'session.input.promoted.1'
+               AND seq > ?2 AND seq <= ?3
+             ORDER BY seq DESC
+             LIMIT 1",
+            rusqlite::params![session.as_str(), prev_terminal, exec_start],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(|error| format!("promoted input lookup failed: {error}"))?
+        .flatten();
+    let Some(input_id) = promoted_input_id else {
+        return Ok(None);
+    };
+    let Some(origin) = admitted_input_by_id(conn, session, &input_id)? else {
         return Ok(None);
     };
     match origin.input_type.as_deref() {
@@ -375,14 +455,7 @@ pub(super) fn interrupted_turn_origin_seq(
                 .map(Some)
                 .map_err(|_| "turn origin seq negative".to_owned())
         }
-        Some("synthetic") if origin.synth_kind.as_deref() == Some("auto_resume") => {
-            let Some(turn_seq) = origin.synth_turn_origin.filter(|value| *value > 0) else {
-                return Ok(None);
-            };
-            u64::try_from(turn_seq)
-                .map(Some)
-                .map_err(|_| "synthetic turnOriginSeq negative".to_owned())
-        }
+        Some("synthetic") => owner_issued_resume_origin(conn, session, &input_id),
         _ => Ok(None),
     }
 }
@@ -453,11 +526,13 @@ pub(super) fn has_unresolved_or_quarantined_attempt(
 }
 
 /// True if the latest `ProcessLoss` step failure since `since_seq` occurred
-/// while a provider HTTP request was still in flight (no `session.tool.%`
-/// event committed in that step after the prior step/execution boundary).
-/// When a tool call already started or settled inside that step, the provider
-/// response had already arrived and the turn is safe to auto-resume once lost
-/// tool runs are settled.
+/// while a provider HTTP request could still have been in flight.
+///
+/// Only a durable terminal provider usage observation
+/// (`session.usage.observed.2` with `$.usage.phase = 'terminal'`) in that step
+/// proves `AttemptFragment::ProviderTerminal` arrived before process loss; a
+/// streaming `ToolCalled` / `session.tool.%` row can commit while the provider
+/// stream is still open and therefore never bypasses the Law D1 guard.
 pub(super) fn has_ambiguous_process_loss_step(
     conn: &rusqlite::Connection,
     session: &SessionId,
@@ -500,17 +575,21 @@ pub(super) fn has_ambiguous_process_loss_step(
             |row| row.get(0),
         )
         .map_err(|error| format!("step boundary lookup failed: {error}"))?;
-    let tool_events: i64 = conn
+    let terminal_provider_events: i64 = conn
         .query_row(
             "SELECT COUNT(*) FROM event
              WHERE aggregate_family = 'session' AND aggregate_id = ?1
                AND seq > ?2 AND seq < ?3
-               AND type LIKE 'session.tool.%'",
+               AND type = 'session.usage.observed.2'
+               AND CASE WHEN json_valid(data)
+                   THEN json_extract(data, '$.usage.phase') = 'terminal'
+                   ELSE 0
+               END",
             rusqlite::params![session.as_str(), step_floor, fail_seq],
             |row| row.get(0),
         )
-        .map_err(|error| format!("step tool event lookup failed: {error}"))?;
-    Ok(tool_events == 0)
+        .map_err(|error| format!("step terminal usage lookup failed: {error}"))?;
+    Ok(terminal_provider_events == 0)
 }
 
 /// Fail-closed check for open/suspended permissions or pending forms.
@@ -566,21 +645,30 @@ pub(super) fn has_active_or_lost_subagent_child(
     Ok(active_children > 0)
 }
 
-/// True only if the synthetic resume `input` was not merely admitted, but
-/// actually handed off and started (promoted via `session.input.promoted.1` or
-/// followed by a `session.execution.started.1`). A crash between admission and
-/// execution handoff therefore returns `false` so restart re-drives the same
-/// idempotent `MessageId` without stranding.
-pub(super) fn synthetic_input_started(
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum SyntheticProgress {
+    NotPromoted,
+    PromotedNotStarted,
+    Started,
+}
+
+/// Inspect durable progress for one synthetic resume `input`.
+///
+/// Only a `session.execution.started.1` committed after `input`'s own
+/// `session.input.promoted.1` (and before any subsequent promotion) proves that
+/// an execution actually started for this exact synthetic input. A crash
+/// between promotion and execution start returns `PromotedNotStarted` so
+/// restart can recover without stranding or falsely marking it `Completed`.
+pub(super) fn synthetic_input_progress(
     conn: &rusqlite::Connection,
     session: &SessionId,
     input: &MessageId,
-) -> Result<bool, String> {
-    let admitted_seq: Option<i64> = conn
+) -> Result<SyntheticProgress, String> {
+    let promo_seq: Option<i64> = conn
         .query_row(
             "SELECT MIN(seq) FROM event
              WHERE aggregate_family = 'session' AND aggregate_id = ?1
-               AND type = 'session.input.admitted.1'
+               AND type = 'session.input.promoted.1'
                AND CASE WHEN json_valid(data)
                    THEN json_extract(data, '$.inputID') = ?2
                    ELSE 0
@@ -588,42 +676,38 @@ pub(super) fn synthetic_input_started(
             rusqlite::params![session.as_str(), input.as_str()],
             |row| row.get(0),
         )
-        .map_err(|error| format!("synthetic admission lookup failed: {error}"))?;
-    let Some(admitted_seq) = admitted_seq else {
-        return Ok(false);
+        .map_err(|error| format!("synthetic promotion lookup failed: {error}"))?;
+    let Some(promo_seq) = promo_seq else {
+        return Ok(SyntheticProgress::NotPromoted);
     };
-    let promoted: Option<i64> = conn
+    let next_promo_seq: i64 = conn
         .query_row(
-            "SELECT 1 FROM event
+            "SELECT MIN(seq) FROM event
              WHERE aggregate_family = 'session' AND aggregate_id = ?1
                AND type = 'session.input.promoted.1'
-               AND seq > ?2
-               AND CASE WHEN json_valid(data)
-                   THEN json_extract(data, '$.inputID') = ?3
-                   ELSE 0
-               END
-             LIMIT 1",
-            rusqlite::params![session.as_str(), admitted_seq, input.as_str()],
-            |row| row.get(0),
+               AND seq > ?2",
+            rusqlite::params![session.as_str(), promo_seq],
+            |row| row.get::<_, Option<i64>>(0),
         )
-        .optional()
-        .map_err(|error| format!("synthetic promotion lookup failed: {error}"))?;
-    if promoted.is_some() {
-        return Ok(true);
-    }
+        .map_err(|error| format!("next promotion lookup failed: {error}"))?
+        .unwrap_or(i64::MAX);
     let started: Option<i64> = conn
         .query_row(
             "SELECT 1 FROM event
              WHERE aggregate_family = 'session' AND aggregate_id = ?1
                AND type = 'session.execution.started.1'
-               AND seq > ?2
+               AND seq > ?2 AND seq < ?3
              LIMIT 1",
-            rusqlite::params![session.as_str(), admitted_seq],
+            rusqlite::params![session.as_str(), promo_seq, next_promo_seq],
             |row| row.get(0),
         )
         .optional()
         .map_err(|error| format!("synthetic execution start lookup failed: {error}"))?;
-    Ok(started.is_some())
+    if started.is_some() {
+        Ok(SyntheticProgress::Started)
+    } else {
+        Ok(SyntheticProgress::PromotedNotStarted)
+    }
 }
 
 /// Collision-free database-wide deterministic `MessageId` derived via SHA-256

@@ -823,7 +823,9 @@ impl Inbox {
                 {
                     continue;
                 }
-                if Self::native_mail_input_eligible_within(&tx, session, &candidate)? {
+                if Self::native_mail_input_eligible_within(&tx, session, &candidate)?
+                    && Self::auto_resume_input_eligible_within(&tx, session, &candidate)?
+                {
                     next = Some(candidate);
                     break;
                 }
@@ -868,5 +870,57 @@ impl Inbox {
             }
         };
         Ok(Some(promoted))
+    }
+
+    fn auto_resume_input_eligible_within(
+        tx: &rusqlite::Connection,
+        session: &SessionId,
+        candidate: &PendingInput,
+    ) -> Result<bool, InboxError> {
+        use rusqlite::OptionalExtension as _;
+        if candidate.kind != PromotedInputKind::Synthetic {
+            return Ok(true);
+        }
+        let table_present: Option<i64> = tx
+            .query_row(
+                "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'pending_resume_input' LIMIT 1",
+                [],
+                |row| row.get(0),
+            )
+            .optional()?;
+        if table_present.is_none() {
+            return Ok(true);
+        }
+        let binding: Option<(i64, i64)> = tx
+            .query_row(
+                "SELECT active, turn_origin_seq FROM pending_resume_input
+                 WHERE session_id = ?1 AND input_id = ?2",
+                rusqlite::params![session.as_str(), candidate.input.as_str()],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .optional()?;
+        let Some((active, turn_origin_seq)) = binding else {
+            return Ok(true);
+        };
+        if active == 0 {
+            return Ok(false);
+        }
+        let newer_human: Option<i64> = tx
+            .query_row(
+                "SELECT 1 FROM event
+                 WHERE aggregate_family = 'session' AND aggregate_id = ?1
+                   AND type = 'session.input.admitted.1'
+                   AND seq > ?2
+                   AND CASE WHEN json_valid(data)
+                       THEN COALESCE(json_extract(data, '$.input.type'), json_extract(data, '$.kind'), 'user') = 'user'
+                            AND COALESCE(json_extract(data, '$.input.data.metadata.origin'), '') != 'seat-startup'
+                       ELSE 0
+                   END
+                 LIMIT 1",
+                rusqlite::params![session.as_str(), turn_origin_seq],
+                |row| row.get(0),
+            )
+            .optional()?;
+        Ok(newer_human.is_none())
     }
 }

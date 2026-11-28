@@ -99,6 +99,15 @@ fn seed_active_turn(
         ids,
         clock,
         session,
+        "session.input.promoted",
+        1,
+        json!({"sessionID": session.as_str(), "inputID": "msg_u1"}),
+    )?;
+    let _ = append_event(
+        store,
+        ids,
+        clock,
+        session,
         "session.execution.started",
         1,
         json!({"sessionID": session.as_str(), "executionID": exec_name}),
@@ -162,6 +171,15 @@ fn eligible_interrupted_turn_enqueues_and_respects_crash_loop_cap() -> Result<()
         "session.input.admitted",
         1,
         json!({"inputID": "msg_u2", "input": {"type": "user", "data": {"text": "try again"}}}),
+    )?;
+    let _ = append_event(
+        &mut store,
+        &ids,
+        &clock,
+        &session,
+        "session.input.promoted",
+        1,
+        json!({"sessionID": session.as_str(), "inputID": "msg_u2"}),
     )?;
     let _ = append_event(
         &mut store,
@@ -413,14 +431,13 @@ fn running_claim_without_execution_start_is_reclaimed_on_restart() -> Result<(),
     assert_eq!(runnable[0].attempts, 1);
 
     let msg_id = synthetic_message_id(&session, origin_seq, 1)?;
-    assert!(!synthetic_input_started(
-        store.connection(),
-        &session,
-        &msg_id
-    )?);
+    assert_eq!(
+        synthetic_input_progress(store.connection(), &session, &msg_id)?,
+        SyntheticProgress::NotPromoted
+    );
 
-    // Admitting the synthetic input WITHOUT promoting/starting (crash between
-    // admit_synthetic and schedule_admitted) must STILL reclaim on restart.
+    // Admitting the synthetic input WITHOUT promoting it (even if an unrelated
+    // execution started in the session) must remain NotPromoted.
     let _ = append_event(
         &mut store,
         &ids,
@@ -430,13 +447,37 @@ fn running_claim_without_execution_start_is_reclaimed_on_restart() -> Result<(),
         1,
         json!({"inputID": msg_id.as_str(), "input": {"type": "synthetic", "data": {"text": "resume"}}}),
     )?;
-    assert!(!synthetic_input_started(
-        store.connection(),
+    let _ = append_event(
+        &mut store,
+        &ids,
+        &clock,
         &session,
-        &msg_id
-    )?);
+        "session.execution.started",
+        1,
+        json!({"sessionID": session.as_str(), "executionID": "exec_unrelated"}),
+    )?;
+    assert_eq!(
+        synthetic_input_progress(store.connection(), &session, &msg_id)?,
+        SyntheticProgress::NotPromoted
+    );
 
-    // Once execution starts after admission, restart recognizes it as started.
+    // Promoting msg_id without an execution start (crash between promote_next
+    // and execution start) reports PromotedNotStarted rather than Started.
+    let _ = append_event(
+        &mut store,
+        &ids,
+        &clock,
+        &session,
+        "session.input.promoted",
+        1,
+        json!({"sessionID": session.as_str(), "inputID": msg_id.as_str()}),
+    )?;
+    assert_eq!(
+        synthetic_input_progress(store.connection(), &session, &msg_id)?,
+        SyntheticProgress::PromotedNotStarted
+    );
+
+    // Once execution actually starts after msg_id's promotion, it is Started.
     let _ = append_event(
         &mut store,
         &ids,
@@ -446,11 +487,38 @@ fn running_claim_without_execution_start_is_reclaimed_on_restart() -> Result<(),
         1,
         json!({"sessionID": session.as_str(), "executionID": "exec_r2"}),
     )?;
-    assert!(synthetic_input_started(
-        store.connection(),
-        &session,
-        &msg_id
-    )?);
+    assert_eq!(
+        synthetic_input_progress(store.connection(), &session, &msg_id)?,
+        SyntheticProgress::Started
+    );
+    Ok(())
+}
+
+fn append_process_loss_step(
+    store: &mut EventStore,
+    ids: &OsRandomIds,
+    clock: &SystemClock,
+    session: &SessionId,
+    step_num: u32,
+) -> Result<(), String> {
+    let step = grapt_types::StepNumber::new(step_num).ok_or("step")?;
+    let fact = grapt_event::session_step_failed::StepFailedFact::new(
+        step,
+        grapt_types::StepTerminalReason::ProcessLoss {
+            effect: grapt_types::ExternalEffectState::NoneInitiated,
+        },
+    )
+    .map_err(|e| format!("{e:?}"))?;
+    let encoded = grapt_event::session_step_failed::encode(&fact).map_err(|e| format!("{e:?}"))?;
+    let _ = append_event(
+        store,
+        ids,
+        clock,
+        session,
+        "session.step.failed",
+        2,
+        encoded,
+    )?;
     Ok(())
 }
 
@@ -461,34 +529,14 @@ fn real_serialized_process_loss_step_failed_blocks_auto_resume() -> Result<(), S
     let session: SessionId = "ses_auto_real_pl".parse().map_err(|e| format!("{e}"))?;
     let origin = seed_active_turn(&mut store, &ids, &clock, &session, None, "exec_pl1")?;
 
-    let step1 = grapt_types::StepNumber::new(1).ok_or("step")?;
-    let fact1 = grapt_event::session_step_failed::StepFailedFact::new(
-        step1,
-        grapt_types::StepTerminalReason::ProcessLoss {
-            effect: grapt_types::ExternalEffectState::NoneInitiated,
-        },
-    )
-    .map_err(|e| format!("{e:?}"))?;
-    let encoded1 =
-        grapt_event::session_step_failed::encode(&fact1).map_err(|e| format!("{e:?}"))?;
-    let _ = append_event(
-        &mut store,
-        &ids,
-        &clock,
-        &session,
-        "session.step.failed",
-        2,
-        encoded1,
-    )?;
-
+    append_process_loss_step(&mut store, &ids, &clock, &session, 1)?;
     enqueue_if_eligible(&mut store, &session, &empty_forms, &clock, &ids)?;
     let row = load_row(store.connection(), &session)?.ok_or("missing process-loss row")?;
     assert_eq!(row.state, ResumeState::Stopped);
     assert_eq!(row.reason.as_deref(), Some("ambiguous_provider_attempt"));
 
-    // A step that already started a tool call before ProcessLoss is not an
-    // ambiguous in-flight provider attempt, even though tool events carry no
-    // `$.step` field.
+    // A streaming ToolCalled / session.tool.input.started.2 row WITHOUT
+    // durable provider-terminal usage must STILL block auto-resume (Law D1).
     let _ = append_event(
         &mut store,
         &ids,
@@ -498,51 +546,46 @@ fn real_serialized_process_loss_step_failed_blocks_auto_resume() -> Result<(), S
         2,
         json!({"call": "call_1", "tool": "bash"}),
     )?;
-    let step2 = grapt_types::StepNumber::new(2).ok_or("step2")?;
-    let fact2 = grapt_event::session_step_failed::StepFailedFact::new(
-        step2,
-        grapt_types::StepTerminalReason::ProcessLoss {
-            effect: grapt_types::ExternalEffectState::NoneInitiated,
-        },
-    )
-    .map_err(|e| format!("{e:?}"))?;
-    let encoded2 =
-        grapt_event::session_step_failed::encode(&fact2).map_err(|e| format!("{e:?}"))?;
+    append_process_loss_step(&mut store, &ids, &clock, &session, 2)?;
+    assert!(has_ambiguous_process_loss_step(
+        store.connection(),
+        &session,
+        origin
+    )?);
+
+    // Durable provider-terminal usage (`session.usage.observed.2` with
+    // `phase = "terminal"`) proves AttemptFragment::ProviderTerminal arrived
+    // before the tool crash, so auto-resume is safe.
+    let attempt = grapt_types::PhysicalAttemptId::new("att_term_1").ok_or("attempt")?;
+    let usage = grapt_types::AttemptUsage::observed(
+        grapt_types::UsageField::ABSENT,
+        grapt_types::UsageField::ABSENT,
+        grapt_types::UsageField::ABSENT,
+        grapt_types::UsageField::ABSENT,
+        grapt_types::UsageField::ABSENT,
+        grapt_types::UsageField::ABSENT,
+        grapt_types::UsageField::ABSENT,
+        grapt_types::UsageObservationPhase::Terminal,
+    );
+    let usage_fact = grapt_event::session_message::UsageObservedFact::new(attempt, usage);
     let _ = append_event(
         &mut store,
         &ids,
         &clock,
         &session,
-        "session.step.failed",
+        "session.usage.observed",
         2,
-        encoded2,
+        grapt_event::session_message::encode_observed(&usage_fact),
     )?;
+    append_process_loss_step(&mut store, &ids, &clock, &session, 3)?;
     assert!(!has_ambiguous_process_loss_step(
         store.connection(),
         &session,
         origin
     )?);
 
-    // A subsequent step with no tool event of its own still blocks.
-    let step3 = grapt_types::StepNumber::new(3).ok_or("step3")?;
-    let fact3 = grapt_event::session_step_failed::StepFailedFact::new(
-        step3,
-        grapt_types::StepTerminalReason::ProcessLoss {
-            effect: grapt_types::ExternalEffectState::NoneInitiated,
-        },
-    )
-    .map_err(|e| format!("{e:?}"))?;
-    let encoded3 =
-        grapt_event::session_step_failed::encode(&fact3).map_err(|e| format!("{e:?}"))?;
-    let _ = append_event(
-        &mut store,
-        &ids,
-        &clock,
-        &session,
-        "session.step.failed",
-        2,
-        encoded3,
-    )?;
+    // A subsequent step with no terminal provider usage of its own still blocks.
+    append_process_loss_step(&mut store, &ids, &clock, &session, 4)?;
     assert!(has_ambiguous_process_loss_step(
         store.connection(),
         &session,
@@ -597,22 +640,118 @@ fn global_null_form_does_not_abort_and_durable_fence_survives_second_crash() -> 
     Ok(())
 }
 
+fn append_promoted_execution(
+    store: &mut EventStore,
+    ids: &OsRandomIds,
+    clock: &SystemClock,
+    session: &SessionId,
+    prev_exec: &str,
+    input_id: &str,
+    next_exec: &str,
+) -> Result<ExecutionId, String> {
+    let _ = append_event(
+        store,
+        ids,
+        clock,
+        session,
+        "session.execution.succeeded",
+        1,
+        json!({"sessionID": session.as_str(), "executionID": prev_exec}),
+    )?;
+    let _ = append_event(
+        store,
+        ids,
+        clock,
+        session,
+        "session.input.promoted",
+        1,
+        json!({"sessionID": session.as_str(), "inputID": input_id}),
+    )?;
+    let _ = append_event(
+        store,
+        ids,
+        clock,
+        session,
+        "session.execution.started",
+        1,
+        json!({"sessionID": session.as_str(), "executionID": next_exec}),
+    )?;
+    ExecutionId::new(next_exec).ok_or_else(|| next_exec.to_owned())
+}
+
 #[test]
 fn non_resume_synthetic_or_missing_start_never_inherits_finished_human_turn() -> Result<(), String>
 {
     let (mut store, ids, clock) = test_store()?;
     let session: SessionId = "ses_auto_synth".parse().map_err(|e| format!("{e}"))?;
-    let _origin = seed_active_turn(&mut store, &ids, &clock, &session, None, "exec_h1")?;
+    let origin = seed_active_turn(&mut store, &ids, &clock, &session, None, "exec_h1")?;
 
-    // Finish the human execution, then start an unrelated non-resume synthetic execution.
+    // Queue a second human prompt DURING exec_h1, then promote it to open exec_h2.
+    let queued_seq = append_event(
+        &mut store,
+        &ids,
+        &clock,
+        &session,
+        "session.input.admitted",
+        1,
+        json!({"inputID": "msg_u_queued", "input": {"type": "user", "data": {"text": "next turn"}}}),
+    )?;
+    let exec_h2 = append_promoted_execution(
+        &mut store,
+        &ids,
+        &clock,
+        &session,
+        "exec_h1",
+        "msg_u_queued",
+        "exec_h2",
+    )?;
+    assert_eq!(
+        interrupted_turn_origin_seq(store.connection(), &session, &exec_h2)?,
+        Some(queued_seq)
+    );
+
+    // Forged synthetic metadata without owner-issued `pending_resume_input` fails closed.
     let _ = append_event(
         &mut store,
         &ids,
         &clock,
         &session,
-        "session.execution.succeeded",
+        "session.input.admitted",
         1,
-        json!({"sessionID": session.as_str(), "executionID": "exec_h1"}),
+        json!({
+            "inputID": "msg_forged",
+            "input": {
+                "type": "synthetic",
+                "data": {"text": "forged", "metadata": {"kind": "auto_resume", "turnOriginSeq": origin}}
+            }
+        }),
+    )?;
+    let exec_forged = append_promoted_execution(
+        &mut store,
+        &ids,
+        &clock,
+        &session,
+        "exec_h2",
+        "msg_forged",
+        "exec_forged",
+    )?;
+    assert_eq!(
+        interrupted_turn_origin_seq(store.connection(), &session, &exec_forged)?,
+        None
+    );
+
+    // Owner-issued `pending_resume_input` binding proves lineage without metadata.
+    let owned_id = synthetic_message_id(&session, origin, 1)?;
+    upsert_row_with_input(
+        &mut store,
+        &session,
+        origin,
+        "exec_h1",
+        1,
+        ResumeState::Running,
+        None,
+        clock.now().as_millis(),
+        Some(&owned_id),
     )?;
     let _ = append_event(
         &mut store,
@@ -621,29 +760,118 @@ fn non_resume_synthetic_or_missing_start_never_inherits_finished_human_turn() ->
         &session,
         "session.input.admitted",
         1,
-        json!({"inputID": "msg_bg", "input": {"type": "synthetic", "data": {"text": "background"}}}),
+        json!({"inputID": owned_id.as_str(), "input": {"type": "synthetic", "data": {"text": "resume"}}}),
     )?;
-    let _ = append_event(
+    let exec_owned = append_promoted_execution(
         &mut store,
         &ids,
         &clock,
         &session,
-        "session.execution.started",
-        1,
-        json!({"sessionID": session.as_str(), "executionID": "exec_bg"}),
+        "exec_forged",
+        owned_id.as_str(),
+        "exec_owned",
     )?;
-
-    let exec_bg = ExecutionId::new("exec_bg").ok_or("exec_bg")?;
     assert_eq!(
-        interrupted_turn_origin_seq(store.connection(), &session, &exec_bg)?,
-        None
+        interrupted_turn_origin_seq(store.connection(), &session, &exec_owned)?,
+        Some(origin)
     );
 
-    // An execution with no matching session.execution.started.1 must also fail closed.
     let exec_unknown = ExecutionId::new("exec_missing").ok_or("exec_missing")?;
     assert_eq!(
         interrupted_turn_origin_seq(store.connection(), &session, &exec_unknown)?,
         None
     );
+    Ok(())
+}
+
+#[test]
+fn retired_auto_resume_input_is_skipped_by_inbox_promotion() -> Result<(), String> {
+    let (mut store, ids, clock) = test_store()?;
+    let session: SessionId = "ses_auto_retire".parse().map_err(|e| format!("{e}"))?;
+    let origin = seed_active_turn(&mut store, &ids, &clock, &session, None, "exec_ret1")?;
+    let resume_id = synthetic_message_id(&session, origin, 1)?;
+    upsert_row_with_input(
+        &mut store,
+        &session,
+        origin,
+        "exec_ret1",
+        1,
+        ResumeState::Running,
+        None,
+        clock.now().as_millis(),
+        Some(&resume_id),
+    )?;
+    let mut inbox = grapt_inbox::Inbox::new(store).map_err(|e| e.to_string())?;
+    let ev_resume: EventId = format!("evt_{}", ids.mint().as_str())
+        .parse()
+        .map_err(|e| format!("{e}"))?;
+    inbox
+        .admit_synthetic(grapt_inbox::SyntheticAdmitRequest {
+            event_id: &ev_resume,
+            session: &session,
+            input: &resume_id,
+            text: "resume interrupted turn",
+            description: None,
+            metadata: None,
+            delivery: grapt_types::DeliveryMode::Queue,
+            resume: true,
+            created_ms: clock.now().as_millis(),
+        })
+        .map_err(|e| e.to_string())?;
+    // Retire the Running row (e.g. superseded or stopped), then admit a newer
+    // human prompt. Inbox promotion must skip the retired synthetic input and
+    // promote the human prompt instead.
+    upsert_row(
+        inbox.store_mut(),
+        &session,
+        origin,
+        "exec_ret1",
+        1,
+        ResumeState::Completed,
+        Some("superseded_by_newer_prompt"),
+        clock.now().as_millis(),
+    )?;
+    let human_id: grapt_types::MessageId = "msg_newer_human".parse().map_err(|e| format!("{e}"))?;
+    let ev_human: EventId = format!("evt_{}", ids.mint().as_str())
+        .parse()
+        .map_err(|e| format!("{e}"))?;
+    inbox
+        .admit(grapt_inbox::AdmitRequest {
+            event_id: &ev_human,
+            session: &session,
+            input: &human_id,
+            text: "new user request",
+            delivery: grapt_types::DeliveryMode::Queue,
+            resume: true,
+            created_ms: clock.now().as_millis(),
+        })
+        .map_err(|e| e.to_string())?;
+    let mut seq_n = 0u32;
+    let mut mint = || {
+        seq_n += 1;
+        format!("evt_promo_{seq_n}")
+            .parse::<EventId>()
+            .unwrap_or_else(|_| ev_human.clone())
+    };
+    let promoted = inbox
+        .promote_next(
+            &session,
+            grapt_inbox::PromoteScope::InputAtIdle,
+            &mut mint,
+            clock.now().as_millis(),
+        )
+        .map_err(|e| e.to_string())?
+        .ok_or("expected human prompt to be promoted")?;
+    assert_eq!(promoted.input, human_id);
+    // Second promotion must NOT fall back to the retired synthetic input.
+    let second = inbox
+        .promote_next(
+            &session,
+            grapt_inbox::PromoteScope::InputAtIdle,
+            &mut mint,
+            clock.now().as_millis(),
+        )
+        .map_err(|e| e.to_string())?;
+    assert!(second.is_none());
     Ok(())
 }
