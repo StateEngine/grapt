@@ -211,7 +211,7 @@ fn first_attempt_consumes_preissued_target_and_retry_issues_fresh() -> Result<()
         admission_diagnosis: super::super::continuation::admission::DiagnosisSlot::default(),
         trim_feedback: None,
         trimmed_request: false,
-        history_items: 0,
+        exchange_items: 0,
         window_floor: None,
         context_hook: None,
         lifecycle: None,
@@ -307,7 +307,7 @@ fn a_bare_first_turn_meets_the_ceiling_at_its_densest_size() -> Result<(), Strin
         .map_err(|error| format!("estimate failed: {error:?}"))?;
     plan.compaction.model_auto_compact_token_limit = Some(raw);
     assert_eq!(plan.context_admission(&planned), Ok(None));
-    plan.history_items = 1;
+    plan.exchange_items = 1;
     assert_eq!(
         plan.context_admission(&planned),
         Ok(Some(grapt_types::CompactionTrigger::PolicyThreshold))
@@ -345,7 +345,7 @@ fn swr_c5_h1_description_bytes_drive_exact_product_admission_boundary() -> Resul
         .map_err(|error| error.detail)?;
     // A request with history behind it can be compacted, so the
     // uncalibrated byte bound holds it to the exact boundary.
-    plan.history_items = 1;
+    plan.exchange_items = 1;
     assert_eq!(plan.context_admission(&planned), Ok(None));
     let recorded = diagnosis
         .matching(grapt_types::CompactionTrigger::ContextOverflow)
@@ -484,7 +484,7 @@ fn pc_anthropic_selection_builds_a_bounded_tool_request() -> Result<(), String> 
         admission_diagnosis: super::super::continuation::admission::DiagnosisSlot::default(),
         trim_feedback: None,
         trimmed_request: false,
-        history_items: 0,
+        exchange_items: 0,
         window_floor: None,
         context_hook: None,
         lifecycle: None,
