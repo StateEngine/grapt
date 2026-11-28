@@ -135,6 +135,11 @@ impl Ledger {
         self.settled.push(Settled { id, outcome });
     }
 
+    /// Settle a command that never ran.
+    pub(super) fn settle(&mut self, id: CommandId, outcome: Outcome) {
+        self.push(id, outcome);
+    }
+
     pub(super) fn len(&self) -> usize {
         self.settled.len()
     }

@@ -5,7 +5,7 @@
 //! waiting when it arrives is discarded, so none takes effect after it. Each
 //! command is fenced to the attachment it was sent on: an answer from a
 //! revoked attachment is never applied.
-use super::{reads::Reads, setup, Command, CommandId, Handoff};
+use super::{reads::Reads, setup, view::Ledger, Command, CommandId, Handoff};
 use crate::bridge::Bridge;
 use grapt_client::{
     contract::Operation,
@@ -73,9 +73,13 @@ impl Held {
 
     /// Discard every command held or still in the intake: all were sent
     /// before the quit, because the UI takes no input while it quits.
-    fn discard(&mut self, commands: &Receiver<(CommandId, Command)>, updates: &Handoff) -> usize {
-        let discarded = self.0.drain(..).count() + commands.try_iter().count();
-        for _ in 0..discarded {
+    fn discard(
+        &mut self,
+        commands: &Receiver<(CommandId, Command)>,
+        updates: &Handoff,
+    ) -> Vec<(CommandId, Command)> {
+        let discarded: Vec<_> = self.0.drain(..).chain(commands.try_iter()).collect();
+        for _ in &discarded {
             updates.received();
         }
         discarded
@@ -90,6 +94,8 @@ pub(super) struct Lane {
     held: Held,
     /// What a quit discarded, told with the next settlement.
     notice: Option<String>,
+    /// Whether the last commands handed out were quits.
+    quitting: bool,
 }
 
 /// What a settled command leaves for the loop.
@@ -139,22 +145,29 @@ impl Lane {
         self.held.fill(commands, updates) && !self.busy()
     }
 
+    /// Whether the last commands handed out were quits.
+    pub(super) fn quitting(&self) -> bool {
+        self.quitting
+    }
+
     /// The commands to run now, in order. A quit runs at once, alone, and
-    /// discards every command still waiting.
+    /// discards every command still waiting, each settled as refused.
     pub(super) fn next(
         &mut self,
         commands: &Receiver<(CommandId, Command)>,
         updates: &Handoff,
+        (ledger, selection): (&mut Ledger, &mut Option<CommandId>),
     ) -> Vec<(CommandId, Command)> {
         let quits = updates.take_quits();
+        self.quitting = !quits.is_empty();
         if quits.is_empty() {
             return self.held.next(self.busy(), updates);
         }
         let discarded = self.held.discard(commands, updates);
-        if discarded > 0 {
-            self.notice = Some(format!(
-                "Closing: {discarded} queued commands were not sent"
-            ));
+        if !discarded.is_empty() {
+            let count = discarded.len();
+            self.notice = Some(format!("Closing: {count} queued commands were not sent"));
+            super::closing::refuse(discarded, ledger, selection);
         }
         quits
             .into_iter()

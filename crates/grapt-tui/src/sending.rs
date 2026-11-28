@@ -303,8 +303,9 @@ pub fn submission(
 }
 
 /// Sends the next queued text once the previous submission is confirmed.
+/// None is sent while a quit waits: it resumes only if the quit is refused.
 pub fn advance(ui: &mut Ui, backend: &Backend) -> bool {
-    if ui.pending.is_some() || !ui.launch.readiness.can_submit() {
+    if ui.pending.is_some() || !ui.launch.readiness.can_submit() || ui.quit.waiting() {
         return false;
     }
     let Some(text) = ui.sending.next() else {

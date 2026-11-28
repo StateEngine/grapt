@@ -1,6 +1,6 @@
 //! A permission reply and a Session open through the running protocol loop.
 use crate::backend::tests::boundary_fixture::{until, Fixture, Result};
-use crate::backend::{Command, Selection};
+use crate::backend::{Command, Outcome, Selection};
 use grapt_client::{
     wire::{PermissionReplyChoice, SessionWireId},
     Bounds, Client, ContractDouble, FramePoll, Operation,
@@ -86,6 +86,50 @@ fn a_submit_held_when_quit_arrives_never_reaches_the_service() -> Result {
         assert_eq!(inputs()?, before, "a held submit reached the service");
         std::thread::sleep(Duration::from_millis(5));
     }
+    Ok(())
+}
+
+#[test]
+fn commands_a_quit_discards_are_settled_and_later_sends_still_work() -> Result {
+    let fixture = Fixture::ready()?;
+    held_reply(&fixture)?;
+    let submit = fixture.command(Command::Submit("discarded by the quit".into()))?;
+    let select = fixture.command(Command::Select(Selection {
+        id: fixture.session.clone(),
+    }))?;
+    fixture.barrier()?;
+    let (mut refused, mut answered) = (false, false);
+    fixture.take_until(|update| {
+        refused |= update.outcomes.iter().any(|settled| {
+            settled.id == submit && matches!(&settled.outcome, Outcome::Submission(_, false, true))
+        });
+        answered |= update.selection == Some(select);
+        refused && answered
+    })?;
+    // The terminal stayed open: the next prompt is sent as usual.
+    fixture.gate.release();
+    fixture.take_until(|update| update.permission.is_none())?;
+    let next = fixture.command(Command::Submit("sent after the close".into()))?;
+    fixture.take_until(|update| {
+        update.outcomes.iter().any(|settled| {
+            settled.id == next && matches!(&settled.outcome, Outcome::Submission(_, true, _))
+        })
+    })?;
+    Ok(())
+}
+
+#[test]
+fn a_pending_quit_runs_before_a_model_refresh_that_would_block() -> Result {
+    let fixture = Fixture::paused()?;
+    fixture.gate.hold(Operation::SessionGet)?;
+    fixture.backend.updates.request_refresh();
+    let asked = Instant::now();
+    fixture.barrier()?;
+    assert!(
+        asked.elapsed() < Duration::from_secs(1),
+        "{:?}",
+        asked.elapsed()
+    );
     Ok(())
 }
 

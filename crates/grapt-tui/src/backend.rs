@@ -32,6 +32,7 @@ use rows::RowSync;
 mod activity;
 use activity::{selected_activity, selected_running};
 mod catalog;
+mod closing;
 mod command_lane;
 mod setup;
 pub(super) use catalog::CatalogRefresh;
@@ -463,14 +464,13 @@ fn serve(
         // Adjacent view requests have no effects between them: attach only the
         // newest one. Preserve ordering around submissions, replies and stops:
         // commands behind a reply or open wait for it, a Quit never does.
-        let mut batch = Vec::new();
-        if updates.refresh_requested() {
-            batch.push(updates.envelope(Command::RefreshModels));
-        }
         // Commands never wait for the UI to take a view: a full chunk leaves
         // a backlog, and the next pass begins without sleeping.
         backlog = lane.fill(&commands, updates);
-        batch.extend(lane.next(&commands, updates));
+        let mut batch = lane.next(&commands, updates, (&mut ledger, &mut selection));
+        if !lane.quitting() && updates.refresh_requested() {
+            batch.insert(0, updates.envelope(Command::RefreshModels));
+        }
         let mark = ledger.len();
         for (id, command) in batch {
             // Each command's results leave their holders before the next

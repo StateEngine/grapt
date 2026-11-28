@@ -378,3 +378,28 @@ fn disconnected_worker_allows_local_exit_only_after_unattached_startup_failure()
     );
     Ok(())
 }
+
+#[test]
+fn a_queued_draft_waits_while_quit_does_and_resumes_when_it_is_refused() -> TestResult {
+    let (mut ui, backend, received, _ready) = fixture();
+    ui.pending = Some("in flight".into());
+    crate::sending::enter(&mut ui, &backend, "queued behind it".into());
+    ui.quit.request(&backend, Duration::ZERO)?;
+    let Some(reply) = backend.updates.take_quits().pop() else {
+        return Err("missing quit".into());
+    };
+    ui.pending = None;
+    assert!(!crate::sending::advance(&mut ui, &backend));
+    assert!(
+        received.try_recv().is_err(),
+        "a queued draft was sent while quitting"
+    );
+    reply.try_send(Err("stop refused".into()))?;
+    assert!(matches!(
+        ui.quit.poll(&backend, Duration::from_millis(1)),
+        Some(Err(_))
+    ));
+    assert!(crate::sending::advance(&mut ui, &backend));
+    assert!(matches!(received.try_recv()?, Command::Submit(text) if text == "queued behind it"));
+    Ok(())
+}
