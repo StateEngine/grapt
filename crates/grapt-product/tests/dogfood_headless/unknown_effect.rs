@@ -560,9 +560,10 @@ fn sc_rel_01c_a_late_reply_to_an_interrupted_call_never_poisons_the_next() {
     process_fixture::cleanup(&journey.service);
 }
 
-/// SC-REL-01b: process loss mid nested run leaves a start with no terminal.
-/// The restart records the lost run as unknown before admitting work, so the
-/// next prompt runs, warned, with no `/reconcile`; reconciling finds nothing.
+/// SC-REL-01b + G2.4: process loss mid nested run leaves a start with no terminal.
+/// The restart records the lost run as unknown before admitting work, and
+/// automatically resumes the interrupted turn with the settled unknown-effect
+/// notice — no manual follow-up prompt or `/reconcile` needed.
 #[test]
 fn sc_rel_01b_restart_settles_a_nested_run_lost_with_its_process() {
     let _journey = process_journey_custody();
@@ -586,17 +587,15 @@ fn sc_rel_01b_restart_settles_a_nested_run_lost_with_its_process() {
     journey.child.stop_after_witness(&journey.service);
     let mut child = spawn(&journey.service, journey.provider.address);
     let address = await_ready(&journey.service, &mut child);
-    assert_eq!(journey.provider.calls.load(Ordering::SeqCst), 1);
 
+    // G2.4 automatic resume picks up the interrupted turn after settling the lost run.
+    settle(address, &session, &journey.provider, 2);
     let path = format!("/api/session/{session}/reconcile");
     let reconciled = json(address, "POST", &path, "{}");
     assert_eq!(
         reconciled["data"]["reconciled"], 0,
         "the restart left the lost run for /reconcile: {reconciled}"
     );
-
-    let _approver = prompt(address, &session, "msg_after_restart");
-    settle(address, &session, &journey.provider, 2);
     let body = last_body(&journey.provider);
     assert!(
         body.contains(NESTED_NOTICE),
@@ -607,6 +606,155 @@ fn sc_rel_01b_restart_settles_a_nested_run_lost_with_its_process() {
     child.stop_after_witness(&journey.service);
     process_fixture::cleanup(&journey.workspace);
     process_fixture::cleanup(&journey.service);
+}
+
+/// G2.4: a poison turn that crashes repeatedly stops auto-resuming at the
+/// retry cap (2) and records a durable status notice rather than crash-looping.
+#[test]
+fn g24_auto_resume_stops_at_crash_loop_cap_with_durable_notice() {
+    let _journey = process_journey_custody();
+    let mut journey = start_with("auto-resume-cap", true, |_| {
+        vec![
+            Script::ToolInput {
+                call: "call_poison_0",
+                tool: "execute",
+                arguments: serde_json::json!({"code": "return await tools['nested_hold']({});"}),
+            },
+            Script::ToolInput {
+                call: "call_poison_1",
+                tool: "execute",
+                arguments: serde_json::json!({"code": "return await tools['nested_hold']({});"}),
+            },
+            Script::ToolInput {
+                call: "call_poison_2",
+                tool: "execute",
+                arguments: serde_json::json!({"code": "return await tools['nested_hold']({});"}),
+            },
+            Script::SuccessText("must not run past cap"),
+        ]
+    });
+    let (address, session) = (journey.address, journey.session.clone());
+    let _approver = prompt(address, &session, "msg_poison_turn");
+    let entered1 = journey.workspace.join(".nested-entered1");
+    answering(address, &session, "initial nested call", || {
+        entered1.exists()
+    });
+    // Crash 1 (original attempt).
+    journey.child.stop_after_witness(&journey.service);
+
+    // Restart 1 -> auto-resume attempt 1 -> crashes again.
+    let _ = fs::remove_file(&entered1);
+    let mut child1 = spawn(&journey.service, journey.provider.address);
+    let address1 = await_ready(&journey.service, &mut child1);
+    answering(address1, &session, "auto-resume attempt 1", || {
+        journey.provider.calls.load(Ordering::SeqCst) >= 2 && entered1.exists()
+    });
+    child1.stop_after_witness(&journey.service);
+
+    // Restart 2 -> auto-resume attempt 2 -> crashes again.
+    let _ = fs::remove_file(&entered1);
+    let mut child2 = spawn(&journey.service, journey.provider.address);
+    let address2 = await_ready(&journey.service, &mut child2);
+    answering(address2, &session, "auto-resume attempt 2", || {
+        journey.provider.calls.load(Ordering::SeqCst) >= 3 && entered1.exists()
+    });
+    child2.stop_after_witness(&journey.service);
+
+    // Restart 3 -> cap (2) reached: must NOT make a 4th provider call and must
+    // record a durable retry-limit notice.
+    let mut child3 = spawn(&journey.service, journey.provider.address);
+    let address3 = await_ready(&journey.service, &mut child3);
+    std::thread::sleep(Duration::from_millis(500));
+    assert_eq!(
+        journey.provider.calls.load(Ordering::SeqCst),
+        3,
+        "auto-resume exceeded retry cap and triggered a 4th provider call"
+    );
+    let info = json(address3, "GET", &format!("/api/session/{session}"), "");
+    let status_message = info["data"]["state"]["message"]
+        .as_str()
+        .unwrap_or_default();
+    assert!(
+        status_message.contains("retry limit"),
+        "missing durable retry-limit status notice: {info}"
+    );
+    write(&journey.workspace.join(".nested-release1"), "release");
+    child3.stop_after_witness(&journey.service);
+    process_fixture::cleanup(&journey.workspace);
+    process_fixture::cleanup(&journey.service);
+}
+
+/// G2.4: a turn interrupted while waiting for a human permission decision is
+/// NOT auto-resumed on restart.
+#[test]
+fn g24_auto_resume_skips_session_with_pending_permission() {
+    let _journey = process_journey_custody();
+    let service = root("auto-resume-pending-perm-service");
+    prepare(&service, 120_000);
+    let workspace = root("auto-resume-pending-perm-workspace");
+    process_fixture::cleanup(&workspace);
+    fs::create_dir_all(&workspace).unwrap_or_else(|error| panic!("workspace: {error}"));
+    let provider = ProviderFixture::start(vec![
+        Script::ToolInput {
+            call: "call_perm_wait",
+            tool: "shell",
+            arguments: serde_json::json!({"command": "rm -rf /tmp/nonexistent-g24-probe", "timeout_ms": 5000}),
+        },
+        Script::SuccessText("must not auto-resume while permission pending"),
+    ]);
+    let mut child = spawn(&service, provider.address);
+    let address = await_ready(&service, &mut child);
+    let session = json(
+        address,
+        "POST",
+        "/api/session",
+        &serde_json::json!({"location":{"directory":workspace}}).to_string(),
+    )["data"]["id"]
+        .as_str()
+        .unwrap_or_else(|| panic!("Session identity is absent"))
+        .to_owned();
+    let _approver = approval::Attachment::open(address, "*");
+    json(
+        address,
+        "POST",
+        &format!("/api/session/{session}/prompt"),
+        r#"{"id":"msg_perm_wait","text":"run gated shell","delivery":"queue","resume":true}"#,
+    );
+    let wait = PollDeadline::new();
+    let mut saw_pending = false;
+    while wait.pending() {
+        if json(
+            address,
+            "GET",
+            &format!("/api/session/{session}/permission"),
+            "",
+        )["data"]
+            .as_array()
+            .is_some_and(|rows| !rows.is_empty())
+        {
+            saw_pending = true;
+            break;
+        }
+        thread::sleep(Duration::from_millis(20));
+    }
+    assert!(
+        saw_pending,
+        "pending permission row never happened ({wait})"
+    );
+    // Crash while the permission request is pending.
+    child.stop_after_witness(&service);
+
+    let mut restarted = spawn(&service, provider.address);
+    let _restarted_address = await_ready(&service, &mut restarted);
+    std::thread::sleep(Duration::from_millis(500));
+    assert_eq!(
+        provider.calls.load(Ordering::SeqCst),
+        1,
+        "restarted server auto-resumed a session with a pending permission"
+    );
+    restarted.stop_after_witness(&service);
+    process_fixture::cleanup(&workspace);
+    process_fixture::cleanup(&service);
 }
 
 /// Review HOLD on 3513d1c9: a live composition's nested call has a start and

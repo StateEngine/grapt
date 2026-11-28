@@ -29,6 +29,7 @@ const OWNED_TABLES: &[&str] = &[
     "inbox_legacy_synthetic_audit",
     "session_operation_delivery_pending",
     "subagent_operation",
+    "pending_resume",
 ];
 
 /// Install every owner schema in one transaction when the store has none of
@@ -57,6 +58,7 @@ pub(super) fn install_fresh(store: &mut EventStore) -> Result<(), String> {
     grapt_inbox::Inbox::ensure_tables(&tx).map_err(|error| error.to_string())?;
     grapt_subagent::SubagentService::ensure_schema_within(&tx)
         .map_err(|error| error.to_string())?;
+    super::startup_recovery::auto_resume::ensure_schema_within(&tx)?;
     tx.commit()
         .map_err(|error| format!("fresh schema commit failed: {error}"))?
         .discard();

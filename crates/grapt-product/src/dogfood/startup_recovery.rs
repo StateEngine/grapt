@@ -20,22 +20,25 @@
 //! misreport it.
 use super::*;
 
+pub(in crate::dogfood) mod auto_resume;
+
 pub(super) fn recover(
     store: &mut grapt_store::EventStore,
     ids: &Arc<OsRandomIds>,
     clock: &Arc<SystemClock>,
     receipt_bytes: NonZeroU32,
 ) -> Result<(), DogfoodRefusal> {
+    auto_resume::ensure_schema(store).map_err(DogfoodRefusal::Compose)?;
     let runtime_ids = execution::RuntimeEventIds(Arc::clone(ids));
     let runtime_clock = execution::RuntimeClock(Arc::clone(clock));
-    let mut first = |store: &mut grapt_store::EventStore, session: &SessionId| {
+    let mut attempt_first = |store: &mut grapt_store::EventStore, session: &SessionId| {
         settle_lost_tool_runs(store, session, &runtime_ids, &runtime_clock)
     };
     let attempts = recover_process_loss_attempts(
         store,
         clock.as_ref(),
         AttemptRecordCeiling::new(receipt_bytes),
-        &mut first,
+        &mut attempt_first,
     )
     .map_err(|error| DogfoodRefusal::Compose(error.to_string()))?;
     for warning in &attempts.warnings {
@@ -56,7 +59,11 @@ pub(super) fn recover(
             "startup warning reason=form-recovery-skipped detail={warning}"
         ));
     }
-    session_status::SessionStatusEmitter::recover(store, clock, ids, &mut first);
+    let mut status_first = |store: &mut grapt_store::EventStore, session: &SessionId| {
+        settle_lost_tool_runs(store, session, &runtime_ids, &runtime_clock)?;
+        auto_resume::enqueue_if_eligible(store, session, clock.as_ref(), ids.as_ref())
+    };
+    session_status::SessionStatusEmitter::recover(store, clock, ids, &mut status_first);
     Ok(())
 }
 
