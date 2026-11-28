@@ -384,6 +384,18 @@ impl<C: Connection> Client<C> {
                 return Ok(true);
             }
             let accepted = self.accept_response(operation, response);
+            // A service that no longer has the Session, as a replacement may
+            // not, answers its snapshot 404 once: the Session is forgotten,
+            // not re-read on every recovery.
+            if operation == Operation::SessionSnapshot
+                && matches!(
+                    &accepted,
+                    Err(ClientError::Status { status: 404, .. }
+                        | ClientError::Refused { status: 404, .. })
+                )
+            {
+                self.forget_session(&history.session);
+            }
             let bytes = accepted.map_err(|error| self.latch_too_old(error))?;
             if history.permissions {
                 // A reply acknowledged while the list was read is newer than

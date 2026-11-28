@@ -197,3 +197,31 @@ fn quiet_open_subscription_wakes_for_failed_history_then_returns_to_timerless_id
     }
     Ok(())
 }
+
+/// A replacement service that no longer has the selected Session answers its
+/// snapshot 404 once: the Session is forgotten instead of re-read forever.
+#[test]
+fn a_session_the_service_lost_is_forgotten_after_one_not_found(
+) -> Result<(), Box<dyn std::error::Error>> {
+    let mut client = super::client();
+    let session = client.create_session()?;
+    super::prove(&mut client);
+    // The service loses the Session behind this client's back.
+    let delete = WireRequest::new(Operation::SessionDelete, Some(&session), None)?;
+    client.connection.call(&delete)?;
+    client.peer_mut().set_fault(Fault::CloseStream);
+    let mut not_found = 0;
+    for _ in 0..16 {
+        match client.pump() {
+            Err(
+                ClientError::Status { status: 404, .. } | ClientError::Refused { status: 404, .. },
+            ) => not_found += 1,
+            Err(error) => return Err(error.into()),
+            Ok(_) => {}
+        }
+    }
+    assert_eq!(not_found, 1, "the lost Session was read more than once");
+    assert_eq!(client.selected(), None);
+    assert!(client.sessions().iter().all(|row| row.id != session));
+    Ok(())
+}
