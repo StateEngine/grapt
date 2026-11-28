@@ -37,8 +37,10 @@ pub(crate) use journal::{wire as state_wire, Presentation};
 
 /// The ruling's last-known cap: 256 sessions, LRU.
 const LAST_KNOWN_CAP: usize = 256;
-/// A hydration snapshot is courtesy, never a replay: bound the frames one
-/// new subscriber can receive from the cache.
+/// A hydration snapshot is courtesy, never a replay: bound the last-known
+/// idle frames one new subscriber can receive from the cache. Every busy
+/// session is restated, so a reader can count them exactly; the registry
+/// bounds those.
 const HYDRATION_CAP: usize = 32;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -240,9 +242,7 @@ impl SessionStatusEmitter {
         active.dedup();
         let mut frames = Vec::with_capacity(HYDRATION_CAP);
         for session in &active {
-            if !self.offer_active(session, &mut frames) {
-                break;
-            }
+            self.offer_active(session, &mut frames);
         }
         self.finish_hydration(&active, &mut frames);
         frames
@@ -254,12 +254,9 @@ impl SessionStatusEmitter {
     /// concurrent settle: the settle either already removed the entry, so
     /// the session is not listed and no stale busy is queued with no debt,
     /// or it lands after the record, so its decision removes the debt and
-    /// publishes the matching idle. `false` when the snapshot is at its
-    /// cap.
-    pub(crate) fn offer_active(&self, session: &SessionId, frames: &mut Vec<DogfoodEvent>) -> bool {
-        if frames.len() >= HYDRATION_CAP {
-            return false;
-        }
+    /// publishes the matching idle. Busy is never capped: a session left
+    /// out would read as idle.
+    pub(crate) fn offer_active(&self, session: &SessionId, frames: &mut Vec<DogfoodEvent>) {
         if let Some(frame) = self.build(session, StatusKind::Busy) {
             // The snapshot's subscriber is told this session is busy; the entry's settle
             // must owe the return to idle even when the execution abandons before prepare
@@ -267,7 +264,6 @@ impl SessionStatusEmitter {
             self.lock_owed().insert(session.clone());
             frames.push(frame);
         }
-        true
     }
 
     /// The snapshot's idle half: the last-known idle entries, in LRU

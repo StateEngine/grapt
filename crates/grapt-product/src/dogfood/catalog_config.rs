@@ -21,6 +21,10 @@ mod boundary_tests;
 #[cfg(test)]
 #[path = "../../tests/support/catalog_boundary.rs"]
 pub(super) mod fixture_diagnostics;
+mod owned;
+#[cfg(test)]
+pub(in crate::dogfood) use owned::documents_in;
+pub(in crate::dogfood) use owned::user_documents;
 const MAX_DOCUMENTS: usize = 256;
 pub(super) const DOCUMENT_BYTES: usize = 64 * 1024;
 const TOTAL_BYTES: usize = 4 * 1024 * 1024;

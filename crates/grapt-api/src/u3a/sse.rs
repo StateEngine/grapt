@@ -295,9 +295,16 @@ impl HostEventQueue {
 #[derive(Debug)]
 pub struct DogfoodEventSubscription {
     queue: Arc<HostEventQueue>,
+    hydration_frames: usize,
 }
 
 impl DogfoodEventSubscription {
+    /// How many frames after `server.connected` restate current state; every
+    /// later frame is live.
+    pub fn hydration_frames(&self) -> usize {
+        self.hydration_frames
+    }
+
     pub fn next_frame(&self) -> Result<Option<Bytes>, SseError> {
         self.queue.next()
     }
@@ -436,28 +443,27 @@ impl DogfoodEventHub {
     /// Queue the snapshot frames for one new subscriber BEFORE it is
     /// registered, so a live edge published after the snapshot always lands
     /// after it. A frame that will not encode or does not fit ends the
-    /// snapshot for that subscriber only: the stream stays alive.
+    /// snapshot, and the error says which; the caller decides whether a
+    /// partial snapshot may still stream.
     fn queue_hydration(
         &self,
         interest: &query::EventLocationQuery,
         offer: &mut impl FnMut(Bytes) -> bool,
-    ) {
+    ) -> Result<(), SseError> {
         let Some(hydrator) = self.status_hydrator.get() else {
-            return;
+            return Ok(());
         };
         for event in hydrator() {
             let location = event.attention_location();
             if location.is_some_and(|location| !v2_interested(interest, Some(location))) {
                 continue;
             }
-            let frame = match encode_sse(&event, self.limits) {
-                Ok(frame) => frame,
-                Err(_) => break,
-            };
+            let frame = encode_sse(&event, self.limits).map_err(|_| SseError::Encode)?;
             if !offer(frame) {
-                break;
+                return Err(SseError::SubscriberOverflow);
             }
         }
+        Ok(())
     }
 
     /// Every global close, including immediate invalidation, requires durable recovery.
@@ -749,16 +755,24 @@ impl DogfoodEventHub {
             self.limits.pending_events(),
             self.connected.clone(),
         ));
+        // A host adapter counts on the whole snapshot, so a partial one is
+        // refused rather than streamed; the queue is never registered.
+        let mut hydration_frames = 0;
         self.queue_hydration(&query::EventLocationQuery::Absent, &mut |frame| {
-            queue.offer_soft(frame) == OfferOutcome::Delivered
-        });
+            let delivered = queue.offer_soft(frame) == OfferOutcome::Delivered;
+            hydration_frames += usize::from(delivered);
+            delivered
+        })?;
         subscribers.push(SubscriberSender {
             approver: None,
             sink: SubscriberSink::Host(Arc::clone(&queue)),
             interest: SubscriberInterest::V2(query::EventLocationQuery::Absent),
             positions: false,
         });
-        Ok(DogfoodEventSubscription { queue })
+        Ok(DogfoodEventSubscription {
+            queue,
+            hydration_frames,
+        })
     }
 
     /// Register the capture sink for one stream. This must run BEFORE the

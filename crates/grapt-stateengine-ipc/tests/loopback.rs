@@ -634,6 +634,40 @@ async fn turns_and_activity_carry_their_keys_and_typed_receipts() -> TestResult 
 }
 
 #[tokio::test]
+async fn a_request_over_one_frame_is_refused_unsent_and_the_connection_stays_usable() -> TestResult
+{
+    let fixture = Fixture::new("oversized")?;
+    let (mut connection, mut host) = negotiated(&fixture, &LIVE).await?;
+    // Within the prose bound, but the envelope takes the frame past its own.
+    let mut oversized = turn("key-a")?;
+    oversized.body_text = Some("a".repeat(1_048_000));
+    oversized.check()?;
+    assert!(matches!(
+        connection.publish_turn(&project(), &oversized).await,
+        Err(IpcError::OutgoingFrame { .. })
+    ));
+    let host_side = async {
+        let published = receive(&mut host).await?;
+        let receipt = json!({"schema": "se.publish-turn-receipt/v1", "agent_id": "agent-fixture",
+            "session_id": "ses_fixture", "vendor_turn_id": "turn-1", "cursor": 1, "body_stored": true,
+            "content_sha256_stored": true, "content_verified": true, "maintenance_pending": false,
+            "commit": {"state": "committed", "event_id": "ev_fixture", "recorded_at": "t",
+                "idempotency_key": "key-b", "writer": {}}});
+        send(
+            &mut host,
+            &output(&published, "se.publish-turn-receipt/v1", receipt),
+        )
+        .await?;
+        TestResult::Ok(published)
+    };
+    let (following, prj) = (turn("key-b")?, project());
+    let (published, receipt) = tokio::join!(host_side, connection.publish_turn(&prj, &following));
+    assert_eq!(published?["request"]["input"]["key"], "key-b");
+    assert_eq!(receipt?.cursor, 1);
+    Ok(())
+}
+
+#[tokio::test]
 async fn a_subscription_asks_for_its_filter_and_reads_the_first_frame() -> TestResult {
     let fixture = Fixture::new("subscribe")?;
     let (connection, mut host) = negotiated(&fixture, &LIVE).await?;

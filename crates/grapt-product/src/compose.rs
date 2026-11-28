@@ -343,6 +343,11 @@ async fn run_ready_on_listener_inner(
         &config.build,
     )
     .err();
+    // The seat reports for a service that has been admitted and is ready.
+    let seat = match (&shutdown_hub, &ready_refusal) {
+        (Some(hub), None) => crate::dogfood::stateengine_seat::install(hub, service_root),
+        _ => None,
+    };
     let execution_refusal = if ready_refusal.is_none() {
         let refusal =
             terminal::until(lifetime, config.serve_window_ms, prompt_driver.as_mut()).await;
@@ -351,6 +356,11 @@ async fn run_ready_on_listener_inner(
     } else {
         None
     };
+    // The seat stops first, so it never subscribes to a hub that is ending;
+    // its last idle report waits briefly, and never on this runtime.
+    if let Some(seat) = seat {
+        let _stopped = tokio::task::spawn_blocking(move || drop(seat)).await;
+    }
     if let Some(hub) = &shutdown_hub {
         hub.shutdown();
     }

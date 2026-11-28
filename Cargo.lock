@@ -2426,6 +2426,7 @@ dependencies = [
  "grapt-session",
  "grapt-shell",
  "grapt-stateengine-api",
+ "grapt-stateengine-ipc",
  "grapt-store",
  "grapt-subagent",
  "grapt-toolchain",
