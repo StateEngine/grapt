@@ -268,6 +268,54 @@ fn a_page_move_in_flight_settles_after_a_quit_and_publications() -> Result {
 }
 
 #[test]
+fn a_session_search_settles_while_startup_is_paused() -> Result {
+    let fixture = Fixture::paused()?;
+    let id = fixture.command(Command::SessionSearch("paused".into()))?;
+    fixture.take_until(|update| update.outcomes.iter().any(|settled| settled.id == id))?;
+    Ok(())
+}
+
+#[test]
+fn a_quit_during_a_form_check_sends_no_decision() -> Result {
+    let fixture = Fixture::ready()?;
+    let form = {
+        let mut source = fixture.source.lock().map_err(|_| "source lock")?;
+        source
+            .raise_form(&fixture.session, "Checked")
+            .ok_or("form")?;
+        let list = WireRequest::new(Operation::SessionFormList, Some(&fixture.session), None)?;
+        let rows = grapt_client::wire::decode_session_forms(&source.call(&list)?.body)?;
+        rows.into_iter().next().ok_or("form row")?
+    };
+    fixture.gate.hold(Operation::SessionFormState)?;
+    let id = fixture.command(Command::Form(grapt_tui_forms::Request {
+        target: grapt_tui_forms::Target::Session(fixture.session.clone()),
+        form: form.clone(),
+        decision: Some(grapt_tui_forms::Decision::Cancel),
+    }))?;
+    until(|| fixture.gate.blocked())?;
+    fixture.barrier()?;
+    fixture.gate.release();
+    let update = fixture.take_until(|update| update.outcomes.iter().any(|s| s.id == id))?;
+    let note = update
+        .outcomes
+        .iter()
+        .find_map(|settled| match &settled.outcome {
+            Outcome::Form(reply) if settled.id == id => Some(reply.note.clone()),
+            _ => None,
+        });
+    assert_eq!(note.as_deref(), Some("Closing; no form response sent"));
+    let source = fixture.source.lock().map_err(|_| "source lock")?;
+    assert!(
+        source
+            .form_state(&form.id)
+            .is_some_and(|state| state.is_open()),
+        "the decision reached the service after the quit"
+    );
+    Ok(())
+}
+
+#[test]
 fn a_pending_quit_runs_before_a_model_refresh_that_would_block() -> Result {
     let fixture = Fixture::paused()?;
     fixture.gate.hold(Operation::SessionGet)?;

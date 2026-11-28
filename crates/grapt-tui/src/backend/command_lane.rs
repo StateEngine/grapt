@@ -6,8 +6,8 @@
 //! effect after it. Each command is fenced to the attachment its first step
 //! was sent on: an answer from a revoked attachment is never applied.
 use super::{
-    closing::Holders, commands, forms, reads::Reads, sessions, setup, Command, CommandId, Handoff,
-    Outcome,
+    closing::Holders, commands, forms, reads::Reads, sessions, setup, step::Turn, Command,
+    CommandId, Handoff, Outcome,
 };
 use crate::bridge::Bridge;
 use grapt_client::{
@@ -22,12 +22,6 @@ use std::sync::{atomic::AtomicBool, mpsc::Receiver, Arc};
 /// The most commands read from the intake and not yet run, and the most
 /// read in one pass.
 const HELD: usize = 16;
-
-/// What a command's step leaves: its next step, or what it settled.
-pub(super) enum Turn<J, O> {
-    Step(J, Result<Accepted, ClientError>),
-    Settle(O),
-}
 
 /// Whether `command` runs on the lane.
 fn runs_on_lane(command: &Command) -> bool {
@@ -62,13 +56,24 @@ enum Job {
     Grant(CommandId, commands::Withdrawal),
 }
 
-/// The step in flight and the attachment its command is fenced to: the
-/// first step pins it for every later step.
+/// The step in flight, and what the command's later steps are held to.
 #[derive(Debug)]
 struct InFlight {
     job: Job,
     call: PreparedCall,
-    attachment: Arc<AtomicBool>,
+    fence: Fence,
+}
+
+/// What a command's later steps are held to.
+#[derive(Debug, Default)]
+struct Fence {
+    /// The attachment its first step was sent on: every later answer must
+    /// come back on it.
+    attachment: Option<Arc<AtomicBool>>,
+    /// That attachment was revoked: no later step is sent, and each fails.
+    revoked: bool,
+    /// A quit was handed out while it ran: it sends no further write.
+    closing: bool,
 }
 
 /// Commands read from the intake and not yet run, oldest first. They still
@@ -140,6 +145,8 @@ pub(super) struct Lane {
     notice: Option<String>,
     /// Whether the last commands handed out were quits.
     quitting: bool,
+    /// A managed Session left none selected.
+    unselected: bool,
 }
 
 /// What settled commands leave for the loop, handed over once a pass.
@@ -151,8 +158,6 @@ struct Settled {
     selection: Option<CommandId>,
     roster: Option<Vec<AgentRow>>,
     models: Option<Vec<ModelRow>>,
-    /// A managed Session left none selected.
-    unselected: bool,
     status: Option<String>,
 }
 
@@ -201,6 +206,9 @@ impl Lane {
         self.quitting = !quits.is_empty();
         if quits.is_empty() {
             return self.held.next(self.busy(), updates);
+        }
+        if let Some(in_flight) = &mut self.in_flight {
+            in_flight.fence.closing = true;
         }
         let discarded = self.held.discard(commands, updates);
         if !discarded.is_empty() {
@@ -251,7 +259,7 @@ impl Lane {
             // The protocol loop hands the lane only the commands above.
             _ => return,
         };
-        self.drive((client, reads), job, first, None);
+        self.drive((client, reads), job, first, Fence::default());
     }
 
     pub(super) fn open(
@@ -267,7 +275,7 @@ impl Lane {
             id,
             session: session.clone(),
         };
-        self.drive((client, reads), job, first, None);
+        self.drive((client, reads), job, first, Fence::default());
     }
 
     /// Apply the step's answer once it arrives. An answer whose attachment
@@ -284,20 +292,27 @@ impl Lane {
         (client, reads): (&mut Client<Bridge>, &mut Reads),
         response: Result<WireResponse, TransportError>,
     ) {
-        let Some(InFlight {
-            job,
-            call,
-            attachment,
-        }) = self.in_flight.take()
-        else {
+        let Some(InFlight { job, call, fence }) = self.in_flight.take() else {
             return;
         };
-        if client.peer_mut().attachment_current(&attachment) {
+        let bridge = client.peer_mut();
+        // Every answer counts toward read health, as a synchronous one does.
+        bridge.read_health.call(&call.request, &response);
+        let current = fence
+            .attachment
+            .as_ref()
+            .is_some_and(|attachment| bridge.attachment_current(attachment));
+        if current {
             let next = client.accept(call, response);
-            self.drive((client, reads), job, next, Some(attachment));
+            self.drive((client, reads), job, next, fence);
         } else {
-            self.revoked((client, reads), job);
+            self.revoked((client, reads), job, fence);
         }
+    }
+
+    /// Whether a managed Session left none selected since the last ask.
+    pub(super) fn left_unselected(&mut self) -> bool {
+        std::mem::take(&mut self.unselected)
     }
 
     /// Hand what settled to the loop's holders; whether to publish.
@@ -309,7 +324,6 @@ impl Lane {
             pages,
             roster,
             models,
-            startup,
             status,
         } = holders;
         let mut publish = !settled.outcomes.is_empty()
@@ -331,9 +345,6 @@ impl Lane {
             *models = settled.models;
             publish = true;
         }
-        if settled.unselected {
-            *startup = crate::launch::Readiness::Manual;
-        }
         if let Some(notice) = settled.status.or_else(|| self.notice.take()) {
             *status = notice;
             publish = true;
@@ -341,24 +352,29 @@ impl Lane {
         publish
     }
 
-    /// Run a command's steps until one is in flight or it has settled.
+    /// Run a command's steps until one is in flight or it has settled. A
+    /// command whose attachment was revoked sends nothing more, and one a
+    /// quit overtook sends no further write: each such step fails unsent.
     fn drive(
         &mut self,
         (client, reads): (&mut Client<Bridge>, &mut Reads),
         mut job: Job,
         mut next: Result<Accepted, ClientError>,
-        pinned: Option<Arc<AtomicBool>>,
+        mut fence: Fence,
     ) {
         loop {
             let done = match next {
+                Ok(Accepted::Next(_)) if fence.revoked => Err(reconnected()),
+                Ok(Accepted::Next(call)) if fence.closing && call.writes() => {
+                    if let Job::Form(id, flow) = job {
+                        return self.form(id, flow.closed());
+                    }
+                    Err(ClientError::InvalidInput("Closing; not sent"))
+                }
                 Ok(Accepted::Next(call)) => match reads.command(client, call.request.clone()) {
                     Ok(sent_on) => {
-                        let attachment = pinned.unwrap_or(sent_on);
-                        self.in_flight = Some(InFlight {
-                            job,
-                            call,
-                            attachment,
-                        });
+                        fence.attachment.get_or_insert(sent_on);
+                        self.in_flight = Some(InFlight { job, call, fence });
                         return;
                     }
                     Err(error) => Err(error),
@@ -375,7 +391,7 @@ impl Lane {
 
     /// A step's answer arrived on a revoked attachment. A reply or an open is
     /// asked for again; any other command settles, or goes on, as failed.
-    fn revoked(&mut self, lanes: (&mut Client<Bridge>, &mut Reads), job: Job) {
+    fn revoked(&mut self, lanes: (&mut Client<Bridge>, &mut Reads), job: Job, fence: Fence) {
         match job {
             Job::Reply => {
                 self.settled.status = Some(
@@ -388,10 +404,11 @@ impl Lane {
                     Some("Session not opened: the service reconnected; open it again".into());
             }
             job => {
-                let reconnected = TransportError::Unavailable {
-                    reason: "the service reconnected before it answered".into(),
+                let fence = Fence {
+                    revoked: true,
+                    ..fence
                 };
-                self.drive(lanes, job, Err(reconnected.into()), None);
+                self.drive(lanes, job, Err(reconnected()), fence);
             }
         }
     }
@@ -447,7 +464,7 @@ impl Lane {
             Job::Manage(id, manage) => match manage.advance(client, done) {
                 Turn::Step(manage, next) => return Some((Job::Manage(id, manage), next)),
                 Turn::Settle(message) => {
-                    self.settled.unselected |= client.selected().is_none();
+                    self.unselected |= client.selected().is_none();
                     self.settled.status = Some("Connected".into());
                     self.outcome(id, Outcome::Session(message));
                 }
@@ -493,31 +510,12 @@ impl Lane {
     }
 }
 
-/// Run a command's steps to the end on the client's own connection, as a
-/// test exercises one without the lane.
-#[cfg(test)]
-pub(super) fn run<J, O, C: grapt_client::Connection>(
-    client: &mut Client<C>,
-    mut turn: Turn<J, O>,
-    advance: impl Fn(J, &mut Client<C>, Result<Done, ClientError>) -> Turn<J, O>,
-) -> O {
-    loop {
-        let (job, mut next) = match turn {
-            Turn::Settle(settled) => return settled,
-            Turn::Step(job, next) => (job, next),
-        };
-        let done = loop {
-            match next {
-                Ok(Accepted::Next(call)) => {
-                    let response = client.peer_mut().call(&call.request);
-                    next = client.accept(call, response);
-                }
-                Ok(Accepted::Done(done)) => break Ok(done),
-                Err(error) => break Err(error),
-            }
-        };
-        turn = advance(job, client, done);
+/// The failure every step of a command on a revoked attachment reports.
+fn reconnected() -> ClientError {
+    TransportError::Unavailable {
+        reason: "the service reconnected before it answered".into(),
     }
+    .into()
 }
 
 #[cfg(test)]

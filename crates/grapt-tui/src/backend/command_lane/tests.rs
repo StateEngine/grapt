@@ -1,7 +1,6 @@
 //! The lane's bound and its attachment fence.
 use super::super::pages::Pages;
 use super::*;
-use crate::launch::Readiness;
 use std::sync::mpsc;
 
 type Result = std::result::Result<(), Box<dyn std::error::Error>>;
@@ -56,7 +55,10 @@ fn a_not_found_open_from_a_revoked_attachment_forgets_nothing() -> Result {
         in_flight: Some(InFlight {
             job: Job::Open { id, session },
             call,
-            attachment: Arc::new(AtomicBool::new(false)),
+            fence: Fence {
+                attachment: Some(Arc::new(AtomicBool::new(false))),
+                ..Fence::default()
+            },
         }),
         ..Lane::default()
     };
@@ -96,14 +98,13 @@ fn an_older_open_settling_after_a_quit_never_replaces_the_newer_selection() -> R
     let newer_id = newer.0;
     let (mut ledger, mut selection) = (Default::default(), None);
     let (mut pages, mut roster) = (Pages::default(), None);
-    let (mut models, mut startup, mut status) = (None, Readiness::Ready, String::new());
+    let (mut models, mut status) = (None, String::new());
     let holders = super::super::closing::Holders {
         ledger: &mut ledger,
         selection: &mut selection,
         pages: &mut pages,
         roster: &mut roster,
         models: &mut models,
-        startup: &mut startup,
         status: &mut status,
     };
     super::super::closing::refuse(vec![newer], &client, holders);
@@ -116,7 +117,6 @@ fn an_older_open_settling_after_a_quit_never_replaces_the_newer_selection() -> R
         pages: &mut pages,
         roster: &mut roster,
         models: &mut models,
-        startup: &mut startup,
         status: &mut status,
     });
     assert_eq!(selection, Some(newer_id));
@@ -134,14 +134,13 @@ fn a_discarded_history_move_and_agent_choice_are_settled() -> Result {
     let choose = updates.envelope(Command::ChooseAgent(agent));
     let (mut ledger, mut selection) = (Default::default(), None);
     let (mut pages, mut roster) = (Pages::default(), None);
-    let (mut models, mut startup, mut status) = (None, Readiness::Ready, String::new());
+    let (mut models, mut status) = (None, String::new());
     let holders = super::super::closing::Holders {
         ledger: &mut ledger,
         selection: &mut selection,
         pages: &mut pages,
         roster: &mut roster,
         models: &mut models,
-        startup: &mut startup,
         status: &mut status,
     };
     super::super::closing::refuse(vec![browse, choose], &client, holders);
@@ -151,5 +150,68 @@ fn a_discarded_history_move_and_agent_choice_are_settled() -> Result {
         "the history move would stay pending"
     );
     assert!(roster.is_some(), "the agent picker would stay pending");
+    Ok(())
+}
+
+/// A Session search in flight on an attachment that is no longer current.
+fn revoked_search(
+    client: &mut Client<Bridge>,
+    id: CommandId,
+) -> std::result::Result<InFlight, Box<dyn std::error::Error>> {
+    Ok(InFlight {
+        job: Job::Search(id, "held".into()),
+        call: client.prepare_session_search("held")?,
+        fence: Fence {
+            attachment: Some(Arc::new(AtomicBool::new(false))),
+            ..Fence::default()
+        },
+    })
+}
+
+#[test]
+fn a_moved_read_answer_raises_and_clears_its_read_notice() -> Result {
+    let mut client = quiet_client()?;
+    let (wake, _ready) = mpsc::sync_channel(1);
+    let mut reads = Reads::start(wake)?;
+    let id = Handoff::default().envelope(Command::Commands).0;
+    let mut lane = Lane::default();
+    for (status, notice) in [(503, true), (200, false)] {
+        lane.in_flight = Some(revoked_search(&mut client, id)?);
+        let response = WireResponse {
+            status,
+            body: Vec::new(),
+        };
+        lane.answer((&mut client, &mut reads), Ok(response));
+        assert_eq!(client.peer_mut().read_health.message().is_some(), notice);
+    }
+    Ok(())
+}
+
+#[test]
+fn a_command_on_a_revoked_attachment_sends_no_later_step() -> Result {
+    let mut client = quiet_client()?;
+    let (wake, _ready) = mpsc::sync_channel(1);
+    let mut reads = Reads::start(wake)?;
+    let id = Handoff::default().envelope(Command::Commands).0;
+    let mut lane = Lane::default();
+    let next = Ok(Accepted::Next(client.prepare_session_search("later")?));
+    let fence = Fence {
+        revoked: true,
+        ..Fence::default()
+    };
+    lane.drive(
+        (&mut client, &mut reads),
+        Job::Search(id, "later".into()),
+        next,
+        fence,
+    );
+    assert!(!lane.busy());
+    let Some((_, Outcome::Session(crate::sessions::Message::Search(search)))) =
+        lane.settled.outcomes.first()
+    else {
+        return Err("the search did not settle".into());
+    };
+    let error = search.result.as_ref().err().ok_or("the search succeeded")?;
+    assert!(error.contains("reconnected before it answered"), "{error}");
     Ok(())
 }

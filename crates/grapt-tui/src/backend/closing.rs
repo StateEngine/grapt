@@ -19,7 +19,6 @@ pub(super) struct Holders<'a> {
     pub(super) pages: &'a mut super::pages::Pages,
     pub(super) roster: &'a mut Option<Vec<AgentRow>>,
     pub(super) models: &'a mut Option<Vec<ModelRow>>,
-    pub(super) startup: &'a mut crate::launch::Readiness,
     pub(super) status: &'a mut String,
 }
 

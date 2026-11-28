@@ -198,7 +198,7 @@ impl Connection for Peer {
 /// Run one form transaction to the end on the test connection.
 fn execute(client: &mut Client<Peer>, request: Request) -> Reply {
     let turn = begin(client, request);
-    crate::backend::command_lane::run(client, turn, Flow::advance)
+    crate::backend::step::run(client, turn, Flow::advance)
 }
 
 fn fixture() -> Result<(Client<Peer>, SessionWireId, FormRow)> {

@@ -1,5 +1,5 @@
 //! The inventory is a projection of the authenticated service, never authority.
-use super::prepared::{Accepted, Done, PreparedCall, Route, Step};
+use super::prepared::{Accepted, Done, PreparedCall, Revoke, Route, Step};
 use super::*;
 use grapt_api::u3a::{
     SandboxGrantDto, SandboxGrantListResponseDto, SandboxGrantRevokeResponseDto,
@@ -161,14 +161,6 @@ impl<C: Connection> Client<C> {
 
 /// The most revocation requests one withdrawal sends.
 const REVOKE_ROUNDS: u8 = 4;
-
-/// A revocation round waiting for its answer.
-#[derive(Debug)]
-pub(super) struct Revoke {
-    session: SessionWireId,
-    body: Vec<u8>,
-    round: u8,
-}
 
 /// The service's message on a revocation, and whether it is complete.
 fn revoked(bytes: &[u8]) -> Result<(String, bool), ClientError> {

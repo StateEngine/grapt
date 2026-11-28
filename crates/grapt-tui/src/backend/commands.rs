@@ -117,17 +117,17 @@ pub(super) struct Withdrawal {
 pub(super) fn revoke_grant<C: Connection>(
     client: &mut Client<C>,
     request: crate::grants::Request,
-) -> super::command_lane::Turn<Withdrawal, Completion> {
+) -> super::step::Turn<Withdrawal, Completion> {
     if client.selected() != Some(&request.session) {
         let mut done = Completion::new("");
         done.session = client.selected().cloned();
         done.notice = "Session changed; no consent was withdrawn.".into();
-        return super::command_lane::Turn::Settle(done);
+        return super::step::Turn::Settle(done);
     }
     let call = client
         .prepare_grant_revoke(&request.grant)
         .map(grapt_client::Accepted::Next);
-    super::command_lane::Turn::Step(Withdrawal { notice: None }, call)
+    super::step::Turn::Step(Withdrawal { notice: None }, call)
 }
 
 /// Withdraw a grant to the end on the client's own connection.
@@ -137,7 +137,7 @@ pub(crate) fn revoke_grant_now<C: Connection>(
     request: crate::grants::Request,
 ) -> Completion {
     let turn = revoke_grant(client, request);
-    super::command_lane::run(client, turn, Withdrawal::advance)
+    super::step::run(client, turn, Withdrawal::advance)
 }
 
 impl Withdrawal {
@@ -145,7 +145,7 @@ impl Withdrawal {
         self,
         client: &mut Client<C>,
         done: Result<grapt_client::Done, grapt_client::ClientError>,
-    ) -> super::command_lane::Turn<Self, Completion> {
+    ) -> super::step::Turn<Self, Completion> {
         let Some(notice) = self.notice else {
             let notice = match done {
                 Ok(grapt_client::Done::Revoked(message)) => message,
@@ -157,7 +157,7 @@ impl Withdrawal {
             let call = client
                 .prepare_grants_refresh()
                 .map(grapt_client::Accepted::Next);
-            return super::command_lane::Turn::Step(
+            return super::step::Turn::Step(
                 Self {
                     notice: Some(notice),
                 },
@@ -174,7 +174,7 @@ impl Withdrawal {
         completion.session = client.selected().cloned();
         completion.view = crate::grants::Snapshot::of(client, notice.clone()).map(View::Grants);
         completion.notice = notice;
-        super::command_lane::Turn::Settle(completion)
+        super::step::Turn::Settle(completion)
     }
 }
 

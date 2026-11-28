@@ -2,17 +2,10 @@
 //! composes them into a form transaction; each is the same route, body and
 //! answer check as its synchronous twin. Replies do not re-list: the host's
 //! transaction reads the list again when it needs it.
-use super::prepared::{Accepted, Done, PreparedCall, Route, Step};
+use super::prepared::{Accepted, Done, Form, FormAt, FormKind as Kind, PreparedCall, Route, Step};
 use super::*;
-use crate::wire::{FormLocation, FormOwner, FormValue, FormWireId};
+use crate::wire::{FormOwner, FormValue, FormWireId};
 use std::collections::BTreeMap;
-
-/// Where a form lives.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum FormAt {
-    Session(SessionWireId),
-    Location(FormLocation),
-}
 
 /// One form request.
 #[derive(Debug)]
@@ -25,22 +18,6 @@ pub enum FormCall {
     List,
     Reply(BTreeMap<String, FormValue>),
     Cancel,
-}
-
-#[derive(Debug, Clone, Copy)]
-enum Kind {
-    State,
-    Get,
-    List,
-    Settle,
-}
-
-/// A form request waiting for its answer.
-#[derive(Debug)]
-pub(super) struct Form {
-    at: FormAt,
-    form: FormWireId,
-    kind: Kind,
 }
 
 impl<C: Connection> Client<C> {

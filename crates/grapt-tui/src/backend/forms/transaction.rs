@@ -2,7 +2,7 @@
 //! the form's state, check the question is unchanged, send the decision,
 //! then read what became of it. A failed write or read after a committed
 //! one is reported, never replayed.
-use super::super::command_lane::Turn;
+use super::super::step::Turn;
 use grapt_client::{
     wire::FormState, Accepted, Client, ClientError, Connection, Done, FormAt, FormCall,
 };
@@ -58,6 +58,11 @@ pub(in crate::backend) fn begin<C: Connection>(
 }
 
 impl Flow {
+    /// A quit overtook the transaction before its decision was sent.
+    pub(in crate::backend) fn closed(self) -> Reply {
+        reply(&self.request, Err("Closing; no form response sent".into()))
+    }
+
     pub(in crate::backend) fn advance<C: Connection>(
         self,
         client: &mut Client<C>,

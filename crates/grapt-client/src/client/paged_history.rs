@@ -1,6 +1,7 @@
 //! One bounded page request,
 //! cursor ownership in the protocol client, and a reading view separate from live state.
-use super::prepared::{Accepted, Done, Route, Step};
+use super::history_move::HistoryMove;
+use super::prepared::{Accepted, Browse, Done, Route, Step};
 use super::*;
 use crate::wire::MessagePage;
 
@@ -8,16 +9,6 @@ const PAGE_ROWS: &str = "200";
 
 #[cfg(test)]
 mod tests;
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum HistoryMove {
-    Older,
-    Newer,
-    Beginning,
-    Latest,
-    /// Undo the most recent page movement without issuing another read.
-    Cancel,
-}
 
 #[derive(Debug, Default)]
 pub(super) struct Window {
@@ -27,15 +18,6 @@ pub(super) struct Window {
     // None: no movement to undo; Some(None): restore the live tail.
     // At most one prior bounded page is retained, moved rather than cloned.
     previous: Option<Option<Reading>>,
-}
-
-/// A page move waiting for its read.
-#[derive(Debug)]
-pub(super) struct Browse {
-    session: SessionWireId,
-    cursor: Option<String>,
-    descending: bool,
-    movement: HistoryMove,
 }
 
 #[derive(Debug)]

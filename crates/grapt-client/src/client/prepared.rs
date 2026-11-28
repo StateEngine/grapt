@@ -14,21 +14,111 @@ pub struct PreparedCall {
     step: Step,
 }
 
+impl PreparedCall {
+    /// Whether the step changes anything at the service.
+    pub fn writes(&self) -> bool {
+        self.operation.method() != crate::contract::Method::Get
+    }
+}
+
 /// What a step's answer is applied to.
 #[derive(Debug)]
 pub(super) enum Step {
-    Reply(offloop_commands::Reply),
-    Open(Box<offloop_commands::Open>),
-    Browse(paged_history::Browse),
+    Reply(Reply),
+    Open(Box<Open>),
+    Browse(Browse),
     Agent(crate::wire::AgentWireId),
     Model(Box<crate::wire::ModelRow>),
     Search,
     Rename,
     Delete(SessionWireId),
     Sessions,
-    Form(offloop_forms::Form),
-    Revoke(grants::Revoke),
+    Form(Form),
+    Revoke(Revoke),
     Grants(SessionWireId),
+}
+
+/// A permission reply: the ask its acknowledgement settles.
+#[derive(Debug)]
+pub(super) struct Reply {
+    pub(super) session: SessionWireId,
+    pub(super) ask: PermissionWireId,
+}
+
+/// The request each step of a Session open sends.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum OpenStep {
+    Session,
+    Project,
+    Subagents,
+}
+
+impl OpenStep {
+    pub(super) fn operation(self) -> Operation {
+        match self {
+            Self::Session => Operation::SessionGet,
+            Self::Project => Operation::ProjectCurrent,
+            Self::Subagents => Operation::SessionSubagentModelGet,
+        }
+    }
+}
+
+/// The Session read, validated: its saved choices, its row and the working
+/// directory its catalog is bound to.
+#[derive(Debug)]
+pub(super) struct Opened {
+    pub(super) saved: crate::wire::SessionAttachment,
+    pub(super) row: Vec<u8>,
+    pub(super) directory: String,
+}
+
+/// One step of a Session open.
+#[derive(Debug)]
+pub(super) struct Open {
+    pub(super) step: OpenStep,
+    pub(super) session: SessionWireId,
+    pub(super) opened: Option<Opened>,
+}
+
+/// A page move waiting for its read.
+#[derive(Debug)]
+pub(super) struct Browse {
+    pub(super) session: SessionWireId,
+    pub(super) cursor: Option<String>,
+    pub(super) descending: bool,
+    pub(super) movement: super::history_move::HistoryMove,
+}
+
+/// Where a form lives.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum FormAt {
+    Session(SessionWireId),
+    Location(crate::wire::FormLocation),
+}
+
+/// What a form request asks.
+#[derive(Debug, Clone, Copy)]
+pub(super) enum FormKind {
+    State,
+    Get,
+    List,
+    Settle,
+}
+
+/// A form request waiting for its answer.
+#[derive(Debug)]
+pub(super) struct Form {
+    pub(super) at: FormAt,
+    pub(super) form: crate::wire::FormWireId,
+    pub(super) kind: FormKind,
+}
+
+/// A revocation round waiting for its answer.
+#[derive(Debug)]
+pub(super) struct Revoke {
+    pub(super) session: SessionWireId,
+    pub(super) body: Vec<u8>,
+    pub(super) round: u8,
 }
 
 /// A command's next step, or what it settled.

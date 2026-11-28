@@ -2,50 +2,9 @@
 //! Session open. Each runs as prepared steps (see [`super::prepared`]). An
 //! open takes several requests; the current Session stays selected until
 //! all of them have validated, and installing the new one starts no request.
-use super::prepared::{Accepted, Done, PreparedCall, Route, Step};
+use super::prepared::{Accepted, Done, Open, OpenStep, Opened, PreparedCall, Reply, Route, Step};
 use super::*;
-use crate::wire::{ModelRow, PermissionReplyChoice, SessionAttachment};
-
-/// A permission reply: the ask its acknowledgement settles.
-#[derive(Debug)]
-pub(super) struct Reply {
-    session: SessionWireId,
-    ask: PermissionWireId,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum OpenStep {
-    Session,
-    Project,
-    Subagents,
-}
-
-impl OpenStep {
-    fn operation(self) -> Operation {
-        match self {
-            Self::Session => Operation::SessionGet,
-            Self::Project => Operation::ProjectCurrent,
-            Self::Subagents => Operation::SessionSubagentModelGet,
-        }
-    }
-}
-
-/// The Session read, validated: its saved choices, its row and the working
-/// directory its catalog is bound to.
-#[derive(Debug)]
-struct Opened {
-    saved: SessionAttachment,
-    row: Vec<u8>,
-    directory: String,
-}
-
-/// One step of a Session open.
-#[derive(Debug)]
-pub(super) struct Open {
-    step: OpenStep,
-    session: SessionWireId,
-    opened: Option<Opened>,
-}
+use crate::wire::{ModelRow, PermissionReplyChoice};
 
 impl<C: Connection> Client<C> {
     /// Build a permission reply. Nothing changes until its answer is accepted.

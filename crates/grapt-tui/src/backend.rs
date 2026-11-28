@@ -36,6 +36,7 @@ mod closing;
 mod command_lane;
 mod pages;
 mod setup;
+mod step;
 pub(super) use catalog::CatalogRefresh;
 
 #[derive(Debug)]
@@ -468,7 +469,6 @@ fn serve(
             pages: &mut pages,
             roster: &mut roster,
             models: &mut models,
-            startup: &mut startup,
             status: &mut status,
         };
         let mut batch = lane.next(&commands, updates, (&client, holders));
@@ -723,6 +723,20 @@ fn serve(
                 }
             }
         }
+        // Commands settle in every startup state: a paused startup still
+        // searches Sessions, and its retry waits behind what runs on the lane.
+        lane.settle(&mut client, &mut reads);
+        publish |= lane.apply(closing::Holders {
+            ledger: &mut ledger,
+            selection: &mut selection,
+            pages: &mut pages,
+            roster: &mut roster,
+            models: &mut models,
+            status: &mut status,
+        });
+        if lane.left_unselected() {
+            startup = crate::launch::Readiness::Manual;
+        }
         if !startup.attached() {
             continue;
         }
@@ -767,16 +781,6 @@ fn serve(
             reads.settle(&mut client, polls, tokio::time::Instant::now(), &wake);
         publish |= settled;
         status = notice.unwrap_or(status);
-        lane.settle(&mut client, &mut reads);
-        publish |= lane.apply(closing::Holders {
-            ledger: &mut ledger,
-            selection: &mut selection,
-            pages: &mut pages,
-            roster: &mut roster,
-            models: &mut models,
-            startup: &mut startup,
-            status: &mut status,
-        });
         if !client.catalog_pending() {
             if models_requested {
                 models = Some(client.models().to_vec());
