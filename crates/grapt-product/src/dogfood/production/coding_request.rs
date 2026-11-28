@@ -360,6 +360,7 @@ impl ProductPlan {
             output_continuation::append(&mut input);
         }
         self.prepare_context_hook(target, &mut input, &mut tools, &mut boundary)?;
+        self.history_items = boundary.protected_from - boundary.history_start;
         // Judge the definitions that will actually be sent, again: a callback
         // can replace a description or a schema the request would have kept,
         // and the authority and the notice must describe the same set the

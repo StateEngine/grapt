@@ -211,6 +211,7 @@ fn first_attempt_consumes_preissued_target_and_retry_issues_fresh() -> Result<()
         admission_diagnosis: super::super::continuation::admission::DiagnosisSlot::default(),
         trim_feedback: None,
         trimmed_request: false,
+        history_items: 0,
         window_floor: None,
         context_hook: None,
         lifecycle: None,
@@ -346,6 +347,9 @@ fn swr_c5_h1_description_bytes_drive_exact_product_admission_boundary() -> Resul
         ))
         .and_then(|value| value.checked_add(super::super::continuation::admission::HEADROOM))
         .ok_or("admission threshold overflow")?;
+    // A request with history behind it can be compacted, so the
+    // uncalibrated byte bound holds it to the exact boundary.
+    plan.history_items = 1;
     concrete
         .context_tokens
         .store(threshold + 1, Ordering::SeqCst);
@@ -446,6 +450,7 @@ fn pc_anthropic_selection_builds_a_bounded_tool_request() -> Result<(), String> 
         admission_diagnosis: super::super::continuation::admission::DiagnosisSlot::default(),
         trim_feedback: None,
         trimmed_request: false,
+        history_items: 0,
         window_floor: None,
         context_hook: None,
         lifecycle: None,

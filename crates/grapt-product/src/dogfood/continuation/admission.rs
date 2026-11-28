@@ -325,6 +325,12 @@ pub(in crate::dogfood) const CALIBRATION_MARGIN: u64 = 2;
 
 const MAX_ESTIMATED_PER_CONFIRMED: u64 = 8;
 
+/// The fewest tokens `units` uncalibrated local units can plausibly charge:
+/// the count at [`MAX_ESTIMATED_PER_CONFIRMED`] units per token.
+pub(in crate::dogfood) fn densest(units: u64) -> u64 {
+    units.div_ceil(MAX_ESTIMATED_PER_CONFIRMED)
+}
+
 /// Provider-confirmed input per locally estimated unit, for one exact target.
 #[derive(Clone)]
 pub(in crate::dogfood) struct Calibration {

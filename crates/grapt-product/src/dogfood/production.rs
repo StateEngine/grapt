@@ -176,6 +176,9 @@ pub(super) struct ProductPlan {
     admission_diagnosis: super::continuation::admission::DiagnosisSlot,
     trim_feedback: Option<super::execution::context_trim::TrimFeedback>,
     trimmed_request: bool,
+    /// How many history items precede this request's current input; with
+    /// none, compaction has nothing it could remove.
+    history_items: usize,
     /// Where this request's history starts when a trimmed retry reads from
     /// the newest window the read bounds serve; what lies before is omitted.
     window_floor: Option<grapt_types::EventSeq>,
@@ -323,6 +326,7 @@ impl ProductPlan {
             admission_diagnosis: super::continuation::admission::DiagnosisSlot::default(),
             trim_feedback: None,
             trimmed_request: false,
+            history_items: 0,
             window_floor: None,
             context_hook: None,
             lifecycle: None,
@@ -372,6 +376,7 @@ impl ProductPlan {
             admission_diagnosis: super::continuation::admission::DiagnosisSlot::default(),
             trim_feedback: None,
             trimmed_request: false,
+            history_items: 0,
             window_floor: None,
             context_hook: None,
             lifecycle: None,
@@ -576,6 +581,16 @@ impl ProductPlan {
             return Ok(Some(trigger));
         }
         let reserve = admission::output_reserve(&planned.request);
+        // Compaction cannot shrink a request with no history, so refusing it is
+        // final. Before any calibration the byte bound only proves it too large
+        // when even the densest tokenizer could not fit it; otherwise the
+        // provider's own count decides, and its usage calibrates the next one.
+        let judged =
+            if self.history_items == 0 && estimate.basis == admission::EstimateBasis::Estimated {
+                admission::densest(estimate.tokens)
+            } else {
+                estimate.tokens
+            };
         // Compacting again with nothing new since the last compaction would
         // only re-summarize its summary, and so would compacting history whose
         // every call repeats what the last compaction summarized (the reread
@@ -596,7 +611,7 @@ impl ProductPlan {
             None => true,
         };
         if !compactable {
-            return Ok((!admission::fits(estimate.tokens, reserve, budget)).then_some(trigger));
+            return Ok((!admission::fits(judged, reserve, budget)).then_some(trigger));
         }
         // `compaction.auto: false` turns off the proactive ceiling above; a
         // request that cannot fit the window still compacts, as the provider's
@@ -609,7 +624,7 @@ impl ProductPlan {
         // refused a summary that fit. An under-count instead reaches the
         // provider's own overflow classification, which the Step recovers with
         // its single bounded rebuild.
-        Ok((!admission::fits(estimate.tokens, reserve, budget)).then_some(trigger))
+        Ok((!admission::fits(judged, reserve, budget)).then_some(trigger))
     }
 }
 
