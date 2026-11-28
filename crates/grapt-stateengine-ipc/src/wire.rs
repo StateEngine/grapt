@@ -58,27 +58,65 @@ impl NativePath {
     }
 }
 
-/// `\\?\...`, `\\.\...`, `\\server\share`, or a drive with `\` or `/`.
+/// A Windows absolute path: a `\\?\` path (`UNC\server\share`, a drive
+/// with `\`, or any name with a later `\`), a `\\.\` device (`UNC\` with a
+/// server and share, or a name), a drive with `\` or `/`, or a UNC
+/// `\\server\share`. Only `\\?\` paths keep `/` as an ordinary unit.
 fn windows_absolute(units: &[u16]) -> bool {
-    let unit = |index: usize| {
-        units
-            .get(index)
-            .copied()
-            .and_then(|unit| u8::try_from(unit).ok())
-    };
-    let backslash = Some(b'\\');
-    let drive = unit(0).is_some_and(|letter| letter.is_ascii_alphabetic())
-        && unit(1) == Some(b':')
-        && matches!(unit(2), Some(b'\\' | b'/'));
-    let device = unit(0) == backslash
-        && unit(1) == backslash
-        && matches!(unit(2), Some(b'?' | b'.'))
-        && unit(3) == backslash;
-    let share = unit(0) == backslash
-        && unit(1) == backslash
-        && unit(2).is_some_and(|first| first != b'\\')
-        && units.iter().skip(3).any(|unit| *unit == u16::from(b'\\'));
-    drive || device || share
+    let backslash = |unit: &u16| *unit == u16::from(b'\\');
+    let separator = |unit: &u16| backslash(unit) || *unit == u16::from(b'/');
+    if let Some(rest) = strip_prefix(units, br"\\?\", false) {
+        if let Some(unc) = strip_prefix(rest, br"UNC\", true) {
+            return server_and_share(unc, backslash);
+        }
+        return match rest {
+            [letter, colon, ..] if *colon == u16::from(b':') => {
+                ascii_alphabetic(*letter) && rest.get(2).is_some_and(backslash)
+            }
+            _ => rest.iter().skip(1).any(backslash),
+        };
+    }
+    if let Some(rest) = strip_prefix(units, br"\\.\", false) {
+        if let Some(unc) = strip_prefix(rest, br"UNC\", true) {
+            return server_and_share(unc, separator);
+        }
+        return rest.first().is_some_and(|unit| !separator(unit));
+    }
+    match units {
+        [letter, colon, slash, ..] if *colon == u16::from(b':') && ascii_alphabetic(*letter) => {
+            separator(slash)
+        }
+        [first, second, rest @ ..] if separator(first) && separator(second) => {
+            server_and_share(rest, separator)
+        }
+        _ => false,
+    }
+}
+
+/// `units` after an ASCII `prefix`, matched case-insensitively when asked.
+fn strip_prefix<'a>(units: &'a [u16], prefix: &[u8], ignore_case: bool) -> Option<&'a [u16]> {
+    let head = units.get(..prefix.len())?;
+    let same = head.iter().zip(prefix).all(|(unit, byte)| {
+        u8::try_from(*unit).is_ok_and(|unit| {
+            if ignore_case {
+                unit.eq_ignore_ascii_case(byte)
+            } else {
+                unit == *byte
+            }
+        })
+    });
+    same.then(|| &units[prefix.len()..])
+}
+
+/// A non-empty server and a non-empty share, split by `separator`.
+fn server_and_share(units: &[u16], separator: impl Fn(&u16) -> bool) -> bool {
+    let mut parts = units.split(separator);
+    parts.next().is_some_and(|server| !server.is_empty())
+        && parts.next().is_some_and(|share| !share.is_empty())
+}
+
+fn ascii_alphabetic(unit: u16) -> bool {
+    u8::try_from(unit).is_ok_and(|unit| unit.is_ascii_alphabetic())
 }
 
 /// When a process started, in its operating system's own terms.
@@ -308,6 +346,8 @@ pub struct ErrorEnvelope {
     pub code: String,
     /// The per-code payload.
     pub detail: Value,
+    /// [`Retry::Never`] when the host omits it.
+    #[serde(default)]
     pub retry: Retry,
     pub class: String,
     pub exit: i32,
@@ -320,7 +360,7 @@ pub struct ErrorEnvelope {
 }
 
 /// Whether and when the same request may be tried again.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(
     tag = "kind",
     content = "value",
@@ -328,6 +368,7 @@ pub struct ErrorEnvelope {
     deny_unknown_fields
 )]
 pub enum Retry {
+    #[default]
     Never,
     AfterReread,
     /// After this many milliseconds.
@@ -348,11 +389,50 @@ pub struct Remedy {
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum Command {
     /// A StateEngine command line.
-    Se { argv: Vec<String> },
+    Se { argv: Argv },
     /// A tool call with its arguments.
     Tool { name: String, args: Value },
     /// A step the user takes by hand.
     Manual,
+}
+
+/// A command line: 1 to 256 arguments, each at most 32768 bytes, none
+/// holding NUL.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "Vec<String>", into = "Vec<String>")]
+pub struct Argv(Vec<String>);
+
+const MAX_ARGS: usize = 256;
+const MAX_ARG_BYTES: usize = 32_768;
+
+impl Argv {
+    /// The arguments, in order.
+    pub fn args(&self) -> &[String] {
+        &self.0
+    }
+}
+
+impl TryFrom<Vec<String>> for Argv {
+    type Error = &'static str;
+
+    fn try_from(args: Vec<String>) -> Result<Self, Self::Error> {
+        if args.is_empty() || args.len() > MAX_ARGS {
+            Err("a command line holds no arguments or more than 256")
+        } else if args
+            .iter()
+            .any(|arg| arg.len() > MAX_ARG_BYTES || arg.contains('\0'))
+        {
+            Err("a command-line argument is longer than 32768 bytes or holds NUL")
+        } else {
+            Ok(Self(args))
+        }
+    }
+}
+
+impl From<Argv> for Vec<String> {
+    fn from(argv: Argv) -> Self {
+        argv.0
+    }
 }
 
 #[cfg(test)]
@@ -377,9 +457,72 @@ mod tests {
         assert_eq!(
             error.remedy.command,
             Some(Command::Se {
-                argv: vec!["se".into(), "status".into()]
+                argv: Argv(vec!["se".into(), "status".into()])
             })
         );
+        Ok(())
+    }
+    #[test]
+    fn windows_absolute_paths_follow_each_prefix_rule() {
+        let absolute = |path: &str| windows_absolute(&path.encode_utf16().collect::<Vec<_>>());
+        for path in [
+            r"\\?\UNC\server\share",
+            r"\\?\unc\server\share",
+            r"\\?\C:\se.exe",
+            r"\\?\Volume{x}\se.exe",
+            r"\\.\UNC\server/share",
+            r"\\.\pipe\se",
+            r"C:/se.exe",
+            r"//server/share",
+            r"\\server\share",
+        ] {
+            assert!(absolute(path), "{path}");
+        }
+        for path in [
+            r"\\?\UNC\server/share",
+            r"\\?\UNC\\share",
+            r"\\?\C:/se.exe",
+            r"\\?\1:\se.exe",
+            r"\\?\name",
+            r"\\.\UNC\server",
+            r"\\.\/pipe",
+            r"\\.\",
+            r"C:se.exe",
+            r"\\server",
+            r"\\\share",
+            r"se.exe",
+        ] {
+            assert!(!absolute(path), "{path}");
+        }
+    }
+
+    #[test]
+    fn an_omitted_retry_never_retries_and_argv_keeps_its_bounds() -> Result<(), serde_json::Error> {
+        let envelope = |command: &str| {
+            format!(
+                r#"{{"schema":"se.error/v1","code":"usage","detail":{{}},"class":"usage","exit":64,
+                "message":"fixture","remedy":{{"text":"fixture","command":{command}}}}}"#
+            )
+        };
+        let error: ErrorEnvelope = serde_json::from_str(&envelope("null"))?;
+        assert_eq!(error.retry, Retry::Never);
+        let args = |count: usize, arg: &str| {
+            let quoted = format!("\"{arg}\"");
+            format!(
+                r#"{{"kind":"se","argv":[{}]}}"#,
+                vec![quoted; count].join(",")
+            )
+        };
+        let long = "a".repeat(32_769);
+        for command in [
+            args(0, "a"),
+            args(257, "a"),
+            args(1, &long),
+            args(1, r"se\u0000"),
+        ] {
+            assert!(serde_json::from_str::<ErrorEnvelope>(&envelope(&command)).is_err());
+        }
+        serde_json::from_str::<ErrorEnvelope>(&envelope(&args(256, &"a".repeat(32_768))))?;
         Ok(())
     }
 }

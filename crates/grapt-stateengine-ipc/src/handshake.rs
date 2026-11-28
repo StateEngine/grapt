@@ -4,7 +4,7 @@
 //! the host's hello is checked against what the client asked for.
 use crate::frame::{decode, encode, read_frame, write_frame};
 use crate::peer::PeerBinding;
-use crate::proof::{owner_mac, OwnerCredential, ProofInput};
+use crate::proof::{owner_mac, ProofInput};
 use crate::wire::{
     Authority, ClientHello, HostEpoch, OwnerProof, Refusal, ServerChallenge, ServerHello, Version,
 };
@@ -53,7 +53,6 @@ pub struct Session {
 pub(crate) async fn handshake<S: AsyncRead + AsyncWrite + Unpin>(
     stream: &mut S,
     endpoint: &Endpoint,
-    credential: &OwnerCredential,
     binding: &PeerBinding,
     client_nonce: [u8; 32],
     options: &HandshakeOptions,
@@ -61,7 +60,7 @@ pub(crate) async fn handshake<S: AsyncRead + AsyncWrite + Unpin>(
     check_options(options)?;
     tokio::time::timeout(
         HELLO_TIMEOUT,
-        exchange(stream, endpoint, credential, binding, client_nonce, options),
+        exchange(stream, endpoint, binding, client_nonce, options),
     )
     .await
     .map_err(|_| IpcError::Timeout(HELLO_TIMEOUT))?
@@ -70,19 +69,18 @@ pub(crate) async fn handshake<S: AsyncRead + AsyncWrite + Unpin>(
 async fn exchange<S: AsyncRead + AsyncWrite + Unpin>(
     stream: &mut S,
     endpoint: &Endpoint,
-    credential: &OwnerCredential,
     binding: &PeerBinding,
     client_nonce: [u8; 32],
     options: &HandshakeOptions,
 ) -> Result<Session, IpcError> {
     let (challenge, raw): (ServerChallenge, Value) = host_frame(stream).await?;
-    if challenge.version != API_VERSION || challenge.version != endpoint.file.api {
+    if challenge.version != API_VERSION || challenge.version != endpoint.file().api {
         return Err(IpcError::ChallengeMismatch("protocol version"));
     }
-    if challenge.epoch != endpoint.file.epoch {
+    if challenge.epoch != endpoint.file().epoch {
         return Err(IpcError::ChallengeMismatch("host epoch"));
     }
-    if challenge.image_sha256 != endpoint.file.image_sha256 {
+    if challenge.image_sha256 != endpoint.file().image_sha256 {
         return Err(IpcError::ChallengeMismatch("host image digest"));
     }
     // The proof covers the epoch exactly as the host sent it.
@@ -91,7 +89,7 @@ async fn exchange<S: AsyncRead + AsyncWrite + Unpin>(
         .map(crate::canonical::canonical)
         .ok_or(IpcError::ChallengeMismatch("host epoch"))?;
     let mac = owner_mac(
-        credential,
+        endpoint.credential(),
         &ProofInput {
             version: API_VERSION,
             canonical_epoch: &canonical_epoch,
@@ -171,7 +169,7 @@ fn session(
             .as_deref()
             .ok_or(IpcError::HelloMismatch("capability list"))?;
         check_capabilities(names).map_err(|_| IpcError::HelloMismatch("capability list"))?;
-        if hello.package_version.as_deref() != Some(endpoint.file.package_version.as_str()) {
+        if hello.package_version.as_deref() != Some(endpoint.file().package_version.as_str()) {
             return Err(IpcError::HelloMismatch("package version"));
         }
     } else if hello.package_version.is_some()

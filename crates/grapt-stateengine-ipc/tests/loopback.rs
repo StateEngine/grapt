@@ -4,13 +4,12 @@
 #![cfg(target_os = "linux")]
 use grapt_stateengine_ipc::wire::StartIdentity;
 use grapt_stateengine_ipc::{
-    connect, observe_self, read_endpoint, read_frame, write_frame, Capabilities, Connection,
-    Endpoint, HandshakeOptions, IdempotencyKey, IpcError, OwnerCredential, PeerBinding, Principal,
-    VerifiedPeer,
+    connect, discover, observe_self, read_frame, write_frame, Capabilities, Connection, Endpoint,
+    HandshakeOptions, IdempotencyKey, IpcError, PeerBinding, Principal, VerifiedPeer,
 };
 use serde_json::{json, Value};
 use std::os::unix::fs::PermissionsExt;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use tokio::net::{UnixListener, UnixStream};
 
 type TestResult<T = ()> = Result<T, Box<dyn std::error::Error>>;
@@ -19,43 +18,34 @@ const SERVER_NONCE: [u8; 32] = [1; 32];
 const CLIENT_NONCE: [u8; 32] = [2; 32];
 const MAX_IMAGE: u64 = 1 << 32;
 
-/// A private state directory this test created, removed on drop.
-struct State(PathBuf);
-
-impl Drop for State {
-    fn drop(&mut self) {
-        let _cleanup = std::fs::remove_dir_all(&self.0);
-    }
-}
-
 /// A host played by this test process: its endpoint names this process, so
 /// the client's real server check passes against it.
 struct Fixture {
-    state: State,
+    state: tempfile::TempDir,
     listener: UnixListener,
     myself: PeerBinding,
     principal: Principal,
     endpoint: Endpoint,
-    credential: OwnerCredential,
 }
 
 impl Fixture {
     fn new(label: &str) -> TestResult<Self> {
-        let path = std::env::temp_dir().join(format!("grapt-ipc-{label}-{}", std::process::id()));
-        std::fs::create_dir(&path)?;
-        let state = State(path);
-        std::fs::set_permissions(&state.0, std::fs::Permissions::from_mode(0o700))?;
-        let listener = UnixListener::bind(state.0.join("se.sock"))?;
+        // A short root keeps the socket path within the kernel's limit
+        // however long the runner's temporary directory is.
+        let state = tempfile::Builder::new()
+            .prefix(&format!("gse-{label}-"))
+            .tempdir_in("/tmp")?;
+        std::fs::set_permissions(state.path(), std::fs::Permissions::from_mode(0o700))?;
+        let listener = UnixListener::bind(state.path().join("se.sock"))?;
         let myself = observe_self(MAX_IMAGE)?;
         let principal = myself.principal.clone();
         write_private(
-            &state.0.join("endpoint.json"),
-            &endpoint_json(&state.0, &myself, 0),
+            &state.path().join("endpoint.json"),
+            &endpoint_json(state.path(), &myself, 0),
         )?;
-        write_private(&state.0.join("credential"), &SECRET)?;
+        write_private(&state.path().join("credential"), &SECRET)?;
         Ok(Self {
-            endpoint: read_endpoint(&state.0, &principal)?,
-            credential: OwnerCredential::read(&state.0, &principal)?,
+            endpoint: discover(state.path(), &principal)?,
             state,
             listener,
             myself,
@@ -81,15 +71,7 @@ impl Fixture {
         peer: VerifiedPeer<UnixStream>,
         options: HandshakeOptions,
     ) -> Result<Connection<UnixStream>, IpcError> {
-        Connection::open(
-            peer,
-            &self.endpoint,
-            &self.credential,
-            &self.myself,
-            CLIENT_NONCE,
-            &options,
-        )
-        .await
+        Connection::open(peer, &self.myself, CLIENT_NONCE, &options).await
     }
 
     fn epoch(&self) -> Value {
@@ -105,6 +87,14 @@ fn write_private(path: &Path, bytes: &[u8]) -> TestResult {
     )?)
 }
 
+/// This process's executable path, as the kernel reports it.
+fn executable() -> Vec<u8> {
+    use std::os::unix::ffi::OsStrExt;
+    std::fs::read_link("/proc/self/exe")
+        .map(|path| path.as_os_str().as_bytes().to_vec())
+        .unwrap_or_default()
+}
+
 fn start_ticks(binding: &PeerBinding) -> u64 {
     match binding.started {
         StartIdentity::Linux { start_ticks } => start_ticks,
@@ -117,7 +107,7 @@ fn start_ticks(binding: &PeerBinding) -> u64 {
 fn epoch(host: &PeerBinding, generation: u64, skew: u64) -> Value {
     json!({"generation": generation, "owner": {
         "argv_sha256": "aa".repeat(32), "boot": "boot-fixture",
-        "executable": {"encoding": "unix_bytes", "units": [47, 115, 101]},
+        "executable": {"encoding": "unix_bytes", "units": executable()},
         "machine": "machine-fixture", "pid": u64::from(host.pid) + skew,
         "started": {"os": "linux", "start_ticks": start_ticks(host) + skew}}})
 }
@@ -173,7 +163,7 @@ fn expected_mac(fixture: &Fixture, secret: &[u8; 32]) -> TestResult<Vec<u8>> {
         field(&mut peer, part);
     }
     let mut message = Vec::new();
-    let image = fixture.endpoint.file.image_sha256.0;
+    let image = fixture.endpoint.file().image_sha256.0;
     for part in [
         &b"se.ipc.owner/v1"[..],
         &[0, 1, 0, 0],
@@ -319,12 +309,12 @@ async fn a_server_that_is_not_the_endpoints_host_gets_no_proof() -> TestResult {
     let other_pin = grapt_stateengine_ipc::Sha256Hex([0; 32]);
     let pinned = connect(&fixture.endpoint, &fixture.principal, &other_pin, MAX_IMAGE).await;
     assert!(matches!(pinned, Err(IpcError::BinaryMismatch)));
-    let endpoint = fixture.state.0.join("endpoint.json");
+    let endpoint = fixture.state.path().join("endpoint.json");
     write_private(
         &endpoint,
-        &endpoint_json(&fixture.state.0, &fixture.myself, 1),
+        &endpoint_json(fixture.state.path(), &fixture.myself, 1),
     )?;
-    fixture.endpoint = read_endpoint(&fixture.state.0, &fixture.principal)?;
+    fixture.endpoint = discover(fixture.state.path(), &fixture.principal)?;
     let moved = fixture.pair().await;
     let refused = moved
         .as_ref()
@@ -332,6 +322,14 @@ async fn a_server_that_is_not_the_endpoints_host_gets_no_proof() -> TestResult {
         .map(ToString::to_string)
         .unwrap_or_default();
     assert!(refused.contains("is not the endpoint's host"), "{refused}");
+    let mut renamed: Value =
+        serde_json::from_slice(&endpoint_json(fixture.state.path(), &fixture.myself, 0))?;
+    renamed["epoch"]["owner"]["executable"]["units"] = json!(b"/se");
+    write_private(&endpoint, renamed.to_string().as_bytes())?;
+    fixture.endpoint = discover(fixture.state.path(), &fixture.principal)?;
+    let renamed = fixture.pair().await.err().map(|error| error.to_string());
+    let renamed = renamed.unwrap_or_default();
+    assert!(renamed.contains("another executable"), "{renamed}");
     Ok(())
 }
 
@@ -454,7 +452,10 @@ async fn a_silent_host_times_out_the_handshake() -> TestResult {
 #[tokio::test]
 async fn an_endpoint_outside_its_rules_is_refused() -> TestResult {
     let fixture = Fixture::new("endpoint")?;
-    let (state, path) = (&fixture.state.0, fixture.state.0.join("endpoint.json"));
+    let (state, path) = (
+        fixture.state.path(),
+        fixture.state.path().join("endpoint.json"),
+    );
     let valid: Value = serde_json::from_slice(&endpoint_json(state, &fixture.myself, 0))?;
     let mut extra = valid.clone();
     extra["unknown"] = json!(1);
@@ -470,13 +471,13 @@ async fn an_endpoint_outside_its_rules_is_refused() -> TestResult {
         vec![b' '; 16_385],
     ] {
         write_private(&path, &body)?;
-        assert!(read_endpoint(state, &fixture.principal).is_err());
+        assert!(discover(state, &fixture.principal).is_err());
     }
     write_private(&path, valid.to_string().as_bytes())?;
     std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o644))?;
-    assert!(read_endpoint(state, &fixture.principal).is_err());
+    assert!(discover(state, &fixture.principal).is_err());
     std::fs::remove_file(&path)?;
     std::os::unix::fs::symlink(state.join("credential"), &path)?;
-    assert!(read_endpoint(state, &fixture.principal).is_err());
+    assert!(discover(state, &fixture.principal).is_err());
     Ok(())
 }

@@ -4,10 +4,9 @@
 use crate::frame::{decode, encode, read_frame, write_frame};
 use crate::handshake::{handshake, HandshakeOptions, Session};
 use crate::peer::PeerBinding;
-use crate::proof::OwnerCredential;
 use crate::server_peer::VerifiedPeer;
 use crate::wire::{IpcEnvelope, IpcResponse, IpcResult, Operation, Output, Request};
-use crate::{Endpoint, IpcError, API_VERSION, MAX_FRAME_BYTES};
+use crate::{IpcError, API_VERSION, MAX_FRAME_BYTES};
 use grapt_stateengine_api::IdempotencyKey;
 use serde_json::Value;
 use tokio::io::{AsyncRead, AsyncWrite};
@@ -32,27 +31,19 @@ impl<S> std::fmt::Debug for Connection<S> {
 }
 
 impl<S: AsyncRead + AsyncWrite + Unpin> Connection<S> {
-    /// Authenticate to the host behind a verified stream within
+    /// Authenticate to the host behind a verified stream, with the endpoint
+    /// and owner credential it was verified against, within
     /// [`HELLO_TIMEOUT`](crate::HELLO_TIMEOUT). `client_nonce` must be fresh
     /// random bytes from the caller's entropy source.
     pub async fn open(
         peer: VerifiedPeer<S>,
-        endpoint: &Endpoint,
-        credential: &OwnerCredential,
         binding: &PeerBinding,
         client_nonce: [u8; 32],
         options: &HandshakeOptions,
     ) -> Result<Self, IpcError> {
         let mut stream = peer.stream;
-        let session = handshake(
-            &mut stream,
-            endpoint,
-            credential,
-            binding,
-            client_nonce,
-            options,
-        )
-        .await?;
+        let session =
+            handshake(&mut stream, &peer.endpoint, binding, client_nonce, options).await?;
         Ok(Self {
             stream,
             session,

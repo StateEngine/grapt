@@ -25,6 +25,42 @@ pub fn observe_self(max_image_bytes: u64) -> Result<PeerBinding, IpcError> {
     })
 }
 
+/// What identifies a running process instance to the server check.
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) struct Instance {
+    /// The effective uid.
+    pub(crate) uid: u32,
+    pub(crate) start_ticks: u64,
+    pub(crate) executable: PathBuf,
+}
+
+impl Instance {
+    /// Whether this observation is the `expected` instance, or which part differs.
+    pub(crate) fn matches(&self, expected: &Self) -> Result<(), IpcError> {
+        let differs = if self.uid != expected.uid {
+            "the server runs as another user"
+        } else if self.start_ticks != expected.start_ticks {
+            "the server process started at another time"
+        } else if self.executable != expected.executable {
+            "the server runs another executable than the endpoint names"
+        } else {
+            return Ok(());
+        };
+        Err(IpcError::PeerMismatch(differs.into()))
+    }
+}
+
+/// The user, start time and executable path of the process at `directory`.
+pub(crate) fn observe(directory: &Path) -> Result<Instance, IpcError> {
+    let status = read(directory, "status")?;
+    Ok(Instance {
+        uid: effective_uid(&status).ok_or_else(|| unreadable(directory, "uid"))?,
+        start_ticks: start_ticks(directory)?,
+        executable: std::fs::read_link(directory.join("exe"))
+            .map_err(|_| unreadable(directory, "exe"))?,
+    })
+}
+
 /// The `/proc` directory of process `pid`.
 pub(crate) fn process(pid: u32) -> PathBuf {
     PathBuf::from(format!("/proc/{pid}"))

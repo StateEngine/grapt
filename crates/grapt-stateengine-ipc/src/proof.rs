@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 //! The owner proof: an HMAC-SHA256 under the owner credential over the
 //! challenge and this client's own native identity, as the host observes it.
-use crate::peer::{field, PeerBinding, Principal};
+use crate::peer::{field, PeerBinding};
 use crate::wire::Version;
 use crate::{IpcError, Sha256Hex};
 use std::path::Path;
@@ -11,7 +11,7 @@ const OWNER_DOMAIN: &[u8] = b"se.ipc.owner/v1";
 const CREDENTIAL_BYTES: usize = 32;
 
 /// The owner's machine credential: exactly 32 bytes, held zeroized.
-pub struct OwnerCredential(Zeroizing<[u8; CREDENTIAL_BYTES]>);
+pub(crate) struct OwnerCredential(Zeroizing<[u8; CREDENTIAL_BYTES]>);
 
 impl std::fmt::Debug for OwnerCredential {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -20,17 +20,19 @@ impl std::fmt::Debug for OwnerCredential {
 }
 
 impl OwnerCredential {
-    /// Read `<state_home>/credential` through the verified state directory:
-    /// a regular file, not a link, that `principal` owns and no one else reads.
-    pub fn read(state_home: &Path, principal: &Principal) -> Result<Self, IpcError> {
-        let path = state_home.join("credential");
-        let bytes = crate::state_dir::StateDir::open(state_home, principal)
-            .and_then(|directory| directory.read("credential", CREDENTIAL_BYTES as u64))
+    /// Read `credential` from the verified state directory at `state_home`:
+    /// a regular file, not a link, that the principal owns and no one else reads.
+    pub(crate) fn read(
+        directory: &crate::state_dir::StateDir,
+        state_home: &Path,
+    ) -> Result<Self, IpcError> {
+        let bytes = directory
+            .read("credential", CREDENTIAL_BYTES as u64)
             .map_err(IpcError::Credential)?;
         let secret: [u8; CREDENTIAL_BYTES] = bytes.as_slice().try_into().map_err(|_| {
             IpcError::Credential(format!(
                 "{} holds {} bytes, not {CREDENTIAL_BYTES}",
-                path.display(),
+                state_home.join("credential").display(),
                 bytes.len()
             ))
         })?;
@@ -69,6 +71,7 @@ pub(crate) fn owner_mac(credential: &OwnerCredential, input: &ProofInput<'_>) ->
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::peer::Principal;
     use crate::wire::StartIdentity;
 
     /// The binding layout spelled out byte by byte, and a MAC computed by hand

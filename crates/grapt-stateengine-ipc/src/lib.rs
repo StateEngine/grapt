@@ -31,7 +31,7 @@ pub mod wire;
 pub use binary::verify_binary;
 pub use connection::Connection;
 pub use digest::Sha256Hex;
-pub use endpoint::{read_endpoint, Endpoint};
+pub use endpoint::{discover, Endpoint};
 pub use error::IpcError;
 pub use frame::{read_frame, write_frame};
 pub use grapt_stateengine_api::IdempotencyKey;
@@ -39,7 +39,6 @@ pub use handshake::{Capabilities, HandshakeOptions, Session};
 #[cfg(target_os = "linux")]
 pub use linux_proc::observe_self;
 pub use peer::{PeerBinding, Principal};
-pub use proof::OwnerCredential;
 #[cfg(target_os = "linux")]
 pub use server_peer::connect;
 pub use server_peer::VerifiedPeer;
