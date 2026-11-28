@@ -17,8 +17,30 @@ pub(super) struct Positions {
     epoch: u64,
     /// The last position stamped in this epoch, shared by every stream of it.
     seq: u64,
-    /// Bytes already sent per live block, keyed by its message and ordinal.
-    offsets: BTreeMap<(String, u64), u64>,
+    /// Bytes already sent per live block, while it is live.
+    offsets: BTreeMap<Block, u64>,
+}
+
+/// One live block's whole identity: its session, assistant message, kind
+/// (reasoning or not) and ordinal. Message ids repeat across sessions, and
+/// each kind numbers its own blocks.
+type Block = (String, String, bool, u64);
+
+/// The live block a slice frame names, if it is one and names it fully.
+fn block(member: EventMember, data: &serde_json::Value) -> Option<Block> {
+    let reasoning = match member {
+        EventMember::ReasoningStarted
+        | EventMember::ReasoningDelta
+        | EventMember::ReasoningEnded => true,
+        EventMember::TextStarted | EventMember::TextDelta | EventMember::TextEnded => false,
+        _ => return None,
+    };
+    Some((
+        data.get("sessionID")?.as_str()?.to_owned(),
+        data.get("assistantMessageID")?.as_str()?.to_owned(),
+        reasoning,
+        data.get("ordinal")?.as_u64()?,
+    ))
 }
 
 /// One session's execution state, at the committed position that reported it.
@@ -91,22 +113,26 @@ impl Positions {
     }
 
     /// Place one delta at its block's offset, as the product's positioned
-    /// frame carries it. A legacy double leaves the delta as it was.
-    fn place(&mut self, data: &mut serde_json::Value) {
+    /// frame carries it. A legacy double leaves the delta as it was, and a
+    /// frame that names no whole block passes unchanged.
+    fn place(&mut self, member: EventMember, data: &mut serde_json::Value) {
         if !self.enabled {
             return;
         }
-        let key = (
-            data["assistantMessageID"]
-                .as_str()
-                .unwrap_or_default()
-                .to_owned(),
-            data["ordinal"].as_u64().unwrap_or_default(),
-        );
+        let Some(key) = block(member, data) else {
+            return;
+        };
         let bytes = data["delta"].as_str().map_or(0, str::len) as u64;
         let offset = self.offsets.entry(key).or_insert(0);
         data["from"] = serde_json::json!(*offset);
         *offset = offset.saturating_add(bytes);
+    }
+
+    /// A block ended: it is live no more, and nothing keeps its offset.
+    fn retire(&mut self, member: EventMember, data: &serde_json::Value) {
+        if let Some(key) = block(member, data) {
+            self.offsets.remove(&key);
+        }
     }
 }
 
@@ -129,13 +155,24 @@ impl ContractDouble {
             return FramePoll::Frame(text);
         }
         let text = match serde_json::from_str::<serde_json::Value>(&text) {
-            Ok(mut value)
-                if value["data"]["delta"].is_string() && value["data"].get("from").is_none() =>
-            {
-                self.positions.place(&mut value["data"]);
-                value.to_string()
+            Ok(mut value) => {
+                let member = value["type"].as_str().and_then(EventMember::parse);
+                match member {
+                    Some(member @ (EventMember::TextEnded | EventMember::ReasoningEnded)) => {
+                        self.positions.retire(member, &value["data"]);
+                        text
+                    }
+                    Some(member)
+                        if value["data"]["delta"].is_string()
+                            && value["data"].get("from").is_none() =>
+                    {
+                        self.positions.place(member, &mut value["data"]);
+                        value.to_string()
+                    }
+                    _ => text,
+                }
             }
-            _ => text,
+            Err(_) => text,
         };
         self.positions.stamp(text)
     }
@@ -146,8 +183,19 @@ impl ContractDouble {
 
     /// Queue one live delta, placed at its offset on a positioned double.
     pub(super) fn delta(&mut self, member: EventMember, mut data: serde_json::Value) {
-        self.positions.place(&mut data);
+        self.positions.place(member, &mut data);
         self.live(member, data);
+    }
+
+    /// Append one block's durable end, retiring the block's live offset.
+    pub(super) fn end_block(
+        &mut self,
+        session: &SessionWireId,
+        member: EventMember,
+        data: serde_json::Value,
+    ) {
+        self.positions.retire(member, &data);
+        self.append(session, member, data);
     }
 
     /// Record a session's execution state at its committed position. A

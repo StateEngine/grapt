@@ -43,13 +43,31 @@ impl SessionView {
         None
     }
 
-    /// Whether a positioned delta for a block that is not open belongs to a
-    /// message the installed snapshot holds durably. The snapshot reopens every
-    /// block still live at P, so such a block ended at or before P: a delta the
-    /// stream retained from before the read is superseded by the durable row.
+    /// Whether a positioned delta for a block that is not open lies wholly
+    /// inside that same block as the installed snapshot holds it durably. The
+    /// snapshot reopens every block still live at P, so such a block ended at
+    /// or before P: a delta the stream retained from before the read is
+    /// superseded by the durable row. Anything less (another ordinal or kind
+    /// of the row, or bytes past what it holds) is a gap, never superseded.
     pub(super) fn superseded_delta(&self, envelope: &EventEnvelope, kind: SliceKind) -> bool {
-        wire_identity(envelope, kind)
-            .is_ok_and(|(message, _)| self.tail_rows.iter().any(|(row, _)| row == &message))
+        let Ok((message, ordinal)) = wire_identity(envelope, kind) else {
+            return false;
+        };
+        let Some(held) = self.durable_bytes(&message, kind, ordinal) else {
+            return false;
+        };
+        let from = envelope
+            .data
+            .get("from")
+            .and_then(serde_json::Value::as_u64)
+            .and_then(|from| usize::try_from(from).ok());
+        let bytes = envelope
+            .data
+            .get("delta")
+            .and_then(serde_json::Value::as_str)
+            .map(str::len);
+        from.zip(bytes)
+            .is_some_and(|(from, bytes)| from.saturating_add(bytes) <= held)
     }
 
     /// Open one live block from a snapshot: identity-tagged, holding its

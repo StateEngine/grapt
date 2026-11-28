@@ -293,7 +293,8 @@ impl ContractDouble {
         self.observe_state(session, "running", Some(execution.clone()));
 
         // Every live block names its assistant row and ordinal, as the real
-        // wire does: the row just recorded, reasoning first, then text.
+        // wire does: the row just recorded, reasoning first, then text. Each
+        // kind numbers its own blocks, as the durable row does.
         let message = format!(
             "msg_{:012x}",
             self.sessions
@@ -314,17 +315,17 @@ impl ContractDouble {
             data["text"] = serde_json::json!(text);
             data
         };
-        self.append(
+        self.end_block(
             session,
             EventMember::ReasoningEnded,
             ended(0, "considering"),
         );
 
-        self.append(session, EventMember::TextStarted, block(1));
+        self.append(session, EventMember::TextStarted, block(0));
         for piece in reply.split_inclusive(' ') {
-            self.delta(EventMember::TextDelta, chunk(1, piece));
+            self.delta(EventMember::TextDelta, chunk(0, piece));
         }
-        self.append(session, EventMember::TextEnded, ended(1, reply));
+        self.end_block(session, EventMember::TextEnded, ended(0, reply));
 
         self.live(
             EventMember::UsageUpdated,

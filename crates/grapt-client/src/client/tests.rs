@@ -265,6 +265,7 @@ mod newest_first;
 mod paging;
 mod streaming;
 mod submission;
+mod superseded;
 mod tools;
 
 // ---------------------------------------------------------------------------
