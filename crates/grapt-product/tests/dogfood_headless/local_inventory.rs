@@ -118,3 +118,36 @@ fn sc_fr01_missing_context_fails_startup_before_any_provider_request(
     }
     Ok(())
 }
+
+/// A first request is judged by what the provider could charge, not one token
+/// per byte: 32K and 40K local models run it, and a 4K one is refused unsent.
+#[test]
+fn sc_fr01_a_small_local_window_runs_a_first_turn_that_fits(
+) -> Result<(), Box<dyn std::error::Error>> {
+    for (context, sent) in [(32_768u64, 1), (40_960, 1), (4_096, 0)] {
+        let _journey = process_journey_custody();
+        let root = root(&format!("sc-fr01-window-{context}"));
+        prepare(&root, 120_000);
+        configure(&root, Some(context))?;
+        let provider = ProviderFixture::start(vec![Script::CompatibleSuccess]);
+        let mut child = spawn(&root, provider.address);
+        let address = await_ready(&root, &mut child);
+        let session = create(address);
+        json(
+            address,
+            "POST",
+            &format!("/api/session/{session}/prompt"),
+            r#"{"id":"msg_sc_fr01_window","text":"reply briefly","delivery":"queue","resume":true}"#,
+        );
+        permission_residuals::wait_session_idle(address, &session);
+        child.stop_after_witness(&root);
+        drop(child);
+        assert_eq!(
+            locked(&provider.bodies).len(),
+            sent,
+            "{context}-token window"
+        );
+        process_fixture::cleanup(&root);
+    }
+    Ok(())
+}

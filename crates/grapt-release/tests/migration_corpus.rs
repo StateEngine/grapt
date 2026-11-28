@@ -150,6 +150,10 @@ fn the_language_neutral_corpus_replays_through_the_public_operator() -> TestResu
     Ok(())
 }
 
+#[cfg_attr(
+    not(feature = "frozen-fixture"),
+    ignore = "reads the frozen fixture corpus: set SECODE_FIXTURES and enable frozen-fixture"
+)]
 #[test]
 fn corpus_pins_the_complete_ordered_current_law_pack() -> TestResult {
     let manifest: CorpusManifest =

@@ -7,6 +7,9 @@ description = "Normalized provider-stream vocabulary, its ordering validator, an
 
 [features]
 default = []
+# Tests that read the external frozen fixture corpus (`SECODE_FIXTURES`). The
+# gates enable it; without it those tests are reported as ignored.
+frozen-fixture = []
 # Plaintext is admitted only for controlled loopback acceptance. Production
 # builds omit this feature and retain the mechanically witnessed HTTPS-only
 # client construction.

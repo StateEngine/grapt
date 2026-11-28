@@ -324,6 +324,10 @@ fn validate(fragments: &[AttemptFragment]) -> Result<StreamValidator, StreamViol
 // Coverage
 // ---------------------------------------------------------------------------
 
+#[cfg_attr(
+    not(feature = "frozen-fixture"),
+    ignore = "reads the frozen fixture corpus: set SECODE_FIXTURES and enable frozen-fixture"
+)]
 #[test]
 fn reasoning_text_usage_stop_maps_onto_the_alphabet() {
     let dir = scenario("provider-transcript-reasoning-text-usage-stop");
@@ -355,6 +359,10 @@ fn reasoning_text_usage_stop_maps_onto_the_alphabet() {
     );
 }
 
+#[cfg_attr(
+    not(feature = "frozen-fixture"),
+    ignore = "reads the frozen fixture corpus: set SECODE_FIXTURES and enable frozen-fixture"
+)]
 #[test]
 fn usage_is_never_a_standalone_fragment_in_the_oracle() {
     // The waiver states it outright: "Usage as a standalone AttemptFragment
@@ -391,6 +399,10 @@ fn usage_is_never_a_standalone_fragment_in_the_oracle() {
 // Corrected expectations
 // ---------------------------------------------------------------------------
 
+#[cfg_attr(
+    not(feature = "frozen-fixture"),
+    ignore = "reads the frozen fixture corpus: set SECODE_FIXTURES and enable frozen-fixture"
+)]
 #[test]
 fn malformed_fragment_yields_one_step_failure_where_the_oracle_recorded_none() {
     // ORACLE RED BASELINE (waivers.json): a tool input delta before start
@@ -450,6 +462,10 @@ fn malformed_fragment_yields_one_step_failure_where_the_oracle_recorded_none() {
     );
 }
 
+#[cfg_attr(
+    not(feature = "frozen-fixture"),
+    ignore = "reads the frozen fixture corpus: set SECODE_FIXTURES and enable frozen-fixture"
+)]
 #[test]
 fn interrupt_midstream_settles_every_started_call() {
     // The oracle's interrupt path runs through running local tools. Its
@@ -507,6 +523,10 @@ fn interrupt_midstream_settles_every_started_call() {
     );
 }
 
+#[cfg_attr(
+    not(feature = "frozen-fixture"),
+    ignore = "reads the frozen fixture corpus: set SECODE_FIXTURES and enable frozen-fixture"
+)]
 #[test]
 fn straggler_asymmetry_is_ignored_evidence_not_a_second_settlement() {
     // caseA: late ERROR after success — benign in the oracle, which records
@@ -601,6 +621,10 @@ fn straggler_asymmetry_is_ignored_evidence_not_a_second_settlement() {
     );
 }
 
+#[cfg_attr(
+    not(feature = "frozen-fixture"),
+    ignore = "reads the frozen fixture corpus: set SECODE_FIXTURES and enable frozen-fixture"
+)]
 #[test]
 fn every_d2_scenario_declares_its_waivers() {
     // A corrected expectation without a waiver row is an undisclosed behaviour

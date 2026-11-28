@@ -290,15 +290,20 @@ class ExecutionTests(unittest.TestCase):
         self.assertEqual(set(command[command.index('--features')+1].split(',')), {
             'grapt-cli/loopback-testkit',
             'grapt-connections/loopback-testkit',
+            'grapt-instruction/frozen-fixture',
             'grapt-login/loopback-testkit',
             'grapt-mcp-client/loopback-testkit',
             'grapt-plugin/loopback-testkit',
             'grapt-product/checkpoint-fixture',
+            'grapt-product/frozen-fixture',
             'grapt-product/handover-crash-fixture',
             'grapt-product/loopback-provider-testkit',
             'grapt-provider/deterministic-testkit',
+            'grapt-provider/frozen-fixture',
             'grapt-provider/loopback-testkit',
+            'grapt-release/frozen-fixture',
             'grapt-runtime/loopback-testkit',
+            'grapt-service/frozen-fixture',
         })
         self.assertLess(command.index('--features'), command.index('--'))
         self.assertIn('--no-fail-fast', command)
@@ -309,6 +314,7 @@ class ExecutionTests(unittest.TestCase):
         self.assertEqual(set(command[command.index('--features')+1].split(',')), {
             'grapt-cli/loopback-testkit',
             'grapt-product/checkpoint-fixture',
+            'grapt-product/frozen-fixture',
             'grapt-product/handover-crash-fixture',
             'grapt-product/loopback-provider-testkit',
         })
@@ -365,7 +371,8 @@ class ExecutionTests(unittest.TestCase):
     def test_provider_only_lint_uses_only_provider_testkit_features(self):
         lint, tests = [command for command in gate.affected_commands(['grapt-provider'])
                        if command[:2] != ['cargo', 'xwin'] and '--doc' not in command]
-        expected = {'grapt-provider/deterministic-testkit', 'grapt-provider/loopback-testkit'}
+        expected = {'grapt-provider/deterministic-testkit', 'grapt-provider/frozen-fixture',
+                    'grapt-provider/loopback-testkit'}
         self.assertEqual(set(lint[lint.index('--features')+1].split(',')), expected)
         self.assertEqual(set(tests[tests.index('--features')+1].split(',')), expected)
         self.assertNotIn('grapt-product', lint)
@@ -395,7 +402,8 @@ class ExecutionTests(unittest.TestCase):
     def test_provider_only_tests_do_not_enable_cli_or_product_features(self):
         command = gate.test_command(['grapt-provider'])
         self.assertEqual(set(command[command.index('--features')+1].split(',')), {
-            'grapt-provider/deterministic-testkit', 'grapt-provider/loopback-testkit'})
+            'grapt-provider/deterministic-testkit', 'grapt-provider/frozen-fixture',
+            'grapt-provider/loopback-testkit'})
 
     def test_unrelated_package_does_not_enable_product_or_its_testkit(self):
         command = gate.test_command(['grapt-types'])

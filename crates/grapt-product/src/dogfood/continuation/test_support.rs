@@ -87,6 +87,16 @@ impl DurableContinuation {
         label: &str,
         prompt: &str,
     ) -> Result<(Self, TestContinuationScratch), String> {
+        Self::with_prompts_for_test(label, &[], prompt)
+    }
+
+    /// A continuation whose `earlier` inputs were promoted, unanswered,
+    /// before the current `prompt`.
+    pub(in crate::dogfood) fn with_prompts_for_test(
+        label: &str,
+        earlier: &[&str],
+        prompt: &str,
+    ) -> Result<(Self, TestContinuationScratch), String> {
         use std::sync::atomic::{AtomicUsize, Ordering};
 
         use grapt_store::AggregateId;
@@ -122,6 +132,12 @@ impl DurableContinuation {
             )
             .map_err(|error| error.to_string())?,
         );
+        for (ordinal, text) in earlier.iter().enumerate() {
+            let earlier = format!("msg_d2a_earlier{ordinal}")
+                .parse::<MessageId>()
+                .map_err(|error| error.to_string())?;
+            promote_test_input(&inbox, &session, &earlier, text)?;
+        }
         promote_test_input(&inbox, &session, &input, prompt)?;
         Ok((Self::new(inbox, artifacts, session, input), scratch))
     }

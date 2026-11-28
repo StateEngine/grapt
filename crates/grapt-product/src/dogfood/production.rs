@@ -176,6 +176,10 @@ pub(super) struct ProductPlan {
     admission_diagnosis: super::continuation::admission::DiagnosisSlot,
     trim_feedback: Option<super::execution::context_trim::TrimFeedback>,
     trimmed_request: bool,
+    /// How many items this request carries that compaction could remove:
+    /// earlier inputs before the current one, and model outputs, replays and
+    /// tool results from any turn or step. With none, it has nothing to do.
+    compactable_items: usize,
     /// Where this request's history starts when a trimmed retry reads from
     /// the newest window the read bounds serve; what lies before is omitted.
     window_floor: Option<grapt_types::EventSeq>,
@@ -210,6 +214,45 @@ impl RequestBoundary {
             // new messages have no durable origin and stay protected together.
             new_prefix
         };
+    }
+
+    /// How many items compaction could remove: the unprotected history, and
+    /// every model exchange outside it.
+    fn compactable(&self, input: &[grapt_provider::CodexInputItem]) -> usize {
+        let history = self.history_start..self.protected_from;
+        let outside = input
+            .iter()
+            .enumerate()
+            .filter(|(index, item)| !history.contains(index) && exchange(item))
+            .count();
+        history.len() + outside
+    }
+}
+
+/// Whether `item` is part of a model exchange: output, replayed reasoning, a
+/// tool call or its result. Instructions, user input and effort updates are
+/// not; compaction can only remove exchanges.
+fn exchange(item: &grapt_provider::CodexInputItem) -> bool {
+    use grapt_provider::{CodexInputItem, InputMessage, MessageRole};
+    match item {
+        CodexInputItem::Message(InputMessage {
+            role: MessageRole::System | MessageRole::User,
+            ..
+        })
+        | CodexInputItem::ImageUser { .. }
+        | CodexInputItem::EffortUpdate(_) => false,
+        CodexInputItem::Message(InputMessage {
+            role: MessageRole::Assistant,
+            ..
+        })
+        | CodexInputItem::AssistantResponseStart
+        | CodexInputItem::ProviderReplay(_)
+        | CodexInputItem::CompatibleReasoning(_)
+        | CodexInputItem::ToolCall { .. }
+        | CodexInputItem::TextToolCall { .. }
+        | CodexInputItem::ToolOutput { .. }
+        | CodexInputItem::ImageToolOutput { .. }
+        | CodexInputItem::CompactionTrigger => true,
     }
 }
 
@@ -323,6 +366,7 @@ impl ProductPlan {
             admission_diagnosis: super::continuation::admission::DiagnosisSlot::default(),
             trim_feedback: None,
             trimmed_request: false,
+            compactable_items: 0,
             window_floor: None,
             context_hook: None,
             lifecycle: None,
@@ -372,6 +416,7 @@ impl ProductPlan {
             admission_diagnosis: super::continuation::admission::DiagnosisSlot::default(),
             trim_feedback: None,
             trimmed_request: false,
+            compactable_items: 0,
             window_floor: None,
             context_hook: None,
             lifecycle: None,
@@ -545,6 +590,18 @@ impl ProductPlan {
                 .map_err(|_| grapt_types::ContextFailure::CompactionFailed)?;
             estimate.basis = admission::EstimateBasis::Estimated;
         }
+        // Compaction cannot shrink a request with nothing compactable, so refusing it is
+        // final. Before any calibration the byte bound only proves it too large
+        // when even the densest tokenizer could not fit it; otherwise the
+        // provider's own count decides, and its usage calibrates the next one.
+        // Both the ceiling and the window judge this one size.
+        let judged = if self.compactable_items == 0
+            && estimate.basis == admission::EstimateBasis::Estimated
+        {
+            admission::densest(&planned.request, estimate.tokens)
+        } else {
+            estimate.tokens
+        };
         self.accounting.record_context(planned.context.as_ref());
         self.admission_diagnosis
             .record_calibration(self.accounting.calibration_for(planned.authority.model()));
@@ -556,7 +613,7 @@ impl ProductPlan {
                 trigger,
                 estimate_basis: estimate.basis,
                 // The number the threshold was judged on.
-                estimate: estimate.tokens,
+                estimate: judged,
                 budget,
             });
         // Universal ceiling: old auto/suppression settings cannot admit more
@@ -568,7 +625,7 @@ impl ProductPlan {
         // unreachable and the Session runs until the provider overflows.
         if self.compaction.auto
             && admission::auto_compact_reached(
-                admission::ceiling_size(context_usage, estimate.tokens.into()),
+                admission::ceiling_size(context_usage, judged.into()),
                 budget,
                 self.compaction.model_auto_compact_token_limit,
             )
@@ -596,7 +653,7 @@ impl ProductPlan {
             None => true,
         };
         if !compactable {
-            return Ok((!admission::fits(estimate.tokens, reserve, budget)).then_some(trigger));
+            return Ok((!admission::fits(judged, reserve, budget)).then_some(trigger));
         }
         // `compaction.auto: false` turns off the proactive ceiling above; a
         // request that cannot fit the window still compacts, as the provider's
@@ -609,7 +666,7 @@ impl ProductPlan {
         // refused a summary that fit. An under-count instead reaches the
         // provider's own overflow classification, which the Step recovers with
         // its single bounded rebuild.
-        Ok((!admission::fits(estimate.tokens, reserve, budget)).then_some(trigger))
+        Ok((!admission::fits(judged, reserve, budget)).then_some(trigger))
     }
 }
 

@@ -274,6 +274,10 @@ fn ratified_schema() -> Value {
     parse(&read(&path), "the ratified oracle-receipt schema")
 }
 
+#[cfg_attr(
+    not(feature = "frozen-fixture"),
+    ignore = "reads the frozen fixture corpus: set SECODE_FIXTURES and enable frozen-fixture"
+)]
 #[test]
 fn the_manifest_validates_against_the_actual_ratified_schema() {
     let schema = ratified_schema();
@@ -304,6 +308,10 @@ fn differential_corpus_dir() -> std::path::PathBuf {
         .join("../../fixtures/rust-reconstruction/r4-desktop-differential-contract")
 }
 
+#[cfg_attr(
+    not(feature = "frozen-fixture"),
+    ignore = "reads the frozen fixture corpus: set SECODE_FIXTURES and enable frozen-fixture"
+)]
 #[test]
 fn the_differential_contract_manifest_validates_against_the_actual_ratified_schema() {
     let schema = ratified_schema();
@@ -328,6 +336,10 @@ fn controller_corpus_dir() -> std::path::PathBuf {
         .join("../../fixtures/rust-reconstruction/r4-service-controller")
 }
 
+#[cfg_attr(
+    not(feature = "frozen-fixture"),
+    ignore = "reads the frozen fixture corpus: set SECODE_FIXTURES and enable frozen-fixture"
+)]
 #[test]
 fn the_service_controller_manifest_validates_against_the_actual_ratified_schema() {
     let schema = ratified_schema();
@@ -385,6 +397,10 @@ fn every_path_the_service_controller_manifest_declares_exists() {
     }
 }
 
+#[cfg_attr(
+    not(feature = "frozen-fixture"),
+    ignore = "reads the frozen fixture corpus: set SECODE_FIXTURES and enable frozen-fixture"
+)]
 #[test]
 fn the_evaluator_detects_a_violation_of_the_schema_it_read() {
     // The same-file control. Without it, `the_manifest_validates_…` could be
@@ -528,6 +544,10 @@ fn every_type_arm_separates_a_matching_instance_from_a_violating_one() {
     }
 }
 
+#[cfg_attr(
+    not(feature = "frozen-fixture"),
+    ignore = "reads the frozen fixture corpus: set SECODE_FIXTURES and enable frozen-fixture"
+)]
 #[test]
 fn a_frozen_scenario_validates_under_the_same_evaluator() {
     // The independent control: a scenario this lane did not author, validated by
@@ -570,6 +590,10 @@ fn operator_preflight_corpus_dir() -> std::path::PathBuf {
         .join("../../fixtures/rust-reconstruction/r4-operator-preflight-contract")
 }
 
+#[cfg_attr(
+    not(feature = "frozen-fixture"),
+    ignore = "reads the frozen fixture corpus: set SECODE_FIXTURES and enable frozen-fixture"
+)]
 #[test]
 fn the_operator_preflight_manifest_validates_against_the_actual_ratified_schema() {
     let schema = ratified_schema();
