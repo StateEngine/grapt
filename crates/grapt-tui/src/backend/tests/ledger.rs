@@ -361,13 +361,13 @@ fn review_ledger_send_second_producer_and_panic_quit_mint_one_identity_sequence(
     drop(crate::PanicClose::new(&backend));
     let first = received.try_recv()?;
     let second = received.try_recv()?;
-    let third = received.try_recv()?;
-    assert!(first.0 < second.0 && second.0 < third.0);
+    assert!(first.0 < second.0);
     assert_eq!(second.0, other_id);
     assert!(matches!(first.1, Command::Models));
     assert!(matches!(second.1, Command::SessionSearch(_)));
-    assert!(matches!(third.1, Command::Quit(_)));
     assert!(received.try_recv().is_err());
+    // The panic close's quit is read apart from the intake.
+    assert_eq!(backend.updates.take_quits().len(), 1);
     Ok(())
 }
 

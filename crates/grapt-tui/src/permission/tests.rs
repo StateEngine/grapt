@@ -25,10 +25,12 @@ fn ask(
     })
 }
 
-fn backend() -> (Backend, crate::Commands) {
+/// A backend handle with its command intake and the loop's wake: a live
+/// worker holds both receivers.
+fn backend() -> (Backend, crate::Commands, mpsc::Receiver<()>) {
     let (commands, receiver) = crate::command_channel();
     let updates = crate::backend::Handoff::default();
-    let (wake, _) = mpsc::sync_channel(1);
+    let (wake, ready) = mpsc::sync_channel(1);
     (
         Backend {
             commands,
@@ -36,6 +38,7 @@ fn backend() -> (Backend, crate::Commands) {
             wake,
         },
         receiver,
+        ready,
     )
 }
 
@@ -91,7 +94,7 @@ fn a_failed_reply_is_visible_after_reviewing_the_tail_of_the_same_request() -> R
         ui.permission_details = true;
         let mut terminal = Terminal::new(TestBackend::new(width, height))?;
         paint(&mut terminal, &mut ui)?;
-        let (backend, commands) = backend();
+        let (backend, commands, _ready) = backend();
         for attempt in 1..=2 {
             ui.permission_scroll = usize::MAX;
             assert!(paint(&mut terminal, &mut ui)?.contains("PATCH_CONTEXT_TAIL"));
@@ -143,7 +146,7 @@ fn every_command_row_and_its_tail_are_reachable_with_fixed_choices() -> Result {
         ui.composer.insert_str("unsent 中 draft");
         ui.permission_update(Some(request.clone()));
         ui.permission_details = true;
-        let (backend, commands) = backend();
+        let (backend, commands, _ready) = backend();
         let mut text = paint(&mut terminal, &mut ui)?;
         assert!(!text.contains("SHELL_CONTEXT_TAIL"));
         let mut seen = String::new();
@@ -330,7 +333,7 @@ fn expanding_permission_details_keeps_the_request_and_draft_until_an_explicit_re
     let request = ask(None)?;
     ui.composer.insert_str("unfinished draft");
     ui.permission_update(Some(request.clone()));
-    let (backend, commands) = backend();
+    let (backend, commands, _ready) = backend();
     assert!(!ui.permission_details);
     for expanded in [true, false, true] {
         keys::handle_key(
@@ -389,7 +392,7 @@ fn expanding_permission_details_keeps_the_request_and_draft_until_an_explicit_re
 fn permission_footer_preserves_quit_confirmation_and_stop_feedback() -> Result {
     let mut ui = Ui::new(false);
     ui.permission_update(Some(ask(None)?));
-    let (backend, commands) = backend();
+    let (backend, _commands, _ready) = backend();
     for (millis, confirmed) in [(0, false), (1, true)] {
         let now = std::time::Duration::from_millis(millis);
         assert_eq!(
@@ -403,7 +406,7 @@ fn permission_footer_preserves_quit_confirmation_and_stop_feedback() -> Result {
         );
         let reply = if confirmed {
             ui.quit.request(&backend, now)?;
-            let Command::Quit(reply) = commands.try_recv()? else {
+            let Some(reply) = backend.updates.take_quits().pop() else {
                 panic!("session stop request absent")
             };
             Some(reply)
@@ -427,7 +430,7 @@ fn permission_footer_preserves_quit_confirmation_and_stop_feedback() -> Result {
 fn permission_keys_wait_for_the_visible_window_and_enter_never_approves() -> Result {
     use grapt_client::wire::PermissionReplyChoice::{Always, Once, Reject, Session};
     for (ch, choice) in [('y', Once), ('n', Reject), ('s', Session), ('a', Always)] {
-        let (backend, commands) = backend();
+        let (backend, commands, _ready) = backend();
         let mut ui = Ui::new(false);
         ui.permission_update(Some(ask(None)?));
         let key = KeyEvent::new(KeyCode::Char(ch), KeyModifiers::NONE);

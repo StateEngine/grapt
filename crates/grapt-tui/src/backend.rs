@@ -23,7 +23,7 @@ mod rows;
 use idle::{wait, wake_delay};
 mod publish;
 mod reads;
-pub use publish::{heartbeat, CommandId, Handoff, Link, LAG_AFTER};
+pub use publish::{heartbeat, CommandId, Handoff, Link, QuitReply, LAG_AFTER};
 mod view;
 use view::Ledger;
 pub use view::{Failure, Outcome, Settled, Update};
@@ -470,7 +470,7 @@ fn serve(
         // Commands never wait for the UI to take a view: a full chunk leaves
         // a backlog, and the next pass begins without sleeping.
         backlog = lane.fill(&commands, updates);
-        batch.extend(lane.next(updates));
+        batch.extend(lane.next(&commands, updates));
         let mark = ledger.len();
         for (id, command) in batch {
             // Each command's results leave their holders before the next

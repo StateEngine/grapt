@@ -387,7 +387,7 @@ impl Fixture {
     }
     pub fn barrier(&self) -> Result {
         let (reply, received) = mpsc::sync_channel(1);
-        crate::send(&self.backend, Command::Quit(reply))?;
+        crate::request_quit(&self.backend, reply)?;
         received.recv_timeout(Duration::from_secs(2))??;
         Ok(())
     }

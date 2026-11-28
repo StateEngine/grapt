@@ -9,6 +9,7 @@
 use super::{Failure, Update};
 use std::sync::{
     atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering},
+    mpsc::SyncSender,
     Arc, Mutex, PoisonError,
 };
 use std::time::Duration;
@@ -16,6 +17,13 @@ use tokio::time::Instant;
 
 /// How long one backend pass may run before the footer reports lag.
 pub const LAG_AFTER: Duration = Duration::from_secs(1);
+
+/// The most quit requests waiting at once: the UI's own, a console close and
+/// a panic close.
+const QUITS: usize = 4;
+
+/// The acknowledgement a quit request waits on.
+pub type QuitReply = SyncSender<Result<(), String>>;
 
 /// Commands waiting at the backend above this depth are shown with the lag.
 pub const SHOWN_DEPTH: usize = 8;
@@ -53,6 +61,9 @@ struct Liveness {
     /// A model refresh the UI asked for on its own: requests coalesce here
     /// instead of queueing behind a stuck backend.
     refresh: AtomicBool,
+    /// Quit requests, read apart from the command intake so none waits
+    /// behind it.
+    quits: Mutex<Vec<QuitReply>>,
     next_command: AtomicU64,
 }
 
@@ -74,6 +85,7 @@ impl Default for Handoff {
                 pass_began: AtomicU64::new(0),
                 intake: AtomicUsize::new(0),
                 refresh: AtomicBool::new(false),
+                quits: Mutex::default(),
                 next_command: AtomicU64::new(1),
             }),
         }
@@ -169,6 +181,31 @@ impl Handoff {
     /// The backend's side of the refresh flag, cleared as it is read.
     pub fn refresh_requested(&self) -> bool {
         self.liveness.refresh.swap(false, Ordering::AcqRel)
+    }
+
+    /// Ask the backend to quit, ahead of every queued command.
+    pub fn request_quit(&self, reply: QuitReply) -> Result<(), String> {
+        let mut quits = self
+            .liveness
+            .quits
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        if quits.len() >= QUITS {
+            return Err("A quit is already waiting for the service".into());
+        }
+        quits.push(reply);
+        Ok(())
+    }
+
+    /// The backend's side of the quit requests, emptied as they are read.
+    pub fn take_quits(&self) -> Vec<QuitReply> {
+        std::mem::take(
+            &mut *self
+                .liveness
+                .quits
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner),
+        )
     }
 
     /// Commands handed over and not yet received.

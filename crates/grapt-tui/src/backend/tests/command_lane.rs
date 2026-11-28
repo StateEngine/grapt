@@ -50,9 +50,12 @@ fn a_held_permission_reply_never_holds_the_protocol_loop() -> Result {
 }
 
 #[test]
-fn quit_is_acknowledged_while_a_reply_is_held() -> Result {
+fn quit_is_acknowledged_behind_a_held_reply_and_a_full_queue() -> Result {
     let fixture = Fixture::ready()?;
     held_reply(&fixture)?;
+    for _ in 0..20 {
+        fixture.command(Command::Models)?;
+    }
     let held = Instant::now();
     fixture.barrier()?;
     assert!(
@@ -61,6 +64,28 @@ fn quit_is_acknowledged_while_a_reply_is_held() -> Result {
         held.elapsed()
     );
     assert!(fixture.gate.blocked(), "the reply was still held");
+    Ok(())
+}
+
+#[test]
+fn a_submit_held_when_quit_arrives_never_reaches_the_service() -> Result {
+    let fixture = Fixture::ready()?;
+    held_reply(&fixture)?;
+    let inputs = || -> Result<usize> {
+        let source = fixture.source.lock().map_err(|_| "source lock")?;
+        Ok(source.user_inputs(&fixture.session).len())
+    };
+    let before = inputs()?;
+    fixture.command(Command::Submit("held behind the reply".into()))?;
+    fixture.barrier()?;
+    fixture.gate.release();
+    fixture.take_until(|update| update.permission.is_none())?;
+    // Anything still held would run and reach the service within this window.
+    let settled = Instant::now();
+    while settled.elapsed() < Duration::from_secs(1) {
+        assert_eq!(inputs()?, before, "a held submit reached the service");
+        std::thread::sleep(Duration::from_millis(5));
+    }
     Ok(())
 }
 

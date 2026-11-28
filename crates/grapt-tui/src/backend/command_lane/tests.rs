@@ -20,10 +20,25 @@ fn saturated_passes_never_grow_the_held_commands_past_their_bound() -> Result {
     }
     // Nothing held has run, so the intake depth still names every command.
     assert_eq!(updates.intake(), 200);
-    let (reply, _result) = mpsc::sync_channel(1);
-    held.0.push_back(updates.envelope(Command::Quit(reply)));
-    let ready = held.next(true, &updates);
-    assert!(matches!(ready.as_slice(), [(_, Command::Quit(_))]));
+    Ok(())
+}
+
+#[test]
+fn one_pass_receives_at_most_its_bound_even_when_selects_coalesce() -> Result {
+    let updates = Handoff::default();
+    let (sender, commands) = mpsc::channel();
+    let session = grapt_client::wire::session_id("ses_000000000009")?;
+    for _ in 0..200 {
+        updates.handed();
+        let select = Command::Select(super::super::Selection {
+            id: session.clone(),
+        });
+        sender.send(updates.envelope(select))?;
+    }
+    let mut held = Held::default();
+    assert!(held.fill(&commands, &updates));
+    assert_eq!(held.0.len(), 1);
+    assert_eq!(commands.try_iter().count(), 200 - HELD);
     Ok(())
 }
 
