@@ -279,6 +279,19 @@ impl ExecutionBackend {
     }
 }
 
+/// Settle what process loss left open before the server admits any work.
+fn recover_at_startup(
+    service_root: &Path,
+    store: &mut grapt_store::EventStore,
+    ids: &Arc<OsRandomIds>,
+    clock: &Arc<SystemClock>,
+) -> Result<(), DogfoodRefusal> {
+    let receipt_bytes = NonZeroU32::new(ATTEMPT_RECEIPT_BYTES)
+        .ok_or_else(|| DogfoodRefusal::Compose("attempt receipt bound is zero".to_owned()))?;
+    startup_recovery::recover(service_root, store, ids, clock, receipt_bytes)
+        .map_err(DogfoodRefusal::Compose)
+}
+
 pub(crate) fn event_hub() -> Result<Arc<DogfoodEventHub>, String> {
     event_hub_with_grace(grapt_api::u3a::DEFAULT_CLOSE_GRACE)
 }
@@ -497,10 +510,7 @@ impl DogfoodApplication {
             OsRandomIds::seed().map_err(|error| DogfoodRefusal::Compose(error.to_string()))?,
         );
         let clock = Arc::new(SystemClock);
-        let receipt_bytes = NonZeroU32::new(ATTEMPT_RECEIPT_BYTES)
-            .ok_or_else(|| DogfoodRefusal::Compose("attempt receipt bound is zero".to_owned()))?;
-        startup_recovery::recover(service_root, &mut store, &ids, &clock, receipt_bytes)
-            .map_err(DogfoodRefusal::Compose)?;
+        recover_at_startup(service_root, &mut store, &ids, &clock)?;
         let inbox =
             Inbox::new(store).map_err(|error| DogfoodRefusal::Compose(error.to_string()))?;
         let readers = inbox
