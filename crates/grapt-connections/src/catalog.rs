@@ -69,6 +69,17 @@ pub fn integrations() -> Result<Vec<CatalogIntegration>, String> {
             })
         })
         .collect::<Result<_, String>>()?;
+    for row in grapt_connections_catalog::local_servers() {
+        if providers.contains_key(row.id) {
+            continue;
+        }
+        let local = KeyProvider::local(row).ok_or("local server preset is invalid")?;
+        rows.push(CatalogIntegration {
+            id: local.id,
+            name: local.name,
+            key: Some(local),
+        });
+    }
     let custom = KeyProvider::custom();
     rows.push(CatalogIntegration {
         id: custom.id,
@@ -101,6 +112,16 @@ impl KeyProvider {
         }
     }
 
+    /// A local model server the bundled catalogue does not name: the same
+    /// compatible chat wire as a custom endpoint, under the server's own name.
+    fn local(row: &'static EndpointProvider) -> Option<Self> {
+        Some(Self {
+            id: row.id,
+            name: row.local?.name,
+            ..Self::custom()
+        })
+    }
+
     pub fn from_id(id: &str) -> Result<Option<Self>, String> {
         if id == "custom" {
             return Ok(Some(Self::custom()));
@@ -109,7 +130,7 @@ impl KeyProvider {
             .as_object()
             .and_then(|providers| providers.get_key_value(id))
         else {
-            return Ok(None);
+            return Ok(endpoint_provider(id).and_then(Self::local));
         };
         Ok(Self::from_row(id, row))
     }
@@ -563,20 +584,40 @@ impl KeyProvider {
             }
         }
         rows.iter()
-            .find_map(|row| {
-                let id = row["id"].as_str()?;
-                let model = &models[id];
-                let context = model["limit"]["context"]
-                    .as_u64()
-                    .or_else(|| row["max_model_len"].as_u64())?;
-                let text = model["modalities"]["output"]
-                    .as_array()
-                    .is_none_or(|items| items.iter().any(|item| item.as_str() == Some("text")));
-                (context > 0 && text && model["tool_call"].as_bool() != Some(false))
-                    .then(|| id.to_owned())
-            })
+            .find(|row| runnable(models, row))
+            .and_then(|row| row["id"].as_str())
+            .map(str::to_owned)
             .ok_or_else(|| "provider lists no supported model with a known context limit".into())
     }
+
+    /// Whether `model` is listed with what a run needs: a known context
+    /// limit, text output and tool calls.
+    pub fn runs(self, listing: &[u8], model: &str) -> Result<bool, String> {
+        validate_listing(listing)?;
+        let listing: Value =
+            serde_json::from_slice(listing).map_err(|_| "provider model list is invalid")?;
+        let models = &snapshot()?[self.id]["models"];
+        Ok(listing["data"].as_array().is_some_and(|rows| {
+            rows.iter()
+                .any(|row| row["id"].as_str() == Some(model) && runnable(models, row))
+        }))
+    }
+}
+
+fn runnable(models: &Value, row: &Value) -> bool {
+    let Some(id) = row["id"].as_str() else {
+        return false;
+    };
+    let model = &models[id];
+    let context = model["limit"]["context"]
+        .as_u64()
+        .or_else(|| row["max_model_len"].as_u64());
+    let text = model["modalities"]["output"]
+        .as_array()
+        .is_none_or(|items| items.iter().any(|item| item.as_str() == Some("text")));
+    context.is_some_and(|context| context > 0)
+        && text
+        && model["tool_call"].as_bool() != Some(false)
 }
 
 fn validate_listing(bytes: &[u8]) -> Result<(), String> {

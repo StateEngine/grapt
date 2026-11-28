@@ -68,13 +68,17 @@ the bundled providers.
 ChatGPT uses browser OAuth. --no-browser selects the device flow for a headless
 machine and displays its URL and code. Anthropic and other implemented API
 providers use a key entered without terminal echo, --key-stdin, or
---api-key-env <name>. Environment references store only the exported name;
-the variable must be available to the service. Use openai for an OpenAI API key.
+--api-key-env <name>. With none of these, the provider's usual variable is used
+when it is set. Environment references store only the exported name; the
+variable must be available to the service. Use openai for an OpenAI API key.
 
 --id <id>       Select or create a named connection.
 --label <label>  Name the connection.
---base-url <url> --model <id> --context-window <tokens>
+--base-url <url> [--model <id> [--context-window <tokens>]]
                 Set explicit coordinates for account-specific or local endpoints.
+                Local presets (ollama, lmstudio, vllm, llamacpp) default to the
+                server's usual address and need no key. Without --model, every
+                model the server lists is offered, each at the window it reports.
 Cloudflare AI Gateway requires --cf-account <account>, --cf-gateway <gateway>
 and --cf-provider <provider>, with its API token entered at the prompt or stdin.
 OpenAI/Anthropic need AI Gateway Run and stored provider keys or Unified Billing.
@@ -97,6 +101,7 @@ Logout refuses a name that is not signed in and lists signed-in IDs, or none.
 Examples:
   grapt login chatgpt --no-browser --json
   grapt login anthropic --api-key-env ANTHROPIC_API_KEY
+  grapt login ollama
   grapt login openai --key-stdin --profile <profile>
   grapt auth status --json";
 
@@ -154,7 +159,7 @@ Example (replace placeholder):
   grapt service status --service <service-root>";
 
 const RUN: &str = "\
-usage: grapt run <connection> [session] [<message>... | --prompt <text> | --stdin] [options]
+usage: grapt run [<connection>] [session] [<message>... | --prompt <text> | --stdin] [options]
 
 Run one prompt noninteractively. Supply text or at least one --image.
 --max-steps <positive-integer> caps logical provider calls for this input.
@@ -174,7 +179,8 @@ It conflicts with --background.
 exact --session without --fork. Transport uncertainty never triggers input replay;
 the caller must reconcile durable acceptance against the same service and Session.
 
-Connection (choose exactly one):
+Connection (choose at most one; omitted means the default profile, whose
+service starts when none is running):
   --service <root>                         Discover an existing local service.
   --remote <https-url> --credential <file>  Remote service; credential from file.
   --embedded --service <root> --product <binary>  Start a temporary local product.
@@ -231,10 +237,11 @@ Examples (replace placeholders):
   grapt run --service <service-root> --continue --fork -- explain the last change";
 
 const ATTACH: &str = "\
-usage: grapt attach <connection> (--session <id> | --resume | --new) [--project <id>] [--json|--jsonl]
+usage: grapt attach [<connection>] (--session <id> | --resume | --new) [--project <id>] [--json|--jsonl]
 
 Attach to a session without submitting a prompt.
-Connection (choose exactly one):
+Connection (choose at most one; omitted means the default profile, whose
+service starts when none is running):
   --service <root>                         Discover an existing local service.
   --remote <https-url> --credential <file>  Remote service; credential from file.
   --embedded --service <root> --product <binary>  Start a temporary local product.
@@ -254,10 +261,11 @@ Examples (replace placeholders):
   grapt attach --remote <https-url> --credential <credential-file> --resume --jsonl";
 
 const ACP: &str = "\
-usage: grapt acp <connection>
+usage: grapt acp [<connection>]
 
 Serve the ACP protocol on stdin/stdout, not a prompt-oriented run command.
-Connection (choose exactly one):
+Connection (choose at most one; omitted means the default profile, whose
+service starts when none is running):
   --service <root>                         Discover an existing local service.
   --remote <https-url> --credential <file>  Remote service; credential from file.
   --embedded --service <root> --product <binary>  Start a temporary local product.

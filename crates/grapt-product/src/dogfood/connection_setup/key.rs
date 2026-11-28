@@ -172,9 +172,9 @@ impl ConnectionSetup {
                     )
                 }
             };
-            provider = setup
-                .as_ref()
-                .map_or(provider, |setup| provider.for_model(setup.model.as_str()));
+            if let Some(model) = setup.as_ref().and_then(|setup| setup.model.as_ref()) {
+                provider = provider.for_model(model.as_str());
+            }
             if let Some(scope) = &cloudflare {
                 provider = provider.with_cloudflare(scope).map_err(invalid)?;
             }
@@ -281,6 +281,10 @@ impl ConnectionSetup {
                 )
                 .await
                 .map_err(|_| invalid("Vertex authorization failed; check the service-account key, project permissions, model location and system clock, then retry Connect"))?,
+                (None, None, SecretInput::ApiKey(secret)) if setup.is_some() => match setup {
+                    Some(setup) => setup.verify(provider, &base, secret, id.as_str()).await?,
+                    None => return Err(invalid("enter the API base URL")),
+                },
                 (None, None, SecretInput::ApiKey(secret)) => {
                     if let Some(scope) = cloudflare {
                         let listing = provider.cloudflare_listing().map_err(invalid)?;
@@ -291,43 +295,6 @@ impl ConnectionSetup {
                     } else if let Some(azure) = azure {
                         grapt_login::key::azure::verify(&base, secret, &azure.deployment, azure.listing)
                             .await
-                    } else if let Some(setup) = setup {
-                        let listing = serde_json::to_vec(&serde_json::json!({"data":[{
-                            "id":setup.model.as_str(), "max_model_len":setup.context_window,
-                        }]}))
-                        .map_err(invalid)?;
-                        let protocol =
-                            if provider.family() == grapt_connections::store::Family::AnthropicMessages {
-                                grapt_login::key::KeyProtocol::BearerMessages
-                            } else if grapt_connections::catalog::endpoint_provider(provider.id())
-                                .is_some_and(|row| row.completion_tokens)
-                            {
-                                grapt_login::key::KeyProtocol::CompletionChat
-                            } else {
-                                grapt_login::key::KeyProtocol::Chat
-                            };
-                        // The key and the destination are checked before the key
-                        // may travel anywhere else. Only a verified key can reach
-                        // the optional catalogue read, and the read is additive.
-                        match grapt_login::key::verify_model_listing(
-                            &base,
-                            secret,
-                            setup.model.as_str(),
-                            listing,
-                            protocol,
-                        )
-                        .await
-                        {
-                            // Discovery is reached only through a verified key,
-                            // so the key cannot travel before its check.
-                            Ok(verified) => {
-                                let listing =
-                                    grapt_login::key::enrich_listing(&verified, setup.model.as_str())
-                                        .await;
-                                Ok(verified.with_listing(listing))
-                            }
-                            Err(error) => Err(error),
-                        }
                     } else if let Some(super::bedrock::Prepared { model, listing, .. }) = bedrock {
                         grapt_login::key::bedrock::verify(&base, &model, secret, listing, &grapt_store::SystemClock).await
                     } else {

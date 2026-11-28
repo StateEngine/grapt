@@ -71,7 +71,7 @@ async fn read_row(verified: &VerifiedKey, model: &str) -> Option<Value> {
 
 /// The catalogue fields one listing row states, each kept only when the
 /// endpoint actually reports it in a bounded, readable form.
-fn fields(row: &Value) -> Value {
+pub(super) fn fields(row: &Value) -> Value {
     let mut fields = json!({});
     if let Some(context) = row
         .get("context_length")

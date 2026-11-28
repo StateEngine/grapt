@@ -70,6 +70,17 @@ impl ApiClient {
                     }) {
                         return Err(ApiClientError::ProviderKeyRejected);
                     }
+                    if error.kind().as_value().is_some_and(|kind| {
+                        kind.as_str() == grapt_api::u3a::INTEGRATION_ENDPOINT_KIND
+                    }) {
+                        let message = error.message().get().as_str();
+                        if !message.is_empty()
+                            && message.len() <= 1024
+                            && !message.chars().any(char::is_control)
+                        {
+                            return Err(ApiClientError::EndpointRefused(message.to_owned()));
+                        }
+                    }
                     if error
                         .kind()
                         .as_value()

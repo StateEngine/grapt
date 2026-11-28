@@ -63,6 +63,18 @@ fn effort_policy(
 pub(crate) struct PlatformTargets(pub(crate) grapt_platform::ProviderTargetAuthority);
 
 fn missing_context(provider: &str, model: &str) -> String {
+    if provider == "custom" || grapt_connections::catalog::endpoint_provider(provider).is_some() {
+        // An endpoint reports a model's window only while that model is
+        // loaded; connecting it by name loads it and reads the window again.
+        let base = if provider == "custom" {
+            " --base-url <url>"
+        } else {
+            ""
+        };
+        return format!(
+            "the server reported no context window for {provider}/{model} when it was connected; connect it by name with grapt login {provider}{base} --model {model}, adding --context-window <tokens> if the server still reports none"
+        );
+    }
     format!(
         "model inventory is missing a positive context limit for {provider}/{model}; provide model-catalog.json metadata or an account-models.json row with max_model_len before starting the provider"
     )

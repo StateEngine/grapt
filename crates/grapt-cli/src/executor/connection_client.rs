@@ -1,4 +1,5 @@
-//! One-shot operators borrow a running service or own its ordinary terminal lifetime.
+//! One-shot operators borrow a running service or own its ordinary terminal lifetime,
+//! on a named profile or the user's default one.
 use super::*;
 use std::path::{Path, PathBuf};
 
@@ -66,6 +67,54 @@ pub(super) async fn open(
             }
         }
     }
+}
+
+/// A command that names no connection: the user's default profile, through
+/// its running service or one this command owns until it exits.
+pub(super) async fn default_profile(limits: CliLimits) -> Result<ApiClient, Failure> {
+    let root = crate::command::terminal::user_profile(|name| std::env::var_os(name)).ok_or((
+        ExitClass::Usage,
+        "default profile is unavailable; provide --service <root>".to_owned(),
+    ))?;
+    match std::fs::symlink_metadata(&root) {
+        Ok(_) => {}
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            let detected = super::connections::ambient_logins();
+            let step = if detected.is_empty() {
+                "connect one with grapt login <provider>, for example grapt login ollama or grapt login anthropic".to_owned()
+            } else {
+                format!("connect one with {}", detected.join(" or "))
+            };
+            return Err((
+                ExitClass::Usage,
+                format!(
+                    "no provider is connected yet (no profile at {}); {step}",
+                    root.display()
+                ),
+            ));
+        }
+        Err(error) => {
+            return Err((
+                ExitClass::Discovery,
+                format!("profile is unreadable: {:?}", error.kind()),
+            ))
+        }
+    }
+    let discovery = ServiceDiscovery::try_new(root.clone(), env!("CARGO_PKG_VERSION"))
+        .map_err(|error| (ExitClass::Discovery, error.to_string()))?;
+    match discovery.discover().await {
+        Ok(service) => {
+            return ApiClient::from_discovered(&service, limits)
+                .map_err(|error| (ExitClass::Protocol, error.to_string()))
+        }
+        Err(
+            crate::DiscoveryError::Absent
+            | crate::DiscoveryError::ReadyAbsent
+            | crate::DiscoveryError::Stale(_),
+        ) => {}
+        Err(error) => return Err((ExitClass::Discovery, error.to_string())),
+    }
+    super::embedded_client(product_binary()?, root, limits).await
 }
 
 fn product_binary() -> Result<PathBuf, Failure> {

@@ -308,6 +308,7 @@ pub async fn connect(
             product_binary,
             service_root,
         } => embedded_client(product_binary, service_root, limits).await,
+        ConnectionChoice::DefaultProfile => connection_client::default_profile(limits).await,
     }
 }
 
@@ -776,8 +777,8 @@ commands:
   session provision --service <root> --session <id> --agent <id> --model <provider/model>
           --location <directory> --identity-entry <json> --packet-entry <json>
           read the issued StateEngine capability from stdin; requires a running service
-  attach  <connection> (--session <id> | --resume | --new) [--project <id>] [--json|--jsonl]
-  run     <connection> [--session <id> | -s <id> | --resume | --continue | -c | --new]
+  attach  [<connection>] (--session <id> | --resume | --new) [--project <id>] [--json|--jsonl]
+  run     [<connection>] [--session <id> | -s <id> | --resume | --continue | -c | --new]
           (<message>... | --prompt <text> | --stdin) [--format default | --json | --jsonl] [--thinking] [--reasoning-effort <level>]
           [--input-id <msg_KEY>] [--background] [--worktree <new-directory>]
   plugin marketplace add <source> [--service <root>]
@@ -792,10 +793,11 @@ commands:
   import mcp --from <claude|codex> --service <root> [--directory <repository>] [--apply]
   import <instructions|skills|hooks> --from <claude|codex> [--service <root>] [--directory <repository>] [--apply]
              copy MCP server definitions into Grapt configuration; dry run by default
-  acp     <connection>
+  acp     [<connection>]
 
 connection: --service <root> | --remote <https-url> --credential <file>
             | --embedded --service <root> --product <binary>
+            omitted: the default profile, starting its service when none runs
 
 Stable exit codes:
   0 success; 1 auth status has no usable connection; 2 invalid command usage

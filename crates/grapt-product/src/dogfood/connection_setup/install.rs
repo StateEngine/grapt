@@ -235,12 +235,8 @@ impl ConnectionSetup {
             .as_mut()
             .filter(|selected| selected.provider == connection)
         {
-            let parsed: serde_json::Value =
-                serde_json::from_slice(&listing).map_err(|_| "invalid verified model list")?;
-            if !parsed["data"].as_array().is_some_and(|rows| {
-                rows.iter()
-                    .any(|row| row["id"].as_str() == Some(selected.model.as_str()))
-            }) {
+            // A reconnect keeps the chosen model only while it still runs here.
+            if !provider.runs(&listing, selected.model.as_str())? {
                 selected.model = ModelId::new(model).ok_or("invalid replacement model")?;
                 selected.variant = None;
             }

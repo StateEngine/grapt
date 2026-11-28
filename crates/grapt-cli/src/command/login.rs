@@ -2,7 +2,7 @@
 use super::{CliCommand, CommandError};
 use std::path::PathBuf;
 
-const USAGE: &str = "usage: grapt login [provider] [--profile <profile>] [--key-stdin | --api-key-env <name> | --azure-cli | --google-adc | --aws | --aws-profile <name>] [--region <region>] [--deployment <name>] [--google-project <id>] [--google-location <location>] [--id <connection>] [--label <label>] [--base-url <url> --model <id> --context-window <tokens>] [--cf-account <account>] [--cf-gateway <gateway>] [--cf-provider <provider>] [--no-browser] [--json]";
+const USAGE: &str = "usage: grapt login [provider] [--profile <profile>] [--key-stdin | --api-key-env <name> | --azure-cli | --google-adc | --aws | --aws-profile <name>] [--region <region>] [--deployment <name>] [--google-project <id>] [--google-location <location>] [--id <connection>] [--label <label>] [--base-url <url>] [--model <id> [--context-window <tokens>]] [--cf-account <account>] [--cf-gateway <gateway>] [--cf-provider <provider>] [--no-browser] [--json]";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum KeyInput {
@@ -17,8 +17,10 @@ pub enum KeyInput {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EndpointCoordinates {
     pub base_url: String,
-    pub model: String,
-    pub context_window: u32,
+    /// Absent: every model the endpoint lists.
+    pub model: Option<String>,
+    /// Present only with a model: the user's own window for it.
+    pub context_window: Option<u32>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -309,44 +311,39 @@ pub(super) fn operator(verb: &str, arguments: &[String]) -> Result<CliCommand, C
         }
         None
     };
-    let setup = match (base_url, model, context_window) {
-        (None, None, None) => None,
-        (Some(base_url), Some(model), Some(context_window)) => {
-            let id = provider
-                .as_deref()
-                .ok_or(CommandError::Login("endpoint setup requires a provider"))?;
-            if id != "custom" && grapt_connections::catalog::endpoint_provider(id).is_none() {
-                return Err(CommandError::Login(
-                    "this provider does not accept endpoint setup",
-                ));
+    let endpoint = provider.as_deref().filter(|id| {
+        *id == "custom" || grapt_connections::catalog::endpoint_provider(id).is_some()
+    });
+    let setup = match endpoint {
+        Some(id) if verb == "login" => {
+            if context_window.is_some() && model.is_none() {
+                return Err(CommandError::Login("--context-window requires --model"));
             }
             if matches!(key, KeyInput::Environment(_)) {
                 return Err(CommandError::Login(
                     "endpoint setup requires an entered key or --key-stdin",
                 ));
             }
+            let base_url = base_url
+                .or_else(|| {
+                    grapt_connections::catalog::endpoint_provider(id)
+                        .and_then(|row| row.local)
+                        .map(|local| local.base.to_owned())
+                })
+                .ok_or(CommandError::Login("enter --base-url for this provider"))?;
             Some(Box::new(EndpointCoordinates {
                 base_url,
                 model,
                 context_window,
             }))
         }
-        _ => {
+        _ if base_url.is_some() || model.is_some() || context_window.is_some() => {
             return Err(CommandError::Login(
-                "use --base-url, --model and --context-window together",
+                "this provider does not accept endpoint setup",
             ))
         }
+        _ => None,
     };
-    if verb == "login"
-        && provider.as_deref().is_some_and(|id| {
-            id == "custom" || grapt_connections::catalog::endpoint_provider(id).is_some()
-        })
-        && setup.is_none()
-    {
-        return Err(CommandError::Login(
-            "enter --base-url, --model and --context-window for this provider",
-        ));
-    }
     let cloudflare = if provider.as_deref() == Some("cloudflare-ai-gateway") && verb == "login" {
         if matches!(key, KeyInput::Environment(_)) {
             return Err(CommandError::Login(
@@ -496,5 +493,44 @@ mod tests {
         assert!(operator("logout", &words(&["openai", "--key-stdin"])).is_err());
         assert!(operator("auth", &words(&["status", "--json"])).is_ok());
         assert!(parse(&words(&["chatgpt", "--no-browser", "--json"])).is_ok());
+    }
+
+    #[test]
+    fn a_local_preset_needs_no_coordinates_and_a_window_needs_its_model() {
+        let setup = |args: &[&str]| match parse(&words(args)) {
+            Ok(CliCommand::Connections(ConnectionCommand {
+                action: ConnectionAction::Login { setup, .. },
+                ..
+            })) => setup.map(|setup| *setup),
+            _ => None,
+        };
+        assert_eq!(
+            setup(&["ollama"]),
+            Some(EndpointCoordinates {
+                base_url: "http://127.0.0.1:11434/v1".into(),
+                model: None,
+                context_window: None,
+            })
+        );
+        assert_eq!(
+            setup(&[
+                "vllm",
+                "--base-url",
+                "http://127.0.0.1:9000/v1",
+                "--model",
+                "m"
+            ]),
+            Some(EndpointCoordinates {
+                base_url: "http://127.0.0.1:9000/v1".into(),
+                model: Some("m".into()),
+                context_window: None,
+            })
+        );
+        assert!(parse(&words(&["ollama", "--context-window", "65536"])).is_err());
+        assert!(
+            parse(&words(&["custom"])).is_err(),
+            "custom has no usual address"
+        );
+        assert!(parse(&words(&["openai", "--model", "m"])).is_err());
     }
 }

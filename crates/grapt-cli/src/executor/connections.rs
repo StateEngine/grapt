@@ -246,6 +246,24 @@ async fn operate(
                 }
                 None => Optional::absent(),
             };
+            // An explicit key source wins. With none, the provider's own
+            // standard variable is used when it is set, before any prompt.
+            let key = match key {
+                KeyInput::Terminal => match ambient_variable(provider)? {
+                    Some(name) => {
+                        super::emit(
+                            format!("Using {name} from the environment; pass --key-stdin to enter a different key."),
+                            true,
+                            limits,
+                        )
+                        .await
+                        .map_err(|error| (ExitClass::Output, error))?;
+                        KeyInput::Environment(name.to_owned())
+                    }
+                    None => KeyInput::Terminal,
+                },
+                other => other,
+            };
             let azure_cli = key == KeyInput::AzureCli;
             let aws_profile = match &key {
                 KeyInput::AwsChain { profile } => Some(profile.clone()),
@@ -282,6 +300,15 @@ async fn operate(
                             String::new()
                         }
                         KeyInput::Stdin => stdin_key(permits_empty).await?,
+                        // A local server on this machine usually takes no key;
+                        // --key-stdin still supplies one for a server that does.
+                        KeyInput::Terminal
+                            if permits_empty
+                                && grapt_connections::catalog::endpoint_provider(provider.id())
+                                    .is_some_and(|row| row.local.is_some()) =>
+                        {
+                            String::new()
+                        }
                         KeyInput::Terminal => crate::client::terminal::read_api_key(permits_empty)
                             .map_err(|reason| (ExitClass::Usage, reason))?,
                         KeyInput::Environment(_) => return Err(protocol()),
@@ -314,9 +341,15 @@ async fn operate(
                                     Some(setup) => Optional::present(CustomProviderRequestDto {
                                         endpoint: DtoString::try_new(setup.base_url)
                                             .map_err(|_| protocol())?,
-                                        model: DtoString::try_new(setup.model)
-                                            .map_err(|_| protocol())?,
-                                        context_window: setup.context_window,
+                                        model: setup
+                                            .model
+                                            .map(DtoString::try_new)
+                                            .transpose()
+                                            .map_err(|_| protocol())?
+                                            .map_or_else(Optional::absent, Optional::present),
+                                        context_window: setup
+                                            .context_window
+                                            .map_or_else(Optional::absent, Optional::present),
                                     }),
                                     None => Optional::absent(),
                                 },
@@ -497,6 +530,33 @@ fn not_signed_in(provider: &str, connections: &[Connection]) -> Failure {
         ),
     )
 }
+/// The first of a provider's standard key variables that is set and non-empty.
+fn ambient_variable(
+    provider: grapt_connections::catalog::KeyProvider,
+) -> Result<Option<&'static str>, Failure> {
+    Ok(provider
+        .environment_names()
+        .map_err(|_| protocol())?
+        .into_iter()
+        .find(|name| std::env::var_os(name).is_some_and(|value| !value.is_empty())))
+}
+
+/// The login commands that would connect a key already in this environment,
+/// for a refusal that has no connection to use yet.
+pub(super) fn ambient_logins() -> Vec<String> {
+    let Ok(integrations) = grapt_connections::catalog::integrations() else {
+        return Vec::new();
+    };
+    integrations
+        .iter()
+        .filter_map(|integration| {
+            let name = ambient_variable(integration.key?).ok()??;
+            Some(format!("grapt login {} (uses {name})", integration.id))
+        })
+        .take(3)
+        .collect()
+}
+
 fn protocol() -> Failure {
     (
         ExitClass::Protocol,

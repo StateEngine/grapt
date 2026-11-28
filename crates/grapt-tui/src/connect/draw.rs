@@ -152,7 +152,7 @@ pub(super) fn draw(connect: &mut Connect, frame: &mut Frame<'_>, area: Rect, pal
                     lines.push(Line::from(
                         "Use an HTTPS API base or http://127.0.0.1:<port>/v1.",
                     ));
-                    lines.push(Line::from("Local HTTP servers may leave the key empty. Connecting sends a small test request."));
+                    lines.push(Line::from("Leave the model empty to use every model the server lists. Local HTTP servers may leave the key empty. Connecting sends a small test request."));
                 }
             }
             if pane.azure() {

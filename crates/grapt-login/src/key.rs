@@ -6,6 +6,8 @@ pub mod azure;
 mod cohere;
 mod endpoint_metadata;
 pub use endpoint_metadata::enrich_listing;
+mod served_models;
+pub use served_models::{first_model, served_listing, ServedError};
 mod google;
 pub use cohere::verify_cohere_completion;
 mod vertex;

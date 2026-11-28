@@ -6,6 +6,9 @@ use super::{IntegrationInfoDto, LocationInfoDto};
 
 /// A provider refused the submitted key during its network verification.
 pub const INTEGRATION_KEY_REJECTED_KIND: &str = "integration_key_rejected";
+/// An endpoint connect refused for a reason the product states in its own
+/// words, such as a server that cannot be reached or serves no usable model.
+pub const INTEGRATION_ENDPOINT_KIND: &str = "integration_endpoint";
 pub const INTEGRATION_AZURE_CREDENTIALS_KIND: &str = "azure_credentials_unavailable";
 pub const INTEGRATION_AZURE_CREDENTIALS_MESSAGE: &str = "Azure CLI could not authorize this deployment; install Azure CLI 2.54 or newer, run az login as the service user, check the Azure resource endpoint, deployment and permissions, then retry Connect";
 pub const INTEGRATION_GOOGLE_ADC_KIND: &str = "google_adc_verification_failed";
@@ -203,8 +206,18 @@ pub enum AzureAuthRequestDto {
 #[serde(deny_unknown_fields)]
 pub struct CustomProviderRequestDto {
     pub endpoint: DtoString,
-    pub model: DtoString,
-    pub context_window: u32,
+    /// Absent: the endpoint's own model list names every model it serves.
+    #[serde(
+        default = "grapt_schema::Optional::absent",
+        skip_serializing_if = "grapt_schema::Optional::is_absent"
+    )]
+    pub model: grapt_schema::Optional<DtoString>,
+    /// Absent: each model's window is what the endpoint reports, or unknown.
+    #[serde(
+        default = "grapt_schema::Optional::absent",
+        skip_serializing_if = "grapt_schema::Optional::is_absent"
+    )]
+    pub context_window: grapt_schema::Optional<u32>,
 }
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
