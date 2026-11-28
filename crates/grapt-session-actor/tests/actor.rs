@@ -44,6 +44,23 @@ fn soon() -> Instant {
     Instant::now() + Duration::from_secs(5)
 }
 
+/// Run `submit` while another connection holds the database's write lock and
+/// the clock is paused: the store's writer cannot answer before the idle
+/// runtime jumps past the reply deadline, so the outcome is always unknown.
+/// The lock is released afterwards, so a later settlement can commit.
+async fn while_writer_locked<T>(
+    path: &Path,
+    submit: impl std::future::Future<Output = T>,
+) -> Result<T, Box<dyn Error + Send + Sync>> {
+    let blocker = rusqlite::Connection::open(path)?;
+    blocker.execute_batch("BEGIN IMMEDIATE")?;
+    tokio::time::pause();
+    let outcome = submit.await;
+    tokio::time::resume();
+    blocker.execute_batch("ROLLBACK")?;
+    Ok(outcome)
+}
+
 #[tokio::test]
 async fn a_transition_is_durable_before_it_is_published_and_survives_restart() -> TestResult {
     let dir = TempDir::new()?;
@@ -152,27 +169,23 @@ async fn a_full_mailbox_refuses_at_once_and_shutdown_leaves_no_task() -> TestRes
 #[tokio::test]
 async fn a_write_whose_reply_timed_out_settles_before_anything_else() -> TestResult {
     let dir = TempDir::new()?;
-    let (store, actor) = start(&dir.path().join("run.db"), ActorConfig::default()).await?;
+    let path = dir.path().join("run.db");
+    let (store, actor) = start(&path, ActorConfig::default()).await?;
     let handle = actor.handle();
-    // With the clock paused, the idle runtime jumps to the reply deadline
-    // while the writer thread is still syncing the admitted commit.
-    tokio::time::pause();
-    let unknown = handle.submit(key("start")?, Event::StartTurn).await;
-    tokio::time::resume();
+    let unknown =
+        while_writer_locked(&path, handle.submit(key("start")?, Event::StartTurn)).await?;
     assert!(
         matches!(unknown, Err(SubmitError::OutcomeUnknown)),
         "{unknown:?}"
     );
     let paused = handle.submit(key("pause")?, Event::Pause).await?;
     assert_eq!((paused.state, paused.state_seq.get()), (S::Paused, 2));
-    tokio::time::pause();
-    let unknown = handle.submit(key("resume")?, Event::Resume).await;
-    tokio::time::resume();
+    let unknown = while_writer_locked(&path, handle.submit(key("resume")?, Event::Resume)).await?;
     assert!(
         matches!(unknown, Err(SubmitError::OutcomeUnknown)),
         "{unknown:?}"
     );
-    // Shutdown returns only once the store has answered that write.
+    // Shutdown returns only once that write has settled in the store.
     actor.shutdown().await?;
     let stored = load(&store.readers(), session()?, soon()).await?;
     assert_eq!((stored.state, stored.state_seq.get()), (S::Running, 3));
@@ -251,7 +264,8 @@ async fn subscriptions_close_when_the_actor_stops() -> TestResult {
 #[tokio::test]
 async fn settling_a_transition_another_actor_published_does_not_publish_it_again() -> TestResult {
     let dir = TempDir::new()?;
-    let (store, first) = start(&dir.path().join("run.db"), ActorConfig::default()).await?;
+    let path = dir.path().join("run.db");
+    let (store, first) = start(&path, ActorConfig::default()).await?;
     let second = spawn(&store, ActorConfig::default()).await?;
     let two = second.handle();
     let mut changes = two.subscribe();
@@ -259,9 +273,7 @@ async fn settling_a_transition_another_actor_published_does_not_publish_it_again
         .handle()
         .submit(key("turn")?, Event::StartTurn)
         .await?;
-    tokio::time::pause();
-    let unknown = two.submit(key("turn")?, Event::StartTurn).await;
-    tokio::time::resume();
+    let unknown = while_writer_locked(&path, two.submit(key("turn")?, Event::StartTurn)).await?;
     assert!(
         matches!(unknown, Err(SubmitError::OutcomeUnknown)),
         "{unknown:?}"
@@ -344,11 +356,18 @@ async fn a_pending_write_stays_pending_while_its_record_cannot_be_read() -> Test
         read_timeout: Duration::from_millis(200),
         ..ActorConfig::default()
     };
-    let (store, actor) = start(&dir.path().join("run.db"), config).await?;
+    let path = dir.path().join("run.db");
+    let (store, first) = start(&path, config).await?;
+    let actor = spawn(&store, config).await?;
     let handle = actor.handle();
-    tokio::time::pause();
-    let unknown = handle.submit(key("start")?, Event::StartTurn).await;
-    tokio::time::resume();
+    // The key is recorded whatever became of the timed-out attempt, so only
+    // reading its record can settle it.
+    first
+        .handle()
+        .submit(key("start")?, Event::StartTurn)
+        .await?;
+    let unknown =
+        while_writer_locked(&path, handle.submit(key("start")?, Event::StartTurn)).await?;
     assert!(
         matches!(unknown, Err(SubmitError::OutcomeUnknown)),
         "{unknown:?}"
@@ -363,6 +382,7 @@ async fn a_pending_write_stays_pending_while_its_record_cannot_be_read() -> Test
     let paused = handle.submit(key("pause")?, Event::Pause).await?;
     assert_eq!((paused.state, paused.state_seq.get()), (S::Paused, 2));
     actor.shutdown().await?;
+    first.shutdown().await?;
     store.shutdown().await?;
     Ok(())
 }
