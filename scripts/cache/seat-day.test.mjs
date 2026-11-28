@@ -676,4 +676,64 @@ test('evaluateReleaseGates reports honest Criterion #3 and #5 verdicts', async (
   );
   assert.equal(unequalWindowSameStartFail.criterion_3.status, 'fail');
   assert.equal(unequalWindowSameStartFail.criterion_3.reason, 'mismatched-comparison-day');
+
+  // Missing recorded day metadata on either export must fail closed even when labels agree.
+  const missingRecordedDayFail = evaluateReleaseGates(
+    {
+      window: null,
+      models: [{ provider: 'openai', model: 'gpt-6.1-sol', requests: 0 }],
+      requests: [],
+      totals: { read_share_percent: 99.1 },
+      operations: { tool_calls: { count: 100, failed: 0, infrastructure_failed: 0 } },
+    },
+    {
+      codexReport: {
+        window: null,
+        models: [{ provider: 'openai', model: 'gpt-6.1-sol', requests: 1 }],
+        requests: [{ reported_ms: Date.parse('2026-11-28T12:00:00Z') }],
+        totals: { read_share_percent: 98.5 },
+      },
+      matchedTasks: {
+        grapt_day: '2026-11-28',
+        codex_day: '2026-11-28',
+        count: 3,
+        grapt_accepted_tasks: 3,
+        grapt_first_review_accept_rate: 0.9,
+        codex_first_review_accept_rate: 0.9,
+        grapt_tokens_per_accepted_task: 10000,
+        codex_tokens_per_accepted_task: 10000,
+      },
+    },
+  );
+  assert.equal(missingRecordedDayFail.criterion_3.status, 'fail');
+  assert.equal(missingRecordedDayFail.criterion_3.reason, 'mismatched-comparison-day');
+
+  // Pairing a windowed export with an unwindowed export on the same day must fail closed.
+  const windowedPlusUnwindowedFail = evaluateReleaseGates(
+    {
+      window: { from: '2026-11-28T00:00:00Z', until: '2026-11-29T00:00:00Z' },
+      models: [{ provider: 'openai', model: 'gpt-6.1-sol', requests: 1 }],
+      requests: [{ opened_ms: Date.parse('2026-11-28T12:00:00Z') }],
+      totals: { read_share_percent: 99.1 },
+      operations: { tool_calls: { count: 100, failed: 0, infrastructure_failed: 0 } },
+    },
+    {
+      codexReport: {
+        window: null,
+        models: [{ provider: 'openai', model: 'gpt-6.1-sol', requests: 1 }],
+        requests: [{ reported_ms: Date.parse('2026-11-28T12:00:00Z') }],
+        totals: { read_share_percent: 98.5 },
+      },
+      matchedTasks: {
+        count: 3,
+        grapt_accepted_tasks: 3,
+        grapt_first_review_accept_rate: 0.9,
+        codex_first_review_accept_rate: 0.9,
+        grapt_tokens_per_accepted_task: 10000,
+        codex_tokens_per_accepted_task: 10000,
+      },
+    },
+  );
+  assert.equal(windowedPlusUnwindowedFail.criterion_3.status, 'fail');
+  assert.equal(windowedPlusUnwindowedFail.criterion_3.reason, 'mismatched-comparison-day');
 });

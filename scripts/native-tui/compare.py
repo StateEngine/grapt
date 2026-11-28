@@ -821,7 +821,6 @@ def apply_step(
             raise HarnessError(
                 f"[{label}] composer echo marker `{expect_text}` was already present on screen before input"
             )
-        before_non_echo = before_screen.replace(expect_text, "")
         before_tokens = before_state.get("stream_tokens") if isinstance(before_state, dict) else None
         echo_start = time.monotonic()
         observer.action({"kind": "paste", "text": text})
@@ -832,15 +831,16 @@ def apply_step(
             if expect_text in after_screen:
                 elapsed_s = max(time.monotonic() - echo_start, 1e-6)
                 echo_ms = round(elapsed_s * 1000.0, 3)
-                after_non_echo = after_screen.replace(expect_text, "")
-                delta_chars = max(0, len(after_non_echo) - len(before_non_echo))
                 after_tokens = (
                     after_state.get("stream_tokens") if isinstance(after_state, dict) else None
                 )
+                # Populate concurrent streaming ONLY from genuine assistant stream
+                # token counters; never infer streaming from whole-screen text length,
+                # which would miscount static status repaints or pasted composer text.
                 if isinstance(before_tokens, (int, float)) and isinstance(after_tokens, (int, float)):
                     delta_tokens = max(0.0, float(after_tokens) - float(before_tokens))
                 else:
-                    delta_tokens = delta_chars / 4.0
+                    delta_tokens = 0.0
                 streaming_observed = delta_tokens > 0.0
                 observed_tok_per_s = (
                     round(delta_tokens / elapsed_s, 3) if streaming_observed else 0.0
@@ -852,7 +852,7 @@ def apply_step(
                     "echo_ms": echo_ms,
                     "streaming_observed": streaming_observed,
                     "observed_tok_per_s": observed_tok_per_s,
-                    "stream_delta_chars": delta_chars,
+                    "stream_delta_tokens": round(delta_tokens, 3),
                 }, shared
             time.sleep(0.002)
         raise HarnessError(

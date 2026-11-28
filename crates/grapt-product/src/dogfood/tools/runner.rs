@@ -73,6 +73,7 @@ impl PermissionToolRunner {
             location,
             child_seam,
             policy,
+            unexecuted_approvals: UnexecutedApprovals::default(),
         }
     }
 
@@ -613,6 +614,7 @@ impl PermissionToolRunner {
         let (progress, _drain) = BoundedProgressSink::channel();
         let (cancel, cancellation) = ToolCancellation::channel();
         let failure_artifacts = Arc::clone(&self.artifacts);
+        let unexecuted_approvals = self.unexecuted_approvals.clone();
         Box::pin(async move {
             // The sender is held for the effect's lifetime so the channel reads
             // as open rather than closed. No product owner sends on it: an
@@ -642,6 +644,9 @@ impl PermissionToolRunner {
                 }
             }
             let authorization = pending.consume_and_run(move |capability| {
+                // Mark as dispatched BEFORE entering the governed effect so any
+                // abort after this point fails closed with EffectUnknown.
+                unexecuted_approvals.mark_dispatched(&call);
                 if let Some(observation) = authorization_observation {
                     observation.authorized();
                 }

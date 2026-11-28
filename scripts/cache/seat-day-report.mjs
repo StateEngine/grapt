@@ -190,19 +190,19 @@ function extractRecordedWindow(report) {
 }
 
 function extractDay(recordedWindow, explicitDay) {
-  if (recordedWindow.invalid) return null;
+  if (recordedWindow.invalid || recordedWindow.day === null) return null;
   const explicit = typeof explicitDay === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(explicitDay) ? explicitDay : null;
-  if (recordedWindow.day !== null) {
-    // Never let a comparison label override the export's recorded date.
-    if (explicit !== null && explicit !== recordedWindow.day) return null;
-    return recordedWindow.day;
-  }
-  return explicit;
+  // Never let a comparison label override the export's recorded date.
+  if (explicit !== null && explicit !== recordedWindow.day) return null;
+  return recordedWindow.day;
 }
 
 function windowsMatch(graptWindow, codexWindow) {
   if (graptWindow.invalid || codexWindow.invalid) return false;
-  if (graptWindow.fromMs !== null && codexWindow.fromMs !== null) {
+  const graptWindowed = graptWindow.fromMs !== null;
+  const codexWindowed = codexWindow.fromMs !== null;
+  if (graptWindowed !== codexWindowed) return false;
+  if (graptWindowed && codexWindowed) {
     return graptWindow.fromMs === codexWindow.fromMs && graptWindow.untilMs === codexWindow.untilMs;
   }
   return true;

@@ -845,13 +845,17 @@ def t5_budget_witnesses() -> None:
     )
 
     class _FakeObserver:
-        def __init__(self, screens: list[str]) -> None:
+        def __init__(self, screens: list[str], stream_tokens: list[int | None] | None = None) -> None:
             self._screens = list(screens)
+            self._tokens = list(stream_tokens) if stream_tokens is not None else [None] * len(screens)
             self._index = 0
 
         def state(self) -> dict:
-            text = self._screens[min(self._index, len(self._screens) - 1)]
-            return {"lines": [text]}
+            idx = min(self._index, len(self._screens) - 1)
+            payload: dict[str, object] = {"lines": [self._screens[idx]]}
+            if self._tokens[idx] is not None:
+                payload["stream_tokens"] = self._tokens[idx]
+            return payload
 
         def action(self, _payload: dict) -> None:
             self._index += 1
@@ -872,11 +876,11 @@ def t5_budget_witnesses() -> None:
         "echo step refuses when marker was already present on screen before input",
         already_present_rejected,
     )
-    # End-to-end runner path: quiet screen (no concurrent streaming) produces
-    # streaming_observed=False so evaluate_t5_budgets refuses pass.
-    quiet_kind, quiet_detail, _ = CMP.apply_step(
-        _FakeObserver(["prompt > ", "prompt > FRESH_MARKER"]),
-        {"echo": "FRESH_MARKER"},
+    # Negative runner test: a large static status repaint or pasted composer
+    # text (without genuine assistant stream_tokens) must NOT satisfy T5 streaming.
+    repaint_kind, repaint_detail, _ = CMP.apply_step(
+        _FakeObserver(["prompt > ", f"{'STATUS_BAR_REPAINT ' * 80}prompt > REPAINT_ECHO"]),
+        {"echo": "REPAINT_ECHO"},
         "native",
         Path("."),
         Path("."),
@@ -884,35 +888,44 @@ def t5_budget_witnesses() -> None:
     )
     check(
         "echo step succeeds when marker was absent before input and newly painted after",
-        quiet_kind == "echo"
-        and isinstance(quiet_detail, dict)
-        and quiet_detail.get("observed") is True
-        and quiet_detail.get("absent_before") is True
-        and quiet_detail.get("streaming_observed") is False
-        and quiet_detail.get("echo_ms") is not None,
-        f"got={quiet_detail!r}",
+        repaint_kind == "echo"
+        and isinstance(repaint_detail, dict)
+        and repaint_detail.get("observed") is True
+        and repaint_detail.get("absent_before") is True
+        and repaint_detail.get("streaming_observed") is False
+        and repaint_detail.get("echo_ms") is not None,
+        f"got={repaint_detail!r}",
     )
-    quiet_budget = CMP.evaluate_t5_budgets(
+    repaint_budget = CMP.evaluate_t5_budgets(
         [
             {
                 "client": "native",
-                "steps": [{"kind": quiet_kind, "t5_echo": True, "elapsed_ms": quiet_detail["echo_ms"], "detail": quiet_detail}],
+                "steps": [
+                    {
+                        "kind": repaint_kind,
+                        "t5_echo": True,
+                        "elapsed_ms": repaint_detail["echo_ms"],
+                        "detail": repaint_detail,
+                    }
+                ],
                 "idle_cpu_seconds": 0.10,
             }
         ]
     )
     check(
-        "runner echo on quiet screen does not pass T5 without witnessed concurrent streaming",
-        quiet_budget["status"] == "not-measured"
-        and quiet_budget["concurrent_streaming_tok_per_s"]["status"] == "not-measured",
-        f"got={quiet_budget!r}",
+        "static screen repaint or pasted composer text never satisfies T5 concurrent streaming",
+        repaint_budget["status"] == "not-measured"
+        and repaint_budget["concurrent_streaming_tok_per_s"]["status"] == "not-measured",
+        f"got={repaint_budget!r}",
     )
-    # End-to-end runner path: concurrent streamed output alongside echo marker
-    # populates streaming_observed=True and observed_tok_per_s >= 200 so
-    # evaluate_t5_budgets passes through the real runner output shape.
-    streamed_chunk = "token " * 80
+    # Positive end-to-end runner test: genuine observer-reported assistant
+    # stream_tokens advancing alongside the echo marker populates
+    # streaming_observed=True and observed_tok_per_s >= 200 so T5 passes.
     stream_kind, stream_detail, _ = CMP.apply_step(
-        _FakeObserver(["prompt > ", f"{streamed_chunk}prompt > STREAM_ECHO"]),
+        _FakeObserver(
+            ["prompt > ", "assistant streaming... prompt > STREAM_ECHO"],
+            stream_tokens=[10, 60],
+        ),
         {"echo": "STREAM_ECHO"},
         "native",
         Path("."),
@@ -938,7 +951,7 @@ def t5_budget_witnesses() -> None:
         ]
     )
     check(
-        "runner echo with concurrent streaming populates observed_tok_per_s and passes T5 budgets",
+        "runner echo with genuine stream_tokens populates observed_tok_per_s and passes T5 budgets",
         stream_detail.get("streaming_observed") is True
         and float(stream_detail.get("observed_tok_per_s", 0.0)) >= 200.0
         and runner_budget["status"] == "pass"

@@ -835,6 +835,29 @@ fn an_edit_copied_from_read_output_applies_to_a_crlf_file_and_keeps_its_endings(
     Ok(())
 }
 
+#[test]
+fn unexecuted_approvals_tracks_pending_and_clears_on_dispatch() -> Result<(), String> {
+    let tracked = UnexecutedApprovals::default();
+    let pending = ToolCallId::new("call_pending_approval").ok_or("call id")?;
+    let unknown = ToolCallId::new("call_never_pending").ok_or("call id")?;
+
+    assert!(
+        !tracked.is_known_unexecuted(&unknown),
+        "unknown/untracked calls must fail closed as false (EffectUnknown)"
+    );
+    tracked.mark_pending(&pending);
+    assert!(
+        tracked.is_known_unexecuted(&pending),
+        "pending approval call must be known_unexecuted before dispatch"
+    );
+    tracked.mark_dispatched(&pending);
+    assert!(
+        !tracked.is_known_unexecuted(&pending),
+        "dispatched call must clear known_unexecuted before running its effect"
+    );
+    Ok(())
+}
+
 mod image;
 
 #[cfg(windows)]
