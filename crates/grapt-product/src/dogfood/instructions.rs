@@ -83,7 +83,7 @@ struct AmbientObservation {
 mod imports;
 mod rules;
 pub(super) mod source;
-use source::read_file;
+use source::{read_file, read_scoped_relative};
 
 impl InstructionRoots {
     /// The roots for a turn at `location`, which the Session resolved once

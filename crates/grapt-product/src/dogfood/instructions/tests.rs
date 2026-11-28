@@ -412,6 +412,35 @@ fn skd_scoped_instructions_refuse_in_scope_sibling_and_dangling_symlinks(
     Ok(())
 }
 
+#[cfg(target_os = "linux")]
+#[test]
+fn skd_scoped_instructions_succeed_beneath_execute_only_ancestor(
+) -> Result<(), Box<dyn std::error::Error>> {
+    use std::os::unix::fs::PermissionsExt as _;
+
+    let fixture = Fixture::new()?;
+    let ancestor = fixture.root.join("exec-only");
+    let scope = ancestor.join("workspace");
+    std::fs::create_dir_all(scope.join("sub"))?;
+    std::fs::write(scope.join("sub/AGENTS.md"), "beneath execute-only ancestor")?;
+    let canonical_scope = std::fs::canonicalize(&scope)?;
+
+    // Restrict the ancestor directory to search/execute-only (0111): not
+    // readable with O_RDONLY, but traversable with O_PATH | O_DIRECTORY.
+    std::fs::set_permissions(&ancestor, std::fs::Permissions::from_mode(0o111))?;
+    let outcome = scoped_for_read(&canonical_scope, &canonical_scope.join("sub/file.rs"));
+    let _restore = std::fs::set_permissions(&ancestor, std::fs::Permissions::from_mode(0o700));
+    assert_eq!(outcome.instructions.len(), 1);
+    match &outcome.instructions[0].content {
+        Ok(content) => assert!(
+            content.contains("beneath execute-only ancestor"),
+            "{content}"
+        ),
+        Err(reason) => panic!("execute-only ancestor refused readable instructions: {reason}"),
+    }
+    Ok(())
+}
+
 #[cfg(unix)]
 #[test]
 fn skd_global_instructions_may_link_into_a_dotfiles_tree() -> Result<(), Box<dyn std::error::Error>>

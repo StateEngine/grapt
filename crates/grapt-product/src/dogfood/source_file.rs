@@ -73,6 +73,22 @@ pub(super) fn open_contained(base: &Path, relative: &Path) -> std::io::Result<Op
 }
 
 #[cfg(not(windows))]
+fn dir_search_flag() -> nix::fcntl::OFlag {
+    #[cfg(any(target_os = "linux", target_os = "android"))]
+    {
+        nix::fcntl::OFlag::O_PATH
+    }
+    #[cfg(target_vendor = "apple")]
+    {
+        nix::fcntl::OFlag::from_bits_retain(nix::libc::O_SEARCH)
+    }
+    #[cfg(not(any(target_os = "linux", target_os = "android", target_vendor = "apple")))]
+    {
+        nix::fcntl::OFlag::O_RDONLY
+    }
+}
+
+#[cfg(not(windows))]
 fn open_dir_segment_nofollow(
     parent_fd: &std::os::fd::OwnedFd,
     segment: &std::ffi::OsStr,
@@ -83,11 +99,7 @@ fn open_dir_segment_nofollow(
     match openat(
         parent_fd,
         segment,
-        OFlag::O_RDONLY
-            | OFlag::O_DIRECTORY
-            | OFlag::O_NOFOLLOW
-            | OFlag::O_CLOEXEC
-            | OFlag::O_NONBLOCK,
+        dir_search_flag() | OFlag::O_DIRECTORY | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC,
         Mode::empty(),
     ) {
         Ok(fd) => Ok(fd),
@@ -109,7 +121,7 @@ fn open_dir_nofollow(path: &Path) -> std::io::Result<std::os::fd::OwnedFd> {
 
     let mut dir_fd = open(
         "/",
-        OFlag::O_RDONLY | OFlag::O_DIRECTORY | OFlag::O_CLOEXEC | OFlag::O_NONBLOCK,
+        dir_search_flag() | OFlag::O_DIRECTORY | OFlag::O_CLOEXEC,
         Mode::empty(),
     )
     .map_err(std::io::Error::from)?;
