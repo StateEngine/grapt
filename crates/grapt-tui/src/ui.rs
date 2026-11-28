@@ -112,8 +112,10 @@ impl Ui {
         }
     }
 
-    /// Settle the outstanding page request. A completed move places the
-    /// view; one a quit discarded leaves the scroll and its anchor as they are.
+    /// Settle the outstanding page request. A completed move places the view
+    /// when it is the one pending; one a quit discarded leaves the scroll and
+    /// its anchor as they are. A discard is always newer than any move that
+    /// ran, so it settles last.
     pub fn settle_navigation(
         &mut self,
         movement: Option<(grapt_client::client::HistoryMove, bool)>,
@@ -122,12 +124,11 @@ impl Ui {
         if let Some((movement, changed)) = movement {
             self.navigation
                 .complete(movement, changed, &mut self.transcript);
-            return true;
         }
         if dropped {
             self.navigation.failed();
         }
-        dropped
+        movement.is_some() || dropped
     }
 
     pub fn new(light: bool) -> Self {
@@ -850,6 +851,21 @@ mod tests {
         // Ctrl+Home asks for the beginning; a refused quit then discards it.
         ui.navigation.jump(HistoryMove::Beginning);
         assert!(ui.settle_navigation(None, true));
+        assert!(!ui.navigation.loading());
+        assert_eq!((ui.transcript.from_top, ui.transcript.scroll), (false, 37));
+    }
+
+    #[test]
+    fn a_discard_settles_after_an_older_move_in_the_same_update() {
+        use grapt_client::client::HistoryMove;
+        let mut ui = Ui::new(false);
+        ui.transcript.from_top = false;
+        ui.transcript.scroll = 37;
+        // Ctrl+Home ran; Ctrl+End, pressed after it, was discarded by a quit
+        // that was then refused. Both reach the UI in one view.
+        ui.navigation.jump(HistoryMove::Beginning);
+        ui.navigation.jump(HistoryMove::Latest);
+        assert!(ui.settle_navigation(Some((HistoryMove::Beginning, true)), true));
         assert!(!ui.navigation.loading());
         assert_eq!((ui.transcript.from_top, ui.transcript.scroll), (false, 37));
     }
