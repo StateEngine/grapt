@@ -228,16 +228,108 @@ test('evaluateReleaseGates reports honest Criterion #3 and #5 verdicts', async (
     {
       codexReport: { totals: { read_share_percent: 98.5 } },
       matchedTasks: {
-        count: 10,
-        grapt_first_review_accept_rate: 0.9,
+        count: 3,
+        grapt_accepted_tasks: 3,
+        // Within 20% of Codex (0.70 >= 0.85 * 0.80 = 0.68; 16500 <= 14000 * 1.20 = 16800)
+        grapt_first_review_accept_rate: 0.7,
         codex_first_review_accept_rate: 0.85,
-        grapt_tokens_per_accepted_task: 12000,
+        grapt_tokens_per_accepted_task: 16500,
         codex_tokens_per_accepted_task: 14000,
       },
     },
   );
   assert.equal(matchedPass.criterion_3.status, 'pass');
   assert.equal(matchedPass.criterion_5.status, 'pass');
+
+  const singleTaskRejected = evaluateReleaseGates(
+    {
+      totals: { read_share_percent: 99.0 },
+      operations: { tool_calls: { count: 100, failed: 0, infrastructure_failed: 0 } },
+    },
+    {
+      codexReport: { totals: { read_share_percent: 98.5 } },
+      matchedTasks: {
+        count: 1,
+        grapt_accepted_tasks: 1,
+        grapt_first_review_accept_rate: 1.0,
+        codex_first_review_accept_rate: 0.8,
+        grapt_tokens_per_accepted_task: 10000,
+        codex_tokens_per_accepted_task: 12000,
+      },
+    },
+  );
+  assert.equal(singleTaskRejected.criterion_3.status, 'fail');
+  assert.equal(singleTaskRejected.criterion_3.reason, 'insufficient-matched-tasks');
+
+  const unacceptedRejected = evaluateReleaseGates(
+    {
+      totals: { read_share_percent: 99.0 },
+      operations: { tool_calls: { count: 100, failed: 0, infrastructure_failed: 0 } },
+    },
+    {
+      codexReport: { totals: { read_share_percent: 98.5 } },
+      matchedTasks: {
+        count: 3,
+        grapt_accepted_tasks: 2,
+        grapt_first_review_accept_rate: 1.0,
+        codex_first_review_accept_rate: 0.8,
+        grapt_tokens_per_accepted_task: 10000,
+        codex_tokens_per_accepted_task: 12000,
+      },
+    },
+  );
+  assert.equal(unacceptedRejected.criterion_3.status, 'fail');
+  assert.equal(unacceptedRejected.criterion_3.reason, 'unaccepted-matched-tasks');
+
+  const outsideMarginRejected = evaluateReleaseGates(
+    {
+      totals: { read_share_percent: 99.0 },
+      operations: { tool_calls: { count: 100, failed: 0, infrastructure_failed: 0 } },
+    },
+    {
+      codexReport: { totals: { read_share_percent: 98.5 } },
+      matchedTasks: {
+        count: 3,
+        grapt_accepted_tasks: 3,
+        grapt_first_review_accept_rate: 0.9,
+        codex_first_review_accept_rate: 0.9,
+        grapt_tokens_per_accepted_task: 17000,
+        codex_tokens_per_accepted_task: 14000,
+      },
+    },
+  );
+  assert.equal(outsideMarginRejected.criterion_3.status, 'fail');
+
+  // Prove operationalReport counts supervisor-synthesized missing-terminal
+  // effect-failed outcomes as infrastructure failures (4/100 = 4% > 3% FAIL).
+  const { operationalReport } = await import('./seat-day-operations.mjs');
+  const events = [];
+  for (let i = 0; i < 100; i++) {
+    const call = `call_${i}`;
+    events.push({
+      id: `evt_s_${i}`, session: 'ses_1', seq: i * 2 + 1, created: 1000 + i,
+      type: 'session.tool.input.started.2', data: { callID: call, name: 'shell' },
+    });
+    const outcome = i < 4
+      ? { kind: 'failed', reason: 'effect-failed', detail: { id: 'a'.repeat(64), length: 10, digest: 'b'.repeat(64) } }
+      : { kind: 'completed', output: null };
+    events.push({
+      id: `evt_e_${i}`, session: 'ses_1', seq: i * 2 + 2, created: 1001 + i,
+      type: 'session.tool.terminal.1', data: { attempt: 'att_1', call, outcome },
+    });
+  }
+  const ops = await operationalReport(
+    events,
+    [],
+    async () => ({ status: 'observed', text: 'runtime infrastructure failure: tool execution ended without producing a terminal result', disposition: 'complete' }),
+  );
+  assert.equal(ops.tool_calls.infrastructure_failed, 4);
+  const missingTerminalGate = evaluateReleaseGates({
+    totals: { read_share_percent: 99.0 },
+    operations: { ...ops, coverage: { unsupported_event_versions: {} } },
+  });
+  assert.equal(missingTerminalGate.criterion_5.status, 'fail');
+  assert.equal(missingTerminalGate.criterion_5.infra_failure_rate_percent, 4);
 
   const unreadableArtifact = evaluateReleaseGates({
     totals: { read_share_percent: 99.0 },

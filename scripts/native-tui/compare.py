@@ -416,6 +416,26 @@ def execution_failures(service_root: Path, sessions: list[str] | None) -> dict:
     return {"observed": True, "sessions": len(sessions), "failed": failed}
 
 
+def measure_idle_cpu_delta(
+    pid: int,
+    window_seconds: float,
+    sampler=None,
+) -> float | None:
+    """Measure CPU seconds consumed across a quiet idle window (delta, never cumulative)."""
+    if window_seconds <= 0.0:
+        return None
+    probe = resources if sampler is None else sampler
+    before = probe(pid)
+    if not before.get("observed") or before.get("processor_seconds") is None:
+        return None
+    time.sleep(window_seconds)
+    after = probe(pid)
+    if not after.get("observed") or after.get("processor_seconds") is None:
+        return None
+    delta = float(after["processor_seconds"]) - float(before["processor_seconds"])
+    return round(max(0.0, delta), 6)
+
+
 def run_client(
     label: str,
     launch: dict,
@@ -424,6 +444,7 @@ def run_client(
     harness: Path,
     effect_root: Path,
     service_root: Path,
+    idle_window_seconds: float = 0.0,
 ) -> dict:
     # Which sessions already existed. Whatever appears while THIS client runs is
     # this client's, which is a launch fact rather than an inference from how
@@ -515,21 +536,24 @@ def run_client(
                 observer, step, label, effect_root, service_root, sessions_before
             )
             elapsed_s = time.monotonic() - at
-            timings.append(
-                {
-                    "step": index,
-                    "kind": kind,
-                    "detail": detail,
-                    # Only steps both clients received identically are
-                    # comparable as like for like; the rest are the navigation
-                    # each client needs to reach the same place.
-                    "shared": shared,
-                    "seconds": round(elapsed_s, 3),
-                    "elapsed_ms": round(elapsed_s * 1000.0, 3),
-                }
-            )
+            timing_row = {
+                "step": index,
+                "kind": kind,
+                "detail": detail,
+                # Only steps both clients received identically are
+                # comparable as like for like; the rest are the navigation
+                # each client needs to reach the same place.
+                "shared": shared,
+                "seconds": round(elapsed_s, 3),
+                "elapsed_ms": round(elapsed_s * 1000.0, 3),
+            }
+            if step.get("t5_echo") is True or kind == "echo":
+                timing_row["t5_echo"] = True
+            timings.append(timing_row)
+        idle_cpu_seconds = measure_idle_cpu_delta(int(ready["pid"]), idle_window_seconds)
     except HarnessError as error:
         failure = str(error)
+        idle_cpu_seconds = None
         sample = resources(int(ready["pid"]))
         if sample.get("observed"):
             usage = sample
@@ -613,6 +637,7 @@ def run_client(
         "startup_seconds": startup,
         "steps": timings,
         "resources": usage,
+        "idle_cpu_seconds": idle_cpu_seconds,
         "failure": failure,
     }
 
@@ -1050,9 +1075,15 @@ def main() -> int:
         help="T5 idle CPU processor-seconds ceiling (default: 0.5)",
     )
     parser.add_argument(
+        "--t5-idle-window-seconds",
+        type=float,
+        default=None,
+        help="quiet idle window (seconds) sampled after steps to measure idle_cpu_seconds",
+    )
+    parser.add_argument(
         "--enforce-t5-budgets",
         action="store_true",
-        help="exit nonzero if any measured T5 smoothness budget fails",
+        help="exit nonzero if T5 smoothness budgets fail or are unmeasured",
     )
     arguments = parser.parse_args()
 
@@ -1071,6 +1102,11 @@ def main() -> int:
     _, secret = credential(arguments.service_root)
     arguments.evidence.mkdir(parents=True)
 
+    idle_window = (
+        arguments.t5_idle_window_seconds
+        if arguments.t5_idle_window_seconds is not None
+        else (1.0 if arguments.enforce_t5_budgets else 0.0)
+    )
     sides = []
     if arguments.only != "retained":
         run = arguments.evidence / "native"
@@ -1088,6 +1124,7 @@ def main() -> int:
                 # recorded, rather than being inferred inside a step.
                 arguments.service_root,
                 store_root,
+                idle_window_seconds=idle_window,
             )
         )
     if arguments.only != "native":

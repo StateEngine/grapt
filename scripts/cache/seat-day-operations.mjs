@@ -121,6 +121,11 @@ export const INFRASTRUCTURE_FAILURE_REASONS = new Set([
   'effect-unknown',
 ]);
 
+function isSupervisorInfrastructureFailure(message) {
+  return typeof message === 'string'
+    && /^(?:runtime infrastructure failure:|tool execution ended without producing a terminal result)/i.test(message);
+}
+
 export async function operationalReport(events, reports, readArtifact, window = null) {
   const facts = index(events), groups = new Map(), failures = new Map(), missingDetails = new Map();
   let count = 0, failed = 0, infrastructureFailed = 0, missingNames = 0;
@@ -140,10 +145,13 @@ export async function operationalReport(events, reports, readArtifact, window = 
       infrastructureFailed++;
     } else if (outcome === 'failed') {
       failed++;
-      if (INFRASTRUCTURE_FAILURE_REASONS.has(end.outcome.reason)) infrastructureFailed++;
       const detail = end.outcome.detail ? await readArtifact(end.outcome.detail) : unavailable('detail-not-recorded');
       if (detail.status !== 'observed') missingDetails.set(detail.reason, (missingDetails.get(detail.reason) ?? 0) + 1);
       const message = detail.status === 'observed' ? normalizeFailure(detail.text) : null;
+      if (INFRASTRUCTURE_FAILURE_REASONS.has(end.outcome.reason)
+          || (end.outcome.reason === 'effect-failed' && isSupervisorInfrastructureFailure(message))) {
+        infrastructureFailed++;
+      }
       const failureKey = JSON.stringify([name, end.outcome.reason, message, detail.status, detail.reason]);
       const row = failures.get(failureKey) ?? { name, reason: end.outcome.reason, message,
         detail_status: detail.status, detail_unavailable_reason: detail.reason ?? null, count: 0,

@@ -681,7 +681,7 @@ fn unsettled_tool_outcome<O: AttemptOwner>(
                 reason: ToolFailureReason::EffectFailed,
                 detail: capture_cause(
                     owner,
-                    "tool execution ended without producing a terminal result",
+                    "runtime infrastructure failure: tool execution ended without producing a terminal result",
                 ),
             },
         }

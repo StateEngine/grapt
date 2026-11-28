@@ -750,6 +750,26 @@ def t5_budget_witnesses() -> None:
         unmeasured["status"] == "not-measured",
         f"got={unmeasured!r}",
     )
+    readings = iter(
+        [
+            {"observed": True, "processor_seconds": 1.25},
+            {"observed": True, "processor_seconds": 1.29},
+        ]
+    )
+    delta = CMP.measure_idle_cpu_delta(1234, 0.001, sampler=lambda _pid: next(readings))
+    check(
+        "measure_idle_cpu_delta computes quiet window delta rather than cumulative CPU",
+        delta == 0.04,
+        f"got={delta!r}",
+    )
+    unobserved = CMP.measure_idle_cpu_delta(
+        1234, 0.001, sampler=lambda _pid: {"observed": False, "processor_seconds": None}
+    )
+    check(
+        "measure_idle_cpu_delta returns None when process CPU is unobserved",
+        unobserved is None,
+        f"got={unobserved!r}",
+    )
 
 
 def main() -> int:
