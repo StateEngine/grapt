@@ -4,11 +4,12 @@ use super::Plan;
 use std::path::{Path, PathBuf};
 
 /// Owned private scratch temp directory attached to one sandboxed child.
-/// Call [`PrivateScratch::cleanup`] only after child termination is confirmed
-/// so permission-locked subdirectories are relaxed strictly inside the owned
-/// scratch tree and any removal failure is surfaced explicitly.
+///
+/// `TempDir`'s recursive drop fallback is disarmed immediately at allocation;
+/// an OS directory handle is pinned at creation and held until explicit
+/// confined cleanup after child termination is confirmed.
 pub(super) struct PrivateScratch {
-    dir: Option<tempfile::TempDir>,
+    pinned: Option<PinnedScratch>,
 }
 
 impl PrivateScratch {
@@ -20,15 +21,39 @@ impl PrivateScratch {
         let Some(parent) = plan.private_temp_parent() else {
             return Ok(None);
         };
-        let dir = tempfile::Builder::new()
+        // Disarm TempDir::drop immediately via `.keep()` so neither attach
+        // errors nor unwinds can ever trigger recursive pathname remove_dir_all.
+        let raw_path = tempfile::Builder::new()
             .prefix("grapt-sandbox-tmp-")
             .tempdir_in(parent)
-            .map_err(|error| format!("sandbox private temp directory unavailable: {error}"))?;
-        let canonical_private = std::fs::canonicalize(dir.path())
-            .map_err(|error| format!("sandbox private temp directory unavailable: {error}"))?;
-        let text = canonical_private
-            .to_str()
-            .ok_or("sandbox private temp directory is not Unicode")?;
+            .map_err(|error| format!("sandbox private temp directory unavailable: {error}"))?
+            .keep();
+        let pinned = match PinnedScratch::pin(parent, raw_path.clone()) {
+            Ok(pinned) => pinned,
+            Err(reason) => {
+                let cleanup_err = std::fs::remove_dir(&raw_path)
+                    .err()
+                    .map(|error| format!("sandbox private temp root rmdir failed: {error}"));
+                return Err(combine_errors(reason, [cleanup_err]));
+            }
+        };
+        let canonical_private = match std::fs::canonicalize(pinned.path()) {
+            Ok(path) => path,
+            Err(error) => {
+                let cleanup_err = pinned.cleanup().err();
+                return Err(combine_errors(
+                    format!("sandbox private temp directory unavailable: {error}"),
+                    [cleanup_err],
+                ));
+            }
+        };
+        let Some(text) = canonical_private.to_str() else {
+            let cleanup_err = pinned.cleanup().err();
+            return Err(combine_errors(
+                "sandbox private temp directory is not Unicode".to_owned(),
+                [cleanup_err],
+            ));
+        };
         environment.retain(|entry| {
             !entry.split_once('=').is_some_and(|(name, _)| {
                 name.eq_ignore_ascii_case("TMPDIR")
@@ -40,42 +65,33 @@ impl PrivateScratch {
         environment.push(format!("TEMP={text}"));
         environment.push(format!("TMP={text}"));
         policy.writable_roots.push(canonical_private);
-        Ok(Some(Self { dir: Some(dir) }))
+        Ok(Some(Self {
+            pinned: Some(pinned),
+        }))
     }
 
     #[cfg(test)]
     pub(super) fn path(&self) -> Option<&Path> {
-        self.dir.as_ref().map(tempfile::TempDir::path)
+        self.pinned.as_ref().map(PinnedScratch::path)
     }
 
     pub(super) fn cleanup(mut self) -> Result<(), String> {
-        let Some(dir) = self.dir.take() else {
+        let Some(pinned) = self.pinned.take() else {
             return Ok(());
         };
-        // Disarm TempDir's recursive remove_dir_all drop fallback: we empty the
-        // tree via strictly confined handle traversal and remove the empty root
-        // directory with a single non-recursive rmdir.
-        let root = dir.keep();
-        clean_tree_confined(&root)?;
-        match std::fs::remove_dir(&root) {
-            Ok(()) => Ok(()),
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
-            Err(error) => Err(format!("sandbox private temp root rmdir failed: {error}")),
-        }
+        pinned.cleanup()
     }
 
-    /// Disarm `TempDir::drop` when child termination could not be confirmed so
-    /// we never walk or remove scratch entries against a still-live child.
+    /// Release the pinned handles without walking or removing scratch when
+    /// child termination could not be confirmed.
     pub(super) fn abandon_unreaped(mut self) {
-        if let Some(dir) = self.dir.take() {
-            let _kept: PathBuf = dir.keep();
-        }
+        let _ = self.pinned.take();
     }
 }
 
 /// Run confined scratch cleanup only when the child is confirmed stopped;
-/// otherwise disarm `TempDir::drop` and return an explicit error so callers
-/// preserve it alongside the primary failure.
+/// otherwise release handles without walking scratch and return an explicit
+/// error so callers preserve it alongside the primary failure.
 pub(super) fn cleanup_after_stop(
     scratch: Option<PrivateScratch>,
     child_stopped: bool,
@@ -89,6 +105,19 @@ pub(super) fn cleanup_after_stop(
             "sandbox private temp cleanup skipped because child termination was not confirmed"
                 .to_owned(),
         )
+    }
+}
+
+/// Finalize a completed child's exit code alongside scratch cleanup without
+/// overwriting a child's nonzero exit code with generic status 1.
+pub(super) fn finish_with_exit_code(
+    code: i32,
+    cleanup: Result<(), String>,
+) -> (i32, Option<String>) {
+    match cleanup {
+        Ok(()) => (code, None),
+        Err(error) if code == 0 => (1, Some(error)),
+        Err(error) => (code, Some(error)),
     }
 }
 
@@ -109,13 +138,96 @@ pub(super) fn combine_errors<const N: usize>(
 }
 
 #[cfg(unix)]
+struct PinnedScratch {
+    parent_fd: std::os::fd::OwnedFd,
+    root_name: std::ffi::CString,
+    root_fd: std::os::fd::OwnedFd,
+    path: PathBuf,
+}
+
+#[cfg(unix)]
+impl PinnedScratch {
+    fn pin(parent: &Path, path: PathBuf) -> Result<Self, String> {
+        use nix::fcntl::{open, openat, OFlag};
+        use nix::sys::stat::{fstat, Mode};
+        use nix::unistd::geteuid;
+        use std::ffi::CString;
+        use std::os::fd::AsFd as _;
+        use std::os::unix::ffi::OsStrExt as _;
+
+        let raw_name = path
+            .file_name()
+            .ok_or_else(|| format!("sandbox private temp has no file name: {}", path.display()))?;
+        let root_name = CString::new(raw_name.as_bytes())
+            .map_err(|_| format!("sandbox private temp name contains NUL: {}", path.display()))?;
+        let flags = OFlag::O_RDONLY | OFlag::O_DIRECTORY | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC;
+        let parent_fd = open(parent, flags, Mode::empty()).map_err(|error| {
+            format!(
+                "sandbox private temp parent open failed at {}: {error}",
+                parent.display()
+            )
+        })?;
+        let root_fd = openat(
+            parent_fd.as_fd(),
+            root_name.as_c_str(),
+            flags,
+            Mode::empty(),
+        )
+        .map_err(|error| {
+            format!(
+                "sandbox private temp root openat failed at {}: {error}",
+                path.display()
+            )
+        })?;
+        let st = fstat(root_fd.as_fd()).map_err(|error| {
+            format!(
+                "sandbox private temp root fstat failed at {}: {error}",
+                path.display()
+            )
+        })?;
+        if !is_directory_mode(st.st_mode) || st.st_uid != geteuid().as_raw() {
+            return Err(format!(
+                "sandbox private temp root failed identity check: {}",
+                path.display()
+            ));
+        }
+        Ok(Self {
+            parent_fd,
+            root_name,
+            root_fd,
+            path,
+        })
+    }
+
+    fn path(&self) -> &Path {
+        &self.path
+    }
+
+    fn cleanup(self) -> Result<(), String> {
+        use nix::errno::Errno;
+        use nix::unistd::{unlinkat, UnlinkatFlags};
+        use std::os::fd::AsFd as _;
+
+        clean_tree_from_root_fd(self.root_fd)?;
+        match unlinkat(
+            self.parent_fd.as_fd(),
+            self.root_name.as_c_str(),
+            UnlinkatFlags::RemoveDir,
+        ) {
+            Ok(()) | Err(Errno::ENOENT) => Ok(()),
+            Err(error) => Err(format!("sandbox private temp root rmdir failed: {error}")),
+        }
+    }
+}
+
+#[cfg(unix)]
 fn is_directory_mode(mode: nix::sys::stat::mode_t) -> bool {
     use nix::sys::stat::SFlag;
     (SFlag::from_bits_truncate(mode) & SFlag::S_IFMT) == SFlag::S_IFDIR
 }
 
 #[cfg(unix)]
-fn clean_tree_confined(root: &Path) -> Result<(), String> {
+fn clean_tree_from_root_fd(root_fd: std::os::fd::OwnedFd) -> Result<(), String> {
     use nix::dir::Dir;
     use nix::errno::Errno;
     use nix::fcntl::AtFlags;
@@ -130,7 +242,7 @@ fn clean_tree_confined(root: &Path) -> Result<(), String> {
         parent_entry_name: Option<CString>,
     }
 
-    let (root_dir, root_entries) = open_confined_root(root)?;
+    let (root_dir, root_entries) = relax_dir_fd_and_read(root_fd)?;
     let mut stack = vec![Frame {
         dir: root_dir,
         pending: root_entries,
@@ -205,25 +317,6 @@ fn clean_tree_confined(root: &Path) -> Result<(), String> {
     Ok(())
 }
 
-#[cfg(unix)]
-fn open_confined_root(root: &Path) -> Result<(nix::dir::Dir, Vec<std::ffi::CString>), String> {
-    use nix::errno::Errno;
-    use nix::fcntl::{open, OFlag};
-    use nix::sys::stat::Mode;
-    let flags = OFlag::O_RDONLY | OFlag::O_DIRECTORY | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC;
-    let fd = match open(root, flags, Mode::empty()) {
-        Ok(fd) => fd,
-        Err(Errno::EACCES) => reopen_unreadable_root(root, flags)?,
-        Err(error) => {
-            return Err(format!(
-                "sandbox private temp root open failed at {}: {error}",
-                root.display()
-            ));
-        }
-    };
-    relax_dir_fd_and_read(fd)
-}
-
 #[cfg(target_os = "linux")]
 fn relax_owned_opath_dir_and_reopen(
     path_fd: std::os::fd::OwnedFd,
@@ -260,50 +353,6 @@ fn relax_owned_opath_dir_and_reopen(
         Mode::empty(),
     )
     .map_err(|error| format!("sandbox private temp fd reopen failed for {label}: {error}"))
-}
-
-#[cfg(target_os = "linux")]
-fn reopen_unreadable_root(
-    root: &Path,
-    open_flags: nix::fcntl::OFlag,
-) -> Result<std::os::fd::OwnedFd, String> {
-    use nix::fcntl::{open, OFlag};
-    use nix::sys::stat::Mode;
-    let path_flags = OFlag::O_PATH | OFlag::O_DIRECTORY | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC;
-    let path_fd = open(root, path_flags, Mode::empty()).map_err(|error| {
-        format!(
-            "sandbox private temp root O_PATH open failed at {}: {error}",
-            root.display()
-        )
-    })?;
-    relax_owned_opath_dir_and_reopen(path_fd, open_flags, &root.display().to_string())
-}
-
-#[cfg(all(unix, not(target_os = "linux")))]
-fn reopen_unreadable_root(
-    root: &Path,
-    open_flags: nix::fcntl::OFlag,
-) -> Result<std::os::fd::OwnedFd, String> {
-    use nix::fcntl::open;
-    use nix::sys::stat::{fchmodat, FchmodatFlags, Mode};
-    fchmodat(
-        nix::fcntl::AT_FDCWD,
-        root,
-        Mode::S_IRWXU,
-        FchmodatFlags::NoFollowSymlink,
-    )
-    .map_err(|error| {
-        format!(
-            "sandbox private temp root permission relax failed at {}: {error}",
-            root.display()
-        )
-    })?;
-    open(root, open_flags, Mode::empty()).map_err(|error| {
-        format!(
-            "sandbox private temp root open failed at {}: {error}",
-            root.display()
-        )
-    })
 }
 
 #[cfg(unix)]
@@ -401,109 +450,51 @@ fn relax_dir_fd_and_read(
 }
 
 #[cfg(windows)]
-fn clean_tree_confined(root: &Path) -> Result<(), String> {
-    use std::os::windows::fs::MetadataExt as _;
-    const FILE_ATTRIBUTE_DIRECTORY: u32 = 0x10;
-    const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x0400;
+struct PinnedScratch {
+    root_handle: std::fs::File,
+    path: PathBuf,
+}
 
-    enum Work {
-        Enter(PathBuf),
-        RemoveDir(PathBuf),
+#[cfg(windows)]
+impl PinnedScratch {
+    fn pin(_parent: &Path, path: PathBuf) -> Result<Self, String> {
+        let root_handle = open_pinned_dir_handle(&path)?;
+        Ok(Self { root_handle, path })
     }
 
-    let mut stack = vec![Work::Enter(root.to_path_buf())];
-    while let Some(item) = stack.pop() {
-        match item {
-            Work::RemoveDir(path) => {
-                if path == root {
-                    continue;
-                }
-                match std::fs::remove_dir(&path) {
-                    Ok(()) => {}
-                    Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-                    Err(error) => {
-                        return Err(format!(
-                            "sandbox private temp rmdir failed at {}: {error}",
-                            path.display()
-                        ));
-                    }
-                }
-            }
-            Work::Enter(path) => {
-                let meta = match std::fs::symlink_metadata(&path) {
-                    Ok(meta) => meta,
-                    Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
-                    Err(error) => {
-                        return Err(format!(
-                            "sandbox private temp metadata failed at {}: {error}",
-                            path.display()
-                        ));
-                    }
-                };
-                let attrs = meta.file_attributes();
-                let is_reparse =
-                    meta.file_type().is_symlink() || (attrs & FILE_ATTRIBUTE_REPARSE_POINT) != 0;
-                if is_reparse {
-                    // Never descend into or modify attributes on symlinks or
-                    // directory junctions; remove only the reparse entry itself.
-                    let remove = if (attrs & FILE_ATTRIBUTE_DIRECTORY) != 0 {
-                        std::fs::remove_dir(&path)
-                    } else {
-                        std::fs::remove_file(&path)
-                    };
-                    match remove {
-                        Ok(()) => {}
-                        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-                        Err(error) => {
-                            return Err(format!(
-                                "sandbox private temp reparse unlink failed at {}: {error}",
-                                path.display()
-                            ));
-                        }
-                    }
-                    continue;
-                }
-                if meta.is_dir() {
-                    clear_readonly_on_dir_handle(&path)?;
-                    stack.push(Work::RemoveDir(path.clone()));
-                    let entries = std::fs::read_dir(&path).map_err(|error| {
-                        format!(
-                            "sandbox private temp directory scan failed at {}: {error}",
-                            path.display()
-                        )
-                    })?;
-                    for entry in entries {
-                        let entry = entry.map_err(|error| {
-                            format!(
-                                "sandbox private temp entry scan failed at {}: {error}",
-                                path.display()
-                            )
-                        })?;
-                        stack.push(Work::Enter(entry.path()));
-                    }
-                } else {
-                    remove_windows_file(&path)?;
-                }
-            }
+    fn path(&self) -> &Path {
+        &self.path
+    }
+
+    fn cleanup(self) -> Result<(), String> {
+        clean_tree_from_pinned_root(self.root_handle, &self.path)?;
+        match std::fs::remove_dir(&self.path) {
+            Ok(()) => Ok(()),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            Err(error) => Err(format!("sandbox private temp root rmdir failed: {error}")),
         }
     }
-    Ok(())
 }
 
 #[cfg(windows)]
 #[allow(clippy::permissions_set_readonly_false)]
-fn clear_readonly_on_dir_handle(path: &Path) -> Result<(), String> {
+fn open_pinned_dir_handle(path: &Path) -> Result<std::fs::File, String> {
     use std::os::windows::fs::OpenOptionsExt as _;
     const FILE_READ_ATTRIBUTES: u32 = 0x0080;
     const FILE_WRITE_ATTRIBUTES: u32 = 0x0100;
+    const FILE_SHARE_READ: u32 = 0x0001;
+    const FILE_SHARE_WRITE: u32 = 0x0002;
     const FILE_FLAG_BACKUP_SEMANTICS: u32 = 0x0200_0000;
     const FILE_FLAG_OPEN_REPARSE_POINT: u32 = 0x0020_0000;
     const FILE_ATTRIBUTE_READONLY: u64 = 0x0001;
     const FILE_ATTRIBUTE_DIRECTORY: u64 = 0x0010;
     const FILE_ATTRIBUTE_REPARSE_POINT: u64 = 0x0400;
 
+    // Omit FILE_SHARE_DELETE so this directory cannot be renamed or replaced
+    // with a reparse point while this handle remains pinned.
     let file = std::fs::OpenOptions::new()
         .access_mode(FILE_READ_ATTRIBUTES | FILE_WRITE_ATTRIBUTES)
+        .share_mode(FILE_SHARE_READ | FILE_SHARE_WRITE)
         .custom_flags(FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT)
         .open(path)
         .map_err(|error| {
@@ -521,7 +512,7 @@ fn clear_readonly_on_dir_handle(path: &Path) -> Result<(), String> {
     let attrs = info.file_attributes();
     if (attrs & FILE_ATTRIBUTE_REPARSE_POINT) != 0 || (attrs & FILE_ATTRIBUTE_DIRECTORY) == 0 {
         return Err(format!(
-            "sandbox private temp directory changed to non-directory or reparse point: {}",
+            "sandbox private temp directory is a reparse point or non-directory: {}",
             path.display()
         ));
     }
@@ -543,6 +534,116 @@ fn clear_readonly_on_dir_handle(path: &Path) -> Result<(), String> {
             )
         })?;
     }
+    Ok(file)
+}
+
+#[cfg(windows)]
+fn read_dir_entries(path: &Path) -> Result<Vec<PathBuf>, String> {
+    let entries = std::fs::read_dir(path).map_err(|error| {
+        format!(
+            "sandbox private temp directory scan failed at {}: {error}",
+            path.display()
+        )
+    })?;
+    let mut children = Vec::new();
+    for entry in entries {
+        let entry = entry.map_err(|error| {
+            format!(
+                "sandbox private temp entry scan failed at {}: {error}",
+                path.display()
+            )
+        })?;
+        children.push(entry.path());
+    }
+    Ok(children)
+}
+
+#[cfg(windows)]
+fn clean_tree_from_pinned_root(root_handle: std::fs::File, root: &Path) -> Result<(), String> {
+    use std::os::windows::fs::MetadataExt as _;
+    const FILE_ATTRIBUTE_DIRECTORY: u32 = 0x10;
+    const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x0400;
+
+    struct Frame {
+        // Pinned with no FILE_SHARE_DELETE across enumeration and child deletion.
+        _handle: std::fs::File,
+        path: PathBuf,
+        pending: Vec<PathBuf>,
+        remove_on_exit: bool,
+    }
+
+    let root_entries = read_dir_entries(root)?;
+    let mut stack = vec![Frame {
+        _handle: root_handle,
+        path: root.to_path_buf(),
+        pending: root_entries,
+        remove_on_exit: false,
+    }];
+
+    while let Some(frame) = stack.last_mut() {
+        if let Some(child_path) = frame.pending.pop() {
+            let meta = match std::fs::symlink_metadata(&child_path) {
+                Ok(meta) => meta,
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
+                Err(error) => {
+                    return Err(format!(
+                        "sandbox private temp metadata failed at {}: {error}",
+                        child_path.display()
+                    ));
+                }
+            };
+            let attrs = meta.file_attributes();
+            let is_reparse =
+                meta.file_type().is_symlink() || (attrs & FILE_ATTRIBUTE_REPARSE_POINT) != 0;
+            if is_reparse {
+                let remove = if (attrs & FILE_ATTRIBUTE_DIRECTORY) != 0 {
+                    std::fs::remove_dir(&child_path)
+                } else {
+                    std::fs::remove_file(&child_path)
+                };
+                match remove {
+                    Ok(()) => {}
+                    Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                    Err(error) => {
+                        return Err(format!(
+                            "sandbox private temp reparse unlink failed at {}: {error}",
+                            child_path.display()
+                        ));
+                    }
+                }
+            } else if meta.is_dir() {
+                let handle = open_pinned_dir_handle(&child_path)?;
+                let children = read_dir_entries(&child_path)?;
+                stack.push(Frame {
+                    _handle: handle,
+                    path: child_path,
+                    pending: children,
+                    remove_on_exit: true,
+                });
+            } else {
+                remove_windows_file(&child_path)?;
+            }
+            continue;
+        }
+        let Some(done) = stack.pop() else {
+            break;
+        };
+        let remove = done.remove_on_exit;
+        let path = done.path;
+        drop(done._handle);
+        if remove {
+            match std::fs::remove_dir(&path) {
+                Ok(()) => {}
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                Err(error) => {
+                    return Err(format!(
+                        "sandbox private temp rmdir failed at {}: {error}",
+                        path.display()
+                    ));
+                }
+            }
+        }
+    }
     Ok(())
 }
 
@@ -552,6 +653,8 @@ fn remove_windows_file(path: &Path) -> Result<(), String> {
     use std::os::windows::fs::OpenOptionsExt as _;
     const FILE_READ_ATTRIBUTES: u32 = 0x0080;
     const FILE_WRITE_ATTRIBUTES: u32 = 0x0100;
+    const FILE_SHARE_READ: u32 = 0x0001;
+    const FILE_SHARE_WRITE: u32 = 0x0002;
     const FILE_FLAG_OPEN_REPARSE_POINT: u32 = 0x0020_0000;
     const FILE_ATTRIBUTE_READONLY: u64 = 0x0001;
     const FILE_ATTRIBUTE_DIRECTORY: u64 = 0x0010;
@@ -565,6 +668,7 @@ fn remove_windows_file(path: &Path) -> Result<(), String> {
             // strictly on the open handle ONLY when nNumberOfLinks == 1.
             let file = std::fs::OpenOptions::new()
                 .access_mode(FILE_READ_ATTRIBUTES | FILE_WRITE_ATTRIBUTES)
+                .share_mode(FILE_SHARE_READ | FILE_SHARE_WRITE)
                 .custom_flags(FILE_FLAG_OPEN_REPARSE_POINT)
                 .open(path)
                 .map_err(|open_err| {
@@ -628,8 +732,24 @@ fn remove_windows_file(path: &Path) -> Result<(), String> {
 }
 
 #[cfg(not(any(unix, windows)))]
-fn clean_tree_confined(_root: &Path) -> Result<(), String> {
-    Ok(())
+struct PinnedScratch {
+    path: PathBuf,
+}
+
+#[cfg(not(any(unix, windows)))]
+impl PinnedScratch {
+    fn pin(_parent: &Path, path: PathBuf) -> Result<Self, String> {
+        Ok(Self { path })
+    }
+
+    fn path(&self) -> &Path {
+        &self.path
+    }
+
+    fn cleanup(self) -> Result<(), String> {
+        std::fs::remove_dir(&self.path)
+            .map_err(|error| format!("sandbox private temp root rmdir failed: {error}"))
+    }
 }
 
 #[cfg(test)]
@@ -677,7 +797,8 @@ mod tests {
         assert!(env.contains(&format!("TMP={}", scratch_path.display())));
 
         // Create read-only (0500) and mode-000 subdirectories plus a read-only
-        // file inside scratch and verify confined handle-based cleanup removes all.
+        // file inside scratch, and even strip permissions from scratch root
+        // itself — pinned root_fd must still relax and remove everything.
         let locked_dir = scratch_path.join("locked");
         let zero_dir = scratch_path.join("zero");
         std::fs::create_dir(&locked_dir).map_err(|e| e.to_string())?;
@@ -695,6 +816,8 @@ mod tests {
             std::fs::set_permissions(&locked_dir, std::fs::Permissions::from_mode(0o500))
                 .map_err(|e| e.to_string())?;
             std::fs::set_permissions(&zero_dir, std::fs::Permissions::from_mode(0o000))
+                .map_err(|e| e.to_string())?;
+            std::fs::set_permissions(&scratch_path, std::fs::Permissions::from_mode(0o000))
                 .map_err(|e| e.to_string())?;
         }
         scratch.cleanup()?;
@@ -729,9 +852,6 @@ mod tests {
             .map_err(|e| e.to_string())?;
         std::fs::hard_link(&outside_file, scratch_path.join("hard-file"))
             .map_err(|e| e.to_string())?;
-        // Bind a Unix-domain socket (S_IFSOCK = 0o140000, which shares bit
-        // S_IFDIR = 0o040000) and verify S_IFMT masking unlinks it instead of
-        // attempting to open it as a directory.
         let sock_path = scratch_path.join("s.sock");
         let listener = std::os::unix::net::UnixListener::bind(&sock_path)
             .map_err(|e| format!("bind unix socket: {e}"))?;
@@ -757,7 +877,7 @@ mod tests {
     }
 
     #[test]
-    fn cleanup_after_stop_skips_unreaped_child_and_preserves_errors() -> Result<(), String> {
+    fn cleanup_after_stop_and_exit_code_preservation() -> Result<(), String> {
         let parent = tempfile::Builder::new()
             .prefix("grapt-scratch-unreaped-")
             .tempdir()
@@ -772,7 +892,7 @@ mod tests {
         );
         assert!(
             scratch_path.exists(),
-            "unreaped cleanup must disarm TempDir drop instead of walking scratch"
+            "unreaped cleanup must leave scratch untouched instead of walking against a live child"
         );
         let combined = combine_errors(
             "sandbox receipt was not delivered".to_owned(),
@@ -781,6 +901,18 @@ mod tests {
         assert!(combined.contains("sandbox receipt was not delivered"));
         assert!(combined.contains("sandbox reap failed: ECHILD"));
         assert!(combined.contains("child termination was not confirmed"));
+
+        assert_eq!(finish_with_exit_code(0, Ok(())), (0, None));
+        assert_eq!(finish_with_exit_code(42, Ok(())), (42, None));
+        assert_eq!(
+            finish_with_exit_code(0, Err("cleanup boom".to_owned())),
+            (1, Some("cleanup boom".to_owned()))
+        );
+        assert_eq!(
+            finish_with_exit_code(42, Err("cleanup boom".to_owned())),
+            (42, Some("cleanup boom".to_owned()))
+        );
+
         let _ = std::fs::remove_dir_all(&scratch_path);
         Ok(())
     }

@@ -284,10 +284,15 @@ fn run(path: &str) -> Result<i32, String> {
     match status {
         Ok(code) => {
             drop(child);
-            if let Some(scratch) = scratch {
-                scratch.cleanup()?;
+            let cleanup = scratch.map_or(Ok(()), super::scratch::PrivateScratch::cleanup);
+            let (exit_code, diagnostic) = super::scratch::finish_with_exit_code(code, cleanup);
+            if let Some(reason) = diagnostic {
+                if code == 0 {
+                    return Err(reason);
+                }
+                eprintln!("{reason}");
             }
-            Ok(code)
+            Ok(exit_code)
         }
         Err(wait_reason) => {
             let (kill_err, reap_err, stopped) = stop_and_reap_child(child);
