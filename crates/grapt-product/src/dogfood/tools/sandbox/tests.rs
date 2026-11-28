@@ -18,6 +18,16 @@ fn isolation_defaults_on_and_user_disable_turns_it_off() -> Result<(), String> {
         let default_plan =
             Plan::read(&workspace, &sources()?)?.ok_or("sandbox did not default on")?;
         assert!(default_plan.network);
+        // When `workspace` lives under `std::env::temp_dir()`, the shared
+        // ancestor temp directory must NOT be added to `writable`, so Linux
+        // mount preparation never creates `.grapt`/`grapt.jsonc` targets in it.
+        let canonical_temp =
+            std::fs::canonicalize(std::env::temp_dir()).map_err(|e| e.to_string())?;
+        assert!(
+            !default_plan.writable.contains(&canonical_temp),
+            "ancestor temp_dir was exposed writable: {:?}",
+            default_plan.writable
+        );
         std::fs::write(
             workspace.join("grapt.json"),
             br#"{"sandbox":{"enabled":false}}"#,
@@ -390,4 +400,38 @@ fn instruction_slots_targets_and_denied_ssh_enter_policy_and_fingerprint() -> Re
     })();
     let _ = std::fs::remove_dir_all(&root);
     result
+}
+
+#[test]
+fn workspace_under_temp_dir_never_exposes_ancestor_or_obstructs_sibling() -> Result<(), String> {
+    let dir = tempfile::Builder::new()
+        .prefix("grapt-sandbox-tmpdir-sibling-")
+        .tempdir()
+        .map_err(|e| e.to_string())?;
+    let workspace = dir.path().join("workspace-a");
+    let sibling = dir.path().join("workspace-b");
+    let config = dir.path().join("config");
+    for path in [&workspace, &sibling, &config] {
+        std::fs::create_dir(path).map_err(|e| e.to_string())?;
+    }
+    let sources_a = CatalogSources::read(&workspace, CatalogEnvironment::isolated(dir.path()))?;
+    let plan = Plan::read(&workspace, &sources_a)?.ok_or("sandbox plan absent")?;
+    let canonical_temp = std::fs::canonicalize(std::env::temp_dir()).map_err(|e| e.to_string())?;
+    let canonical_sibling = std::fs::canonicalize(&sibling).map_err(|e| e.to_string())?;
+    assert!(
+        !plan.writable.contains(&canonical_temp),
+        "shared ancestor temp_dir must not be writable: {:?}",
+        plan.writable
+    );
+    assert!(
+        !plan
+            .writable
+            .iter()
+            .any(|writable| canonical_sibling.starts_with(writable)),
+        "sibling workspace must not fall under any writable root: {:?}",
+        plan.writable
+    );
+    // Sibling catalog discovery remains completely unobstructed.
+    let _sources_b = CatalogSources::read(&sibling, CatalogEnvironment::isolated(dir.path()))?;
+    Ok(())
 }

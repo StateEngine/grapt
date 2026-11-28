@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use grapt_config::{ConfigSourcePath, MaxPathBytes};
 
 use super::MAX_FILE_BYTES;
-use crate::dogfood::source_file::{open_contained, open_contained_nofollow};
+use crate::dogfood::source_file::{is_symlink_refusal, open_contained, open_contained_nofollow};
 
 pub(super) struct InstructionFile {
     pub(super) path: PathBuf,
@@ -15,69 +15,89 @@ pub(super) struct InstructionFile {
     pub(super) text: String,
 }
 
+fn normalize_within_scope(scope: &Path, relative: &Path) -> Option<PathBuf> {
+    let mut normalized = scope.to_path_buf();
+    let mut depth = 0usize;
+    for component in relative.components() {
+        match component {
+            std::path::Component::CurDir => {}
+            std::path::Component::Normal(segment) => {
+                normalized.push(segment);
+                depth += 1;
+            }
+            std::path::Component::ParentDir => {
+                if depth == 0 {
+                    return None;
+                }
+                normalized.pop();
+                depth -= 1;
+            }
+            std::path::Component::RootDir | std::path::Component::Prefix(_) => return None,
+        }
+    }
+    Some(normalized)
+}
+
 pub(super) fn read_file(
-    path: &Path,
+    raw_path: &Path,
     scope: Option<&Path>,
 ) -> Result<Option<InstructionFile>, String> {
     let path = ConfigSourcePath::new(
-        path,
+        raw_path,
         MaxPathBytes::try_new(4096).map_err(|error| error.to_string())?,
     )
     .map_err(|error| error.to_string())?;
     let outside = || "instruction source resolves outside the directory it governs".to_owned();
-    if let Some(supplied_scope) = scope {
-        let metadata = match std::fs::symlink_metadata(path.as_path()) {
-            Ok(metadata) => metadata,
+    let unreadable = |error| format!("instruction source is unreadable: {error}");
+
+    let (target, scope, opened) = if let Some(supplied_scope) = scope {
+        // Never pre-canonicalize or lexically collapse a scoped path before the
+        // link-refusing dirfd walk: collapsing `dir_symlink/..` would hide an
+        // intermediate symlink from `O_NOFOLLOW`.
+        let unfollowed = raw_path
+            .strip_prefix(supplied_scope)
+            .map_err(|_| outside())?;
+        let target = normalize_within_scope(supplied_scope, unfollowed).ok_or_else(outside)?;
+        ConfigSourcePath::new(
+            &target,
+            MaxPathBytes::try_new(4096).map_err(|error| error.to_string())?,
+        )
+        .map_err(|error| error.to_string())?;
+        #[cfg(test)]
+        testing::observe(testing::Phase::Opening, &target);
+        let opened = match open_contained_nofollow(supplied_scope, unfollowed) {
+            Ok(opened) => opened,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+            Err(error) if is_symlink_refusal(&error) => {
+                if std::fs::canonicalize(raw_path)
+                    .is_ok_and(|resolved| resolved.strip_prefix(supplied_scope).is_err())
+                {
+                    return Err(outside());
+                }
+                return Err("instruction source must not be a symlink".to_owned());
+            }
+            Err(error) => return Err(unreadable(error)),
+        };
+        (target, supplied_scope.to_path_buf(), opened)
+    } else {
+        // Global instruction links retain their existing resolved-parent exception.
+        let target = match std::fs::canonicalize(path.as_path()) {
+            Ok(target) => target,
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
             Err(error) => return Err(format!("instruction source cannot be resolved: {error}")),
         };
-        if metadata.file_type().is_symlink() {
-            if std::fs::canonicalize(path.as_path())
-                .is_ok_and(|resolved| resolved.strip_prefix(supplied_scope).is_err())
-            {
-                return Err(outside());
-            }
-            return Err("instruction source must not be a symlink".to_owned());
-        }
-    }
-    let target = match std::fs::canonicalize(path.as_path()) {
-        Ok(target) => target,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-        Err(error) => return Err(format!("instruction source cannot be resolved: {error}")),
+        ConfigSourcePath::new(
+            &target,
+            MaxPathBytes::try_new(4096).map_err(|error| error.to_string())?,
+        )
+        .map_err(|error| error.to_string())?;
+        let scope = target.parent().unwrap_or(&target).to_owned();
+        let relative = target.strip_prefix(&scope).map_err(|_| outside())?;
+        #[cfg(test)]
+        testing::observe(testing::Phase::Opening, &target);
+        let opened = open_contained(&scope, relative).map_err(unreadable)?;
+        (target, scope, opened)
     };
-    ConfigSourcePath::new(
-        &target,
-        MaxPathBytes::try_new(4096).map_err(|error| error.to_string())?,
-    )
-    .map_err(|error| error.to_string())?;
-    // A supplied scope was resolved by the owner ONCE. Re-resolving it here
-    // could follow a replacement link and silently widen that read authority.
-    // Global instruction links retain their existing resolved-parent exception.
-    let supplied_scope = scope;
-    let scope = scope
-        .unwrap_or_else(|| target.parent().unwrap_or(&target))
-        .to_owned();
-    let canonical_relative = target.strip_prefix(&scope).map_err(|_| outside())?;
-    let relative =
-        match supplied_scope.and_then(|supplied| path.as_path().strip_prefix(supplied).ok()) {
-            Some(unfollowed)
-                if !unfollowed
-                    .components()
-                    .any(|component| matches!(component, std::path::Component::ParentDir)) =>
-            {
-                unfollowed
-            }
-            _ => canonical_relative,
-        };
-    #[cfg(test)]
-    testing::observe(testing::Phase::Opening, &target);
-    let unreadable = |error| format!("instruction source is unreadable: {error}");
-    let opened = if supplied_scope.is_some() {
-        open_contained_nofollow(&scope, relative)
-    } else {
-        open_contained(&scope, relative)
-    }
-    .map_err(unreadable)?;
     #[cfg(test)]
     testing::observe(testing::Phase::Opened, &target);
     let metadata = opened.file.metadata().map_err(unreadable)?;

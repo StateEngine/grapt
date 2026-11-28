@@ -5,6 +5,20 @@ use grapt_config::ConfigValue;
 
 const INSTRUCTION_FILES: [&str; 2] = ["AGENTS.md", "AGENTS.override.md"];
 
+fn initial_writable_roots(root: &Path) -> Result<Vec<PathBuf>, String> {
+    let canonical_root = canonical(root)?;
+    let canonical_temp = canonical(&std::env::temp_dir())?;
+    let mut writable = vec![canonical_root.clone()];
+    // Never widen a workspace into a shared ancestor temp directory (e.g. when
+    // `root` itself lives under `/tmp` or `$TMPDIR`): exposing an ancestor lets
+    // sandboxed commands write into sibling workspaces and causes synthetic
+    // read-only mount targets to be created in the shared parent directory.
+    if !canonical_root.starts_with(&canonical_temp) {
+        writable.push(canonical_temp);
+    }
+    Ok(writable)
+}
+
 #[expect(clippy::too_many_lines, reason = "legacy")]
 pub(super) fn read(root: &Path, sources: &CatalogSources) -> Result<Option<Plan>, String> {
     let mut enabled = true;
@@ -61,7 +75,7 @@ pub(super) fn read(root: &Path, sources: &CatalogSources) -> Result<Option<Plan>
     if !enabled && !git_metadata_read_only {
         return Ok(None);
     }
-    let mut writable = vec![canonical(root)?, canonical(&std::env::temp_dir())?];
+    let mut writable = initial_writable_roots(root)?;
     writable.extend(declared);
     writable.sort();
     writable.dedup();

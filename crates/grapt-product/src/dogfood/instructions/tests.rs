@@ -372,6 +372,43 @@ fn skd_scoped_instructions_refuse_in_scope_sibling_and_dangling_symlinks(
         Err(reason) => assert!(reason.contains("must not be a symlink"), "{reason}"),
         Ok(content) => panic!("dangling symlink was delivered: {content}"),
     }
+
+    // A scoped `..` import crossing an in-scope directory symlink must still be
+    // refused by the link-refusing component walk, while a real directory `..`
+    // import inside scope continues to work.
+    std::fs::remove_file(session.join("a/AGENTS.override.md"))?;
+    std::fs::create_dir_all(session.join("real_dir"))?;
+    std::fs::write(session.join("target.md"), "real parent import target")?;
+    std::fs::write(session.join("a/target.md"), "lexical target in a")?;
+    std::os::unix::fs::symlink(session.join("real_dir"), session.join("a/dir_symlink"))?;
+    std::fs::write(session.join("a/AGENTS.md"), "@dir_symlink/../target.md\n")?;
+    let via_symlink = scoped_for_read(&canonical, &canonical.join("a/file.rs")).instructions;
+    let symlink_contents: Vec<_> = via_symlink.iter().map(|item| &item.content).collect();
+    assert!(
+        via_symlink.iter().any(|item| item
+            .content
+            .as_ref()
+            .is_err_and(|r| r.contains("must not be a symlink"))),
+        "dir_symlink/../target.md was not refused as a symlink: {symlink_contents:?}"
+    );
+    assert!(
+        !via_symlink.iter().any(|item| item
+            .content
+            .as_ref()
+            .is_ok_and(|c| c.contains("real parent import target"))),
+        "dir_symlink/../target.md delivered content through a symlink: {symlink_contents:?}"
+    );
+
+    std::fs::write(session.join("a/AGENTS.md"), "@../target.md\n")?;
+    let via_real = scoped_for_read(&canonical, &canonical.join("a/file.rs")).instructions;
+    let real_contents: Vec<_> = via_real.iter().map(|item| &item.content).collect();
+    assert!(
+        via_real.iter().any(|item| item
+            .content
+            .as_ref()
+            .is_ok_and(|c| c.contains("real parent import target"))),
+        "real parent import inside scope failed: {real_contents:?}"
+    );
     Ok(())
 }
 

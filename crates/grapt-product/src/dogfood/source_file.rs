@@ -55,8 +55,6 @@ pub(super) const NONBLOCK: i32 = 0o4000;
 #[cfg(all(unix, not(any(target_os = "linux", target_os = "android"))))]
 pub(super) const NONBLOCK: i32 = 0x0004;
 
-/// `O_NOFOLLOW`, which std does not name: 0o100000 on Linux ARM/AArch64,
-/// 0o400000 on Linux x86/x86_64/other, and 0x0100 on Apple/BSD.
 /// `base` is the canonical authority anchor; `relative` has only normal components.
 #[cfg(not(windows))]
 pub(super) fn open_contained(base: &Path, relative: &Path) -> std::io::Result<OpenedResource> {
@@ -74,64 +72,147 @@ pub(super) fn open_contained(base: &Path, relative: &Path) -> std::io::Result<Op
     })
 }
 
-/// Like [`open_contained`], but walks each relative component from `base` via
-/// dirfd-relative `openat` with `O_NOFOLLOW` (`O_DIRECTORY` on intermediate
-/// segments), so the final open is anchored to the exact verified parent fd
-/// without reopening by pathname.
+#[cfg(not(windows))]
+fn open_dir_segment_nofollow(
+    parent_fd: &std::os::fd::OwnedFd,
+    segment: &std::ffi::OsStr,
+) -> std::io::Result<std::os::fd::OwnedFd> {
+    use nix::fcntl::{openat, AtFlags, OFlag};
+    use nix::sys::stat::{fstatat, Mode};
+
+    match openat(
+        parent_fd,
+        segment,
+        OFlag::O_RDONLY
+            | OFlag::O_DIRECTORY
+            | OFlag::O_NOFOLLOW
+            | OFlag::O_CLOEXEC
+            | OFlag::O_NONBLOCK,
+        Mode::empty(),
+    ) {
+        Ok(fd) => Ok(fd),
+        Err(nix::errno::Errno::ENOTDIR)
+            if fstatat(parent_fd, segment, AtFlags::AT_SYMLINK_NOFOLLOW)
+                .is_ok_and(|st| (st.st_mode & nix::libc::S_IFMT) == nix::libc::S_IFLNK) =>
+        {
+            Err(std::io::Error::from_raw_os_error(nix::libc::ELOOP))
+        }
+        Err(err) => Err(std::io::Error::from(err)),
+    }
+}
+
+#[cfg(not(windows))]
+fn open_dir_nofollow(path: &Path) -> std::io::Result<std::os::fd::OwnedFd> {
+    use nix::fcntl::{open, OFlag};
+    use nix::sys::stat::Mode;
+    use std::path::Component;
+
+    let mut dir_fd = open(
+        "/",
+        OFlag::O_RDONLY | OFlag::O_DIRECTORY | OFlag::O_CLOEXEC | OFlag::O_NONBLOCK,
+        Mode::empty(),
+    )
+    .map_err(std::io::Error::from)?;
+    for component in path.components() {
+        match component {
+            Component::RootDir | Component::CurDir => {}
+            Component::Normal(segment) => {
+                dir_fd = open_dir_segment_nofollow(&dir_fd, segment)?;
+            }
+            Component::ParentDir | Component::Prefix(_) => {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::InvalidInput,
+                    "scope directory path contains a non-normal component",
+                ));
+            }
+        }
+    }
+    Ok(dir_fd)
+}
+
+/// True when `open_contained_nofollow` rejected a symlink or reparse point.
+pub(super) fn is_symlink_refusal(error: &std::io::Error) -> bool {
+    #[cfg(not(windows))]
+    {
+        error.raw_os_error() == Some(nix::libc::ELOOP)
+    }
+    #[cfg(windows)]
+    {
+        error.to_string().contains("link or junction")
+    }
+}
+
+/// Like [`open_contained`], but acquires `base` via a link-refusing component
+/// walk from `/` and walks each original component of `relative` (including
+/// `..` parent segments) via dirfd-relative `openat` with `O_NOFOLLOW`
+/// (`O_DIRECTORY` on intermediate segments), never reopening by pathname.
 #[cfg(not(windows))]
 pub(super) fn open_contained_nofollow(
     base: &Path,
     relative: &Path,
 ) -> std::io::Result<OpenedResource> {
-    use nix::fcntl::{open, openat, OFlag};
+    use nix::fcntl::{openat, OFlag};
     use nix::sys::stat::Mode;
     use std::path::Component;
 
-    let mut dir_fd = open(
-        base,
-        OFlag::O_RDONLY | OFlag::O_DIRECTORY | OFlag::O_CLOEXEC | OFlag::O_NONBLOCK,
-        Mode::empty(),
-    )
-    .map_err(std::io::Error::from)?;
-
+    let scope_fd = open_dir_nofollow(base)?;
+    let mut dir_stack = vec![scope_fd];
+    #[cfg(not(any(target_os = "linux", target_os = "android")))]
+    let mut normalized = base.to_path_buf();
     let mut components = relative.components().peekable();
     while let Some(component) = components.next() {
-        let Component::Normal(segment) = component else {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::InvalidInput,
-                "source file relative path contains a non-normal component",
-            ));
-        };
-        if components.peek().is_some() {
-            dir_fd = openat(
-                &dir_fd,
-                segment,
-                OFlag::O_RDONLY
-                    | OFlag::O_DIRECTORY
-                    | OFlag::O_NOFOLLOW
-                    | OFlag::O_CLOEXEC
-                    | OFlag::O_NONBLOCK,
-                Mode::empty(),
-            )
-            .map_err(std::io::Error::from)?;
-        } else {
-            let file_fd = openat(
-                &dir_fd,
-                segment,
-                OFlag::O_RDONLY | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC | OFlag::O_NONBLOCK,
-                Mode::empty(),
-            )
-            .map_err(std::io::Error::from)?;
-            return Ok(OpenedResource {
-                file: std::fs::File::from(file_fd),
+        match component {
+            Component::CurDir => {}
+            Component::ParentDir => {
+                if dir_stack.len() <= 1 {
+                    return Err(std::io::Error::new(
+                        std::io::ErrorKind::PermissionDenied,
+                        "source file path escapes its governing scope",
+                    ));
+                }
+                dir_stack.pop();
                 #[cfg(not(any(target_os = "linux", target_os = "android")))]
-                requested: base.join(relative),
-            });
+                {
+                    normalized.pop();
+                }
+            }
+            Component::Normal(segment) => {
+                let parent_fd = dir_stack.last().ok_or_else(|| {
+                    std::io::Error::other("scope directory descriptor stack is empty")
+                })?;
+                if components.peek().is_some() {
+                    let next_fd = open_dir_segment_nofollow(parent_fd, segment)?;
+                    dir_stack.push(next_fd);
+                    #[cfg(not(any(target_os = "linux", target_os = "android")))]
+                    normalized.push(segment);
+                } else {
+                    let file_fd = openat(
+                        parent_fd,
+                        segment,
+                        OFlag::O_RDONLY | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC | OFlag::O_NONBLOCK,
+                        Mode::empty(),
+                    )
+                    .map_err(std::io::Error::from)?;
+                    #[cfg(not(any(target_os = "linux", target_os = "android")))]
+                    normalized.push(segment);
+                    return Ok(OpenedResource {
+                        file: std::fs::File::from(file_fd),
+                        #[cfg(not(any(target_os = "linux", target_os = "android")))]
+                        requested: normalized,
+                    });
+                }
+            }
+            Component::RootDir | Component::Prefix(_) => {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::InvalidInput,
+                    "source file relative path contains an absolute component",
+                ));
+            }
         }
     }
     Err(std::io::Error::new(
         std::io::ErrorKind::InvalidInput,
-        "source file relative path is empty",
+        "source file relative path does not name a file",
     ))
 }
 
@@ -177,11 +258,34 @@ pub(super) fn open_contained(base: &Path, relative: &Path) -> std::io::Result<Op
             pinned.push(open(&prefix)?);
         }
     }
+    let mut depth = 0usize;
     let mut components = relative.components().peekable();
     while let Some(component) = components.next() {
-        prefix.push(component);
-        if components.peek().is_some() {
-            pinned.push(open(&prefix)?);
+        match component {
+            std::path::Component::CurDir => {}
+            std::path::Component::ParentDir => {
+                if depth == 0 {
+                    return Err(std::io::Error::new(
+                        std::io::ErrorKind::PermissionDenied,
+                        "source file path escapes its governing scope",
+                    ));
+                }
+                prefix.pop();
+                depth -= 1;
+            }
+            std::path::Component::Normal(segment) => {
+                prefix.push(segment);
+                depth += 1;
+                if components.peek().is_some() {
+                    pinned.push(open(&prefix)?);
+                }
+            }
+            std::path::Component::RootDir | std::path::Component::Prefix(_) => {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::InvalidInput,
+                    "source file relative path contains an absolute component",
+                ));
+            }
         }
     }
     Ok(OpenedResource {
