@@ -872,8 +872,93 @@ impl Inbox {
         Ok(Some(promoted))
     }
 
+    /// Register an owner-issued automatic-resume synthetic input binding inside
+    /// the caller's governed transaction, retiring any earlier inactive resume
+    /// inputs for the session out of `session_pending` atomically.
+    pub fn register_resume_input_within(
+        tx: &GovernedTransaction<'_>,
+        session: &SessionId,
+        input: &MessageId,
+        turn_origin_seq: u64,
+    ) -> Result<(), InboxError> {
+        let seq = i64::try_from(turn_origin_seq)
+            .map_err(|_| InboxError::PendingBound("resume turn origin seq exceeds SQLite range"))?;
+        tx.execute(
+            "UPDATE session_resume_input SET active = 0
+             WHERE session_id = ?1 AND input_id != ?2 AND active != 0",
+            rusqlite::params![session.as_str(), input.as_str()],
+        )?;
+        tx.execute(
+            "DELETE FROM session_pending
+             WHERE session_id = ?1 AND input_type = 'synthetic'
+               AND id IN (
+                   SELECT input_id FROM session_resume_input
+                   WHERE session_id = ?1 AND active = 0
+               )",
+            [session.as_str()],
+        )?;
+        tx.execute(
+            "INSERT INTO session_resume_input (session_id, input_id, turn_origin_seq, active)
+             VALUES (?1, ?2, ?3, 1)
+             ON CONFLICT(session_id, input_id) DO UPDATE SET
+                 turn_origin_seq = excluded.turn_origin_seq,
+                 active = 1",
+            rusqlite::params![session.as_str(), input.as_str(), seq],
+        )?;
+        Ok(())
+    }
+
+    /// Retire all active automatic-resume bindings for `session` and remove
+    /// their queued synthetic rows from `session_pending` inside the caller's
+    /// governed transaction so retired inputs neither consume inbox capacity
+    /// nor block undo.
+    pub fn retire_resume_inputs_within(
+        tx: &GovernedTransaction<'_>,
+        session: &SessionId,
+    ) -> Result<usize, InboxError> {
+        tx.execute(
+            "UPDATE session_resume_input SET active = 0
+             WHERE session_id = ?1 AND active != 0",
+            [session.as_str()],
+        )?;
+        let removed = tx.execute(
+            "DELETE FROM session_pending
+             WHERE session_id = ?1 AND input_type = 'synthetic'
+               AND id IN (
+                   SELECT input_id FROM session_resume_input
+                   WHERE session_id = ?1 AND active = 0
+               )",
+            [session.as_str()],
+        )?;
+        Ok(removed)
+    }
+
+    /// Look up the owner-issued `turn_origin_seq` for a synthetic resume input.
+    /// Fails closed if `session_resume_input` is absent or corrupt.
+    pub fn resume_input_origin(
+        conn: &rusqlite::Connection,
+        session: &SessionId,
+        input: &str,
+    ) -> Result<Option<u64>, InboxError> {
+        use rusqlite::OptionalExtension as _;
+        let origin: Option<i64> = conn
+            .query_row(
+                "SELECT turn_origin_seq FROM session_resume_input
+                 WHERE session_id = ?1 AND input_id = ?2",
+                rusqlite::params![session.as_str(), input],
+                |row| row.get(0),
+            )
+            .optional()?;
+        match origin.filter(|value| *value > 0) {
+            Some(value) => u64::try_from(value)
+                .map(Some)
+                .map_err(|_| InboxError::PendingBound("resume turn origin seq negative")),
+            None => Ok(None),
+        }
+    }
+
     fn auto_resume_input_eligible_within(
-        tx: &rusqlite::Connection,
+        tx: &GovernedTransaction<'_>,
         session: &SessionId,
         candidate: &PendingInput,
     ) -> Result<bool, InboxError> {
@@ -881,19 +966,9 @@ impl Inbox {
         if candidate.kind != PromotedInputKind::Synthetic {
             return Ok(true);
         }
-        let table_present: Option<i64> = tx
-            .query_row(
-                "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'pending_resume_input' LIMIT 1",
-                [],
-                |row| row.get(0),
-            )
-            .optional()?;
-        if table_present.is_none() {
-            return Ok(true);
-        }
         let binding: Option<(i64, i64)> = tx
             .query_row(
-                "SELECT active, turn_origin_seq FROM pending_resume_input
+                "SELECT active, turn_origin_seq FROM session_resume_input
                  WHERE session_id = ?1 AND input_id = ?2",
                 rusqlite::params![session.as_str(), candidate.input.as_str()],
                 |row| Ok((row.get(0)?, row.get(1)?)),
@@ -903,6 +978,11 @@ impl Inbox {
             return Ok(true);
         };
         if active == 0 {
+            tx.execute(
+                "DELETE FROM session_pending
+                 WHERE session_id = ?1 AND id = ?2 AND input_type = 'synthetic'",
+                rusqlite::params![session.as_str(), candidate.input.as_str()],
+            )?;
             return Ok(false);
         }
         let newer_human: Option<i64> = tx
@@ -921,6 +1001,19 @@ impl Inbox {
                 |row| row.get(0),
             )
             .optional()?;
-        Ok(newer_human.is_none())
+        if newer_human.is_some() {
+            tx.execute(
+                "UPDATE session_resume_input SET active = 0
+                 WHERE session_id = ?1 AND input_id = ?2",
+                rusqlite::params![session.as_str(), candidate.input.as_str()],
+            )?;
+            tx.execute(
+                "DELETE FROM session_pending
+                 WHERE session_id = ?1 AND id = ?2 AND input_type = 'synthetic'",
+                rusqlite::params![session.as_str(), candidate.input.as_str()],
+            )?;
+            return Ok(false);
+        }
+        Ok(true)
     }
 }

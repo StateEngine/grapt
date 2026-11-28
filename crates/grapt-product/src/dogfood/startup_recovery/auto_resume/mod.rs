@@ -32,10 +32,10 @@ use grapt_types::{ClockAuthority, DeterministicAuthorities, SessionId};
 
 use self::store::{
     has_active_or_lost_subagent_child, has_ambiguous_process_loss_step,
-    has_pending_approval_or_form, has_unresolved_or_quarantined_attempt,
-    interrupted_turn_origin_seq, is_child_session, latest_human_input_seq, list_runnable_after,
-    load_row, synthetic_input_progress, synthetic_message_id, upsert_row, upsert_row_with_input,
-    PendingRow, ResumeState, SyntheticProgress,
+    has_pending_approval_or_form, has_unresolved_or_quarantined_attempt, interrupted_turn,
+    is_child_session, latest_human_input_seq, list_runnable_after, load_row,
+    synthetic_input_progress, synthetic_message_id, upsert_row, upsert_row_with_input, PendingRow,
+    ResumeState, SyntheticProgress,
 };
 
 /// Maximum automatic resume attempts for a single user turn (`turn_origin_seq`).
@@ -70,7 +70,8 @@ pub(super) fn fence_pre_recovery_form_sessions(
             continue;
         };
         let existing = load_row(store.connection(), session)?;
-        let turn_origin_seq = interrupted_turn_origin_seq(store.connection(), session, &execution)?
+        let turn_origin_seq = interrupted_turn(store.connection(), session, &execution)?
+            .map(|turn| turn.origin_seq)
             .or_else(|| existing.as_ref().map(|row| row.turn_origin_seq))
             .unwrap_or(0);
         let attempts = existing
@@ -111,11 +112,10 @@ pub(super) fn enqueue_if_eligible(
     if is_child_session(store.connection(), session)? {
         return Ok(());
     }
-    let Some(turn_origin_seq) =
-        interrupted_turn_origin_seq(store.connection(), session, &execution)?
-    else {
+    let Some(turn) = interrupted_turn(store.connection(), session, &execution)? else {
         return Ok(());
     };
+    let turn_origin_seq = turn.origin_seq;
     let now_ms = clock.now().as_millis();
     let existing = load_row(store.connection(), session)?;
     if existing.as_ref().is_some_and(|row| {
@@ -136,7 +136,7 @@ pub(super) fn enqueue_if_eligible(
     if let Some(reason) = ineligible_reason(
         store.connection(),
         session,
-        turn_origin_seq,
+        turn.execution_start_seq,
         pre_recovery_forms,
     )? {
         upsert_row(
@@ -197,13 +197,13 @@ pub(super) fn enqueue_if_eligible(
 fn ineligible_reason(
     conn: &rusqlite::Connection,
     session: &SessionId,
-    turn_origin_seq: u64,
+    execution_start_seq: u64,
     pre_recovery_forms: &HashSet<SessionId>,
 ) -> Result<Option<&'static str>, String> {
     if has_unresolved_or_quarantined_attempt(conn, session)? {
         return Ok(Some("unresolved_or_quarantined_attempt"));
     }
-    if has_ambiguous_process_loss_step(conn, session, turn_origin_seq)? {
+    if has_ambiguous_process_loss_step(conn, session, execution_start_seq)? {
         return Ok(Some("ambiguous_provider_attempt"));
     }
     if pre_recovery_forms.contains(session) || has_pending_approval_or_form(conn, session)? {

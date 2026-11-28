@@ -1,6 +1,6 @@
 use super::store::{
-    has_pending_approval_or_form, has_unresolved_or_quarantined_attempt,
-    interrupted_turn_origin_seq, load_row, synthetic_message_id, upsert_row, ResumeState,
+    has_pending_approval_or_form, has_unresolved_or_quarantined_attempt, interrupted_turn,
+    load_row, synthetic_message_id, upsert_row, ResumeState,
 };
 use super::*;
 use grapt_store::{AggregateId, AppendInput, Appended, OsRandomIds, SystemClock};
@@ -8,6 +8,7 @@ use grapt_types::{DeterministicAuthorities, EventId, EventVersion, ExecutionId};
 
 fn test_store() -> Result<(EventStore, OsRandomIds, SystemClock), String> {
     let mut store = EventStore::open_in_memory().map_err(|error| error.to_string())?;
+    grapt_inbox::Inbox::ensure_tables(store.connection()).map_err(|error| error.to_string())?;
     let tx = store
         .governed_transaction()
         .map_err(|error| error.to_string())?;
@@ -361,7 +362,7 @@ fn queued_prompt_and_seat_startup_do_not_shift_or_satisfy_turn_origin() -> Resul
     )?;
     let exec_q1 = ExecutionId::new("exec_q1").ok_or("exec_q1")?;
     assert_eq!(
-        interrupted_turn_origin_seq(store.connection(), &s_queued, &exec_q1)?,
+        interrupted_turn(store.connection(), &s_queued, &exec_q1)?.map(|t| t.origin_seq),
         Some(origin_seq)
     );
     Ok(())
@@ -706,7 +707,7 @@ fn non_resume_synthetic_or_missing_start_never_inherits_finished_human_turn() ->
         "exec_h2",
     )?;
     assert_eq!(
-        interrupted_turn_origin_seq(store.connection(), &session, &exec_h2)?,
+        interrupted_turn(store.connection(), &session, &exec_h2)?.map(|t| t.origin_seq),
         Some(queued_seq)
     );
 
@@ -736,11 +737,11 @@ fn non_resume_synthetic_or_missing_start_never_inherits_finished_human_turn() ->
         "exec_forged",
     )?;
     assert_eq!(
-        interrupted_turn_origin_seq(store.connection(), &session, &exec_forged)?,
+        interrupted_turn(store.connection(), &session, &exec_forged)?,
         None
     );
 
-    // Owner-issued `pending_resume_input` binding proves lineage without metadata.
+    // Owner-issued `session_resume_input` binding proves lineage without metadata.
     let owned_id = synthetic_message_id(&session, origin, 1)?;
     upsert_row_with_input(
         &mut store,
@@ -772,13 +773,13 @@ fn non_resume_synthetic_or_missing_start_never_inherits_finished_human_turn() ->
         "exec_owned",
     )?;
     assert_eq!(
-        interrupted_turn_origin_seq(store.connection(), &session, &exec_owned)?,
+        interrupted_turn(store.connection(), &session, &exec_owned)?.map(|t| t.origin_seq),
         Some(origin)
     );
 
     let exec_unknown = ExecutionId::new("exec_missing").ok_or("exec_missing")?;
     assert_eq!(
-        interrupted_turn_origin_seq(store.connection(), &session, &exec_unknown)?,
+        interrupted_turn(store.connection(), &session, &exec_unknown)?,
         None
     );
     Ok(())
@@ -818,9 +819,17 @@ fn retired_auto_resume_input_is_skipped_by_inbox_promotion() -> Result<(), Strin
             created_ms: clock.now().as_millis(),
         })
         .map_err(|e| e.to_string())?;
-    // Retire the Running row (e.g. superseded or stopped), then admit a newer
-    // human prompt. Inbox promotion must skip the retired synthetic input and
-    // promote the human prompt instead.
+    let pending_rows = |conn: &rusqlite::Connection| -> Result<i64, String> {
+        conn.query_row(
+            "SELECT COUNT(*) FROM session_pending WHERE session_id = ?1",
+            [session.as_str()],
+            |row| row.get(0),
+        )
+        .map_err(|e| e.to_string())
+    };
+    assert_eq!(pending_rows(inbox.store().connection())?, 1);
+    // Retiring the Running row must atomically remove the synthetic input from
+    // `session_pending` so it neither consumes inbox budget nor blocks undo.
     upsert_row(
         inbox.store_mut(),
         &session,
@@ -831,6 +840,7 @@ fn retired_auto_resume_input_is_skipped_by_inbox_promotion() -> Result<(), Strin
         Some("superseded_by_newer_prompt"),
         clock.now().as_millis(),
     )?;
+    assert_eq!(pending_rows(inbox.store().connection())?, 0);
     let human_id: grapt_types::MessageId = "msg_newer_human".parse().map_err(|e| format!("{e}"))?;
     let ev_human: EventId = format!("evt_{}", ids.mint().as_str())
         .parse()
@@ -863,7 +873,6 @@ fn retired_auto_resume_input_is_skipped_by_inbox_promotion() -> Result<(), Strin
         .map_err(|e| e.to_string())?
         .ok_or("expected human prompt to be promoted")?;
     assert_eq!(promoted.input, human_id);
-    // Second promotion must NOT fall back to the retired synthetic input.
     let second = inbox
         .promote_next(
             &session,
@@ -873,5 +882,47 @@ fn retired_auto_resume_input_is_skipped_by_inbox_promotion() -> Result<(), Strin
         )
         .map_err(|e| e.to_string())?;
     assert!(second.is_none());
+    Ok(())
+}
+
+#[test]
+fn queued_prompt_promoted_after_prior_process_loss_does_not_inherit_ambiguity() -> Result<(), String>
+{
+    let (mut store, ids, clock) = test_store()?;
+    let empty_forms = HashSet::new();
+    let session: SessionId = "ses_auto_queued_pl".parse().map_err(|e| format!("{e}"))?;
+    let _origin_a = seed_active_turn(&mut store, &ids, &clock, &session, None, "exec_a")?;
+
+    // Prompt B is queued while execution A is running, BEFORE execution A
+    // suffers an ambiguous ProcessLoss.
+    let queued_b_seq = append_event(
+        &mut store,
+        &ids,
+        &clock,
+        &session,
+        "session.input.admitted",
+        1,
+        json!({"inputID": "msg_b", "input": {"type": "user", "data": {"text": "second prompt"}}}),
+    )?;
+    append_process_loss_step(&mut store, &ids, &clock, &session, 1)?;
+    let exec_b = append_promoted_execution(
+        &mut store, &ids, &clock, &session, "exec_a", "msg_b", "exec_b",
+    )?;
+    let authorities = DeterministicAuthorities::new(&clock, &ids);
+    grapt_service_state::record(
+        &mut store,
+        &authorities,
+        &session,
+        &exec_b,
+        State::plain(Kind::Running),
+        Change::Start,
+    )?;
+
+    // Execution B has no ProcessLoss of its own and must enqueue cleanly rather
+    // than inheriting Execution A's earlier ambiguous ProcessLoss.
+    enqueue_if_eligible(&mut store, &session, &empty_forms, &clock, &ids)?;
+    let row = load_row(store.connection(), &session)?.ok_or("missing queued-b row")?;
+    assert_eq!(row.state, ResumeState::Pending);
+    assert_eq!(row.turn_origin_seq, queued_b_seq);
     Ok(())
 }

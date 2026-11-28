@@ -64,14 +64,7 @@ pub(super) fn ensure_schema_within(tx: &GovernedTransaction<'_>) -> Result<(), S
                 updated_at INTEGER NOT NULL
             );
             CREATE INDEX IF NOT EXISTS idx_pending_resume_state_session
-                ON pending_resume (state, session_id);
-            CREATE TABLE IF NOT EXISTS pending_resume_input (
-                session_id TEXT NOT NULL,
-                input_id TEXT NOT NULL,
-                turn_origin_seq INTEGER NOT NULL,
-                active INTEGER NOT NULL,
-                PRIMARY KEY (session_id, input_id)
-            );",
+                ON pending_resume (state, session_id);",
     )
     .map_err(|error| format!("pending_resume schema failed: {error}"))
 }
@@ -80,9 +73,9 @@ pub(super) fn ensure_schema_within(tx: &GovernedTransaction<'_>) -> Result<(), S
 /// it; fresh stores install it in `schemas::install_fresh` and steady restarts
 /// perform zero writes.
 pub(super) fn ensure_schema_if_missing(store: &mut EventStore) -> Result<(), String> {
-    if table_exists(store.connection(), "pending_resume")?
-        && table_exists(store.connection(), "pending_resume_input")?
-    {
+    grapt_inbox::Inbox::ensure_tables(store.connection())
+        .map_err(|error| format!("inbox schema setup failed: {error}"))?;
+    if table_exists(store.connection(), "pending_resume")? {
         return Ok(());
     }
     let tx = store
@@ -238,31 +231,12 @@ pub(super) fn upsert_row_with_input(
         ],
     )
     .map_err(|error| format!("pending_resume upsert failed: {error}"))?;
-    if table_exists(&tx, "pending_resume_input")? {
-        if let Some(input_id) = active_input {
-            tx.execute(
-                "UPDATE pending_resume_input SET active = 0
-                 WHERE session_id = ?1 AND input_id != ?2 AND active != 0",
-                rusqlite::params![session.as_str(), input_id.as_str()],
-            )
-            .map_err(|error| format!("pending_resume_input deactivate failed: {error}"))?;
-            tx.execute(
-                "INSERT INTO pending_resume_input (session_id, input_id, turn_origin_seq, active)
-                 VALUES (?1, ?2, ?3, 1)
-                 ON CONFLICT(session_id, input_id) DO UPDATE SET
-                     turn_origin_seq = excluded.turn_origin_seq,
-                     active = 1",
-                rusqlite::params![session.as_str(), input_id.as_str(), seq],
-            )
-            .map_err(|error| format!("pending_resume_input register failed: {error}"))?;
-        } else if matches!(state, ResumeState::Completed | ResumeState::Stopped) {
-            tx.execute(
-                "UPDATE pending_resume_input SET active = 0
-                 WHERE session_id = ?1 AND active != 0",
-                [session.as_str()],
-            )
-            .map_err(|error| format!("pending_resume_input retire failed: {error}"))?;
-        }
+    if let Some(input_id) = active_input {
+        grapt_inbox::Inbox::register_resume_input_within(&tx, session, input_id, turn_origin_seq)
+            .map_err(|error| format!("resume input registration failed: {error}"))?;
+    } else if matches!(state, ResumeState::Completed | ResumeState::Stopped) {
+        grapt_inbox::Inbox::retire_resume_inputs_within(&tx, session)
+            .map_err(|error| format!("resume input retirement failed: {error}"))?;
     }
     tx.commit()
         .map_err(|error| format!("pending_resume commit failed: {error}"))?
@@ -356,45 +330,27 @@ fn admitted_input_by_id(
     .map_err(|error| format!("admitted input lookup failed: {error}"))
 }
 
-fn owner_issued_resume_origin(
-    conn: &rusqlite::Connection,
-    session: &SessionId,
-    input_id: &str,
-) -> Result<Option<u64>, String> {
-    if !table_exists(conn, "pending_resume_input")? {
-        return Ok(None);
-    }
-    let origin: Option<i64> = conn
-        .query_row(
-            "SELECT turn_origin_seq FROM pending_resume_input
-             WHERE session_id = ?1 AND input_id = ?2",
-            rusqlite::params![session.as_str(), input_id],
-            |row| row.get(0),
-        )
-        .optional()
-        .map_err(|error| format!("pending_resume_input lineage lookup failed: {error}"))?;
-    match origin.filter(|value| *value > 0) {
-        Some(value) => u64::try_from(value)
-            .map(Some)
-            .map_err(|_| "pending_resume_input turn_origin_seq negative".to_owned()),
-        None => Ok(None),
-    }
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) struct InterruptedTurn {
+    pub(super) origin_seq: u64,
+    pub(super) execution_start_seq: u64,
 }
 
-/// Identify the durable human prompt `seq` that originated `execution`.
+/// Identify the durable human prompt `seq` that originated `execution` along
+/// with `execution`'s own `session.execution.started.1` boundary.
 ///
 /// Looks up the `session.input.promoted.1` event that opened `execution` (so
 /// human prompts queued during a previous execution and promoted later retain
 /// their true admission `seq`), and proves synthetic auto-resume lineage solely
-/// through the owner-issued `pending_resume_input` binding rather than
+/// through the Inbox-owned `session_resume_input` binding rather than
 /// caller-writable metadata. Fails closed (`Ok(None)`) when `execution` has no
 /// matching start, no promoted input, or was started by `seat-startup` or an
 /// unrelated synthetic input.
-pub(super) fn interrupted_turn_origin_seq(
+pub(super) fn interrupted_turn(
     conn: &rusqlite::Connection,
     session: &SessionId,
     execution: &ExecutionId,
-) -> Result<Option<u64>, String> {
+) -> Result<Option<InterruptedTurn>, String> {
     let Some(exec_start): Option<i64> = conn
         .query_row(
             "SELECT MIN(seq) FROM event
@@ -411,6 +367,8 @@ pub(super) fn interrupted_turn_origin_seq(
     else {
         return Ok(None);
     };
+    let execution_start_seq =
+        u64::try_from(exec_start).map_err(|_| "execution start seq negative".to_owned())?;
 
     let prev_terminal: i64 = conn
         .query_row(
@@ -449,15 +407,18 @@ pub(super) fn interrupted_turn_origin_seq(
     let Some(origin) = admitted_input_by_id(conn, session, &input_id)? else {
         return Ok(None);
     };
-    match origin.input_type.as_deref() {
+    let origin_seq = match origin.input_type.as_deref() {
         Some("user") if origin.user_origin.as_deref() != Some("seat-startup") => {
-            u64::try_from(origin.seq)
-                .map(Some)
-                .map_err(|_| "turn origin seq negative".to_owned())
+            Some(u64::try_from(origin.seq).map_err(|_| "turn origin seq negative".to_owned())?)
         }
-        Some("synthetic") => owner_issued_resume_origin(conn, session, &input_id),
-        _ => Ok(None),
-    }
+        Some("synthetic") => grapt_inbox::Inbox::resume_input_origin(conn, session, &input_id)
+            .map_err(|error| format!("resume input lineage lookup failed: {error}"))?,
+        _ => None,
+    };
+    Ok(origin_seq.map(|origin_seq| InterruptedTurn {
+        origin_seq,
+        execution_start_seq,
+    }))
 }
 
 /// Latest durable human prompt `seq` (excluding `seat-startup`) for detecting
