@@ -8,9 +8,8 @@ use grapt_client::{
 use std::time::Duration;
 use tokio::time::Instant;
 
-#[test]
-fn a_held_permission_reply_never_holds_the_protocol_loop() -> Result {
-    let fixture = Fixture::ready()?;
+/// Answer an open ask and hold the reply's answer at the service.
+fn held_reply(fixture: &Fixture) -> Result {
     fixture
         .source
         .lock()
@@ -24,7 +23,13 @@ fn a_held_permission_reply_never_holds_the_protocol_loop() -> Result {
         .ok_or("ask")?;
     fixture.gate.hold(Operation::SessionPermissionReply)?;
     fixture.command(Command::Reply(ask, PermissionReplyChoice::Once))?;
-    until(|| fixture.gate.blocked())?;
+    until(|| fixture.gate.blocked())
+}
+
+#[test]
+fn a_held_permission_reply_never_holds_the_protocol_loop() -> Result {
+    let fixture = Fixture::ready()?;
+    held_reply(&fixture)?;
     let held = Instant::now();
     // While the reply's answer is held, the loop still pumps and publishes.
     for frame in fixture.turn("streamed while the reply is held")? {
@@ -41,6 +46,21 @@ fn a_held_permission_reply_never_holds_the_protocol_loop() -> Result {
     fixture.gate.release();
     fixture.take_until(|update| update.permission.is_none())?;
     assert_eq!(fixture.gate.calls(Operation::SessionPermissionReply)?, 1);
+    Ok(())
+}
+
+#[test]
+fn quit_is_acknowledged_while_a_reply_is_held() -> Result {
+    let fixture = Fixture::ready()?;
+    held_reply(&fixture)?;
+    let held = Instant::now();
+    fixture.barrier()?;
+    assert!(
+        held.elapsed() < Duration::from_secs(1),
+        "{:?}",
+        held.elapsed()
+    );
+    assert!(fixture.gate.blocked(), "the reply was still held");
     Ok(())
 }
 

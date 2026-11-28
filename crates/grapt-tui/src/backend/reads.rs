@@ -97,18 +97,20 @@ impl Reads {
         })
     }
 
-    /// Send one command on the worker. Refused while another is in flight.
+    /// Send one command on the worker; the attachment it is sent on comes
+    /// back to fence its answer. Refused while another is in flight.
     pub(super) fn command(
         &mut self,
         client: &mut Client<Bridge>,
         request: WireRequest,
-    ) -> Result<(), ClientError> {
+    ) -> Result<Arc<AtomicBool>, ClientError> {
         if self.commanding {
             return Err(ClientError::NotOffered {
                 what: "A reply or Session open is already in progress.",
             });
         }
         let peer = client.peer_mut().read_peer()?;
+        let attachment = peer.attachment();
         let mut slots = lock(&self.shared);
         if slots.closed {
             return Err(TransportError::Unavailable {
@@ -120,7 +122,7 @@ impl Reads {
         drop(slots);
         self.shared.1.notify_one();
         self.commanding = true;
-        Ok(())
+        Ok(attachment)
     }
 
     /// The command's answer, once it has arrived.

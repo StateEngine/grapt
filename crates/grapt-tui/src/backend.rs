@@ -462,30 +462,17 @@ fn serve(
         )?;
         // Adjacent view requests have no effects between them: attach only the
         // newest one. Preserve ordering around submissions, replies and stops:
-        // commands behind a reply or open wait, in the channel, for it.
-        let mut batch = lane.take_held();
+        // commands behind a reply or open wait for it, a Quit never does.
+        let mut batch = Vec::new();
         if updates.refresh_requested() {
             batch.push(updates.envelope(Command::RefreshModels));
         }
         // Commands never wait for the UI to take a view: a full chunk leaves
         // a backlog, and the next pass begins without sleeping.
-        let room = if lane.busy() { 0 } else { 16 };
-        backlog = room > 0;
-        for _ in 0..room {
-            let Ok(command) = commands.try_recv() else {
-                backlog = false;
-                break;
-            };
-            updates.received();
-            if matches!(&command.1, Command::Select(_))
-                && matches!(batch.last(), Some((_, Command::Select(_))))
-            {
-                batch.pop();
-            }
-            batch.push(command);
-        }
+        backlog = lane.fill(&commands, updates);
+        batch.extend(lane.next(updates));
         let mark = ledger.len();
-        for (id, command) in lane.admit(batch) {
+        for (id, command) in batch {
             // Each command's results leave their holders before the next
             // command runs, so none can replace another's.
             ledger.collect(
