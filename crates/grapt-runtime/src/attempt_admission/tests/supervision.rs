@@ -54,9 +54,13 @@ async fn saturated_provider_plus_interrupt_settles_every_tool_before_step_failed
     );
     let handle = tokio::spawn(run);
 
-    // Interrupt only once both tools are running and the provider channel is
-    // full behind the held loop.
-    signalled(&saturation.full, "the provider channel never filled").await;
+    // Interrupt only once both tools are running and the reader's reservation
+    // is waiting on the full channel behind the held loop.
+    signalled(
+        &saturation.parked,
+        "no reservation waited on a full channel",
+    )
+    .await;
     interrupt.interrupt(AttemptCancelCause::Interrupted {
         by: InterruptionSource::User,
     });
@@ -83,10 +87,6 @@ async fn saturated_provider_plus_interrupt_settles_every_tool_before_step_failed
     assert_eq!(
         report.diagnostics.provider_high_water, PROVIDER_CHANNEL_CAPACITY,
         "the provider channel filled behind the held owner"
-    );
-    assert!(
-        report.diagnostics.provider_contention_events > 0,
-        "a provider send waited on the full channel"
     );
     assert!(matches!(report.outcome, StepOutcome::Failed { .. }));
 

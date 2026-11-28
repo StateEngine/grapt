@@ -18,6 +18,10 @@ pub(super) async fn pump_reader<R: ProviderReader>(
     mut step: watch::Receiver<Option<InterruptionSource>>,
     shared: Arc<SharedDiagnostics>,
 ) {
+    #[cfg(test)]
+    if let Some(probe) = reader.reservation_probe() {
+        let _ = shared.reservation_probe.set(probe);
+    }
     // Three facts, never one rule.
     //   * A Step cancel already published stops this reader. The supervisor
     //     holds the same source and names the typed cause when the stream
@@ -243,7 +247,7 @@ async fn send_fragment(delivery: &mut Delivery<'_>, fragment: AttemptFragment) -
             // One reservation, pinned once: a harmless wake must not abandon
             // it, because a reservation is this fragment's place in the queue
             // and re-creating it would send us to the back.
-            let mut reserving = std::pin::pin!(tx.reserve());
+            let mut reserving = std::pin::pin!(observed(tx.reserve(), delivery.shared));
             let permit = loop {
                 tokio::select! {
                     biased;
@@ -366,4 +370,18 @@ pub(super) fn spawn_tool<T: ToolRunner>(
 /// no-terminal fallback — so both must construct their terminal here.
 pub(super) fn cancelled_tool_outcome(by: InterruptionSource) -> ToolOutcome {
     ToolOutcome::Cancelled { by }
+}
+
+/// The full-channel reservation; test builds let a probe see it wait.
+#[cfg(not(test))]
+fn observed<F: std::future::Future>(reservation: F, _shared: &SharedDiagnostics) -> F {
+    reservation
+}
+
+#[cfg(test)]
+fn observed<F: std::future::Future>(
+    reservation: F,
+    shared: &SharedDiagnostics,
+) -> super::reservation_probe::Observed<F> {
+    super::reservation_probe::observe(reservation, shared.reservation_probe.get().cloned())
 }

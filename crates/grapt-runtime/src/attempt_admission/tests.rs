@@ -125,6 +125,13 @@ impl ProviderReader for ScriptedReader {
         }
         async move { next }
     }
+
+    fn reservation_probe(&self) -> Option<crate::supervisor::reservation_probe::ReservationProbe> {
+        let saturation = Arc::clone(self.saturation.as_ref()?);
+        Some(crate::supervisor::reservation_probe::ReservationProbe::new(
+            move || saturation.reservation_parked(),
+        ))
+    }
 }
 
 /// A reader that never yields anything and never completes — a hung provider.
@@ -214,17 +221,18 @@ async fn signalled(signal: &Notify, what: &str) {
     }
 }
 
-/// Proves the provider channel is full behind a held attempt loop.
+/// Proves the provider channel is full behind a held attempt loop and the
+/// reader's reservation is waiting on it.
 ///
 /// The reader sends every fragment but a text delta as soon as it reads it,
-/// so when it is asked for fragment `n`, fragments `1..n` are sent. Once the
-/// loop is held having received `m` fragments, being asked for fragment
-/// `m + capacity + 1` means the channel holds `capacity` fragments and that
-/// send must wait for room.
+/// so a reservation made while it is asked for fragment `n` is fragment `n`'s.
+/// Once the loop is held having received `m` fragments, the channel holds
+/// fragments `m + 1..=m + capacity`, so a waiting reservation for fragment
+/// `m + capacity + 1` is the send that a full channel parked.
 struct Saturation {
     reads_and_hold: std::sync::Mutex<(usize, Option<usize>)>,
     capacity: usize,
-    full: Notify,
+    parked: Notify,
 }
 
 impl Saturation {
@@ -232,32 +240,29 @@ impl Saturation {
         Self {
             reads_and_hold: std::sync::Mutex::new((0, None)),
             capacity,
-            full: Notify::new(),
+            parked: Notify::new(),
         }
     }
 
     fn read(&self) {
-        let mut state = self.lock();
-        state.0 += 1;
-        self.check(*state);
+        self.lock().0 += 1;
     }
 
     fn held_after(&self, received: usize) {
-        let mut state = self.lock();
-        state.1 = Some(received);
-        self.check(*state);
+        self.lock().1 = Some(received);
+    }
+
+    fn reservation_parked(&self) {
+        let (reads, held) = *self.lock();
+        if held.is_some_and(|received| reads > received + self.capacity) {
+            self.parked.notify_one();
+        }
     }
 
     fn lock(&self) -> std::sync::MutexGuard<'_, (usize, Option<usize>)> {
         self.reads_and_hold
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
-    }
-
-    fn check(&self, (reads, held): (usize, Option<usize>)) {
-        if held.is_some_and(|received| reads > received + self.capacity) {
-            self.full.notify_one();
-        }
     }
 }
 
