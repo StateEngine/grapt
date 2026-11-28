@@ -135,6 +135,21 @@ fn a_prompt_that_pages_to_the_tail_keeps_the_page_move_before_it() -> Result {
 }
 
 #[test]
+fn a_prompt_refused_behind_a_pending_stop_settles_its_page_request() -> Result {
+    let fixture = Fixture::ready()?;
+    fixture.gate.hold(Operation::SessionInterrupt)?;
+    fixture.command(Command::InterruptSession(fixture.session.clone()))?;
+    until(|| fixture.gate.blocked())?;
+    let prompt = fixture.command(Command::Submit("refused behind the stop".into()))?;
+    fixture.take_until(|update| update.navigation_dropped.contains(&prompt))?;
+    // Paging still answers afterwards.
+    fixture.gate.release();
+    let browse = fixture.command(Command::Browse(HistoryMove::Latest))?;
+    fixture.take_until(|update| update.navigation.iter().any(|(id, ..)| *id == browse))?;
+    Ok(())
+}
+
+#[test]
 fn a_pending_quit_runs_before_a_model_refresh_that_would_block() -> Result {
     let fixture = Fixture::paused()?;
     fixture.gate.hold(Operation::SessionGet)?;

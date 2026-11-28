@@ -34,6 +34,7 @@ use activity::{selected_activity, selected_running};
 mod catalog;
 mod closing;
 mod command_lane;
+mod pages;
 mod setup;
 pub(super) use catalog::CatalogRefresh;
 
@@ -232,8 +233,7 @@ fn serve(
     let mut followups = followups::Submissions::default();
     let mut imports = import::Import::default();
     let mut stops = interrupt::Stops::default();
-    let mut navigation = Vec::new();
-    let mut navigation_dropped = Vec::new();
+    let mut pages = pages::Pages::default();
     let mut models = None;
     let mut models_requested = false;
     let mut connections_refresh = false;
@@ -355,6 +355,7 @@ fn serve(
                 &client.peer_mut().connection().state,
             );
             grapt_tui_transcript::profile::update();
+            let (navigation, navigation_dropped) = pages.take();
             updates.put(Update {
                 selection: selection.take(),
                 previews: family.take_previews(),
@@ -427,8 +428,8 @@ fn serve(
                 mcp_detail: grapt_client::view::mcp_detail_lines(&client, 120),
                 patches: delta.patches,
                 history_edges: client.history_edges(),
-                navigation: std::mem::take(&mut navigation),
-                navigation_dropped: std::mem::take(&mut navigation_dropped),
+                navigation,
+                navigation_dropped,
                 browsing: client.browsing_history(),
                 model: client.model().cloned(),
                 models: models.take(),
@@ -472,7 +473,7 @@ fn serve(
         let holders = closing::Holders {
             ledger: &mut ledger,
             selection: &mut selection,
-            navigation_dropped: &mut navigation_dropped,
+            pages: &mut pages,
             roster: &mut roster,
         };
         let mut batch = lane.next(&commands, updates, (&client, holders));
@@ -492,6 +493,7 @@ fn serve(
             );
             publish = true;
             submissions.cancel_for(&command);
+            pages.asked(id, &command);
             let literal_startup = matches!(&command, Command::StartupPrompt(_));
             let result = match command {
                 Command::Followup(request) if stops.pending_for(Some(&request.session)) => {
@@ -542,7 +544,7 @@ fn serve(
                     let dispatched = submissions.submit_image(&mut client, prompt, id);
                     status = dispatched.notice;
                     if let Some((movement, changed)) = dispatched.navigation {
-                        navigation.push((id, movement, changed));
+                        pages.moved(id, movement, changed);
                     }
                     if dispatched.models.is_some() {
                         models = dispatched.models;
@@ -574,7 +576,7 @@ fn serve(
                     let dispatched = submissions.submit(&mut client, text, literal_startup, id);
                     status = dispatched.notice;
                     if let Some((movement, changed)) = dispatched.navigation {
-                        navigation.push((id, movement, changed));
+                        pages.moved(id, movement, changed);
                     }
                     if dispatched.models.is_some() {
                         models = dispatched.models;
@@ -608,7 +610,7 @@ fn serve(
                     }
                 }
                 Command::Select(request) => {
-                    navigation.clear();
+                    pages.clear();
                     startup = crate::launch::Readiness::Manual;
                     roster = None;
                     let lanes = (&mut client, &mut reads);
@@ -703,7 +705,7 @@ fn serve(
                 }
                 Command::Browse(movement) => {
                     let result = client.browse_history(movement);
-                    navigation.push((id, movement, matches!(result, Ok(true))));
+                    pages.moved(id, movement, matches!(result, Ok(true)));
                     result.map(|_| ())
                 }
             };

@@ -13,7 +13,7 @@ pub(super) struct Holders<'a> {
     /// The newest Select a view answers.
     pub(super) selection: &'a mut Option<CommandId>,
     /// Commands that could have moved the page, discarded.
-    pub(super) navigation_dropped: &'a mut Vec<CommandId>,
+    pub(super) pages: &'a mut super::pages::Pages,
     pub(super) roster: &'a mut Option<Vec<AgentRow>>,
 }
 
@@ -29,19 +29,12 @@ pub(super) fn refuse(
     let Holders {
         ledger,
         selection,
-        navigation_dropped,
+        pages,
         roster,
     } = holders;
     for (id, command) in discarded {
-        if matches!(
-            command,
-            Command::Browse(_)
-                | Command::Submit(_)
-                | Command::SubmitImages(_)
-                | Command::StartupPrompt(_)
-                | Command::Retry(_)
-        ) {
-            navigation_dropped.push(id);
+        if super::pages::Pages::navigates(&command) {
+            pages.dropped(id);
         }
         let outcome = match command {
             Command::Submit(text) | Command::Retry(text) => Outcome::Submission(text, false, true),

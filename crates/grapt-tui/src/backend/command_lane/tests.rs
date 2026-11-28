@@ -1,4 +1,5 @@
 //! The lane's bound and its attachment fence.
+use super::super::pages::Pages;
 use super::*;
 use std::sync::mpsc;
 
@@ -88,11 +89,11 @@ fn an_older_open_settling_after_a_quit_never_replaces_the_newer_selection() -> R
     let newer = updates.envelope(Command::Select(super::super::Selection { id: session }));
     let newer_id = newer.0;
     let (mut ledger, mut selection) = (Default::default(), None);
-    let (mut dropped, mut roster) = (Vec::new(), None);
+    let (mut pages, mut roster) = (Pages::default(), None);
     let holders = super::super::closing::Holders {
         ledger: &mut ledger,
         selection: &mut selection,
-        navigation_dropped: &mut dropped,
+        pages: &mut pages,
         roster: &mut roster,
     };
     super::super::closing::refuse(vec![newer], &client, holders);
@@ -116,16 +117,16 @@ fn a_discarded_history_move_and_agent_choice_are_settled() -> Result {
     let agent = grapt_client::wire::agent_id("agt_fixture")?;
     let choose = updates.envelope(Command::ChooseAgent(agent));
     let (mut ledger, mut selection) = (Default::default(), None);
-    let (mut dropped, mut roster) = (Vec::new(), None);
+    let (mut pages, mut roster) = (Pages::default(), None);
     let holders = super::super::closing::Holders {
         ledger: &mut ledger,
         selection: &mut selection,
-        navigation_dropped: &mut dropped,
+        pages: &mut pages,
         roster: &mut roster,
     };
     super::super::closing::refuse(vec![browse, choose], &client, holders);
     assert_eq!(
-        dropped,
+        pages.take().1,
         vec![browse_id],
         "the history move would stay pending"
     );
