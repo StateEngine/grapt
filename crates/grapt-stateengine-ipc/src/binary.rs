@@ -25,10 +25,19 @@ pub(crate) fn same_digest(left: &Sha256Hex, right: &Sha256Hex) -> bool {
 
 /// The SHA-256 of a file of at most `max_bytes`, read in bounded chunks.
 pub(crate) fn sha256_file(path: &Path, max_bytes: u64) -> Result<Sha256Hex, IpcError> {
+    sha256_opened(path, max_bytes).map(|(digest, _)| digest)
+}
+
+/// [`sha256_file`], with the metadata of the very file it opened and hashed.
+pub(crate) fn sha256_opened(
+    path: &Path,
+    max_bytes: u64,
+) -> Result<(Sha256Hex, std::fs::Metadata), IpcError> {
     let unreadable =
         |error: std::io::Error| IpcError::Binary(format!("{}: {error}", path.display()));
     let mut file = std::fs::File::open(path).map_err(unreadable)?;
-    if !file.metadata().map_err(unreadable)?.is_file() {
+    let metadata = file.metadata().map_err(unreadable)?;
+    if !metadata.is_file() {
         return Err(IpcError::Binary(format!(
             "{} is not a regular file",
             path.display()
@@ -56,7 +65,7 @@ pub(crate) fn sha256_file(path: &Path, max_bytes: u64) -> Result<Sha256Hex, IpcE
         .as_ref()
         .try_into()
         .map_err(|_| IpcError::Binary("SHA-256 did not produce 32 bytes".into()))?;
-    Ok(Sha256Hex(bytes))
+    Ok((Sha256Hex(bytes), metadata))
 }
 
 #[cfg(test)]

@@ -73,7 +73,7 @@ fn windows_absolute(units: &[u16]) -> bool {
             [letter, colon, ..] if *colon == u16::from(b':') => {
                 ascii_alphabetic(*letter) && rest.get(2).is_some_and(backslash)
             }
-            _ => rest.iter().skip(1).any(backslash),
+            _ => rest.iter().position(backslash).is_some_and(|end| end > 0),
         };
     }
     if let Some(rest) = strip_prefix(units, br"\\.\", false) {
@@ -484,6 +484,7 @@ mod tests {
             r"\\?\C:/se.exe",
             r"\\?\1:\se.exe",
             r"\\?\name",
+            r"\\?\\a\b",
             r"\\.\UNC\server",
             r"\\.\/pipe",
             r"\\.\",

@@ -78,12 +78,19 @@ pub async fn connect(
     let directory = crate::linux_proc::process(pid);
     crate::linux_proc::observe(&directory)?.matches(&expected)?;
     let hashed = directory.clone();
-    let image =
-        tokio::task::spawn_blocking(move || crate::linux_proc::image(&hashed, max_image_bytes))
-            .await
-            .map_err(|_| IpcError::Binary("the server image could not be hashed".into()))??;
-    // The same process instance, user and executable throughout.
+    let (image, hashed_file) = tokio::task::spawn_blocking(move || {
+        crate::linux_proc::hashed_image(&hashed, max_image_bytes)
+    })
+    .await
+    .map_err(|_| IpcError::Binary("the server image could not be hashed".into()))??;
+    // The same process instance, user and executable throughout, and the
+    // file it runs is the very file that was hashed.
     crate::linux_proc::observe(&directory)?.matches(&expected)?;
+    if crate::linux_proc::executable_id(&directory)? != hashed_file {
+        return Err(IpcError::PeerMismatch(
+            "the server's executable is not the file that was hashed".into(),
+        ));
+    }
     if !crate::binary::same_digest(&image, pinned_image) {
         return Err(IpcError::BinaryMismatch);
     }

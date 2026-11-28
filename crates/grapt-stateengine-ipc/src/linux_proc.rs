@@ -73,7 +73,40 @@ pub(crate) fn start_ticks(directory: &Path) -> Result<u64, IpcError> {
 
 /// The SHA-256 of the process's executable, at most `max_bytes` of it.
 pub(crate) fn image(directory: &Path, max_bytes: u64) -> Result<Sha256Hex, IpcError> {
-    crate::binary::sha256_file(&directory.join("exe"), max_bytes)
+    hashed_image(directory, max_bytes).map(|(digest, _)| digest)
+}
+
+/// A file's device and inode: which file it is, whatever its name.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct FileId {
+    device: u64,
+    inode: u64,
+}
+
+impl FileId {
+    fn of(metadata: &std::fs::Metadata) -> Self {
+        use std::os::unix::fs::MetadataExt;
+        Self {
+            device: metadata.dev(),
+            inode: metadata.ino(),
+        }
+    }
+}
+
+/// [`image`], with the identity of the very file that was opened and hashed.
+pub(crate) fn hashed_image(
+    directory: &Path,
+    max_bytes: u64,
+) -> Result<(Sha256Hex, FileId), IpcError> {
+    crate::binary::sha256_opened(&directory.join("exe"), max_bytes)
+        .map(|(digest, metadata)| (digest, FileId::of(&metadata)))
+}
+
+/// The identity of the file the process at `directory` runs now.
+pub(crate) fn executable_id(directory: &Path) -> Result<FileId, IpcError> {
+    std::fs::metadata(directory.join("exe"))
+        .map(|metadata| FileId::of(&metadata))
+        .map_err(|_| unreadable(directory, "exe"))
 }
 
 fn read(directory: &Path, name: &str) -> Result<String, IpcError> {
@@ -111,6 +144,8 @@ mod tests {
         assert_eq!(effective_uid("Name:\tx\nUid:\t1\t2\t3\t4\n"), Some(2));
         let stat = format!("9 (a) b) S {} 77 0", "0 ".repeat(18));
         assert_eq!(parse_start_ticks(&stat), Some(77));
+        let (_, hashed) = hashed_image(Path::new("/proc/self"), 1 << 32)?;
+        assert_eq!(executable_id(Path::new("/proc/self"))?, hashed);
         let observed = observe_self(1 << 32)?;
         assert_eq!(observed.pid, std::process::id());
         assert_eq!(
