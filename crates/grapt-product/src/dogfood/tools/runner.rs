@@ -632,6 +632,7 @@ impl PermissionToolRunner {
                         )
                         .await
                     {
+                        unexecuted_approvals.clear(&call);
                         return captured_failure(
                             &failure_artifacts,
                             ToolFailureReason::EffectFailed,
@@ -643,10 +644,12 @@ impl PermissionToolRunner {
                     }
                 }
             }
+            let call_for_cleanup = call.clone();
+            let unexecuted_for_dispatch = unexecuted_approvals.clone();
             let authorization = pending.consume_and_run(move |capability| {
                 // Mark as dispatched BEFORE entering the governed effect so any
                 // abort after this point fails closed with EffectUnknown.
-                unexecuted_approvals.mark_dispatched(&call);
+                unexecuted_for_dispatch.clear(&call);
                 if let Some(observation) = authorization_observation {
                     observation.authorized();
                 }
@@ -660,6 +663,7 @@ impl PermissionToolRunner {
                     match guard.cancel(grapt_permission::CancelReason::ApprovalUnavailable) {
                         Ok(false) => authorization.await, // An already-committed reply wins.
                         Ok(true) => {
+                            unexecuted_approvals.clear(&call_for_cleanup);
                             let (reason, detail) = if availability.is_ok() {
                                 (ToolFailureReason::ApprovalUnavailable,
                                  "approval connection lost: no matching approver remains; no effect ran")
@@ -670,11 +674,16 @@ impl PermissionToolRunner {
                             return captured_failure(&failure_artifacts, reason,
                                 &refusal_detail(refused.as_ref(), detail));
                         }
-                        Err(error) => return captured_failure(&failure_artifacts, ToolFailureReason::AuthorityUnavailable,
-                            &refusal_detail(refused.as_ref(), &format!("approval unavailable; pending permission settlement failed: {error}; no effect ran"))),
+                        Err(error) => {
+                            unexecuted_approvals.clear(&call_for_cleanup);
+                            return captured_failure(&failure_artifacts, ToolFailureReason::AuthorityUnavailable,
+                                &refusal_detail(refused.as_ref(), &format!("approval unavailable; pending permission settlement failed: {error}; no effect ran")));
+                        }
                     }
                 }
             };
+            // Remove on every non-aborted settlement path (including denial/rejection).
+            unexecuted_approvals.clear(&call_for_cleanup);
             guard.finish();
             drop(approvals);
             settle_authorized_effect(authorized, &failure_artifacts, refused.as_ref()).await

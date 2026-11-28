@@ -393,12 +393,17 @@ impl UnexecutedApprovals {
         lock(&self.0).insert(call.clone());
     }
 
-    fn mark_dispatched(&self, call: &ToolCallId) {
+    fn clear(&self, call: &ToolCallId) {
         lock(&self.0).remove(call);
     }
 
-    fn is_known_unexecuted(&self, call: &ToolCallId) -> bool {
-        lock(&self.0).contains(call)
+    fn take_if_unexecuted(&self, call: &ToolCallId) -> bool {
+        lock(&self.0).remove(call)
+    }
+
+    #[cfg(test)]
+    fn is_empty(&self) -> bool {
+        lock(&self.0).is_empty()
     }
 }
 
@@ -672,7 +677,7 @@ impl ToolRunner for PermissionToolRunner {
         Box::pin(async move { workers.settle().await })
     }
     fn known_unexecuted(&self, call: &ToolCallId) -> bool {
-        self.unexecuted_approvals.is_known_unexecuted(call)
+        self.unexecuted_approvals.take_if_unexecuted(call)
     }
     fn run_with_nested(
         &self,

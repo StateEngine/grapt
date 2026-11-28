@@ -836,24 +836,34 @@ fn an_edit_copied_from_read_output_applies_to_a_crlf_file_and_keeps_its_endings(
 }
 
 #[test]
-fn unexecuted_approvals_tracks_pending_and_clears_on_dispatch() -> Result<(), String> {
+fn unexecuted_approvals_clears_on_dispatch_denial_and_abort() -> Result<(), String> {
     let tracked = UnexecutedApprovals::default();
-    let pending = ToolCallId::new("call_pending_approval").ok_or("call id")?;
+    let dispatched = ToolCallId::new("call_dispatched").ok_or("call id")?;
+    let denied = ToolCallId::new("call_denied").ok_or("call id")?;
+    let aborted = ToolCallId::new("call_aborted").ok_or("call id")?;
     let unknown = ToolCallId::new("call_never_pending").ok_or("call id")?;
 
     assert!(
-        !tracked.is_known_unexecuted(&unknown),
+        !tracked.take_if_unexecuted(&unknown),
         "unknown/untracked calls must fail closed as false (EffectUnknown)"
     );
-    tracked.mark_pending(&pending);
+
+    // Normal dispatch clears the entry before effect execution.
+    tracked.mark_pending(&dispatched);
+    tracked.clear(&dispatched);
+    assert!(!tracked.take_if_unexecuted(&dispatched));
+
+    // Denial/cancellation clears the entry so it never accumulates.
+    tracked.mark_pending(&denied);
+    tracked.clear(&denied);
+    assert!(!tracked.take_if_unexecuted(&denied));
+
+    // Aborted pending approval reports known_unexecuted=true once and removes the entry.
+    tracked.mark_pending(&aborted);
+    assert!(tracked.take_if_unexecuted(&aborted));
     assert!(
-        tracked.is_known_unexecuted(&pending),
-        "pending approval call must be known_unexecuted before dispatch"
-    );
-    tracked.mark_dispatched(&pending);
-    assert!(
-        !tracked.is_known_unexecuted(&pending),
-        "dispatched call must clear known_unexecuted before running its effect"
+        tracked.is_empty(),
+        "settled/denied/aborted approvals must never accumulate"
     );
     Ok(())
 }

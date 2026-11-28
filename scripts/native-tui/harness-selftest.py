@@ -958,6 +958,84 @@ def t5_budget_witnesses() -> None:
         and runner_budget["concurrent_streaming_tok_per_s"]["status"] == "pass",
         f"detail={stream_detail!r} budget={runner_budget!r}",
     )
+    # End-to-end loopback-provider witness: real loopback-provider.py streaming
+    # SSE deltas updates the stream-metrics file while an observer with NO
+    # stream_tokens field in /state runs apply_step -> evaluate_t5_budgets passes.
+    with tempfile.TemporaryDirectory() as raw_stream_dir:
+        metrics_path = Path(raw_stream_dir) / "provider.stream-tokens.json"
+        PROVIDER._write_stream_metrics(metrics_path, 0)
+        client_sock, server_sock = socket.socketpair()
+        served_times: list[float] = []
+        stream_counter = {"tokens": 0}
+        stream_lock = threading.Lock()
+        request_body = json.dumps(
+            {"input": [{"role": "user", "content": "stream a reply"}]}
+        ).encode("utf-8")
+        request_wire = (
+            f"POST /responses HTTP/1.1\r\nHost: 127.0.0.1\r\n"
+            f"Content-Length: {len(request_body)}\r\n\r\n"
+        ).encode("utf-8") + request_body
+
+        class _StreamingObserver:
+            def __init__(self) -> None:
+                self._sent = False
+
+            def state(self) -> dict:
+                # Deliberately no `stream_tokens` field in /state: compare.py
+                # must witness real streaming from loopback-provider's metrics file.
+                return {"lines": ["prompt > LOOPBACK_ECHO" if self._sent else "prompt > "]}
+
+            def action(self, _payload: dict) -> None:
+                client_sock.sendall(request_wire)
+                client_sock.shutdown(socket.SHUT_WR)
+                worker = threading.Thread(
+                    target=PROVIDER.serve,
+                    args=(server_sock, 0, served_times, metrics_path, stream_counter, stream_lock),
+                )
+                worker.start()
+                while client_sock.recv(4096):
+                    pass
+                worker.join(timeout=5)
+                self._sent = True
+
+        try:
+            lb_kind, lb_detail, _ = CMP.apply_step(
+                _StreamingObserver(),
+                {"echo": "LOOPBACK_ECHO"},
+                "native",
+                Path("."),
+                Path("."),
+                set(),
+                stream_metrics_path=metrics_path,
+            )
+        finally:
+            client_sock.close()
+        lb_budget = CMP.evaluate_t5_budgets(
+            [
+                {
+                    "client": "native",
+                    "steps": [
+                        {
+                            "kind": lb_kind,
+                            "t5_echo": True,
+                            "elapsed_ms": lb_detail["echo_ms"],
+                            "streaming_observed": lb_detail["streaming_observed"],
+                            "observed_tok_per_s": lb_detail["observed_tok_per_s"],
+                            "detail": lb_detail,
+                        }
+                    ],
+                    "idle_cpu_seconds": 0.10,
+                }
+            ]
+        )
+        check(
+            "end-to-end loopback-provider stream-metrics witness passes T5 budgets without /state stream_tokens",
+            lb_detail.get("streaming_observed") is True
+            and float(lb_detail.get("observed_tok_per_s", 0.0)) >= 200.0
+            and lb_budget["status"] == "pass"
+            and lb_budget["concurrent_streaming_tok_per_s"]["status"] == "pass",
+            f"detail={lb_detail!r} budget={lb_budget!r}",
+        )
     non_t5_rejected = False
     try:
         CMP.validate_t5_scenario({"name": "j02"}, [{"key": "Enter"}])

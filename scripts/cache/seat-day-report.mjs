@@ -156,18 +156,15 @@ function extractRecordedWindow(report) {
   let windowDay = null;
   if (hasWindow) {
     fromMs = toEpochMs(report.window.from);
-    if (fromMs === null) return { day: null, fromMs: null, untilMs: null, invalid: true };
+    untilMs = toEpochMs(report.window.until);
+    if (fromMs === null || untilMs === null || untilMs <= fromMs) {
+      return { day: null, fromMs, untilMs, invalid: true };
+    }
     windowDay = isoDayOf(fromMs);
-    if (report.window.until !== undefined && report.window.until !== null) {
-      untilMs = toEpochMs(report.window.until);
-      if (untilMs === null || untilMs <= fromMs) {
-        return { day: null, fromMs, untilMs, invalid: true };
-      }
-      // Half-open [from, until) must fall within a single UTC calendar day.
-      const endDay = isoDayOf(untilMs - 1);
-      if (endDay !== windowDay) {
-        return { day: null, fromMs, untilMs, invalid: true };
-      }
+    // Half-open [from, until) must fall within a single UTC calendar day.
+    const endDay = isoDayOf(untilMs - 1);
+    if (endDay !== windowDay) {
+      return { day: null, fromMs, untilMs, invalid: true };
     }
   }
   if (Array.isArray(report?.requests) && report.requests.length > 0) {
@@ -203,7 +200,10 @@ function windowsMatch(graptWindow, codexWindow) {
   const codexWindowed = codexWindow.fromMs !== null;
   if (graptWindowed !== codexWindowed) return false;
   if (graptWindowed && codexWindowed) {
-    return graptWindow.fromMs === codexWindow.fromMs && graptWindow.untilMs === codexWindow.untilMs;
+    return graptWindow.untilMs !== null
+      && codexWindow.untilMs !== null
+      && graptWindow.fromMs === codexWindow.fromMs
+      && graptWindow.untilMs === codexWindow.untilMs;
   }
   return true;
 }

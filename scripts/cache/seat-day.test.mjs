@@ -249,12 +249,12 @@ test('evaluateReleaseGates reports honest Criterion #3 and #5 verdicts', async (
 
   const mismatchedDay = evaluateReleaseGates(
     {
-      window: { from: '2026-11-28T00:00:00Z' }, model: 'gpt-6.1-sol',
+      window: { from: '2026-11-28T00:00:00Z', until: '2026-11-29T00:00:00Z' }, model: 'gpt-6.1-sol',
       totals: { read_share_percent: 99.0 },
       operations: { tool_calls: { count: 100, failed: 0, infrastructure_failed: 0 } },
     },
     {
-      codexReport: { window: { from: '2026-11-27T00:00:00Z' }, model: 'gpt-6.1-sol', totals: { read_share_percent: 98.5 } },
+      codexReport: { window: { from: '2026-11-27T00:00:00Z', until: '2026-11-28T00:00:00Z' }, model: 'gpt-6.1-sol', totals: { read_share_percent: 98.5 } },
       matchedTasks: {
         count: 3, grapt_accepted_tasks: 3,
         grapt_first_review_accept_rate: 0.9, codex_first_review_accept_rate: 0.9,
@@ -267,12 +267,12 @@ test('evaluateReleaseGates reports honest Criterion #3 and #5 verdicts', async (
 
   const mismatchedModel = evaluateReleaseGates(
     {
-      window: { from: '2026-11-28T00:00:00Z' }, model: 'gpt-6.1-sol',
+      window: { from: '2026-11-28T00:00:00Z', until: '2026-11-29T00:00:00Z' }, model: 'gpt-6.1-sol',
       totals: { read_share_percent: 99.0 },
       operations: { tool_calls: { count: 100, failed: 0, infrastructure_failed: 0 } },
     },
     {
-      codexReport: { window: { from: '2026-11-28T00:00:00Z' }, model: 'other-model', totals: { read_share_percent: 98.5 } },
+      codexReport: { window: { from: '2026-11-28T00:00:00Z', until: '2026-11-29T00:00:00Z' }, model: 'other-model', totals: { read_share_percent: 98.5 } },
       matchedTasks: {
         count: 3, grapt_accepted_tasks: 3,
         grapt_first_review_accept_rate: 0.9, codex_first_review_accept_rate: 0.9,
@@ -285,12 +285,12 @@ test('evaluateReleaseGates reports honest Criterion #3 and #5 verdicts', async (
 
   const invalidBounds = evaluateReleaseGates(
     {
-      window: { from: '2026-11-28T00:00:00Z' }, model: 'gpt-6.1-sol',
+      window: { from: '2026-11-28T00:00:00Z', until: '2026-11-29T00:00:00Z' }, model: 'gpt-6.1-sol',
       totals: { read_share_percent: 99.0 },
       operations: { tool_calls: { count: 100, failed: 0, infrastructure_failed: 0 } },
     },
     {
-      codexReport: { window: { from: '2026-11-28T00:00:00Z' }, model: 'gpt-6.1-sol', totals: { read_share_percent: 98.5 } },
+      codexReport: { window: { from: '2026-11-28T00:00:00Z', until: '2026-11-29T00:00:00Z' }, model: 'gpt-6.1-sol', totals: { read_share_percent: 98.5 } },
       matchedTasks: {
         count: 3, grapt_accepted_tasks: 3,
         grapt_first_review_accept_rate: 1.5, codex_first_review_accept_rate: 0.9,
@@ -303,12 +303,12 @@ test('evaluateReleaseGates reports honest Criterion #3 and #5 verdicts', async (
 
   const singleTaskRejected = evaluateReleaseGates(
     {
-      window: { from: '2026-11-28T00:00:00Z' }, model: 'gpt-6.1-sol',
+      window: { from: '2026-11-28T00:00:00Z', until: '2026-11-29T00:00:00Z' }, model: 'gpt-6.1-sol',
       totals: { read_share_percent: 99.0 },
       operations: { tool_calls: { count: 100, failed: 0, infrastructure_failed: 0 } },
     },
     {
-      codexReport: { window: { from: '2026-11-28T00:00:00Z' }, model: 'gpt-6.1-sol', totals: { read_share_percent: 98.5 } },
+      codexReport: { window: { from: '2026-11-28T00:00:00Z', until: '2026-11-29T00:00:00Z' }, model: 'gpt-6.1-sol', totals: { read_share_percent: 98.5 } },
       matchedTasks: {
         count: 1,
         grapt_accepted_tasks: 1,
@@ -324,12 +324,12 @@ test('evaluateReleaseGates reports honest Criterion #3 and #5 verdicts', async (
 
   const unacceptedRejected = evaluateReleaseGates(
     {
-      window: { from: '2026-11-28T00:00:00Z' }, model: 'gpt-6.1-sol',
+      window: { from: '2026-11-28T00:00:00Z', until: '2026-11-29T00:00:00Z' }, model: 'gpt-6.1-sol',
       totals: { read_share_percent: 99.0 },
       operations: { tool_calls: { count: 100, failed: 0, infrastructure_failed: 0 } },
     },
     {
-      codexReport: { window: { from: '2026-11-28T00:00:00Z' }, model: 'gpt-6.1-sol', totals: { read_share_percent: 98.5 } },
+      codexReport: { window: { from: '2026-11-28T00:00:00Z', until: '2026-11-29T00:00:00Z' }, model: 'gpt-6.1-sol', totals: { read_share_percent: 98.5 } },
       matchedTasks: {
         count: 3,
         grapt_accepted_tasks: 2,
@@ -345,12 +345,12 @@ test('evaluateReleaseGates reports honest Criterion #3 and #5 verdicts', async (
 
   const outsideMarginRejected = evaluateReleaseGates(
     {
-      window: { from: '2026-11-28T00:00:00Z' }, model: 'gpt-6.1-sol',
+      window: { from: '2026-11-28T00:00:00Z', until: '2026-11-29T00:00:00Z' }, model: 'gpt-6.1-sol',
       totals: { read_share_percent: 99.0 },
       operations: { tool_calls: { count: 100, failed: 0, infrastructure_failed: 0 } },
     },
     {
-      codexReport: { window: { from: '2026-11-28T00:00:00Z' }, model: 'gpt-6.1-sol', totals: { read_share_percent: 98.5 } },
+      codexReport: { window: { from: '2026-11-28T00:00:00Z', until: '2026-11-29T00:00:00Z' }, model: 'gpt-6.1-sol', totals: { read_share_percent: 98.5 } },
       matchedTasks: {
         count: 3,
         grapt_accepted_tasks: 3,
@@ -736,4 +736,31 @@ test('evaluateReleaseGates reports honest Criterion #3 and #5 verdicts', async (
   );
   assert.equal(windowedPlusUnwindowedFail.criterion_3.status, 'fail');
   assert.equal(windowedPlusUnwindowedFail.criterion_3.reason, 'mismatched-comparison-day');
+
+  // Equal start dates with both `until` bounds missing must fail closed.
+  const bothMissingEndFail = evaluateReleaseGates(
+    {
+      window: { from: '2026-11-28T00:00:00Z' },
+      models: [{ provider: 'openai', model: 'gpt-6.1-sol', requests: 1 }],
+      totals: { read_share_percent: 99.1 },
+      operations: { tool_calls: { count: 100, failed: 0, infrastructure_failed: 0 } },
+    },
+    {
+      codexReport: {
+        window: { from: '2026-11-28T00:00:00Z' },
+        models: [{ provider: 'openai', model: 'gpt-6.1-sol', requests: 1 }],
+        totals: { read_share_percent: 98.5 },
+      },
+      matchedTasks: {
+        count: 3,
+        grapt_accepted_tasks: 3,
+        grapt_first_review_accept_rate: 0.9,
+        codex_first_review_accept_rate: 0.9,
+        grapt_tokens_per_accepted_task: 10000,
+        codex_tokens_per_accepted_task: 10000,
+      },
+    },
+  );
+  assert.equal(bothMissingEndFail.criterion_3.status, 'fail');
+  assert.equal(bothMissingEndFail.criterion_3.reason, 'mismatched-comparison-day');
 });
