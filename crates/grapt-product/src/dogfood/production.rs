@@ -176,10 +176,10 @@ pub(super) struct ProductPlan {
     admission_diagnosis: super::continuation::admission::DiagnosisSlot,
     trim_feedback: Option<super::execution::context_trim::TrimFeedback>,
     trimmed_request: bool,
-    /// How many model outputs, replays and tool results this request
-    /// carries, from any earlier turn or step; with none, compaction has
-    /// nothing it could remove.
-    exchange_items: usize,
+    /// How many items this request carries that compaction could remove:
+    /// earlier inputs before the current one, and model outputs, replays and
+    /// tool results from any turn or step. With none, it has nothing to do.
+    compactable_items: usize,
     /// Where this request's history starts when a trimmed retry reads from
     /// the newest window the read bounds serve; what lies before is omitted.
     window_floor: Option<grapt_types::EventSeq>,
@@ -327,7 +327,7 @@ impl ProductPlan {
             admission_diagnosis: super::continuation::admission::DiagnosisSlot::default(),
             trim_feedback: None,
             trimmed_request: false,
-            exchange_items: 0,
+            compactable_items: 0,
             window_floor: None,
             context_hook: None,
             lifecycle: None,
@@ -377,7 +377,7 @@ impl ProductPlan {
             admission_diagnosis: super::continuation::admission::DiagnosisSlot::default(),
             trim_feedback: None,
             trimmed_request: false,
-            exchange_items: 0,
+            compactable_items: 0,
             window_floor: None,
             context_hook: None,
             lifecycle: None,
@@ -551,17 +551,18 @@ impl ProductPlan {
                 .map_err(|_| grapt_types::ContextFailure::CompactionFailed)?;
             estimate.basis = admission::EstimateBasis::Estimated;
         }
-        // Compaction cannot shrink a request with no exchange in it, so refusing it is
+        // Compaction cannot shrink a request with nothing compactable, so refusing it is
         // final. Before any calibration the byte bound only proves it too large
         // when even the densest tokenizer could not fit it; otherwise the
         // provider's own count decides, and its usage calibrates the next one.
         // Both the ceiling and the window judge this one size.
-        let judged =
-            if self.exchange_items == 0 && estimate.basis == admission::EstimateBasis::Estimated {
-                admission::densest(&planned.request, estimate.tokens)
-            } else {
-                estimate.tokens
-            };
+        let judged = if self.compactable_items == 0
+            && estimate.basis == admission::EstimateBasis::Estimated
+        {
+            admission::densest(&planned.request, estimate.tokens)
+        } else {
+            estimate.tokens
+        };
         self.accounting.record_context(planned.context.as_ref());
         self.admission_diagnosis
             .record_calibration(self.accounting.calibration_for(planned.authority.model()));

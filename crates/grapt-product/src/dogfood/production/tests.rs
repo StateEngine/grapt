@@ -211,7 +211,7 @@ fn first_attempt_consumes_preissued_target_and_retry_issues_fresh() -> Result<()
         admission_diagnosis: super::super::continuation::admission::DiagnosisSlot::default(),
         trim_feedback: None,
         trimmed_request: false,
-        exchange_items: 0,
+        compactable_items: 0,
         window_floor: None,
         context_hook: None,
         lifecycle: None,
@@ -281,19 +281,18 @@ fn compatible_selection_builds_chat_messages_and_reissues_on_retry() -> Result<(
     Ok(())
 }
 
-/// A first turn with nothing to compact is judged by one size at both the
-/// automatic ceiling and the window, so the ceiling cannot refuse what the
-/// window admits; with history behind it the byte bound holds at both.
-#[test]
-fn a_bare_first_turn_meets_the_ceiling_at_its_densest_size() -> Result<(), String> {
+/// Whether a request planned after `earlier` unanswered inputs asks to
+/// compact when its automatic limit sits at its own raw estimate.
+fn compacts_at_raw_ceiling(label: &str, earlier: &[&str]) -> Result<bool, String> {
     let concrete = targets(ProtocolFamily::ChatGptCodex)?;
     let first = concrete.issue()?;
     let step = StepNumber::new(1).ok_or("step")?;
-    let (continuation, _scratch) = DurableContinuation::empty_for_test("bare-ceiling")?;
+    let (continuation, _scratch) =
+        DurableContinuation::with_prompts_for_test(label, earlier, "hello")?;
     let mut plan = ProductPlan::new(
         ProtocolFamily::ChatGptCodex,
         "hello".into(),
-        cache_key("bare_ceiling")?,
+        cache_key(label)?,
         Some(first),
         concrete,
         Arc::new(super::super::mcp::PublishedTools::default()),
@@ -306,12 +305,24 @@ fn a_bare_first_turn_meets_the_ceiling_at_its_densest_size() -> Result<(), Strin
     let raw = super::super::continuation::admission::estimate(&planned.request)
         .map_err(|error| format!("estimate failed: {error:?}"))?;
     plan.compaction.model_auto_compact_token_limit = Some(raw);
-    assert_eq!(plan.context_admission(&planned), Ok(None));
-    plan.exchange_items = 1;
-    assert_eq!(
-        plan.context_admission(&planned),
-        Ok(Some(grapt_types::CompactionTrigger::PolicyThreshold))
-    );
+    match plan.context_admission(&planned) {
+        Ok(None) => Ok(false),
+        Ok(Some(grapt_types::CompactionTrigger::PolicyThreshold)) => Ok(true),
+        other => Err(format!("unexpected admission {other:?}")),
+    }
+}
+
+/// A first turn with nothing to compact is judged by one size at both the
+/// automatic ceiling and the window, so the ceiling cannot refuse what the
+/// window admits. Earlier unanswered inputs are compactable, so a request
+/// after them is held to the byte bound at both.
+#[test]
+fn a_bare_first_turn_meets_the_ceiling_at_its_densest_size() -> Result<(), String> {
+    assert!(!compacts_at_raw_ceiling("bare_ceiling", &[])?);
+    assert!(compacts_at_raw_ceiling(
+        "earlier_ceiling",
+        &["an earlier request that was never answered"]
+    )?);
     Ok(())
 }
 
@@ -345,7 +356,7 @@ fn swr_c5_h1_description_bytes_drive_exact_product_admission_boundary() -> Resul
         .map_err(|error| error.detail)?;
     // A request with history behind it can be compacted, so the
     // uncalibrated byte bound holds it to the exact boundary.
-    plan.exchange_items = 1;
+    plan.compactable_items = 1;
     assert_eq!(plan.context_admission(&planned), Ok(None));
     let recorded = diagnosis
         .matching(grapt_types::CompactionTrigger::ContextOverflow)
@@ -484,7 +495,7 @@ fn pc_anthropic_selection_builds_a_bounded_tool_request() -> Result<(), String> 
         admission_diagnosis: super::super::continuation::admission::DiagnosisSlot::default(),
         trim_feedback: None,
         trimmed_request: false,
-        exchange_items: 0,
+        compactable_items: 0,
         window_floor: None,
         context_hook: None,
         lifecycle: None,
