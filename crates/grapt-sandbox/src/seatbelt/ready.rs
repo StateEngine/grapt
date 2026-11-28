@@ -17,8 +17,14 @@ fn is_deprecation_warning(line: &[u8]) -> bool {
     let Ok(text) = std::str::from_utf8(line) else {
         return false;
     };
-    let lower = text.to_ascii_lowercase();
-    lower.contains("sandbox-exec") && lower.contains("deprecated")
+    let trimmed = text.trim_end_matches(['\r', '\n']);
+    matches!(
+        trimmed,
+        "sandbox-exec is deprecated"
+            | "sandbox-exec: -p is deprecated"
+            | "sandbox-exec: -f is deprecated"
+            | "WARNING: sandbox-exec is deprecated and may be removed in a future release."
+    )
 }
 
 fn strip_pre_ready_deprecation_warnings(prefix: &[u8], suffix: &[u8]) -> Vec<u8> {
@@ -91,13 +97,13 @@ mod tests {
     ) -> Result<(), Box<dyn std::error::Error>> {
         let (mut reader, mut writer) = std::io::pipe()?;
         writer.write_all(
-            b"sandbox-exec: -p is deprecated\nwarning: keep \xff diagnostic\nGRAPT_SEATBELT_READY\nsandbox-exec: post-ready deprecated stays\n",
+            b"sandbox-exec: -p is deprecated\nwarning: keep \xff diagnostic\ntool note: sandbox-exec flag is deprecated in config\nGRAPT_SEATBELT_READY\nsandbox-exec: -p is deprecated\n",
         )?;
         drop(writer);
         let prefix = wait_ready(&mut reader, 1000)?;
         assert_eq!(
             prefix,
-            b"warning: keep \xff diagnostic\nsandbox-exec: post-ready deprecated stays\n"
+            b"warning: keep \xff diagnostic\ntool note: sandbox-exec flag is deprecated in config\nsandbox-exec: -p is deprecated\n"
         );
         Ok(())
     }

@@ -293,8 +293,36 @@ fn instruction_slots_targets_and_denied_ssh_enter_policy_and_fingerprint() -> Re
         assert!(plan.denied.contains(&ssh), "missing denied .ssh path");
         let ssh_id = grapt_types::PathIdentity::canonical(crate::dogfood::tools::path_text(&ssh));
         assert!(
-            plan.filesystem().deny().contains(&ssh_id),
-            "denied .ssh path missing from capability fingerprint"
+            plan.filesystem().read_deny().contains(&ssh_id),
+            "denied .ssh path missing from capability read_deny domain"
+        );
+        let protected_only = grapt_types::ResolvedCapability::new(
+            grapt_types::EffectClass::ProcessSpawn,
+            None,
+            grapt_types::FilesystemAuthority::new(
+                plan.filesystem().read().to_vec(),
+                plan.filesystem().write().to_vec(),
+                vec![ssh_id.clone()],
+            ),
+            plan.egress(),
+            plan.intended(),
+        );
+        let protected_and_denied = grapt_types::ResolvedCapability::new(
+            grapt_types::EffectClass::ProcessSpawn,
+            None,
+            grapt_types::FilesystemAuthority::new(
+                plan.filesystem().read().to_vec(),
+                plan.filesystem().write().to_vec(),
+                vec![ssh_id.clone()],
+            )
+            .with_read_deny(vec![ssh_id]),
+            plan.egress(),
+            plan.intended(),
+        );
+        assert_ne!(
+            grapt_types::CapabilityId::derive(&protected_only),
+            grapt_types::CapabilityId::derive(&protected_and_denied),
+            "denied_paths must produce a distinct capability ID from protected_paths alone"
         );
         Ok(())
     })();

@@ -90,13 +90,12 @@ impl Plan {
                 .map(|path| grapt_types::PathIdentity::canonical(super::path_text(path)))
                 .collect()
         };
-        let mut deny = identities(&self.protected);
-        deny.extend(identities(&self.denied));
         grapt_types::FilesystemAuthority::new(
             identities(&self.readable),
             identities(&self.writable),
-            deny,
+            identities(&self.protected),
         )
+        .with_read_deny(identities(&self.denied))
     }
     pub(super) fn egress(&self) -> grapt_types::EgressAuthority {
         // Explicit all-protocol/all-host/all-port authority differs from the

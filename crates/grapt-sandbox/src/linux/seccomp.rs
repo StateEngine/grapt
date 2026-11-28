@@ -136,7 +136,8 @@ mod tests {
         let status = std::process::Command::new("python3")
             .args([
                 "-c",
-                "import errno, socket, sys\na, b = socket.socketpair(socket.AF_UNIX, socket.SOCK_DGRAM)\ntry:\n    a.sendmsg([b'probe'])\n    sys.exit(0)\nexcept OSError as exc:\n    sys.exit(77 if exc.errno == errno.EPERM else 78)\n",
+                "import ctypes, errno, socket, sys\na, b = socket.socketpair(socket.AF_UNIX, socket.SOCK_DGRAM)\ntry:\n    a.sendmsg([b'probe'])\n    sendmsg_code = 0\nexcept OSError as exc:\n    sendmsg_code = 77 if exc.errno == errno.EPERM else 78\nlibc = ctypes.CDLL(None, use_errno=True)\nlibc.syscall.restype = ctypes.c_long\nres = libc.syscall(ctypes.c_long(int(sys.argv[1])), ctypes.c_int(a.fileno()), ctypes.c_void_p(0), ctypes.c_uint(0), ctypes.c_int(0))\nif res == -1:\n    err = ctypes.get_errno()\n    sendmmsg_code = 77 if err == errno.EPERM else 79\nelse:\n    sendmmsg_code = 0\nif sendmsg_code != sendmmsg_code:\n    sys.exit(80)\nsys.exit(sendmsg_code)\n",
+                &libc::SYS_sendmmsg.to_string(),
             ])
             .status()?;
         let expected = if network { 0 } else { 77 };
