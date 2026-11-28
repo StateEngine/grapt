@@ -375,7 +375,8 @@ async fn a_running_owner_repairs_a_crash_between_state_and_projection() {
     save(&profile.0, &signed_in(NOW + HOUR)).unwrap_or_else(|error| panic!("{error}"));
     let mut session = running(&profile);
     let next = signed_in(NOW + 12 * HOUR);
-    replace(&profile.0, STATE_FILE, &encode(&next)).unwrap_or_else(|error| panic!("{error}"));
+    replace_all(&profile.0, &[(STATE_FILE, &encode(&next))], &[])
+        .unwrap_or_else(|error| panic!("{error}"));
     let issuer = Issuer::start(Vec::new()).await;
     session
         .prepare(&client(), &issuer.base, &Fixed(NOW))

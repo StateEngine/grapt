@@ -96,6 +96,21 @@ impl DatabaseFileHandle {
     }
 }
 
+/// The file a database path names, with a final file link resolved. SQLite
+/// reads and writes, its `-wal` and `-journal` sidecars and the backup must
+/// all use the real file: SQLite on Windows would otherwise put sidecars
+/// beside the link, where an open through the real path never finds them.
+/// An absent path stays as given, for initialization; any other failure to
+/// read the path is returned, never mistaken for a path without a link.
+pub(crate) fn real_database_path(path: &Path) -> Result<PathBuf, std::io::Error> {
+    match std::fs::symlink_metadata(path) {
+        Ok(metadata) if metadata.file_type().is_symlink() => std::fs::canonicalize(path),
+        Ok(_) => Ok(path.to_path_buf()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(path.to_path_buf()),
+        Err(error) => Err(error),
+    }
+}
+
 pub(crate) fn database_file_handle(path: &Path) -> Result<DatabaseFileHandle, std::io::Error> {
     let mut options = std::fs::OpenOptions::new();
     options.read(true);
@@ -275,6 +290,8 @@ pub(super) fn future_backup(path: &Path, metadata: &std::fs::Metadata) -> Future
         BackupCapacity, BackupDirectory, BackupPermissions, CreateBackupFile, WriteBackupFile,
     };
 
+    // `path` is the real file (see `real_database_path`), so the backup and
+    // its capacity check land on that file's filesystem.
     let location = path.parent().map(Path::to_path_buf).unwrap_or_default();
     let minimum_free_bytes = metadata.len();
     let directory = match std::fs::read_dir(&location) {
@@ -448,6 +465,36 @@ mod tests {
                 write_file,
             },
         }
+    }
+
+    /// A path through a regular file cannot be read; it must not be taken
+    /// for a plain path, while a truly absent path stays usable.
+    #[cfg(unix)]
+    #[test]
+    fn unreadable_paths_refuse_and_absent_paths_stay_as_given() -> Result<(), std::io::Error> {
+        /// A directory this test created itself, removed on drop.
+        struct Created(PathBuf);
+        impl Drop for Created {
+            fn drop(&mut self) {
+                let _cleanup = std::fs::remove_dir_all(&self.0);
+            }
+        }
+        let path = std::env::temp_dir().join(format!("grapt-real-path-{}", std::process::id()));
+        // Created exclusively: an existing directory fails the test and is
+        // never deleted, because only a directory made here gets the guard.
+        std::fs::create_dir(&path)?;
+        let root = Created(path);
+        let file = root.0.join("file");
+        std::fs::write(&file, b"")?;
+        assert_eq!(
+            real_database_path(&file.join("store.db")).map_err(|error| error.kind()),
+            Err(std::io::ErrorKind::NotADirectory)
+        );
+        assert_eq!(
+            real_database_path(&root.0.join("store.db"))?,
+            root.0.join("store.db")
+        );
+        Ok(())
     }
 
     #[test]

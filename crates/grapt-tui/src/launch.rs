@@ -77,21 +77,29 @@ pub fn attach<C: Connection>(
 ) -> Result<Readiness, ClientError> {
     client.refresh_sessions()?;
     client.attach_launch_session(session)?;
-    // Selecting the Session reconciles history with a canonical permission
-    // read. Submission still rechecks requests at its existing boundary.
+    // Selecting the Session reads its snapshot once the stream proves itself;
+    // until then readiness is Loading. Submission still rechecks requests at
+    // its existing boundary.
     client.refresh_forms()?;
     Ok(readiness(client))
 }
 
-/// Choices load on the shared catalog lane; optional Git metadata does not gate input.
+/// Choices load on the shared catalog lane, and an attached Session's open
+/// requests arrive with its snapshot; optional Git metadata does not gate input.
 pub fn readiness<C: Connection>(client: &Client<C>) -> Readiness {
-    if client.catalog_pending() {
+    if client.catalog_pending() || awaiting_snapshot(client) {
         Readiness::Loading
     } else if client.catalog_validated() && client.ready_to_chat() && !protected(client) {
         Readiness::Ready
     } else {
         Readiness::Manual
     }
+}
+
+/// A selected Session whose own snapshot has not installed yet: its pending
+/// permissions and forms are not known, so nothing may count as unprotected.
+fn awaiting_snapshot<C: Connection>(client: &Client<C>) -> bool {
+    client.selected().is_some() && !client.selected_snapshot_installed()
 }
 
 pub fn protected<C: Connection>(client: &Client<C>) -> bool {

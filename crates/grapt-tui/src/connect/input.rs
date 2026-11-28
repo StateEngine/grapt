@@ -289,7 +289,7 @@ impl Connect {
                     && !pane.azure_cli
                     && !pane.custom()
                     && !pane.endpoint_provider().is_some_and(|row| {
-                        row.permits_empty_local_key && pane.endpoint.starts_with("http://")
+                        row.permits_empty_local_key && pane.endpoint_base().starts_with("http://")
                     })
                 {
                     return Err(if pane.is_vertex() {
@@ -331,7 +331,7 @@ impl Connect {
                 } else {
                     Optional::absent()
                 };
-                let (custom, databricks) = if pane.endpoint_inputs() || pane.databricks() {
+                let (custom, databricks) = if pane.databricks() {
                     let context_window = pane
                         .context
                         .trim()
@@ -340,34 +340,21 @@ impl Connect {
                         .filter(|context| (512..=16_777_216).contains(context))
                         .ok_or("Enter the model's context window in tokens (512 to 16777216).")?;
                     if pane.endpoint.trim().is_empty() || pane.model.trim().is_empty() {
-                        return Err(if pane.databricks() {
-                            "Enter the workspace URL and model ID."
-                        } else {
-                            "Enter the API base URL and model ID."
-                        }
-                        .into());
+                        return Err("Enter the workspace URL and model ID.".into());
                     }
-                    let endpoint = dto_string(pane.endpoint.trim())?;
-                    let model = dto_string(pane.model.trim())?;
-                    if pane.databricks() {
-                        (
-                            Optional::absent(),
-                            Optional::present(DatabricksProviderRequestDto {
-                                workspace: endpoint,
-                                model,
-                                context_window,
-                            }),
-                        )
-                    } else {
-                        (
-                            Optional::present(CustomProviderRequestDto {
-                                endpoint,
-                                model,
-                                context_window,
-                            }),
-                            Optional::absent(),
-                        )
-                    }
+                    (
+                        Optional::absent(),
+                        Optional::present(DatabricksProviderRequestDto {
+                            workspace: dto_string(pane.endpoint.trim())?,
+                            model: dto_string(pane.model.trim())?,
+                            context_window,
+                        }),
+                    )
+                } else if pane.endpoint_inputs() {
+                    (
+                        Optional::present(pane.endpoint_request()?),
+                        Optional::absent(),
+                    )
                 } else {
                     (Optional::absent(), Optional::absent())
                 };
@@ -542,6 +529,40 @@ impl Connect {
         .map_err(|_| "Invalid sign-in answers")?;
         self.request(Request::OAuth(id, body));
         Ok(())
+    }
+}
+impl Pane {
+    /// An endpoint connect: a model and its window are optional, and an
+    /// endpoint named without a model offers every model it serves.
+    fn endpoint_request(&self) -> Result<CustomProviderRequestDto, String> {
+        let model = self.model.trim();
+        let context = self.context.trim();
+        let context_window = match context {
+            "" => Optional::absent(),
+            _ if model.is_empty() => {
+                return Err("Enter the model ID that this context window belongs to.".into())
+            }
+            _ => Optional::present(
+                context
+                    .parse::<u32>()
+                    .ok()
+                    .filter(|context| (512..=16_777_216).contains(context))
+                    .ok_or("Enter the model's context window in tokens (512 to 16777216).")?,
+            ),
+        };
+        let endpoint = self.endpoint_base();
+        if endpoint.is_empty() {
+            return Err("Enter the API base URL.".into());
+        }
+        Ok(CustomProviderRequestDto {
+            endpoint: dto_string(endpoint)?,
+            model: if model.is_empty() {
+                Optional::absent()
+            } else {
+                Optional::present(dto_string(model)?)
+            },
+            context_window,
+        })
     }
 }
 fn dto_string(value: &str) -> Result<grapt_api::u3a::DtoString, String> {

@@ -404,15 +404,13 @@ impl Drop for Held {
 }
 
 #[cfg(feature = "handover-crash-fixture")]
-/// A product-created store under open-ready authority, serving for `window_ms`.
+/// A store the product created on its first launch, serving for `window_ms`.
 ///
-/// Initialize creates a current fresh store; repeated initialization refuses
-/// that Ready store without writing. Later launches use open-ready authority.
+/// The first launch creates a current store; a second launch opens that Ready
+/// store as it is, without creating it again.
 pub(super) fn product_installation(label: &str, build: &str, window_ms: u32) -> PathBuf {
     let root = scratch(label);
     write_inputs(&root, build);
-    let config_path = root.join("grapt.jsonc");
-    let config = fs::read_to_string(&config_path).unwrap_or_else(|error| panic!("config: {error}"));
     let serve = || {
         grapt_service::launcher_environment::command(env!("CARGO_BIN_EXE_grapt-server"))
             .args(["serve", "--service"])
@@ -421,47 +419,18 @@ pub(super) fn product_installation(label: &str, build: &str, window_ms: u32) -> 
             .output()
             .unwrap_or_else(|error| panic!("serve: {error}"))
     };
-    fs::write(
-        &config_path,
-        config.replace("\"migrate\"", "\"initialize\""),
-    )
-    .unwrap_or_else(|error| panic!("initialize config: {error}"));
-    let initialized = serve();
-    assert!(
-        initialized.status.success(),
-        "fresh product initialization: {}",
-        String::from_utf8_lossy(&initialized.stdout)
-    );
-    assert!(matches!(
-        grapt_store::preflight_read_only(&root.join("database.sqlite3")),
-        grapt_store::StoreReadiness::Ready
-    ));
-    let before = fs::read(root.join("database.sqlite3"))
-        .unwrap_or_else(|error| panic!("ready store: {error}"));
-    let repeated = serve();
-    assert!(
-        !repeated.status.success(),
-        "repeat Initialize must refuse Ready"
-    );
-    let refused = receipt(&repeated);
-    let reason = refused["reason"]
-        .as_str()
-        .unwrap_or_else(|| panic!("repeat Initialize refusal missing: {refused}"));
-    assert!(
-        reason.contains("Initialize") && reason.contains("Ready") && reason.contains("open-ready"),
-        "repeat Initialize refusal: {reason}"
-    );
-    assert_eq!(
-        fs::read(root.join("database.sqlite3"))
-            .unwrap_or_else(|error| panic!("ready store after refusal: {error}")),
-        before,
-        "repeat Initialize changed the Ready store"
-    );
-    fs::write(
-        &config_path,
-        config.replace("\"migrate\"", "\"open-ready\""),
-    )
-    .unwrap_or_else(|error| panic!("ready config: {error}"));
+    for launch in ["first", "second"] {
+        let served = serve();
+        assert!(
+            served.status.success(),
+            "{launch} product launch: {}",
+            String::from_utf8_lossy(&served.stdout)
+        );
+        assert!(matches!(
+            grapt_store::preflight_read_only(&root.join("database.sqlite3")),
+            grapt_store::StoreReadiness::Ready
+        ));
+    }
     set_window(&root, window_ms);
     root
 }
@@ -861,52 +830,4 @@ mod witnesses {
         assert_eq!(receipt_line(&text)["outcome"], "served");
         fs::remove_dir_all(root).unwrap_or_else(|error| panic!("cleanup: {error}"));
     }
-}
-
-#[cfg(feature = "handover-crash-fixture")]
-#[test]
-fn initialize_on_a_legacy_store_requires_migrate_and_preserves_data() {
-    let root = scratch("initialize-legacy-refusal");
-    write_inputs(&root, "secode-rust@fresh-authority-fixture");
-    let config_path = root.join("grapt.jsonc");
-    let config =
-        fs::read_to_string(&config_path).unwrap_or_else(|error| panic!("legacy config: {error}"));
-    fs::write(
-        &config_path,
-        config.replace("\"migrate\"", "\"initialize\""),
-    )
-    .unwrap_or_else(|error| panic!("initialize config: {error}"));
-    let database = root.join("database.sqlite3");
-    legacy_database(&database);
-    assert!(matches!(
-        grapt_store::preflight_read_only(&database),
-        grapt_store::StoreReadiness::MigrationNeeded(_)
-    ));
-    let before = fs::read(&database).unwrap_or_else(|error| panic!("legacy store: {error}"));
-    let output = grapt_service::launcher_environment::command(env!("CARGO_BIN_EXE_grapt-server"))
-        .args(["serve", "--service"])
-        .arg(&root)
-        .args(["--port", "0"])
-        .output()
-        .unwrap_or_else(|error| panic!("legacy initialize: {error}"));
-    assert!(
-        !output.status.success(),
-        "Initialize admitted a legacy store"
-    );
-    let refused = receipt(&output);
-    let reason = refused["reason"]
-        .as_str()
-        .unwrap_or_else(|| panic!("legacy refusal missing: {refused}"));
-    assert!(
-        reason.contains("Initialize")
-            && reason.contains("MigrationNeeded")
-            && reason.contains("migrate"),
-        "legacy Initialize refusal: {reason}"
-    );
-    assert_eq!(
-        fs::read(&database).unwrap_or_else(|error| panic!("legacy store after refusal: {error}")),
-        before,
-        "Initialize changed the legacy store"
-    );
-    fs::remove_dir_all(root).unwrap_or_else(|error| panic!("legacy fixture cleanup: {error}"));
 }

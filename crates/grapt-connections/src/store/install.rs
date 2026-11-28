@@ -373,9 +373,30 @@ impl Store {
         if let Some(secret) = secret {
             let mut vault = SealedFileVault::open(&self.root).map_err(vault_error)?;
             let key = VaultKey::new(connection.clone(), &intent.material()).map_err(vault_error)?;
-            vault
-                .put(&key, binding, secret, updated)
-                .map_err(vault_error)?;
+            // A reconnect writes a new slot; its sealing must also answer for
+            // the material it succeeds.
+            let current = old.as_ref().and_then(|records| {
+                records
+                    .connections
+                    .iter()
+                    .find(|record| &record.id == connection)
+            });
+            match current {
+                Some(record) => {
+                    // An OAuth connection holds its state and its projection;
+                    // both answer for the generation that succeeds them.
+                    let predecessors = record
+                        .oauth_file
+                        .iter()
+                        .chain([&record.credential_file])
+                        .map(|file| VaultKey::new(connection.clone(), file))
+                        .collect::<Result<Vec<_>, _>>()
+                        .map_err(vault_error)?;
+                    vault.put_succeeding(&key, &predecessors, binding, secret, updated)
+                }
+                None => vault.put(&key, binding, secret, updated),
+            }
+            .map_err(vault_error)?;
         }
         discard(
             &self.root,

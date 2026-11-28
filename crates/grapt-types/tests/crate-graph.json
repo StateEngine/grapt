@@ -384,6 +384,12 @@
    "deps": [],
    "dev": []
   },
+  "grapt-stateengine-ipc": {
+   "deps": [
+    "grapt-stateengine-api"
+   ],
+   "dev": []
+  },
   "grapt-store": {
    "deps": [
     "grapt-event",

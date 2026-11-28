@@ -88,8 +88,6 @@ impl<C: Connection> Client<C> {
         self.activity.remove(session);
         self.observations.remove(session);
         self.pending.remove(session);
-        self.quiescence_fact_epoch.remove(session);
-        self.quiescence_terminal_epoch.remove(session);
         self.permissions.retain(|ask| &ask.session_id != session);
         if self.selected.as_ref() == Some(session) {
             self.cancel_mcp_catalog();

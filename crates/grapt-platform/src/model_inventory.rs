@@ -14,6 +14,16 @@ use serde_json::Value;
 
 mod compose;
 mod reasoning;
+
+/// The reasoning variants a listing row offers for one model of a catalog
+/// provider: what a run of that model may select.
+pub fn offered_variants(
+    provider: &str,
+    model: &str,
+    row: &Value,
+) -> Result<Vec<grapt_types::ModelVariantId>, String> {
+    reasoning::offered(provider, model, row)
+}
 mod thinking;
 pub use thinking::AnthropicThinkingMode;
 mod chatgpt_window;
@@ -316,7 +326,7 @@ impl ModelInventory {
                 .and_then(Value::as_str)
                 .ok_or("account model has no identity")?;
             if !seen.insert(raw) {
-                return Err(format!("account discovery repeats model {raw}"));
+                return Err("account discovery repeats a model".into());
             }
             let offered = match row.get("visibility") {
                 None => true,
@@ -332,11 +342,11 @@ impl ModelInventory {
                 (Some(metadata), _) => metadata.clone(),
                 (None, Metadata::CatalogOrListing) => listing_metadata(raw, row)?,
                 (None, Metadata::Catalog) => {
-                    return Err(format!("account model {raw} has no catalog metadata"));
+                    return Err("an account model has no catalog metadata".into());
                 }
             };
             if metadata.get("id").and_then(Value::as_str) != Some(raw) {
-                return Err(format!("model catalog identity disagrees with key {raw}"));
+                return Err("model catalog identity disagrees with its listing key".into());
             }
             let context = row
                 .get("context_window")
@@ -491,7 +501,7 @@ fn listing_metadata(raw: &str, row: &Value) -> Result<Value, String> {
         Some(value) => value
             .as_str()
             .filter(|name| !name.is_empty() && name.len() <= 256)
-            .ok_or_else(|| format!("account model {raw} has an invalid display name"))?,
+            .ok_or("an account model has an invalid display name")?,
     };
     let input = match row.get("input_modalities") {
         None => vec!["text"],
@@ -499,7 +509,7 @@ fn listing_metadata(raw: &str, row: &Value) -> Result<Value, String> {
             .as_array()
             .filter(|modalities| !modalities.is_empty() && modalities.len() <= MAX_MODALITIES)
             .and_then(|modalities| modalities.iter().map(Value::as_str).collect())
-            .ok_or_else(|| format!("account model {raw} has invalid input modalities"))?,
+            .ok_or("an account model has invalid input modalities")?,
     };
     Ok(serde_json::json!({
         "id": raw,
@@ -809,7 +819,7 @@ mod tests {
                 )]
             )
             .err(),
-            Some("account model gpt-new has no catalog metadata".to_owned())
+            Some("an account model has no catalog metadata".to_owned())
         );
         for (key, bad) in [
             ("display_name", json!("")),
@@ -818,18 +828,23 @@ mod tests {
         ] {
             let mut account = account.clone();
             account["models"][3][key] = bad;
+            let slug = account["models"][3]["slug"]
+                .as_str()
+                .ok_or("slug")?
+                .to_owned();
+            let refusal = ModelInventory::compose(
+                public.clone(),
+                vec![(
+                    openai.clone(),
+                    account,
+                    Metadata::CatalogOrListing,
+                    DiscoveryShape::Codex,
+                )],
+            );
+            // Refused, without repeating the identity the account returned.
             assert!(
-                ModelInventory::compose(
-                    public.clone(),
-                    vec![(
-                        openai.clone(),
-                        account,
-                        Metadata::CatalogOrListing,
-                        DiscoveryShape::Codex
-                    )]
-                )
-                .is_err(),
-                "an invalid {key} survived"
+                refusal.is_err_and(|refusal| !refusal.contains(&slug)),
+                "an invalid {key} survived or its refusal named the model"
             );
         }
         Ok(())

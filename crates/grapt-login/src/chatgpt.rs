@@ -10,7 +10,7 @@
 
 use std::fmt;
 use std::io::Read;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use base64::Engine;
@@ -440,8 +440,14 @@ pub(crate) fn form(pairs: &[(&str, &str)]) -> String {
 /// Store `tokens` as the profile's sign-in generation, then derive the
 /// product's credential from it.
 pub fn save(profile: &Path, tokens: &Tokens) -> Result<(), SignInError> {
-    replace(profile, STATE_FILE, &encode(tokens))?;
-    project(profile, tokens)
+    replace_all(
+        profile,
+        &[
+            (STATE_FILE, &encode(tokens)),
+            (CREDENTIAL_FILE, tokens.access.as_bytes()),
+        ],
+        &[],
+    )
 }
 
 /// The profile's sign-in generation, or `None` when it is not signed in to
@@ -513,7 +519,11 @@ fn project(profile: &Path, tokens: &Tokens) -> Result<(), SignInError> {
             Ok(())
         }
         // Missing, different, oversized or unreadable: the generation wins.
-        _ => replace(profile, CREDENTIAL_FILE, tokens.access.as_bytes()),
+        _ => replace_all(
+            profile,
+            &[(CREDENTIAL_FILE, tokens.access.as_bytes())],
+            &[STATE_FILE],
+        ),
     }
 }
 
@@ -724,6 +734,13 @@ fn read_bounded(path: &Path, cap: usize) -> Result<Option<Vec<u8>>, SignInError>
     let failed = |error: std::io::Error| {
         if crate::profile_security::is_key_missing(&error) {
             SignInError::Store(format!("{name}: {}", crate::profile_security::KEY_MISSING))
+        } else if let Some(bus) = crate::profile_security::bus_refusal(&error) {
+            SignInError::Store(format!("{name}: {}", bus.guidance()))
+        } else if crate::profile_security::is_keystore_unavailable(&error) {
+            SignInError::Store(format!(
+                "{name} is sealed with the system keystore, which is unavailable; start it and \
+                 try again, or sign in again to replace it"
+            ))
         } else {
             SignInError::Store(format!("{name} is unreadable: {:?}", error.kind()))
         }
@@ -793,12 +810,31 @@ fn same_file(_before: &std::fs::Metadata, _opened: &std::fs::Metadata) -> bool {
     true
 }
 
-/// Write `name` in `directory` through a private temporary file and an
-/// atomic rename, so a reader sees the old bytes or the new, never a mix.
-fn replace(directory: &Path, name: &str, bytes: &[u8]) -> Result<(), SignInError> {
-    let protected = crate::profile_security::seal(bytes)
-        .map_err(|error| write_failure(name, "protected", &error))?;
-    write_replacing(directory, name, protected.as_slice())
+/// Write each `(name, bytes)` in `directory` through a private temporary
+/// file and an atomic rename, so a reader sees the old bytes or the new,
+/// never a mix. One protection decision covers every file written and every
+/// `companion` of theirs, so sign-in state and its projection are sealed or
+/// left owner-only together, and nothing is published when either refuses.
+fn replace_all(
+    directory: &Path,
+    files: &[(&str, &[u8])],
+    companions: &[&str],
+) -> Result<(), SignInError> {
+    let paths: Vec<_> = files
+        .iter()
+        .map(|(name, _)| *name)
+        .chain(companions.iter().copied())
+        .map(|name| directory.join(name))
+        .collect();
+    let targets: Vec<&Path> = paths.iter().map(PathBuf::as_path).collect();
+    let items: Vec<&[u8]> = files.iter().map(|(_, bytes)| *bytes).collect();
+    let first = files.first().map_or("sign-in state", |(name, _)| *name);
+    let protected = crate::profile_security::seal_all(&items, &targets)
+        .map_err(|error| write_failure(first, "protected", &error))?;
+    for ((name, _), bytes) in files.iter().zip(protected) {
+        write_replacing(directory, name, bytes.as_slice())?;
+    }
+    Ok(())
 }
 
 fn write_failure(name: &str, step: &str, error: &std::io::Error) -> SignInError {

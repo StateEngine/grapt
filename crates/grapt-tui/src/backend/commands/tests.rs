@@ -24,6 +24,8 @@ struct Peer {
     next_auth_status: Option<u16>,
     export_pages: Option<std::collections::VecDeque<WireResponse>>,
     instruction_response: Option<WireResponse>,
+    /// The stream subscription a too-old service refuses, naming what it lacks.
+    refuse_subscribe: Option<&'static str>,
 }
 impl Transport for Peer {
     #[expect(clippy::too_many_lines, reason = "legacy")]
@@ -171,7 +173,16 @@ impl Connection for Peer {
         self.inner.resubscribe()
     }
     fn subscribed(&self) -> bool {
-        self.inner.subscribed()
+        self.refuse_subscribe.is_none() && self.inner.subscribed()
+    }
+    fn begin_reconnect(&mut self) -> Result<Option<bool>, TransportError> {
+        match self.refuse_subscribe {
+            Some(missing) => Err(TransportError::ServerTooOld { missing }),
+            None => {
+                self.inner.resubscribe();
+                Ok(Some(self.inner.subscribed()))
+            }
+        }
     }
 }
 fn prepared(session: bool) -> TestResult<Client<Peer>> {
@@ -196,6 +207,7 @@ fn prepared_with_bounds(session: bool, bounds: Bounds) -> TestResult<Client<Peer
             next_auth_status: None,
             export_pages: None,
             instruction_response: None,
+            refuse_subscribe: None,
         },
         bounds,
     );
@@ -224,6 +236,7 @@ mod export;
 mod fork;
 mod inspection;
 mod reconciliation;
+mod refusal;
 
 #[test]
 fn commands_use_client_routes_instead_of_becoming_model_prompts() -> TestResult {

@@ -32,6 +32,7 @@ fn configured_adc_prepares_without_an_async_runtime_or_token_exchange() -> TestR
     std::fs::create_dir(&path)?;
     let root = Profile(std::fs::canonicalize(path)?);
     grapt_login::profile_security::protect_directory(&root.0)?;
+    let keystore = grapt_login::profile_security::isolate_test_keystore()?;
     let listener = std::net::TcpListener::bind("127.0.0.1:0")?;
     listener.set_nonblocking(true)?;
     std::fs::write(
@@ -101,6 +102,10 @@ fn configured_adc_prepares_without_an_async_runtime_or_token_exchange() -> TestR
         ])
         .current_dir(&root.0)
         .env(CHILD, "1")
+        .env(
+            grapt_login::profile_security::TEST_KEYSTORE_VARIABLE,
+            &keystore,
+        )
         .env("HOME", &root.0)
         .env("USERPROFILE", &root.0)
         .env("CLOUDSDK_CONFIG", &root.0)

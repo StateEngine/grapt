@@ -78,6 +78,7 @@ pub async fn verify(
     } else {
         verified
             .check_model(api_base, KeyProtocol::Responses, deployment)
-            .await
+            .await?;
+        Ok(verified)
     }
 }

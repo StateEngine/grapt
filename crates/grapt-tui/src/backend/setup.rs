@@ -18,6 +18,16 @@ pub fn paused(error: &ClientError, retrying: bool) -> String {
     }
 }
 
+/// The status line while startup is loading: a saved Session restores its
+/// choices, a new draft loads the models.
+pub fn loading_status(saved: bool) -> &'static str {
+    if saved {
+        "Restoring saved choices; draft editable"
+    } else {
+        "Loading models…; draft editable"
+    }
+}
+
 pub fn attach<C: Connection>(
     client: &mut Client<C>,
     session: Option<&SessionWireId>,

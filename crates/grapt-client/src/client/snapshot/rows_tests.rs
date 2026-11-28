@@ -1,4 +1,4 @@
-//! A snapshot's rows install through the legacy page decoder in the exact
+//! A snapshot's rows install through the message page decoder in the exact
 //! tag-first shape the server's typed encoder serves.
 use super::decode;
 

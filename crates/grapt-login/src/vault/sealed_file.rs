@@ -42,9 +42,11 @@ impl std::fmt::Debug for SealedFileVault {
     }
 }
 
-fn unavailable(operation: StorageOperation) -> impl FnOnce(io::Error) -> VaultError {
+pub(super) fn unavailable(operation: StorageOperation) -> impl FnOnce(io::Error) -> VaultError {
     move |error| {
-        if profile_security::failure_code(&error) == "io" {
+        if let Some(bus) = profile_security::bus_refusal(&error) {
+            VaultError::KeystoreBus(bus)
+        } else if profile_security::failure_code(&error) == "io" {
             VaultError::Unavailable(StorageFailure::capture(operation, &error))
         } else {
             VaultError::Protection(format!(
@@ -79,6 +81,11 @@ impl SealedFileVault {
     }
 
     fn read(&self, key: &VaultKey) -> Result<Option<Document>, VaultError> {
+        Ok(self.read_stored(key)?.map(|(document, _)| document))
+    }
+
+    /// The entry and how its file is protected.
+    fn read_stored(&self, key: &VaultKey) -> Result<Option<(Document, BackendKind)>, VaultError> {
         self.check_root()?;
         let stored = match profile_security::read_owner_only_file(
             &self.root.join(&key.file),
@@ -96,6 +103,8 @@ impl SealedFileVault {
             Zeroizing::new(profile_security::open(&stored, BYTE_CAP).map_err(|error| {
                 if profile_security::is_key_missing(&error) {
                     VaultError::KeyMissing
+                } else if profile_security::is_keystore_unavailable(&error) {
+                    VaultError::KeystoreUnavailable
                 } else {
                     unavailable(StorageOperation::OpenEnvelope)(error)
                 }
@@ -115,7 +124,14 @@ impl SealedFileVault {
         if document.connection != key.connection.as_str() {
             return Err(VaultError::BindingMismatch);
         }
-        Ok(Some(document))
+        let backend = if profile_security::is_keystore_sealed(&stored) {
+            BackendKind::SystemKeystoreEncryption
+        } else if profile_security::is_protected(&stored) {
+            BackendKind::WindowsCurrentUserEncryption
+        } else {
+            BackendKind::OwnerOnlyLegacyPlaintext
+        };
+        Ok(Some((document, backend)))
     }
 
     fn lock(&self) -> Result<MutationLock, VaultError> {
@@ -165,6 +181,15 @@ impl SealedFileVault {
 
 /// Whether an entry exists that may be replaced or removed: a readable one of
 /// this connection, or one whose sealing key is gone. Anything else refuses.
+/// Whether an entry exists that may be removed: one that may be replaced, or
+/// one whose keystore cannot be reached, since removing it overwrites nothing.
+fn removable(read: Result<Option<Document>, VaultError>) -> Result<bool, VaultError> {
+    match read {
+        Err(VaultError::KeystoreUnavailable) => Ok(true),
+        read => replaceable(read),
+    }
+}
+
 fn replaceable(read: Result<Option<Document>, VaultError>) -> Result<bool, VaultError> {
     match read {
         Ok(document) => Ok(document.is_some()),
@@ -173,15 +198,36 @@ fn replaceable(read: Result<Option<Document>, VaultError>) -> Result<bool, Vault
     }
 }
 
-impl CredentialVault for SealedFileVault {
-    fn put(
+impl SealedFileVault {
+    /// Store `secret` as `key`, the next generation of the connection whose
+    /// current files are `predecessors`. While no keystore is present, this
+    /// refuses as keystore unavailable when any of those files is sealed, so a
+    /// reconnect never succeeds a sealed credential with an unsealed one.
+    pub fn put_succeeding(
         &mut self,
         key: &VaultKey,
+        predecessors: &[VaultKey],
         binding: &DestinationBinding,
         secret: VaultSecret,
         updated: Timestamp,
     ) -> Result<(), VaultError> {
-        if !binding.valid() || secret.0.expose().oauth() != binding.has_refresh() {
+        self.store(key, predecessors, binding, secret, updated)
+    }
+
+    fn store(
+        &mut self,
+        key: &VaultKey,
+        predecessors: &[VaultKey],
+        binding: &DestinationBinding,
+        secret: VaultSecret,
+        updated: Timestamp,
+    ) -> Result<(), VaultError> {
+        if !binding.valid()
+            || secret.0.expose().oauth() != binding.has_refresh()
+            || predecessors
+                .iter()
+                .any(|predecessor| predecessor.connection != key.connection)
+        {
             return Err(VaultError::InvalidInput);
         }
         let _lock = self.lock()?;
@@ -206,13 +252,36 @@ impl CredentialVault for SealedFileVault {
         if plaintext.len() > BYTE_CAP {
             return Err(VaultError::InvalidInput);
         }
+        let paths: Vec<PathBuf> = std::iter::once(key)
+            .chain(predecessors)
+            .map(|entry| self.root.join(&entry.file))
+            .collect();
+        let targets: Vec<&Path> = paths.iter().map(PathBuf::as_path).collect();
         let stored = Zeroizing::new(
-            profile_security::seal(&plaintext).map_err(unavailable(StorageOperation::Seal))?,
+            profile_security::seal_replacing(&plaintext, &targets).map_err(|error| {
+                if profile_security::is_keystore_unavailable(&error) {
+                    VaultError::KeystoreUnavailable
+                } else {
+                    unavailable(StorageOperation::Seal)(error)
+                }
+            })?,
         );
         self.check_root()?;
         profile_security::replace_private_file(&self.root, &key.file, &stored)
             .map_err(unavailable(StorageOperation::WriteEntry))?;
         self.sync()
+    }
+}
+
+impl CredentialVault for SealedFileVault {
+    fn put(
+        &mut self,
+        key: &VaultKey,
+        binding: &DestinationBinding,
+        secret: VaultSecret,
+        updated: Timestamp,
+    ) -> Result<(), VaultError> {
+        self.store(key, &[], binding, secret, updated)
     }
 
     fn get(
@@ -234,7 +303,7 @@ impl CredentialVault for SealedFileVault {
         self.discard_staged(key)?;
         // An entry whose sealing key is gone cannot be read; removing the file
         // this key names is how it is cleared.
-        if !replaceable(self.read(key))? {
+        if !removable(self.read(key))? {
             self.sync()?;
             return Ok(false);
         }
@@ -250,18 +319,14 @@ impl CredentialVault for SealedFileVault {
         key: &VaultKey,
         binding: &DestinationBinding,
     ) -> Result<Option<CredentialDescription>, VaultError> {
-        let Some(document) = self.read(key)? else {
+        let Some((document, backend)) = self.read_stored(key)? else {
             return Ok(None);
         };
         if &document.binding != binding {
             return Err(VaultError::BindingMismatch);
         }
         Ok(Some(CredentialDescription {
-            backend: if cfg!(windows) {
-                BackendKind::WindowsCurrentUserEncryption
-            } else {
-                BackendKind::OwnerOnlyLegacyPlaintext
-            },
+            backend,
             last4: document.material.last4(),
             updated: Timestamp::from_millis(document.updated_ms),
         }))

@@ -144,6 +144,18 @@ fn new_child(fail_catalog: bool) -> Result {
     let mut client = Client::new(bridge, Bounds::PRODUCTION);
     client.refresh_sessions()?;
     assert_eq!(client.sessions().len(), 1);
+    // The stream opens with its positioned connect.
+    events.send(Delivery::Frame(FramePoll::Positioned {
+        id: "child-0".into(),
+        data: serde_json::json!({"id":"evt_connected","type":"server.connected","data":{}})
+            .to_string(),
+    }))?;
+    client.pump_at(Duration::ZERO)?;
+    let decoded = client.diagnostics().frames_decoded;
+    let positioned = |seq: u64, data: String| FramePoll::Positioned {
+        id: format!("child-{seq}"),
+        data,
+    };
     let frame = |kind: &str, seq| {
         serde_json::json!({
             "id":format!("evt_child_{seq}"), "type":kind, "created":seq,
@@ -159,9 +171,9 @@ fn new_child(fail_catalog: bool) -> Result {
         .peer_mut()
         .sessions_dirty
         .store(true, Ordering::Release);
-    events.send(Delivery::Frame(FramePoll::Frame(start)))?;
+    events.send(Delivery::Frame(positioned(1, start)))?;
     client.pump_at(Duration::ZERO)?;
-    assert_eq!(client.diagnostics().frames_decoded, 0);
+    assert_eq!(client.diagnostics().frames_decoded, decoded);
     assert_eq!(client.observed_activity(&child), None);
     // Use Backend's actual refresh/retry owner. No other stream event or
     // input arrives: the catalog must explicitly continue the retained start.
@@ -174,7 +186,7 @@ fn new_child(fail_catalog: bool) -> Result {
         assert_eq!(refresh.wait(now), Some(Duration::from_secs(1)));
         assert!(!refresh.refresh_inline(&mut client, now, &wake)?);
         client.pump_at(Duration::ZERO)?;
-        assert_eq!(client.diagnostics().frames_decoded, 0);
+        assert_eq!(client.diagnostics().frames_decoded, decoded);
         assert_eq!(client.observed_activity(&child), None);
         assert!(ready.try_recv().is_err());
         now += Duration::from_secs(1);
@@ -192,10 +204,10 @@ fn new_child(fail_catalog: bool) -> Result {
         .iter()
         .any(|row| row.id == child && row.parent.as_ref() == Some(&parent)));
     assert!(client.view_of(&child).is_none());
-    events.send(Delivery::Frame(FramePoll::Frame(frame(
-        "session.execution.succeeded",
+    events.send(Delivery::Frame(positioned(
         2,
-    ))))?;
+        frame("session.execution.succeeded", 2),
+    )))?;
     client.pump_at(Duration::ZERO)?;
     assert_eq!(
         client.observed_activity(&child),

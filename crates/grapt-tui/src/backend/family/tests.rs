@@ -13,7 +13,10 @@ struct Peer {
 
 impl Transport for Peer {
     fn call(&mut self, request: &WireRequest) -> Result<WireResponse, TransportError> {
-        if request.operation() != Operation::MessageList {
+        if !matches!(
+            request.operation(),
+            Operation::MessageList | Operation::SessionSnapshot
+        ) {
             return self.inner.call(request);
         }
         let rows = self
@@ -33,20 +36,24 @@ impl Transport for Peer {
             .transpose()
             .map_err(|_| TransportError::NotConnected)?
             .unwrap_or_default();
-        Ok(WireResponse {
-            status: 200,
-            body: encode_messages(rows, None).map_err(|_| TransportError::NotConnected)?,
-        })
+        let mut body = encode_messages(rows, None).map_err(|_| TransportError::NotConnected)?;
+        if request.operation() == Operation::SessionSnapshot {
+            body = grapt_client::double::page_snapshot(request, &body, 0)
+                .map_err(|_| TransportError::NotConnected)?;
+        }
+        Ok(WireResponse { status: 200, body })
     }
 }
 
 impl Connection for Peer {
     fn poll_frame(&mut self) -> Result<FramePoll, TransportError> {
-        Ok(FramePoll::Idle)
+        self.inner.poll_frame()
     }
-    fn resubscribe(&mut self) {}
+    fn resubscribe(&mut self) {
+        self.inner.resubscribe();
+    }
     fn subscribed(&self) -> bool {
-        true
+        self.inner.subscribed()
     }
 }
 
@@ -116,6 +123,10 @@ fn saved_child_completion_retires_without_live_events_and_keeps_transcript_acces
     );
     assert!(client.sessions().iter().any(|row| row.id == completed));
     client.select(&completed)?;
+    // The stream's positioned connect, then the snapshot it permits.
+    for _ in 0..2 {
+        client.pump()?;
+    }
     assert_eq!(client.selected(), Some(&completed));
     assert!(matches!(
         client.view().ok_or("view")?.execution,

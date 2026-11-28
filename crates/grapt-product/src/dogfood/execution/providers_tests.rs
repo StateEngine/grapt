@@ -68,6 +68,7 @@ async fn retained_openers_keep_their_key_and_version_after_three_connection_inst
         Profile(std::env::temp_dir().join(format!("grapt-retained-key-{}", std::process::id())));
     std::fs::create_dir(&profile.0)?;
     grapt_login::profile_security::protect_directory(&profile.0)?;
+    grapt_login::profile_security::isolate_test_keystore()?;
     std::fs::write(
         profile.0.join("grapt.jsonc"),
         br#"{"store":{"authority":"open-ready"},"product":{"build":"retained-key-test"}}"#,

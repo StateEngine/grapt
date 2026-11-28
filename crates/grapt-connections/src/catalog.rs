@@ -3,6 +3,8 @@
 // Copyright 2025 OpenAI. See licenses/openai-codex/.
 // Public metadata: models.dev, MIT; see licenses/models-dev/.
 mod compatible;
+#[cfg(test)]
+mod listing_tests;
 pub use compatible::requires_reasoning_content_replay;
 pub use grapt_connections_catalog::{endpoint_provider, EndpointProvider};
 
@@ -69,6 +71,17 @@ pub fn integrations() -> Result<Vec<CatalogIntegration>, String> {
             })
         })
         .collect::<Result<_, String>>()?;
+    for row in grapt_connections_catalog::local_servers() {
+        if providers.contains_key(row.id) {
+            continue;
+        }
+        let local = KeyProvider::local(row).ok_or("local server preset is invalid")?;
+        rows.push(CatalogIntegration {
+            id: local.id,
+            name: local.name,
+            key: Some(local),
+        });
+    }
     let custom = KeyProvider::custom();
     rows.push(CatalogIntegration {
         id: custom.id,
@@ -101,6 +114,16 @@ impl KeyProvider {
         }
     }
 
+    /// A local model server the bundled catalogue does not name: the same
+    /// compatible chat wire as a custom endpoint, under the server's own name.
+    fn local(row: &'static EndpointProvider) -> Option<Self> {
+        Some(Self {
+            id: row.id,
+            name: row.local?.name,
+            ..Self::custom()
+        })
+    }
+
     pub fn from_id(id: &str) -> Result<Option<Self>, String> {
         if id == "custom" {
             return Ok(Some(Self::custom()));
@@ -109,7 +132,7 @@ impl KeyProvider {
             .as_object()
             .and_then(|providers| providers.get_key_value(id))
         else {
-            return Ok(None);
+            return Ok(endpoint_provider(id).and_then(Self::local));
         };
         Ok(Self::from_row(id, row))
     }
@@ -257,7 +280,7 @@ impl KeyProvider {
             .as_array()
             .filter(|names| names.len() <= 16)
             .ok_or("provider environment names exceed their bound")?;
-        names
+        let names = names
             .iter()
             .map(|value| {
                 value
@@ -269,9 +292,15 @@ impl KeyProvider {
                                 .bytes()
                                 .all(|byte| byte == b'_' || byte.is_ascii_alphanumeric())
                     })
-                    .ok_or_else(|| "provider environment name is invalid".into())
+                    .ok_or_else(|| "provider environment name is invalid".to_owned())
             })
-            .collect()
+            .collect::<Result<Vec<_>, _>>()?;
+        // Only a credential is read from the environment; an account, host or
+        // address variable beside it is not a key.
+        Ok(names
+            .into_iter()
+            .filter(|name| credential_name(name))
+            .collect())
     }
     pub fn allows_environment(self, name: &str) -> Result<bool, String> {
         Ok(self.environment_names()?.contains(&name))
@@ -289,13 +318,17 @@ impl KeyProvider {
     }
 
     pub fn for_model(mut self, model: &str) -> Self {
-        if endpoint_provider(self.id)
-            .and_then(|row| row.messages_model_prefix)
-            .is_some_and(|prefix| model.starts_with(prefix))
-        {
+        if self.messages_model(model) {
             self.family = Family::AnthropicMessages;
         }
         self
+    }
+
+    /// Whether a mixed endpoint serves `model` on its Messages wire.
+    fn messages_model(self, model: &str) -> bool {
+        endpoint_provider(self.id)
+            .and_then(|row| row.messages_model_prefix)
+            .is_some_and(|prefix| model.starts_with(prefix))
     }
 
     pub fn placement(self) -> grapt_login::key::KeyPlacement {
@@ -387,10 +420,27 @@ impl KeyProvider {
         if self.id == "cloudflare-ai-gateway" {
             return self.cloudflare_listing();
         }
-        // Explicit endpoints check their one selected model on this route;
-        // catalog SDK defaults cannot override the verified coordinates.
-        if endpoint_provider(self.id).is_some() {
-            return Ok(bytes.to_vec());
+        // Explicit endpoints check their selected model on this route;
+        // catalog SDK defaults cannot override the verified coordinates. A
+        // connection publishes only the models it can run on the wire it
+        // checked: a mixed endpoint serves each model on one wire, and a row
+        // that says it takes no tools or returns no text runs nowhere.
+        if self.id == "custom" || endpoint_provider(self.id).is_some() {
+            let messages = self.family == Family::AnthropicMessages;
+            let models = &snapshot()?[self.id]["models"];
+            let mut listing: Value =
+                serde_json::from_slice(bytes).map_err(|_| "provider model list is invalid")?;
+            listing["data"]
+                .as_array_mut()
+                .ok_or("provider model list is invalid")?
+                .retain(|row| {
+                    row["id"]
+                        .as_str()
+                        .is_some_and(|id| self.messages_model(id) == messages)
+                        && capable(models, row)
+                });
+            return serde_json::to_vec(&listing)
+                .map_err(|_| "provider model list cannot be encoded".into());
         }
         let mut listing: Value =
             serde_json::from_slice(bytes).map_err(|_| "provider model list is invalid")?;
@@ -563,20 +613,64 @@ impl KeyProvider {
             }
         }
         rows.iter()
-            .find_map(|row| {
-                let id = row["id"].as_str()?;
-                let model = &models[id];
-                let context = model["limit"]["context"]
-                    .as_u64()
-                    .or_else(|| row["max_model_len"].as_u64())?;
-                let text = model["modalities"]["output"]
-                    .as_array()
-                    .is_none_or(|items| items.iter().any(|item| item.as_str() == Some("text")));
-                (context > 0 && text && model["tool_call"].as_bool() != Some(false))
-                    .then(|| id.to_owned())
-            })
+            .find(|row| runnable(models, row))
+            .and_then(|row| row["id"].as_str())
+            .map(str::to_owned)
             .ok_or_else(|| "provider lists no supported model with a known context limit".into())
     }
+
+    /// Whether `model` is listed with what a run needs: a known context
+    /// limit, text output and tool calls.
+    pub fn runs(self, listing: &[u8], model: &str) -> Result<bool, String> {
+        validate_listing(listing)?;
+        let listing: Value =
+            serde_json::from_slice(listing).map_err(|_| "provider model list is invalid")?;
+        let models = &snapshot()?[self.id]["models"];
+        Ok(listing["data"].as_array().is_some_and(|rows| {
+            rows.iter()
+                .any(|row| row["id"].as_str() == Some(model) && runnable(models, row))
+        }))
+    }
+
+    /// Whether a listed row can run a session before its window is known:
+    /// text output and tool calls, as `runs` reads them.
+    pub fn capable(self, row: &Value) -> Result<bool, String> {
+        Ok(capable(&snapshot()?[self.id]["models"], row))
+    }
+}
+
+fn runnable(models: &Value, row: &Value) -> bool {
+    let Some(id) = row["id"].as_str() else {
+        return false;
+    };
+    let context = models[id]["limit"]["context"]
+        .as_u64()
+        .or_else(|| row["max_model_len"].as_u64());
+    context.is_some_and(|context| context > 0) && capable(models, row)
+}
+
+fn capable(models: &Value, row: &Value) -> bool {
+    let Some(id) = row["id"].as_str() else {
+        return false;
+    };
+    let model = &models[id];
+    // What the live row states about its request surface and output wins
+    // over the bundled catalogue, as the model inventory reads it.
+    let output = grapt_login::key::stated_modalities(row, "output")
+        .or_else(|| model["modalities"]["output"].as_array());
+    let text = output.is_none_or(|items| items.iter().any(|item| item.as_str() == Some("text")));
+    let tools = match row["supported_parameters"].as_array() {
+        Some(names) => names.iter().any(|name| name.as_str() == Some("tools")),
+        None => model["tool_call"].as_bool() != Some(false),
+    };
+    text && tools
+}
+
+/// Whether an environment variable's name says it holds a credential.
+fn credential_name(name: &str) -> bool {
+    ["KEY", "TOKEN", "PAT", "SECRET"]
+        .iter()
+        .any(|end| name.ends_with(end))
 }
 
 fn validate_listing(bytes: &[u8]) -> Result<(), String> {

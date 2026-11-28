@@ -108,14 +108,8 @@ impl Connection for Peer {
         self.watched = session;
     }
     fn stream_binding(&self) -> Option<StreamBinding> {
-        self.open.then(|| {
-            StreamBinding::new(
-                "http://127.0.0.1",
-                self.credential,
-                self.watched.clone(),
-                true,
-            )
-        })
+        self.open
+            .then(|| StreamBinding::new("http://127.0.0.1", self.credential, self.watched.clone()))
     }
     fn resume_from(&mut self, token: Option<ResumeToken>) {
         self.offered.push(token);
@@ -539,16 +533,32 @@ fn an_uncertified_reconnect_reads_a_fresh_baseline() -> TestResult {
             }
         };
         refused.peer_mut().frames.push_back(first);
+        if refusal == "legacy" {
+            // A service that predates positions is refused, never resumed.
+            let refusal = refused.pump_at(Duration::from_millis(140));
+            assert!(
+                matches!(
+                    refusal,
+                    Err(grapt_client::ClientError::Transport(
+                        TransportError::ServerTooOld { .. }
+                    ))
+                ),
+                "{refusal:?}"
+            );
+            continue;
+        }
         pump(&mut refused, 140)?;
         pump(&mut refused, 150)?;
-        let expected = if ["legacy", "non_connected", "malformed"].contains(&refusal) {
-            Operation::MessageList
+        // A stream that proved nothing gets no snapshot: only the permission
+        // list is read until a positioned connect arrives.
+        let expected = if ["non_connected", "malformed"].contains(&refusal) {
+            vec![Operation::PermissionRequestList]
         } else {
-            Operation::SessionSnapshot
+            vec![Operation::PermissionRequestList, Operation::SessionSnapshot]
         };
         assert_eq!(
             refused.peer_mut().ops,
-            vec![Operation::PermissionRequestList, expected],
+            expected,
             "{refusal}: refusal owns the recovery read"
         );
         assert!(control.peer_mut().ops.is_empty());
@@ -577,7 +587,7 @@ fn a_certificate_at_the_original_deadline_is_retired() -> TestResult {
     pump(&mut client, 5_000)?;
     assert_eq!(
         client.peer_mut().ops,
-        vec![Operation::PermissionRequestList, Operation::MessageList]
+        vec![Operation::PermissionRequestList]
     );
     assert!(
         client
@@ -595,12 +605,7 @@ fn a_certificate_at_the_original_deadline_is_retired() -> TestResult {
     pump(&mut client, 5_020)?;
     assert_eq!(
         client.peer_mut().ops,
-        vec![
-            Operation::PermissionRequestList,
-            Operation::MessageList,
-            Operation::PermissionRequestList,
-            Operation::SessionSnapshot
-        ]
+        vec![Operation::PermissionRequestList, Operation::SessionSnapshot]
     );
     Ok(())
 }

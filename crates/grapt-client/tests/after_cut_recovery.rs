@@ -1,6 +1,7 @@
-//! After a cut, the history read waits, bounded, for the next stream to prove
-//! its mode: a positions stream resumes on a snapshot, never on a legacy page,
-//! and no history read waits on a dead stream for longer than the bound.
+//! After a cut, the snapshot read waits, bounded, for the next stream's first
+//! frame: a positions stream resumes on a snapshot, never on a message page; a
+//! stream silent past the bound is retired; and a service without positions
+//! or without the snapshot is refused as too old.
 use grapt_client::{
     bounds::Bounds,
     client::Connection,
@@ -23,10 +24,9 @@ struct Peer {
     page: serde_json::Value,
     snapshot: WireResponse,
     snapshots: usize,
-    legacy_reads: usize,
+    page_reads: usize,
     permission_reads: usize,
-    legacy_on_refusal: bool,
-    legacy_pending: bool,
+    retired: usize,
     hold_snapshot: bool,
     pending_read: Option<WireResponse>,
     cancelled_reads: usize,
@@ -38,7 +38,7 @@ impl Transport for Peer {
                 self.snapshots += 1;
                 return Ok(self.snapshot.clone());
             }
-            Operation::MessageList => self.legacy_reads += 1,
+            Operation::MessageList => self.page_reads += 1,
             Operation::PermissionRequestList => self.permission_reads += 1,
             _ => {}
         }
@@ -75,24 +75,12 @@ impl Connection for Peer {
         Ok(self.frames.pop_front().unwrap_or(FramePoll::Idle))
     }
     fn resubscribe(&mut self) {}
-    fn refuse_positions(&mut self) {
-        if self.legacy_on_refusal {
-            self.frames.clear();
-            self.frames.push_back(if self.legacy_pending {
-                FramePoll::Closed
-            } else {
-                legacy_connected()
-            });
-        }
+    fn retire_stream(&mut self) {
+        self.retired += 1;
+        self.frames.clear();
     }
     fn subscribed(&self) -> bool {
-        !self.legacy_pending
-    }
-    fn begin_reconnect(&mut self) -> Result<Option<bool>, TransportError> {
-        Ok((!self.legacy_pending).then_some(true))
-    }
-    fn poll_reconnect(&mut self) -> Result<Option<bool>, TransportError> {
-        Ok((!self.legacy_pending).then_some(true))
+        true
     }
 }
 
@@ -102,9 +90,10 @@ fn connected() -> FramePoll {
         data: json!({"id":"evt_cut_connected","type":"server.connected","data":{}}).to_string(),
     }
 }
-fn legacy_connected() -> FramePoll {
+/// The first frame of a service that predates positions.
+fn unpositioned_connected() -> FramePoll {
     FramePoll::Frame(
-        json!({"id":"evt_cut_legacy_connected","type":"server.connected","data":{}}).to_string(),
+        json!({"id":"evt_cut_old_connected","type":"server.connected","data":{}}).to_string(),
     )
 }
 fn delta(session: &SessionWireId, text: &str, from: Option<u64>) -> FramePoll {
@@ -162,12 +151,12 @@ fn set_snapshot(
 fn launch(pump_first: bool) -> TestResult<(Client<Peer>, SessionWireId)> {
     let mut inner = ContractDouble::new();
     let session = inner.create_session("after cut").ok_or("session bound")?;
-    let legacy = inner.call(&WireRequest::new(
+    let rows = inner.call(&WireRequest::new(
         Operation::MessageList,
         Some(&session),
         None,
     )?)?;
-    let page: serde_json::Value = serde_json::from_slice(&legacy.body)?;
+    let page: serde_json::Value = serde_json::from_slice(&rows.body)?;
     let mut client = Client::new(
         Peer {
             inner,
@@ -178,10 +167,9 @@ fn launch(pump_first: bool) -> TestResult<(Client<Peer>, SessionWireId)> {
                 body: Vec::new(),
             },
             snapshots: 0,
-            legacy_reads: 0,
+            page_reads: 0,
             permission_reads: 0,
-            legacy_on_refusal: false,
-            legacy_pending: false,
+            retired: 0,
             hold_snapshot: false,
             pending_read: None,
             cancelled_reads: 0,
@@ -237,13 +225,27 @@ fn at(millis: u64) -> Duration {
     Duration::from_millis(millis)
 }
 
-/// Pump at each instant; true while no legacy page was read.
-fn no_legacy_read_through(client: &mut Client<Peer>, instants: &[u64]) -> TestResult<bool> {
-    let before = client.peer_mut().legacy_reads;
+/// Pump at each instant; true while nothing was read and nothing retired.
+fn waits_through(client: &mut Client<Peer>, instants: &[u64]) -> TestResult<bool> {
+    let peer = client.peer_mut();
+    let before = (peer.snapshots, peer.page_reads, peer.retired);
     for millis in instants {
         client.pump_at(at(*millis))?;
     }
-    Ok(client.peer_mut().legacy_reads == before)
+    let peer = client.peer_mut();
+    Ok((peer.snapshots, peer.page_reads, peer.retired) == before)
+}
+
+/// The refusal a service too old for this client earns.
+fn too_old(result: Result<bool, grapt_client::ClientError>) -> bool {
+    matches!(
+        &result,
+        Err(grapt_client::ClientError::Transport(
+            TransportError::ServerTooOld { .. }
+        ))
+    ) && result
+        .err()
+        .is_some_and(|error| error.to_string().contains("Upgrade the Grapt server"))
 }
 
 fn cut(client: &mut Client<Peer>, frame: FramePoll, millis: u64) -> TestResult {
@@ -253,7 +255,7 @@ fn cut(client: &mut Client<Peer>, frame: FramePoll, millis: u64) -> TestResult {
 }
 
 #[test]
-fn a_cut_resumes_on_one_snapshot_and_never_reads_a_legacy_page() -> TestResult {
+fn a_cut_resumes_on_one_snapshot_and_never_reads_a_message_page() -> TestResult {
     for frame in [FramePoll::Closed, FramePoll::Gap] {
         let (mut client, session) = streaming()?;
         let gaps = client.diagnostics().gaps_observed;
@@ -266,9 +268,9 @@ fn a_cut_resumes_on_one_snapshot_and_never_reads_a_legacy_page() -> TestResult {
         client.pump_at(at(1_200))?;
         assert_eq!(client.peer_mut().snapshots, 2, "{frame:?}: one snapshot");
         assert_eq!(
-            client.peer_mut().legacy_reads,
+            client.peer_mut().page_reads,
             0,
-            "{frame:?}: no legacy page"
+            "{frame:?}: no message page"
         );
         assert_eq!(rendered(&client), "aaaabbbbccccdddd", "{frame:?}");
         if frame == FramePoll::Closed {
@@ -279,33 +281,27 @@ fn a_cut_resumes_on_one_snapshot_and_never_reads_a_legacy_page() -> TestResult {
 }
 
 #[test]
-fn an_absent_first_frame_falls_back_to_http_at_the_deadline() -> TestResult {
+fn an_absent_first_frame_retires_the_stream_at_the_deadline() -> TestResult {
     let (mut client, _) = streaming()?;
     cut(&mut client, FramePoll::Closed, 1_000)?;
-    assert!(no_legacy_read_through(
-        &mut client,
-        &[2_000, 3_000, 4_000, 4_999]
-    )?);
+    assert!(waits_through(&mut client, &[2_000, 3_000, 4_000, 4_999])?);
     assert!(
         matches!(client.recovery_wait_at(at(4_999)), Some(wait) if wait > Duration::ZERO),
         "the wait polls instead of spinning"
     );
     client.pump_at(at(5_000))?;
-    assert_eq!(
-        client.peer_mut().legacy_reads,
-        1,
-        "HTTP read at the deadline"
-    );
-    assert_eq!(client.peer_mut().snapshots, 1);
+    let peer = client.peer_mut();
+    assert_eq!(peer.retired, 1, "the silent stream is retired");
+    assert_eq!((peer.snapshots, peer.page_reads), (1, 0), "nothing read");
     Ok(())
 }
 
 #[test]
-fn a_late_positioned_handshake_replaces_the_fallback_page_before_any_delta() -> TestResult {
+fn a_late_handshake_after_the_deadline_reads_one_snapshot() -> TestResult {
     let (mut client, session) = streaming()?;
     cut(&mut client, FramePoll::Closed, 1_000)?;
     client.pump_at(at(5_000))?;
-    assert_eq!(client.peer_mut().legacy_reads, 1);
+    assert_eq!(client.peer_mut().retired, 1);
     let gaps = client.diagnostics().gaps_observed;
     set_snapshot(&mut client, &session, 150, Some("aaaabbbbcccc"), json!({}))?;
     let peer = client.peer_mut();
@@ -314,7 +310,7 @@ fn a_late_positioned_handshake_replaces_the_fallback_page_before_any_delta() -> 
     client.pump_at(at(6_000))?;
     client.pump_at(at(6_100))?;
     assert_eq!(client.peer_mut().snapshots, 2, "one snapshot re-read");
-    assert_eq!(client.peer_mut().legacy_reads, 1);
+    assert_eq!(client.peer_mut().page_reads, 0);
     assert_eq!(rendered(&client), "aaaabbbbccccdddd");
     assert_eq!(client.diagnostics().gaps_observed, gaps, "no refusal");
     Ok(())
@@ -324,16 +320,16 @@ fn a_late_positioned_handshake_replaces_the_fallback_page_before_any_delta() -> 
 fn the_deadline_is_total_across_another_cut() -> TestResult {
     let (mut client, _) = streaming()?;
     cut(&mut client, FramePoll::Closed, 1_000)?;
-    assert!(no_legacy_read_through(&mut client, &[2_000, 3_000])?);
+    assert!(waits_through(&mut client, &[2_000, 3_000])?);
     cut(&mut client, FramePoll::Closed, 3_500)?;
-    assert!(no_legacy_read_through(&mut client, &[4_000, 4_999])?);
+    assert!(waits_through(&mut client, &[4_000, 4_999])?);
     client.pump_at(at(5_000))?;
-    assert_eq!(client.peer_mut().legacy_reads, 1);
+    assert_eq!(client.peer_mut().retired, 1);
     Ok(())
 }
 
 #[test]
-fn selecting_during_the_wait_keeps_the_deadline_and_reads_no_page_early() -> TestResult {
+fn selecting_during_the_wait_keeps_the_deadline_and_reads_nothing_early() -> TestResult {
     let (mut client, _) = streaming()?;
     cut(&mut client, FramePoll::Closed, 1_000)?;
     client.pump_at(at(2_000))?;
@@ -343,96 +339,138 @@ fn selecting_during_the_wait_keeps_the_deadline_and_reads_no_page_early() -> Tes
         .create_session("other")
         .ok_or("session bound")?;
     client.select(&other)?;
-    assert_eq!(client.peer_mut().legacy_reads, 0, "no direct legacy read");
-    assert!(no_legacy_read_through(&mut client, &[3_000, 4_000, 4_999])?);
+    assert_eq!(client.peer_mut().snapshots, 1, "no direct snapshot read");
+    assert!(waits_through(&mut client, &[3_000, 4_000, 4_999])?);
     client.pump_at(at(5_000))?;
-    assert_eq!(client.peer_mut().legacy_reads, 1, "the same deadline");
+    assert_eq!(client.peer_mut().retired, 1, "the same deadline");
     Ok(())
 }
 
 #[test]
-fn a_legacy_first_frame_after_a_cut_reads_the_page_at_once() -> TestResult {
+fn an_unpositioned_first_frame_after_a_cut_refuses_the_server_as_too_old() -> TestResult {
     let (mut client, _) = streaming()?;
     cut(&mut client, FramePoll::Closed, 1_000)?;
-    cut(&mut client, legacy_connected(), 1_500)?;
-    assert_eq!(client.peer_mut().legacy_reads, 1);
-    assert_eq!(client.peer_mut().snapshots, 1);
+    let retired = client.peer_mut().retired;
+    // A positioned connect later on the SAME stream cannot redeem it.
+    client.peer_mut().frames.push_back(unpositioned_connected());
+    client.peer_mut().frames.push_back(connected());
+    assert!(too_old(client.pump_at(at(1_500))));
+    assert_eq!(
+        client.peer_mut().retired,
+        retired + 1,
+        "the stream is retired"
+    );
+    // The refusal is terminal: later pumps keep it and open nothing.
+    for later in [1_600, 1_700, 60_000] {
+        assert!(too_old(client.pump_at(at(later))));
+    }
+    assert_eq!(client.peer_mut().retired, retired + 1, "retired once");
+    assert_eq!(client.peer_mut().page_reads, 0);
+    assert_eq!(client.peer_mut().snapshots, 1, "no snapshot on its word");
     Ok(())
 }
 
 #[test]
-fn launch_reads_at_once_and_a_positioned_proof_replaces_that_page() -> TestResult {
+fn launch_waits_for_the_first_frame_then_reads_one_snapshot() -> TestResult {
     let (mut client, _) = launch(false)?;
-    assert_eq!(client.peer_mut().legacy_reads, 1, "launch is unchanged");
-    assert_eq!(client.peer_mut().snapshots, 0);
+    assert_eq!(client.peer_mut().page_reads, 0, "no message page");
+    assert_eq!(client.peer_mut().snapshots, 0, "no read before the stream");
     client.pump_at(at(100))?;
-    assert_eq!(client.peer_mut().snapshots, 1, "one snapshot re-read");
+    assert_eq!(client.peer_mut().snapshots, 1, "one snapshot");
     assert_eq!(rendered(&client), "aaaa");
     Ok(())
 }
 
-/// A snapshot 404 on a positions connection: its legacy replacement may never
-/// send a first frame.
-fn refused(legacy_pending: bool) -> TestResult<(Client<Peer>, SessionWireId)> {
+#[test]
+fn a_snapshot_404_refuses_the_server_as_too_old_on_both_reads() -> TestResult {
+    // The direct read.
     let (mut client, session) = streaming()?;
+    client.peer_mut().snapshot = WireResponse {
+        status: 404,
+        body: Vec::new(),
+    };
+    let snapshots = client.peer_mut().snapshots;
+    // A pump-owned read is pending when the refusal lands.
+    client.open_commands();
+    assert!(too_old(client.reconcile(&session).map(|()| true)));
+    assert_eq!(client.peer_mut().page_reads, 0, "no message page instead");
+    stays_refused(&mut client, &session, snapshots + 1)?;
+    // The queued read after a cut.
+    let (mut client, session) = streaming()?;
+    client.peer_mut().snapshot = WireResponse {
+        status: 404,
+        body: Vec::new(),
+    };
+    let snapshots = client.peer_mut().snapshots;
+    cut(&mut client, FramePoll::Closed, 1_000)?;
+    client.peer_mut().frames.push_back(connected());
+    client.open_commands();
+    assert!(too_old(client.pump_at(at(1_100))));
+    assert_eq!(client.peer_mut().page_reads, 0, "no message page instead");
+    stays_refused(&mut client, &session, snapshots + 1)?;
+    Ok(())
+}
+
+/// After a terminal refusal the stream is retired, later cuts, pumps and
+/// reads ask the service nothing, and recovery advertises no deadline.
+fn stays_refused(
+    client: &mut Client<Peer>,
+    session: &SessionWireId,
+    snapshots: usize,
+) -> TestResult {
+    let retired = client.peer_mut().retired;
+    assert!(retired >= 1, "the stream is retired");
+    for later in [1_200, 1_300, 60_000] {
+        client.peer_mut().frames.push_back(FramePoll::Closed);
+        client.peer_mut().frames.push_back(connected());
+        assert!(too_old(client.pump_at(at(later))));
+        assert_eq!(
+            client.recovery_wait_at(at(later)),
+            None,
+            "no recovery deadline"
+        );
+    }
+    assert!(too_old(client.reconcile(session).map(|()| true)));
     let peer = client.peer_mut();
-    peer.snapshot.status = 404;
-    peer.legacy_on_refusal = true;
-    peer.legacy_pending = legacy_pending;
-    Ok((client, session))
+    assert_eq!(peer.snapshots, snapshots, "no second snapshot request");
+    assert_eq!(peer.page_reads, 0);
+    Ok(())
 }
 
 #[test]
-fn a_404_wait_for_a_silent_legacy_stream_is_bounded() -> TestResult {
-    // A positioned delta without an offset is refused; its snapshot read
-    // answers 404 at 1 s, and the wait for the legacy stream starts at 2 s.
-    let (mut client, session) = refused(true)?;
-    cut(&mut client, delta(&session, "x", None), 1_000)?;
-    assert_eq!(client.peer_mut().snapshots, 2, "the refusal was exercised");
-    assert!(no_legacy_read_through(&mut client, &[2_000, 3_000])?);
+fn a_session_the_service_cannot_find_is_not_a_server_too_old() -> TestResult {
+    let (mut client, session) = streaming()?;
+    client.peer_mut().snapshot = WireResponse {
+        status: 404,
+        // The product's own not-found body, byte for byte in shape.
+        body: serde_json::to_vec(&json!({"_tag":"SessionNotFoundError",
+            "sessionID":session.spelled(),"message":"Session was not found"}))?,
+    };
+    let refusal = client.reconcile(&session);
     assert!(
-        client.peer_mut().frames.is_empty(),
-        "the retired stream closed"
-    );
-    cut(&mut client, FramePoll::Closed, 4_000)?;
-    assert!(no_legacy_read_through(&mut client, &[5_000, 5_999])?);
-    client.pump_at(at(6_000))?;
-    assert_eq!(
-        client.peer_mut().legacy_reads,
-        1,
-        "HTTP read at the deadline"
+        matches!(
+            &refusal,
+            Err(grapt_client::ClientError::Refused { status: 404, message, .. })
+                if message == "Session was not found"
+        ),
+        "{refusal:?}"
     );
     Ok(())
 }
 
 #[test]
-fn a_404_legacy_first_frame_reads_the_page_at_once() -> TestResult {
-    let (mut client, session) = refused(false)?;
-    client.reconcile(&session)?;
-    client.pump_at(at(1_000))?;
-    client.pump_at(at(1_500))?;
-    assert_eq!(client.peer_mut().legacy_reads, 1);
-    Ok(())
-}
-
-#[test]
-fn a_404_wait_reads_permissions_and_keeps_its_queued_read() -> TestResult {
-    let (mut client, session) = refused(true)?;
-    let permissions = client.peer_mut().permission_reads;
-    client.reconcile(&session)?;
-    client.pump_at(at(1_000))?;
-    assert_eq!(client.peer_mut().permission_reads, permissions + 1);
-    assert!(no_legacy_read_through(&mut client, &[2_000, 3_000, 4_999])?);
-    assert_eq!(
-        client.peer_mut().permission_reads,
-        permissions + 1,
-        "recovery did not churn the queued read"
-    );
-    client.pump_at(at(5_000))?;
-    assert_eq!(
-        client.peer_mut().legacy_reads,
-        1,
-        "the queued read survived"
+fn another_typed_snapshot_404_keeps_its_own_message() -> TestResult {
+    let (mut client, session) = streaming()?;
+    client.peer_mut().snapshot = WireResponse {
+        status: 404,
+        body: serde_json::to_vec(&json!({"_tag":"WorkspaceNotFoundError",
+            "message":"the workspace was removed"}))?,
+    };
+    let refusal = client.reconcile(&session);
+    assert!(
+        matches!(&refusal, Err(grapt_client::ClientError::Refused { status: 404, message, .. })
+            if message == "the workspace was removed"),
+        "{refusal:?}"
     );
     Ok(())
 }

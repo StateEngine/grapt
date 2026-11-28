@@ -955,20 +955,24 @@ impl ContractDouble {
                 status: 200,
                 body: Vec::new(),
             }),
-            // A legacy double is an older service: the client keeps its
-            // legacy reads. A positioned one answers the coherent snapshot.
-            Operation::SessionSnapshot if self.positions_enabled() => {
-                let Some(session) = Self::session_of(&path) else {
-                    return Ok(WireResponse {
+            // An unknown session is the product's typed not-found.
+            Operation::SessionSnapshot => {
+                let session = Self::session_of(&path);
+                let snapshot = session
+                    .as_ref()
+                    .map(|session| self.coherent_snapshot(session))
+                    .transpose();
+                match snapshot {
+                    Ok(Some(Some(body))) => Ok(WireResponse { status: 200, body }),
+                    Ok(_) => Ok(WireResponse {
                         status: 404,
-                        body: Vec::new(),
-                    });
-                };
-                match self.coherent_snapshot(&session) {
-                    Ok(Some(body)) => Ok(WireResponse { status: 200, body }),
-                    Ok(None) => Ok(WireResponse {
-                        status: 404,
-                        body: Vec::new(),
+                        body: serde_json::json!({
+                            "_tag": "SessionNotFoundError",
+                            "sessionID": session.as_ref().map(|session| session.spelled()),
+                            "message": "Session was not found",
+                        })
+                        .to_string()
+                        .into_bytes(),
                     }),
                     Err(_) => Ok(WireResponse {
                         status: 500,
@@ -976,10 +980,6 @@ impl ContractDouble {
                     }),
                 }
             }
-            Operation::SessionSnapshot => Ok(WireResponse {
-                status: 404,
-                body: Vec::new(),
-            }),
         }
     }
 }

@@ -50,6 +50,7 @@ impl<C: Connection> Client<C> {
         &mut self,
         read: PeriodicRead,
     ) -> Result<Option<PreparedRead>, ClientError> {
+        self.refused()?;
         let (operation, session, location) = match read {
             PeriodicRead::Permissions => (Operation::PermissionRequestList, None, None),
             PeriodicRead::Sessions => (Operation::SessionList, None, None),
@@ -94,6 +95,9 @@ impl<C: Connection> Client<C> {
         prepared: PreparedRead,
         response: Result<WireResponse, TransportError>,
     ) -> Result<bool, ClientError> {
+        // An answer from a service refused since the read was issued is not
+        // applied.
+        self.refused()?;
         let in_scope = prepared.acknowledged == self.acknowledged
             && match prepared.read {
                 PeriodicRead::Permissions | PeriodicRead::Sessions => true,

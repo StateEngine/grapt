@@ -564,115 +564,11 @@ fn a_terminal_hydrates_before_consuming_the_next_executions_live_frames() {
     assert_eq!(client.diagnostics().stream_closes, 0);
 }
 
-#[test]
-fn a_quiescence_fact_outlives_a_terminal_only_the_relist_knows() {
-    // The Q3 row's shape against the real product: the quiescence edge crossed the
-    // client, but the turn's terminal never crossed the live stream — it exists only in
-    // the durable re-list, so the view never stamped it. The rebuild carries that
-    // terminal, and it must not erase the quiescence fact the client was told: the
-    // terminal's silence is not a fresh fact, and the re-subscription's hydration is the
-    // recovery path a cut live edge leaves behind.
-    let mut client = client();
-    let session = client
-        .create_session()
-        .unwrap_or_else(|error| panic!("create: {error}"));
-    client
-        .reconcile(&session)
-        .unwrap_or_else(|error| panic!("reconcile: {error}"));
-    client
-        .submit_prompt("hello")
-        .unwrap_or_else(|error| panic!("prompt: {error}"));
-    // The settle idle edge, as the live stream (or the next hydration) told
-    // this client — stamped, with no live terminal ever applied.
-    let envelope = EventEnvelope::decode(&format!(
-        "{{\"id\":\"evt_status_witness\",\"type\":\"session.status\",\"created\":1791695003000,\
-         \"data\":{{\"sessionID\":\"{session}\",\"status\":{{\"type\":\"idle\"}}}}}}",
-        session = session.as_inner().as_str()
-    ))
-    .unwrap_or_else(|error| panic!("status frame: {error}"));
-    client
-        .views
-        .get_mut(&session)
-        .unwrap_or_else(|| panic!("reconcile installs the view"))
-        .apply(&envelope, Bounds::PRODUCTION)
-        .unwrap_or_else(|error| panic!("status fold: {error}"));
-    client
-        .reconcile(&session)
-        .unwrap_or_else(|error| panic!("terminal reconcile: {error}"));
-    let view = client
-        .view()
-        .unwrap_or_else(|| panic!("the selected session has a view"));
-    assert!(
-        matches!(
-            view.execution,
-            ExecutionState::Settled {
-                outcome: Outcome::Succeeded,
-                ..
-            }
-        ),
-        "the durable terminal stands: {:?}",
-        view.execution
-    );
-    assert_eq!(
-        view.idle,
-        Some(true),
-        "the quiescence fact the client was told outlives the terminal the re-list carries"
-    );
-    assert_eq!(
-        view.idle_created,
-        Some(1_791_695_003_000),
-        "and its stamp travels with it"
-    );
-}
-
-#[test]
-fn a_busy_fact_does_not_outlive_a_terminal_only_the_relist_knows() {
-    // The mirror of the row above: the prepare busy for a turn whose terminal
-    // crossed only through the durable re-list is stale — the turn is
-    // durably over, and carrying the edge would claim work the durable record
-    // says ended. Absent is not busy:
-    // the screen returns to the honest unreported.
-    let mut client = client();
-    let session = client
-        .create_session()
-        .unwrap_or_else(|error| panic!("create: {error}"));
-    client
-        .reconcile(&session)
-        .unwrap_or_else(|error| panic!("reconcile: {error}"));
-    client
-        .submit_prompt("hello")
-        .unwrap_or_else(|error| panic!("prompt: {error}"));
-    let envelope = EventEnvelope::decode(&format!(
-        "{{\"id\":\"evt_status_witness2\",\"type\":\"session.status\",\"created\":1791695002000,         \"data\":{{\"sessionID\":\"{session}\",\"status\":{{\"type\":\"busy\"}}}}}}",
-        session = session.as_inner().as_str()
-    ))
-    .unwrap_or_else(|error| panic!("status frame: {error}"));
-    client
-        .views
-        .get_mut(&session)
-        .unwrap_or_else(|| panic!("reconcile installs the view"))
-        .apply(&envelope, Bounds::PRODUCTION)
-        .unwrap_or_else(|error| panic!("execution fold: {error}"));
-    client
-        .reconcile(&session)
-        .unwrap_or_else(|error| panic!("terminal reconcile: {error}"));
-    let view = client
-        .view()
-        .unwrap_or_else(|| panic!("the selected session has a view"));
-    assert!(
-        matches!(view.execution, ExecutionState::Settled { .. }),
-        "the durable terminal stands: {:?}",
-        view.execution
-    );
-    assert_eq!(
-        view.idle, None,
-        "a stale busy yields to the turn the terminal ends"
-    );
-}
-
 /// A wire peer over the contract double that queues raw live frames, so a
 /// witness can tell the client something the double would never emit of its
-/// own — a `session.status` edge — in exactly the order it chooses.
+/// own — a `session.status` edge — in exactly the order it chooses. Its
+/// frames are served on the double's own positioned stream, ahead of the
+/// double's.
 #[derive(Debug)]
 struct StatusPeer {
     inner: ContractDouble,
@@ -689,12 +585,19 @@ impl StatusPeer {
         }
     }
 
-    fn status(&mut self, session: &str, kind: &str, created: u64) {
+    /// A status edge carrying its typed state at committed position
+    /// `revision`.
+    fn status(&mut self, session: &str, kind: &str, revision: u64) {
+        let state = if kind == "busy" {
+            serde_json::json!({"type": "running", "revision": revision, "executionID": "exe_status"})
+        } else {
+            serde_json::json!({"type": "idle", "revision": revision})
+        };
         let frame = serde_json::json!({
-            "id": format!("evt_status_{created}"),
+            "id": format!("evt_status_{revision}"),
             "type": "session.status",
-            "created": created,
-            "data": { "sessionID": session, "status": { "type": kind } }
+            "created": revision,
+            "data": { "sessionID": session, "status": { "type": kind }, "state": state }
         })
         .to_string();
         self.frames.push_back(FramePoll::Frame(frame));
@@ -715,14 +618,21 @@ impl Connection for StatusPeer {
         !self.closed
     }
     fn poll_frame(&mut self) -> Result<FramePoll, TransportError> {
-        let frame = self.frames.pop_front().unwrap_or(FramePoll::Idle);
-        if matches!(frame, FramePoll::Closed) {
-            self.closed = true;
+        if let Some(connect) = self.inner.connect() {
+            return Ok(connect);
         }
-        Ok(frame)
+        match self.frames.pop_front() {
+            Some(FramePoll::Closed) => {
+                self.closed = true;
+                Ok(FramePoll::Closed)
+            }
+            Some(frame) => Ok(self.inner.serve(frame)),
+            None => self.inner.poll_frame(),
+        }
     }
     fn resubscribe(&mut self) {
         self.closed = false;
+        self.inner.resubscribe();
     }
 }
 
@@ -740,14 +650,12 @@ fn a_stream_cut_returns_the_quiescence_fact_to_unreported() {
     let Ok(session) = client.create_session() else {
         panic!("create")
     };
-    client
-        .reconcile(&session)
-        .unwrap_or_else(|error| panic!("reconcile: {error}"));
+    prove(&mut client);
 
     // The live idle edge the connection carried.
     client
         .connection
-        .status(session.as_inner().as_str(), "idle", 1_791_695_003_000);
+        .status(session.as_inner().as_str(), "idle", 1_000);
     let Ok(_) = client.pump() else {
         panic!("pump the idle edge")
     };
@@ -767,15 +675,20 @@ fn a_stream_cut_returns_the_quiescence_fact_to_unreported() {
         None,
         "the dead connection's observation must not survive the cut"
     );
+    // The reconnect's snapshot reports the state at its own position.
+    prove(&mut client);
+    let Ok(_) = client.pump() else {
+        panic!("pump the snapshot")
+    };
     assert!(
         client.stream_state().is_live(),
-        "the reconnect re-established the stream; the fact stays unreported"
+        "the reconnect re-established the stream"
     );
 
     // Same-process reconnect, fresh edge: the footer is truthful again.
     client
         .connection
-        .status(session.as_inner().as_str(), "busy", 1_791_695_004_000);
+        .status(session.as_inner().as_str(), "busy", 1_001);
     let Ok(_) = client.pump() else {
         panic!("pump the fresh edge")
     };
@@ -799,13 +712,11 @@ fn a_fresh_busy_fact_survives_the_relist_of_the_preceding_terminal() {
     let Ok(session) = client.create_session() else {
         panic!("create")
     };
-    client
-        .reconcile(&session)
-        .unwrap_or_else(|error| panic!("reconcile: {error}"));
+    prove(&mut client);
     client
         .submit_prompt("review turn")
         .unwrap_or_else(|error| panic!("prompt: {error}"));
-    // The turn's terminal crosses only through the durable re-list.
+    // The turn's terminal is read through the snapshot.
     client
         .reconcile(&session)
         .unwrap_or_else(|error| panic!("terminal reconcile: {error}"));
@@ -821,7 +732,7 @@ fn a_fresh_busy_fact_survives_the_relist_of_the_preceding_terminal() {
     // The next preparation's busy, observed live after that history read.
     client
         .connection
-        .status(session.as_inner().as_str(), "busy", 1_791_695_005_000);
+        .status(session.as_inner().as_str(), "busy", 1_000);
     let Ok(_) = client.pump() else {
         panic!("pump the fresh busy")
     };
@@ -831,8 +742,8 @@ fn a_fresh_busy_fact_survives_the_relist_of_the_preceding_terminal() {
         "the fresh busy must be reported"
     );
 
-    // A further relist carrying the same preceding terminal: the fresh busy
-    // stands.
+    // A further snapshot at the preceding terminal's position: the fresh
+    // busy is newer, and stands.
     client
         .reconcile(&session)
         .unwrap_or_else(|error| panic!("relist: {error}"));
@@ -840,85 +751,6 @@ fn a_fresh_busy_fact_survives_the_relist_of_the_preceding_terminal() {
         client.view().map(|view| view.idle),
         Some(Some(false)),
         "a relist of the preceding terminal must not discard the fresh busy"
-    );
-}
-
-#[test]
-fn a_newer_terminal_clears_stale_busy_at_the_retention_bound() {
-    // the reviewer SQ-H3 retention remainder: at
-    // the transcript retention bound a completed newer turn evicts the
-    // older user rows, so a count of RETAINED rows no longer moves — and
-    // the preparation's stale busy of the turn's own preparation survived
-    // its own terminal. The folded count names the turn retention cannot.
-    let mut bounds = Bounds::PRODUCTION;
-    bounds.max_retained_slices = 2;
-    let Ok(bounds) = bounds.validate() else {
-        panic!("bounds must validate")
-    };
-    let mut client = Client::new(StatusPeer::new(), bounds);
-    if let Err(error) = client.select_first_offer() {
-        panic!("the double must offer a selection: {error}");
-    }
-    let Ok(session) = client.create_session() else {
-        panic!("create")
-    };
-    client
-        .reconcile(&session)
-        .unwrap_or_else(|error| panic!("reconcile: {error}"));
-
-    // Turn one completes. At the two-slice bound the row that names it is
-    // already evicted by the time its terminal is installed.
-    client
-        .submit_prompt("first completed turn")
-        .unwrap_or_else(|error| panic!("prompt: {error}"));
-    client
-        .reconcile(&session)
-        .unwrap_or_else(|error| panic!("terminal reconcile: {error}"));
-    let Some(view) = client.view() else {
-        panic!("a view exists")
-    };
-    assert!(
-        matches!(view.execution, ExecutionState::Settled { .. }),
-        "the durable terminal stands: {:?}",
-        view.execution
-    );
-    assert_eq!(
-        view.user_row_count(),
-        0,
-        "the bound evicted the row that names turn one: the precondition"
-    );
-
-    // Turn two's preparation busy is observed live, and its terminal then
-    // installs over the re-list while the busy is held.
-    client
-        .connection
-        .status(session.as_inner().as_str(), "busy", 1_791_695_006_000);
-    let Ok(_) = client.pump() else {
-        panic!("pump the preparation busy")
-    };
-    assert_eq!(
-        client.view().map(|view| view.idle),
-        Some(Some(false)),
-        "the preparation busy must be reported"
-    );
-    client
-        .submit_prompt("second completed turn")
-        .unwrap_or_else(|error| panic!("prompt: {error}"));
-    client
-        .reconcile(&session)
-        .unwrap_or_else(|error| panic!("second terminal reconcile: {error}"));
-    assert!(
-        matches!(
-            client.view().map(|view| &view.execution),
-            Some(ExecutionState::Settled { .. })
-        ),
-        "turn two's terminal stands: {:?}",
-        client.view().map(|view| &view.execution)
-    );
-    assert_eq!(
-        client.view().map(|view| view.idle),
-        Some(None),
-        "the newer terminal must clear the stale busy at the bound"
     );
 }
 

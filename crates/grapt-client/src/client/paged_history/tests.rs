@@ -17,8 +17,31 @@ struct Peer {
     tools: bool,
 }
 
+impl Peer {
+    /// The snapshot: the newest window this peer serves.
+    fn snapshot(&mut self, request: &WireRequest) -> Result<WireResponse, TransportError> {
+        let session = request
+            .path()
+            .strip_prefix("/api/session/")
+            .and_then(|rest| rest.split('/').next())
+            .and_then(|raw| crate::wire::session_id(raw).ok())
+            .unwrap_or_else(|| panic!("snapshot path"));
+        let window = WireRequest::new(Operation::MessageList, Some(&session), None)
+            .unwrap_or_else(|e| panic!("window: {e}"))
+            .with_query("limit", "200")
+            .with_query("order", "desc");
+        let page = self.call(&window)?;
+        let body = crate::double::page_snapshot(request, &page.body, 0)
+            .unwrap_or_else(|e| panic!("snapshot: {e}"));
+        Ok(WireResponse { status: 200, body })
+    }
+}
+
 impl Transport for Peer {
     fn call(&mut self, request: &WireRequest) -> Result<WireResponse, TransportError> {
+        if request.operation() == Operation::SessionSnapshot {
+            return self.snapshot(request);
+        }
         if request.operation() != Operation::MessageList {
             return self.inner.call(request);
         }
@@ -118,11 +141,13 @@ impl Transport for Peer {
 }
 impl Connection for Peer {
     fn poll_frame(&mut self) -> Result<FramePoll, TransportError> {
-        Ok(FramePoll::Idle)
+        self.inner.poll_frame()
     }
-    fn resubscribe(&mut self) {}
+    fn resubscribe(&mut self) {
+        self.inner.resubscribe();
+    }
     fn subscribed(&self) -> bool {
-        true
+        self.inner.subscribed()
     }
 }
 
@@ -145,6 +170,7 @@ fn client_with(total: usize) -> Result<(Client<Peer>, SessionWireId), ClientErro
     );
     client.enable_paged_history();
     client.select(&session)?;
+    crate::client::tests::prove(&mut client);
     Ok((client, session))
 }
 
@@ -213,24 +239,6 @@ fn tool_hints_refresh_one_newest_page_in_chronological_order_without_moving_the_
         .slices
         .iter()
         .any(|row| row.text.contains("tool 09800"))));
-    Ok(())
-}
-
-#[test]
-fn a_window_relist_keeps_live_idle_when_the_tail_has_no_contradicting_terminal(
-) -> Result<(), ClientError> {
-    let (mut client, session) = client_with(10_000)?;
-    let view = client
-        .views
-        .get_mut(&session)
-        .unwrap_or_else(|| panic!("live view"));
-    view.idle = Some(true);
-    view.idle_created = Some(1);
-    client.reconcile(&session)?;
-    // The canonical identity-based policy carries a live fact until an actual
-    // newer durable terminal contradicts it; a window's row count is no evidence.
-    assert_eq!(client.view().and_then(|v| v.idle), Some(true));
-    assert!(client.stream_state().is_live());
     Ok(())
 }
 
@@ -344,9 +352,15 @@ fn failed_or_repeated_page_preserves_the_reader_and_new_tail_recovery_does_not_m
         assert!(client.browse_history(HistoryMove::Older).is_err());
         assert_eq!(client.display_view().cloned(), before);
     }
-    client.cursor.stream_closed();
+    // The stream is cut; the reconnect proves itself before its snapshot.
+    client
+        .peer_mut()
+        .inner
+        .set_fault(crate::double::Fault::CloseStream);
     let reads = client.peer_mut().reads;
-    client.pump_at(std::time::Duration::ZERO)?;
+    for _ in 0..3 {
+        client.pump_at(std::time::Duration::ZERO)?;
+    }
     assert_eq!(
         client.peer_mut().reads,
         reads + 1,

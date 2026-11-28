@@ -144,3 +144,38 @@ fn aws_chain_refusals_keep_safe_causes_without_refreshing_or_echoing_backend_tex
     }
     Ok(())
 }
+
+#[test]
+fn an_endpoint_refusal_shows_the_services_recovery_step() -> Result<(), Box<dyn std::error::Error>>
+{
+    let mut api = Api {
+        directory: Some("/work/my project".into()),
+        attempt: None,
+        browser: None,
+        peer: Peer(VecDeque::from([(
+            Operation::IntegrationKeyConnect,
+            WireResponse {
+                status: 400,
+                body: serde_json::to_vec(&serde_json::json!({
+                    "_tag":"InvalidRequestError", "kind":grapt_api::u3a::INTEGRATION_ENDPOINT_KIND,
+                    "message":"could not reach http://127.0.0.1:11434/v1; start the server there or enter its API base URL"
+                }))?,
+            },
+        )])),
+    };
+    let body = serde_json::from_value(serde_json::json!({
+        "key":"private-fixture-key", "custom":{"endpoint":"http://127.0.0.1:11434/v1"}
+    }))?;
+    let error = match api.execute(Request::Key(
+        IntegrationIdDto::try_new("ollama")?,
+        Box::new(body),
+    )) {
+        Err(error) => error,
+        _ => return Err("endpoint refusal accepted".into()),
+    };
+    assert_eq!(
+        error,
+        "Could not reach http://127.0.0.1:11434/v1; start the server there or enter its API base URL."
+    );
+    Ok(())
+}

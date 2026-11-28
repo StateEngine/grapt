@@ -197,6 +197,16 @@ impl Pane {
     fn endpoint_inputs(&self) -> bool {
         self.custom() || self.endpoint_provider().is_some()
     }
+    /// The entered API base, or a local server's usual one when left empty.
+    fn endpoint_base(&self) -> &str {
+        match self.endpoint.trim() {
+            "" => self
+                .endpoint_provider()
+                .and_then(|row| row.local)
+                .map_or("", |local| local.base),
+            entered => entered,
+        }
+    }
     fn bedrock(&self) -> bool {
         self.provider
             .as_ref()

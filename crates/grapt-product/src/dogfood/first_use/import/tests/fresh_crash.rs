@@ -115,6 +115,11 @@ fn paused_child(
             .env("GRAPT_IR_SOURCE", source)
             .env("GRAPT_IR_MARKER", marker)
             .env("GRAPT_IR_CUT", phase)
+            .env(
+                grapt_login::profile_security::TEST_KEYSTORE_VARIABLE,
+                grapt_login::profile_security::isolate_test_keystore()
+                    .map_err(|error| error.to_string())?,
+            )
             .stdout(Stdio::null())
             .stderr(Stdio::null())
             .spawn()

@@ -93,9 +93,10 @@ impl Connection for PresetPeer {
     }
     fn resubscribe(&mut self) {
         self.connected = true;
+        self.inner.resubscribe();
     }
     fn poll_frame(&mut self) -> Result<FramePoll, TransportError> {
-        Ok(FramePoll::Idle)
+        self.inner.poll_frame()
     }
     fn begin_read(
         &mut self,

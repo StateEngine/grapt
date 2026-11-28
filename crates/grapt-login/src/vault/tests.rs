@@ -26,7 +26,6 @@ fn secret(value: &str) -> Result<VaultSecret, VaultError> {
 }
 
 #[test]
-#[expect(clippy::cognitive_complexity, reason = "legacy")]
 fn stored_credentials_keep_connection_destination_and_payload_purpose() -> TestResult {
     let profile = Profile::new("bindings")?;
     let mut vault = SealedFileVault::open(&profile.0)?;
@@ -57,14 +56,7 @@ fn stored_credentials_keep_connection_destination_and_payload_purpose() -> TestR
     assert!(api.check_api("https://foreign.example/v1").is_err());
     assert!(api.check_refresh("https://api.openai.com/v1").is_err());
     let description = vault.describe(&key, &api)?.ok_or("missing description")?;
-    assert_eq!(
-        description.backend,
-        if cfg!(windows) {
-            BackendKind::WindowsCurrentUserEncryption
-        } else {
-            BackendKind::OwnerOnlyLegacyPlaintext
-        }
-    );
+    assert_eq!(description.backend, BackendKind::SystemKeystoreEncryption);
     assert_eq!(description.last4.as_deref(), Some("1234"));
     assert_eq!(description.updated, Timestamp::from_millis(42));
     assert!(vault.remove(&key)?);
@@ -224,7 +216,6 @@ fn deletion_clears_owned_staging_and_preserves_foreign_links() -> TestResult {
     Ok(())
 }
 
-#[cfg(windows)]
 #[test]
 fn an_entry_whose_key_is_gone_can_be_replaced_and_removed() -> TestResult {
     let profile = Profile::new("missing-key")?;
@@ -260,5 +251,47 @@ fn an_entry_whose_key_is_gone_can_be_replaced_and_removed() -> TestResult {
         .put(&key, &api, secret("other-key")?, Timestamp::from_millis(2))
         .is_err());
     assert!(vault.remove(&key).is_err());
+    Ok(())
+}
+
+/// Without a keystore a new entry is stored owner-only and sealed when next
+/// written with one; a sealed entry is then never overwritten while its
+/// keystore is away, only removed.
+#[cfg(not(windows))]
+#[test]
+fn a_sealed_entry_is_never_downgraded_without_its_keystore() -> TestResult {
+    use crate::profile_security::TestKeystoreUnavailable;
+    let profile = Profile::new("headless")?;
+    let mut vault = SealedFileVault::open(&profile.0)?;
+    let key = key("fixture", "fixture.credential")?;
+    let api = DestinationBinding::key(ApiDestination::parse("https://api.example/v1")?);
+    let backend = |vault: &SealedFileVault| -> TestResult<BackendKind> {
+        Ok(vault.describe(&key, &api)?.ok_or("missing entry")?.backend)
+    };
+    {
+        let _headless = TestKeystoreUnavailable::now();
+        vault.put(
+            &key,
+            &api,
+            secret("headless-key")?,
+            Timestamp::from_millis(1),
+        )?;
+    }
+    assert_eq!(backend(&vault)?, BackendKind::OwnerOnlyLegacyPlaintext);
+    vault.put(&key, &api, secret("sealed-key")?, Timestamp::from_millis(2))?;
+    assert_eq!(backend(&vault)?, BackendKind::SystemKeystoreEncryption);
+    let sealed = std::fs::read(profile.0.join("fixture.credential"))?;
+    let _headless = TestKeystoreUnavailable::now();
+    assert!(matches!(
+        vault.get(&key, &api),
+        Err(VaultError::KeystoreUnavailable)
+    ));
+    assert!(matches!(
+        vault.put(&key, &api, secret("downgrade")?, Timestamp::from_millis(3)),
+        Err(VaultError::KeystoreUnavailable)
+    ));
+    assert_eq!(std::fs::read(profile.0.join("fixture.credential"))?, sealed);
+    assert!(vault.remove(&key)?);
+    assert!(vault.get(&key, &api)?.is_none());
     Ok(())
 }

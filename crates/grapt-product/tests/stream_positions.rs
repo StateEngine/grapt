@@ -155,6 +155,15 @@ struct Positioned {
     reader: BufReader<TcpStream>,
     prior: Option<(String, u64)>,
 }
+
+/// Fold one positioned frame into the client's view.
+fn apply(view: &mut SessionView, frame: &serde_json::Value) -> TestResult {
+    view.apply(
+        &EventEnvelope::decode(&frame.to_string())?,
+        Bounds::PRODUCTION,
+    )?;
+    Ok(())
+}
 impl Positioned {
     fn next(&mut self) -> TestResult<(String, serde_json::Value)> {
         let raw = next(&mut self.reader)?.ok_or("positioned frame absent")?;
@@ -174,11 +183,12 @@ impl Positioned {
     }
 }
 
+/// The next legacy frame, byte for byte as a legacy-only registration sends
+/// it and decodable as an envelope.
 fn legacy(
     reader: &mut BufReader<TcpStream>,
     control: &DogfoodEventSubscription,
     codec: &mut SseReader,
-    view: &mut SessionView,
 ) -> TestResult<serde_json::Value> {
     let raw = next(reader)?.ok_or("legacy frame absent")?;
     let expected = control
@@ -192,8 +202,7 @@ fn legacy(
     assert!(!raw.lines().any(|line| line.starts_with("id:")));
     codec.push_bytes(raw.as_bytes())?;
     let payload = codec.take().ok_or("legacy decoder lost frame")?;
-    let event = EventEnvelope::decode(&payload)?;
-    view.apply(&event, Bounds::PRODUCTION)?;
+    EventEnvelope::decode(&payload)?;
     let value = data(&raw)?;
     assert!(value["data"].get("from").is_none());
     Ok(value)
@@ -258,7 +267,9 @@ fn publish_blocks(
                 },
             )?;
         }
-        assert_eq!(positioned.next()?.1, legacy(old, control, codec, view)?);
+        let current = positioned.next()?.1;
+        apply(view, &current)?;
+        assert_eq!(current, legacy(old, control, codec)?);
         let mut offset = 0u64;
         for text in ["é🙂", "x"] {
             let event = delta(kind, ordinal, text)?;
@@ -274,11 +285,12 @@ fn publish_blocks(
             }
             let mut current = positioned.next()?.1;
             assert_eq!(current["data"]["from"].as_u64(), Some(offset));
+            apply(view, &current)?;
             current["data"]
                 .as_object_mut()
                 .ok_or("delta object")?
                 .remove("from");
-            assert_eq!(current, legacy(old, control, codec, view)?);
+            assert_eq!(current, legacy(old, control, codec)?);
             offset += u64::try_from(text.len())?;
         }
         let event = DurableEvent::new(
@@ -308,13 +320,15 @@ fn publish_blocks(
                 },
             )?;
         }
-        assert_eq!(positioned.next()?.1, legacy(old, control, codec, view)?);
+        let current = positioned.next()?.1;
+        apply(view, &current)?;
+        assert_eq!(current, legacy(old, control, codec)?);
     }
     Ok(())
 }
 
 #[test]
-fn mixed_subscribers_keep_legacy_decoding_and_positioned_utf8_offsets() -> TestResult {
+fn mixed_subscribers_keep_legacy_bytes_and_positioned_utf8_offsets() -> TestResult {
     let runtime = tokio::runtime::Runtime::new()?;
     let hub = hub()?;
     let control_hub = self::hub()?;
@@ -328,7 +342,7 @@ fn mixed_subscribers_keep_legacy_decoding_and_positioned_utf8_offsets() -> TestR
     };
     let mut codec = SseReader::new(Bounds::PRODUCTION);
     let mut view = SessionView::new(&grapt_client::wire::session_id(SESSION)?);
-    let initial = legacy(&mut old, &control, &mut codec, &mut view)?;
+    let initial = legacy(&mut old, &control, &mut codec)?;
     assert_eq!(positioned.next()?.1, initial);
     publish_blocks(
         &hub,

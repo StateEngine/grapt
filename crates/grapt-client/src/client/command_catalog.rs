@@ -54,7 +54,7 @@ impl<C: Connection> Client<C> {
         false
     }
     pub(super) fn commands_changed(&mut self) -> bool {
-        if !self.command_catalog.enabled {
+        if !self.command_catalog.enabled || self.keep_commands_refused() {
             return false;
         }
         if self.command_catalog.pending {
@@ -75,7 +75,9 @@ impl<C: Connection> Client<C> {
             return;
         }
         self.command_catalog.enabled = true;
-        self.command_catalog.note = Some("Commands loading…".into());
+        if !self.keep_commands_refused() {
+            self.command_catalog.note = Some("Commands loading…".into());
+        }
     }
     pub fn commands(&self) -> &[CommandTemplate] {
         if self.command_catalog.location != self.form_location()
@@ -87,6 +89,7 @@ impl<C: Connection> Client<C> {
     }
     pub fn commands_status(&self) -> Option<&str> {
         if self.command_catalog.enabled
+            && self.refused().is_ok()
             && (self.command_catalog.location != self.form_location()
                 || self.command_catalog.session != self.selected)
         {
@@ -102,11 +105,46 @@ impl<C: Connection> Client<C> {
                     || self.command_catalog.session != self.selected))
     }
     pub fn refresh_commands(&mut self) {
+        if self.keep_commands_refused() {
+            return;
+        }
         if self.command_catalog.pending {
             self.connection.cancel_catalog();
         }
         self.command_catalog.reset();
     }
+    /// Whether the service was refused; a command read it would owe
+    /// settles with the refusal instead of loading.
+    fn keep_commands_refused(&mut self) -> bool {
+        match self.refused() {
+            Ok(()) => false,
+            Err(refusal) => {
+                self.refuse_commands(&refusal.to_string());
+                true
+            }
+        }
+    }
+
+    /// Whether the service was refused, so no command read will run.
+    pub fn commands_refused(&self) -> bool {
+        self.refused().is_err()
+    }
+
+    /// A refused service answers no command read: the catalog drops the rows
+    /// it had, loaded or waiting, and settles saying why.
+    pub(super) fn refuse_commands(&mut self, refusal: &str) {
+        if self.command_catalog.pending {
+            self.connection.cancel_catalog();
+        }
+        self.command_catalog.location = self.form_location();
+        self.command_catalog.session = self.selected.clone();
+        self.command_catalog.rows.clear();
+        self.command_catalog.dirty = false;
+        self.command_catalog.pending = false;
+        self.command_catalog.settled = true;
+        self.command_catalog.note = Some(format!("Commands unavailable: {refusal}"));
+    }
+
     pub(super) fn advance_commands(&mut self) -> bool {
         if !self.command_catalog.enabled
             || self.catalog_pending()

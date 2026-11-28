@@ -1,43 +1,59 @@
-//! Positions mode (B3 S2c). A connection whose stream proved positions reads
-//! one coherent snapshot at a committed position P in place of the legacy
-//! history read: its rows and cursor install through the existing tail path,
+//! Positions (B3 S2c). Every stream must open with a positioned
+//! `server.connected`; once it has, the client reads one coherent snapshot at
+//! a committed position P: its rows and cursor install through the tail path,
 //! and P becomes the durable baseline, so a durable frame at or before P is a
-//! duplicate and one after it applies once. A legacy connection never asks.
+//! duplicate and one after it applies once. A service without positions or
+//! without the snapshot is refused as too old, naming the upgrade.
 use super::*;
 use grapt_api::u3a::{decode_page, SessionSnapshotResponseDto};
 
-/// What the one live connection proved about stream positions.
+/// What the one live stream has proved about itself.
 #[derive(Debug, Default)]
 pub(crate) struct Positions {
-    /// How this connection's stream carries live blocks, decided once by its
-    /// first frame: a `server.connected` with an `id:` proves positions, any
-    /// other first frame is legacy. Cleared when the stream ends.
-    pub(super) mode: Option<crate::projection::StreamMode>,
-    /// The service had no snapshot route (404): the connection is turning
-    /// legacy, and the messages read waits for the legacy stream's first frame.
-    pub(super) awaiting_legacy: bool,
+    /// Whether this stream's first frame, a positioned `server.connected`,
+    /// has arrived. Cleared when the stream ends.
+    pub(super) proven: bool,
     /// The committed position the next tail install adopts as its baseline.
     pub(super) baseline: Option<u64>,
-    /// The last mode any stream on this connection proved. After a cut it says
-    /// whether the next stream must prove its mode before the messages read.
-    pub(super) proven: Option<crate::projection::StreamMode>,
-    /// A legacy messages read installed while no stream had proved a mode. A
-    /// later positions proof re-reads a snapshot before any delta applies.
-    pub(super) legacy_unproven: bool,
-    /// When the client began waiting for a stream to prove its mode, on the
+    /// When the client began waiting for a stream's first frame, on the
     /// `pump_at` clock. Only a proof clears it, so the wait is bounded in total
     /// across stream ends and selection changes.
     pub(super) handshake_since: Option<std::time::Duration>,
+    /// The session whose snapshot installed last. It outlives the stream:
+    /// what the snapshot told about that session stays known until a
+    /// selection clears what it installed.
+    installed: Option<SessionWireId>,
 }
 
 impl Positions {
-    /// A stream ended: its mode and baseline go. What the connection learned
-    /// (a 404's wait, the last proof, an unproven baseline, the handshake
-    /// deadline) survives until the next stream's first frame.
+    /// A selection cleared the session-scoped state a snapshot installed, so
+    /// no session is ready until its own snapshot installs again.
+    pub(super) fn forget_installed(&mut self) {
+        self.installed = None;
+    }
+
+    /// A stream ended: its proof and baseline go. The handshake deadline
+    /// survives until the next stream's first frame.
     pub(super) fn reset(&mut self) {
-        self.mode = None;
+        self.proven = false;
         self.baseline = None;
     }
+}
+
+/// Which of a snapshot's open-state sections an install takes. A staged
+/// attachment reads its forms after its snapshot, and may accept a newer
+/// permission refresh meanwhile; it leaves those sections to the newer reads.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) struct Sections {
+    pub(super) permissions: bool,
+    pub(super) forms: bool,
+}
+
+impl Sections {
+    pub(super) const ALL: Self = Self {
+        permissions: true,
+        forms: true,
+    };
 }
 
 /// A decoded snapshot: the page the tail path installs, its position, and
@@ -62,7 +78,7 @@ pub(super) struct Provisional {
     text: String,
 }
 
-/// The legacy page shape, borrowed from the snapshot's typed rows and cursor.
+/// The message page shape, borrowed from the snapshot's typed rows and cursor.
 #[derive(serde::Serialize)]
 struct Page<'a, R, C> {
     data: &'a R,
@@ -70,7 +86,7 @@ struct Page<'a, R, C> {
 }
 
 /// Decode through the closed snapshot decoder, then hand its rows and cursor
-/// to the same page decoder the legacy read uses, so both paths install one
+/// to the same page decoder older-history pages use, so both install one
 /// shape.
 pub(super) fn decode(bytes: &[u8]) -> Result<Snapshot, ClientError> {
     let limits = crate::wire::limits()?;
@@ -104,100 +120,56 @@ pub(super) fn decode(bytes: &[u8]) -> Result<Snapshot, ClientError> {
 }
 
 impl<C: Connection> Client<C> {
-    /// Snapshot reads only on a connection whose stream proved positions and
-    /// whose service serves the snapshot; never one without the other.
-    pub(super) fn positions_mode(&self) -> bool {
-        self.positions.mode == Some(crate::projection::StreamMode::Positions)
+    /// Whether the selected session's snapshot has installed, so its open
+    /// permissions, forms and execution state are known. Selecting another
+    /// session waits for that session's own snapshot.
+    pub fn selected_snapshot_installed(&self) -> bool {
+        self.selected.is_some() && self.positions.installed == self.selected
     }
 
-    /// Decide this connection's mode from its first frame, once: only a
-    /// `server.connected` carrying an `id:` proves positions. False when a
-    /// later frame belongs to the other class.
-    pub(super) fn latch_mode(&mut self, payload: &str, positioned: bool) -> bool {
-        use crate::projection::StreamMode;
-        match self.positions.mode {
-            None => {
-                // The stream a snapshot 404 asked for has arrived.
-                self.positions.awaiting_legacy = false;
-                let connected = EventEnvelope::decode(payload)
-                    .ok()
-                    .and_then(|envelope| envelope.member)
-                    == Some(crate::contract::EventMember::ServerConnected);
-                let mode = if positioned && connected {
-                    StreamMode::Positions
-                } else {
-                    StreamMode::Legacy
-                };
-                self.positions.mode = Some(mode);
-                self.positions.proven = Some(mode);
-                self.positions.handshake_since = None;
-                // A legacy page read before this proof must not take this
-                // stream's deltas: a snapshot replaces it first.
-                if std::mem::take(&mut self.positions.legacy_unproven)
-                    && mode == StreamMode::Positions
-                {
-                    self.request_history();
-                }
-                true
-            }
-            Some(mode) => (mode == StreamMode::Positions) == positioned,
+    /// Check one frame against this stream's contract. Its first frame must
+    /// be a positioned `server.connected`; an unpositioned one comes from a
+    /// service that predates positions, which is refused. False when the
+    /// stream breaks its own contract: a positioned first frame that is not
+    /// the connect, or a later frame without a position.
+    pub(super) fn latch_mode(
+        &mut self,
+        payload: &str,
+        positioned: bool,
+    ) -> Result<bool, ClientError> {
+        if self.positions.proven {
+            return Ok(positioned);
         }
-    }
-
-    /// The one decision both messages reads make: a snapshot on a stream that
-    /// proved positions, a legacy page on one that proved legacy. While no
-    /// stream has proved a mode, a connection that needs the proof (a snapshot
-    /// 404's legacy replacement, or a cut on a positions connection) waits for
-    /// the next stream's first frame, bounded in total by
-    /// [`super::recovery::RECONNECT_RETRY_MAX`] from `handshake_since`; past
-    /// that the page is read over HTTP anyway. `None` waits. A caller without
-    /// the `pump_at` clock passes `None` and only ever waits or proceeds as
-    /// though the bound had not passed; the queued read applies it.
-    pub(super) fn messages_read(
-        &self,
-        now: Option<std::time::Duration>,
-    ) -> Option<super::recovery::MessagesRead> {
-        use super::recovery::MessagesRead;
-        use crate::projection::StreamMode;
-        match self.positions.mode {
-            Some(StreamMode::Positions) => Some(MessagesRead::Snapshot),
-            Some(StreamMode::Legacy) => Some(MessagesRead::Legacy),
-            None => {
-                let expired =
-                    now.zip(self.positions.handshake_since)
-                        .is_some_and(|(now, since)| {
-                            now.saturating_sub(since) >= super::recovery::RECONNECT_RETRY_MAX
-                        });
-                (!self.needs_mode_proof() || expired).then_some(MessagesRead::Legacy)
-            }
+        if !positioned {
+            // No later stream from this service can prove positions.
+            return Err(self.refuse_too_old("stream positions"));
         }
-    }
-
-    /// Whether the next stream must prove its mode before the messages read.
-    pub(super) fn needs_mode_proof(&self) -> bool {
-        self.positions.mode.is_none()
-            && (self.positions.awaiting_legacy
-                || self.positions.proven == Some(crate::projection::StreamMode::Positions))
-    }
-
-    /// The service has no snapshot (404): the connection turns legacy with a
-    /// legacy stream before any legacy read, so a positions stream is never
-    /// paired with a legacy history read.
-    pub(super) fn refuse_snapshot(&mut self) {
-        self.connection.refuse_positions();
-        self.drop_resume();
-        self.positions.reset();
-        self.positions.awaiting_legacy = true;
-        self.cursor.stream_closed();
-    }
-
-    /// The mode live blocks apply in on this connection.
-    pub(super) fn stream_mode(&self) -> crate::projection::StreamMode {
-        if self.positions_mode() {
-            crate::projection::StreamMode::Positions
-        } else {
-            crate::projection::StreamMode::Legacy
+        let connected = EventEnvelope::decode(payload)
+            .ok()
+            .and_then(|envelope| envelope.member)
+            == Some(crate::contract::EventMember::ServerConnected);
+        if connected {
+            self.positions.proven = true;
+            self.positions.handshake_since = None;
         }
+        Ok(connected)
+    }
+
+    /// Whether this stream's first frame has arrived, so the snapshot may be
+    /// read. The first wait starts the handshake deadline; a stream still
+    /// silent at [`super::recovery::RECONNECT_RETRY_MAX`] is retired, so
+    /// recovery subscribes afresh, and the deadline starts again.
+    pub(super) fn first_frame_seen(&mut self, now: std::time::Duration) -> bool {
+        if self.positions.proven {
+            return true;
+        }
+        let since = *self.positions.handshake_since.get_or_insert(now);
+        if now.saturating_sub(since) >= super::recovery::RECONNECT_RETRY_MAX {
+            self.connection.retire_stream();
+            self.cursor.stream_closed();
+            self.positions.handshake_since = Some(now);
+        }
+        false
     }
 
     /// Install one snapshot, baselined at P, as one atomic swap: every section
@@ -207,6 +179,17 @@ impl<C: Connection> Client<C> {
         &mut self,
         session: &SessionWireId,
         bytes: &[u8],
+    ) -> Result<(), ClientError> {
+        self.install_snapshot_sections(session, bytes, Sections::ALL)
+    }
+
+    /// Install a snapshot, leaving out the sections the caller already holds
+    /// newer than it.
+    pub(super) fn install_snapshot_sections(
+        &mut self,
+        session: &SessionWireId,
+        bytes: &[u8],
+        sections: Sections,
     ) -> Result<(), ClientError> {
         let snapshot = decode(bytes)?;
         // The durable tail, and the live blocks opened on it; durable truth wins.
@@ -223,7 +206,11 @@ impl<C: Connection> Client<C> {
             .filter(|ask| &ask.session_id != session)
             .cloned()
             .collect();
-        let permissions = self.permission_candidate(snapshot.permissions, kept)?;
+        let permissions = if sections.permissions {
+            Some(self.permission_candidate(snapshot.permissions, kept))
+        } else {
+            None
+        };
         // The execution state at P, unless this client already holds a newer
         // presentation fact; what the install shows is derived from it alone.
         let presented = self.observed_at(session, snapshot.seq, snapshot.execution);
@@ -240,18 +227,14 @@ impl<C: Connection> Client<C> {
         });
         // Commit: nothing below can fail.
         self.positions.baseline = Some(snapshot.seq);
-        self.commit_tail(
-            session,
-            &snapshot.page,
-            snapshot.page_bytes,
-            tail,
-            super::history_install::Carry::Observed,
-        );
+        self.commit_tail(session, &snapshot.page, snapshot.page_bytes, tail);
         self.positions.baseline = None;
-        self.positions.legacy_unproven = false;
+        self.positions.installed = Some(session.clone());
         self.commit_presented(session, presented);
-        self.commit_permissions(permissions);
-        if self.selected.as_ref() == Some(session) {
+        if let Some(permissions) = permissions {
+            self.commit_permissions(permissions);
+        }
+        if sections.forms && self.selected.as_ref() == Some(session) {
             self.forms = snapshot
                 .forms
                 .into_iter()
@@ -267,9 +250,10 @@ impl<C: Connection> Client<C> {
         Ok(())
     }
 
-    /// The direct read: a snapshot, or `false` when this service has none
-    /// and the connection drops to legacy mode.
-    pub(super) fn read_snapshot(&mut self, session: &SessionWireId) -> Result<bool, ClientError> {
+    /// The direct read: the snapshot, installed, or queued with the recovery
+    /// owner when it is incomplete for now. A service without the snapshot
+    /// is refused as too old where its answer is accepted.
+    pub(super) fn read_snapshot(&mut self, session: &SessionWireId) -> Result<(), ClientError> {
         match self.ingest(
             Operation::SessionSnapshot,
             Some(session),
@@ -278,22 +262,13 @@ impl<C: Connection> Client<C> {
             None,
             None,
         ) {
-            Ok(bytes) => {
-                self.install_snapshot(session, &bytes)?;
-                Ok(true)
-            }
-            Err(error) if unsupported(&error) => {
-                self.refuse_snapshot();
-                self.request_history();
-                Ok(true)
-            }
-            // Incomplete for now: the recovery read retries it with backoff,
-            // still in positions mode; the direct read never falls to legacy.
+            Ok(bytes) => self.install_snapshot(session, &bytes),
+            // Incomplete for now: the recovery read retries it with backoff.
             Err(error) if error.is_transient() => {
                 self.request_history();
-                Ok(true)
+                Ok(())
             }
-            Err(error) => Err(error),
+            Err(error) => Err(self.latch_too_old(error)),
         }
     }
 }
@@ -381,12 +356,30 @@ pub(super) fn is_stream_resync(payload: &str) -> bool {
             .unwrap_or(false)
 }
 
-/// Whether a snapshot answer means "this service has no snapshot route": the
-/// connection then falls back to its legacy reads. A 503 is not that: the
-/// snapshot is incomplete for now (a live block it cannot carry whole) and
-/// is retried with the ordinary transient backoff, never mixed with legacy.
-pub(super) fn unsupported(error: &ClientError) -> bool {
-    matches!(error, ClientError::Status { status: 404, .. })
+/// What a snapshot 404 says, read within `bound`. An unregistered route
+/// answers without a typed body: a service too old for snapshots. A typed
+/// refusal, a missing session's `SessionNotFoundError` included, keeps its
+/// own message rather than collapsing to a status. A body past the bound is
+/// not read and keeps the plain status.
+pub(super) fn missing(body: &[u8], bound: usize) -> Option<ClientError> {
+    if body.len() > bound {
+        return None;
+    }
+    let value = serde_json::from_slice::<serde_json::Value>(body).ok();
+    let field = |name: &str| {
+        value
+            .as_ref()
+            .and_then(|value| value.get(name))
+            .and_then(serde_json::Value::as_str)
+    };
+    match field("_tag") {
+        None => Some(super::refusal::too_old("session snapshots")),
+        Some(tag) => Some(ClientError::Refused {
+            operation: Operation::SessionSnapshot.operation_id(),
+            status: 404,
+            message: field("message").unwrap_or(tag).to_owned(),
+        }),
+    }
 }
 
 #[cfg(test)]

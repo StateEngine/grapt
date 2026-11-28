@@ -4,43 +4,9 @@
 use super::*;
 use crate::contract::Operation;
 
-/// Whether this connection subscribes without positions after a snapshot
-/// 404 (B3 S2c-1b). The latch is bound to the legacy stream it installs:
-/// retiring the old positioned stream cannot clear it, and only losing the
-/// installed legacy stream lets the next subscribe probe positions again.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum LegacyLatch {
-    Off,
-    /// Refused positions; the legacy stream is not installed yet.
-    Pending,
-    /// The legacy stream is installed.
-    Installed,
-}
-
-impl LegacyLatch {
-    /// Whether the next subscribe asks for positions.
-    pub(super) fn positions(self) -> bool {
-        self == Self::Off
-    }
-
-    pub(super) fn installed(&mut self) {
-        if *self == Self::Pending {
-            *self = Self::Installed;
-        }
-    }
-
-    pub(super) fn stream_lost(&mut self) {
-        if *self == Self::Installed {
-            *self = Self::Off;
-        }
-    }
-}
-
 #[derive(Debug)]
 pub(super) struct SubscriptionAttempt {
     health: bool,
-    /// The subscribe asked for stream positions (`positions=1`).
-    positions: bool,
     request: pending::PendingHttp,
 }
 
@@ -53,12 +19,10 @@ impl HttpConnection {
     /// has stopped. The first subscribe, a resubscribe and incremental recovery
     /// all build their request here so none of them can drift.
     ///
-    /// `positions` opts into stream positions. An older service refuses the
-    /// unknown parameter with exactly 400, and the subscribe is then retried
-    /// once without it; every other refusal is reported unchanged. Retained
-    /// Sessions ride with positions, so that same retry also reaches a service
-    /// that predates them.
-    pub(super) fn subscribe_request(&self, positions: bool) -> Result<WireRequest, TransportError> {
+    /// Every subscribe opts into stream positions. A service that predates
+    /// them refuses the unknown parameter with exactly 400, which
+    /// [`subscribe_refusal`] names; retained Sessions ride with positions.
+    pub(super) fn subscribe_request(&self) -> Result<WireRequest, TransportError> {
         let request = WireRequest::new(Operation::EventSubscribe, None, None)?;
         let request = match self.watched_session() {
             Some(session) => request.with_query("session", session.as_str()),
@@ -66,13 +30,9 @@ impl HttpConnection {
             // and the service decides from its own registry.
             None => request,
         };
-        if !positions {
-            return Ok(request);
-        }
         let request = request.with_query("positions", "1");
         // Newest first, as many as keep the whole query within the service's
-        // bound: past it the service refuses the subscribe with 400, and the
-        // legacy retry would then drop positions and every claim with it.
+        // bound: past it the service would refuse the subscribe with 400.
         let mut retain = String::new();
         let mut bytes = Self::encoded_query_bytes(request.query()) + "&retain=".len();
         for kept in self.retained_sessions() {
@@ -93,15 +53,13 @@ impl HttpConnection {
         Ok(request.with_query("retain", &retain))
     }
 
-    /// A reader for a stream in either class: a positioned frame may carry
-    /// its `id:` line and offset past the legacy frame bound.
-    pub(super) fn stream_reader(&self, positions: bool) -> SseReader {
+    /// A reader for a positioned stream: a frame may carry its `id:` line and
+    /// offset past the unpositioned frame bound.
+    pub(super) fn stream_reader(&self) -> SseReader {
         let mut bounds = self.bounds;
-        if positions {
-            bounds.max_frame_bytes = bounds
-                .max_frame_bytes
-                .max(grapt_api::u3a::MAX_POSITIONED_FRAME_BYTES);
-        }
+        bounds.max_frame_bytes = bounds
+            .max_frame_bytes
+            .max(grapt_api::u3a::MAX_POSITIONED_FRAME_BYTES);
         SseReader::new(bounds)
     }
 
@@ -166,11 +124,10 @@ impl HttpConnection {
                 false,
             )?
         } else {
-            self.start_pending(&self.subscribe_request(self.legacy.positions())?, true)?
+            self.start_pending(&self.subscribe_request()?, true)?
         };
         self.subscription_attempt = Some(SubscriptionAttempt {
             health,
-            positions: !health && self.legacy.positions(),
             request: pending,
         });
         self.advance_reconnect()
@@ -205,36 +162,32 @@ impl HttpConnection {
             // have switched Session meanwhile. Build the request from the
             // Session watched at this moment, so the subscription that opens is
             // the one the caller last selected.
-            let request = self.subscribe_request(self.legacy.positions())?;
+            let request = self.subscribe_request()?;
             self.subscription_attempt = Some(SubscriptionAttempt {
                 health: false,
-                positions: self.legacy.positions(),
-                request: self.start_pending(&request, true)?,
-            });
-            return Ok(None);
-        }
-        if attempt.positions && response.status == 400 {
-            // An older service refusing the unknown parameter: legacy stream.
-            let request = self.subscribe_request(false)?;
-            self.subscription_attempt = Some(SubscriptionAttempt {
-                health: false,
-                positions: false,
                 request: self.start_pending(&request, true)?,
             });
             return Ok(None);
         }
         if !response.is_success() {
-            return Err(TransportError::Status {
-                status: response.status,
-            });
+            return Err(subscribe_refusal(response.status));
         }
-        self.reader = self.stream_reader(attempt.positions);
-        self.stream_binding = Some(self.binding_for(attempt.positions));
-        if !attempt.positions {
-            self.legacy.installed();
-        }
+        self.reader = self.stream_reader();
+        self.stream_binding = Some(self.binding_for());
         self.push_stream_bytes(&response.body)?;
         self.stream = Some(attempt.request.stream);
         Ok(Some(true))
+    }
+}
+
+/// Why a subscribe was refused. Every subscribe asks for positions, so the
+/// 400 a service answers to that unknown parameter means it predates them.
+pub(super) fn subscribe_refusal(status: u16) -> TransportError {
+    if status == 400 {
+        TransportError::ServerTooOld {
+            missing: "stream positions",
+        }
+    } else {
+        TransportError::Status { status }
     }
 }

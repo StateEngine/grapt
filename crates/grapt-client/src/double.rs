@@ -109,7 +109,7 @@ pub enum Fault {
     /// End the subscription at the next poll.
     CloseStream,
     /// End the subscription at a reconcile boundary: the frames already
-    /// queued drain, a positions stream is told `stream.resync`, then it ends.
+    /// queued drain, the stream is told `stream.resync`, then it ends.
     Resync,
     /// Silently withhold the next `n` durable frames, so the client observes a
     /// sequence gap exactly as a lossy transport would produce.
@@ -250,7 +250,7 @@ pub struct ContractDouble {
     fault: Fault,
     closed: bool,
     connected_sent: bool,
-    /// The positions class, when this double serves it.
+    /// The positions every frame of the subscription carries.
     positions: positions::Positions,
     /// The SAME bound set the client uses, applied at the producer's own
     /// ownership points.
@@ -819,11 +819,7 @@ impl ContractDouble {
             }
             Fault::Resync if self.connected_sent && self.pending.is_empty() => {
                 self.fault = Fault::CloseStream;
-                if let Some(frame) = self.positions.resync() {
-                    return Ok(frame);
-                }
-                self.closed = true;
-                return Ok(FramePoll::Closed);
+                return Ok(self.positions.resync());
             }
             Fault::SkipDurable(count) if count > 0 => {
                 // Withhold durable frames the way a lossy transport does: the
@@ -839,15 +835,8 @@ impl ContractDouble {
             }
             _ => {}
         }
-        if !self.connected_sent {
-            self.connected_sent = true;
-            let frame = Self::render(
-                EventMember::ServerConnected,
-                &serde_json::json!({}),
-                None,
-                self.next_id,
-            );
-            return Ok(self.positions.stamp(frame));
+        if let Some(connect) = self.connect() {
+            return Ok(connect);
         }
         if self.pending.is_empty() {
             return Ok(FramePoll::Idle);
@@ -903,8 +892,11 @@ mod tests;
 mod catalogs;
 mod routes;
 
+mod placer;
 mod positions;
 mod producer;
+pub use placer::Placer;
+pub use positions::page_snapshot;
 mod session_management;
 mod session_snapshot;
 

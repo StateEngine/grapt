@@ -10,25 +10,19 @@ struct ActivityPeer {
     failed: bool,
 }
 
+/// The failure row a failed execution leaves in history.
+const FAILURE_PAGE: &[u8] = br#"{"data":[{"type":"system","id":"msg_activity_failure","metadata":{"executionFailure":true},"time":{"created":101},"text":"Execution failed: provider refused"}],"cursor":{}}"#;
+
 impl Transport for ActivityPeer {
     fn call(&mut self, request: &WireRequest) -> Result<WireResponse, TransportError> {
-        if self.failed && request.operation() == Operation::MessageList {
-            return Ok(WireResponse {
-                status: 200,
-                body: br#"{"data":[{"type":"system","id":"msg_activity_failure","metadata":{"executionFailure":true},"time":{"created":101},"text":"Execution failed: provider refused"}],"cursor":{}}"#.to_vec(),
-            });
-        }
-        if request.operation() == Operation::SessionSnapshot {
-            return Ok(WireResponse {
-                status: 200,
-                body: serde_json::json!({
-                    "revision":{"aggregate":self.session.spelled(),"seq":1},
-                    "rows":[],"cursor":{},"permissions":[],"forms":[],
-                    "execution":{},"provisional":[]
-                })
-                .to_string()
-                .into_bytes(),
-            });
+        if self.failed && request.operation() == Operation::SessionSnapshot {
+            // The snapshot at the failure's committed position.
+            let body = grapt_client::double::page_snapshot(request, FAILURE_PAGE, 12).map_err(
+                |error| TransportError::Unavailable {
+                    reason: error.to_string(),
+                },
+            )?;
+            return Ok(WireResponse { status: 200, body });
         }
         self.inner.call(request)
     }
@@ -36,20 +30,25 @@ impl Transport for ActivityPeer {
 
 impl Connection for ActivityPeer {
     fn poll_frame(&mut self) -> Result<FramePoll, TransportError> {
-        Ok(self.frame.take().unwrap_or(FramePoll::Idle))
+        if let Some(connect) = self.inner.connect() {
+            return Ok(connect);
+        }
+        Ok(self
+            .frame
+            .take()
+            .map_or(FramePoll::Idle, |frame| self.inner.serve(frame)))
     }
     fn subscribed(&self) -> bool {
         true
     }
-    fn resubscribe(&mut self) {}
+    fn resubscribe(&mut self) {
+        self.inner.resubscribe();
+    }
 }
 
-fn client(history: bool) -> Result<Client<ActivityPeer>, Box<dyn std::error::Error>> {
+fn client() -> Result<Client<ActivityPeer>, Box<dyn std::error::Error>> {
     let mut inner = ContractDouble::new();
     let session = inner.create_session("activity ordering").ok_or("session")?;
-    if history {
-        inner.run_turn(&session, "hello", "done");
-    }
     let mut client = Client::new(
         ActivityPeer {
             inner,
@@ -61,6 +60,10 @@ fn client(history: bool) -> Result<Client<ActivityPeer>, Box<dyn std::error::Err
     );
     client.refresh_sessions()?;
     client.select(&session)?;
+    // The stream's positioned connect, then the snapshot it permits.
+    for _ in 0..2 {
+        client.pump_at(Duration::ZERO)?;
+    }
     Ok(client)
 }
 
@@ -75,9 +78,15 @@ fn frame(
     }
     let session = client.peer_mut().session.clone();
     let (member, data) = match kind {
+        // A status edge carries its typed state at committed position `seq`.
         "busy" | "idle" => (
             "session.status".to_owned(),
-            serde_json::json!({"sessionID":session.spelled(),"status":{"type":kind}}),
+            serde_json::json!({"sessionID":session.spelled(),"status":{"type":kind},
+            "state": if kind == "busy" {
+                serde_json::json!({"type":"running","revision":seq,"executionID":"exe_activity"})
+            } else {
+                serde_json::json!({"type":"idle","revision":seq})
+            }}),
         ),
         _ => (
             format!(
@@ -90,7 +99,7 @@ fn frame(
     };
     let mut value = serde_json::json!({"id":format!("evt_activity_{kind}_{created}"),
         "type":member,"created":created,"data":data});
-    if let Some(seq) = seq {
+    if let Some(seq) = seq.filter(|_| !matches!(kind, "busy" | "idle")) {
         value["durable"] =
             serde_json::json!({"aggregateID":session.spelled(),"seq":seq,"version":1});
     }
@@ -110,13 +119,13 @@ fn review_ordered_activity_handles_both_directions_and_settled_ties() -> TestRes
             vec![
                 ("started", Some(10), 100),
                 ("failed", Some(12), 101),
-                ("busy", None, 105),
+                ("busy", Some(13), 105),
             ],
             true,
         ),
         (
             vec![
-                ("idle", None, 90),
+                ("idle", Some(9), 90),
                 ("started", Some(10), 100),
                 ("failed", Some(12), 101),
             ],
@@ -133,14 +142,14 @@ fn review_ordered_activity_handles_both_directions_and_settled_ties() -> TestRes
         (
             vec![
                 ("started", Some(10), 100),
-                ("busy", None, 101),
+                ("busy", Some(11), 101),
                 ("failed", Some(12), 101),
             ],
             false,
         ),
     ];
     for (script, running) in scripts {
-        let mut client = client(false)?;
+        let mut client = client()?;
         for (kind, seq, created) in script.iter().copied() {
             frame(&mut client, kind, seq, created)?;
         }
@@ -152,7 +161,7 @@ fn review_ordered_activity_handles_both_directions_and_settled_ties() -> TestRes
 
 #[test]
 fn review_a_live_failure_clears_the_thinking_label_without_an_idle_frame() -> TestResult {
-    let mut client = client(false)?;
+    let mut client = client()?;
     frame(&mut client, "started", Some(10), 100)?;
     let mut ui = crate::ui::Ui::new(false);
     ui.session_update(client.selected().cloned(), selected_running(&client));
@@ -181,7 +190,7 @@ fn picker_last_fact(
     created: u64,
     expected: SessionActivity,
 ) -> TestResult {
-    let mut client = client(false)?;
+    let mut client = client()?;
     let parent = client.selected().ok_or("parent")?.clone();
     let child = client
         .peer_mut()
@@ -235,33 +244,8 @@ fn review_picker_settled_activity_wins_timestamp_tie() -> TestResult {
 }
 
 #[test]
-fn review_an_unstamped_history_terminal_keeps_legacy_busy_precedence() -> TestResult {
-    let mut client = client(true)?;
-    assert!(matches!(
-        client.view().ok_or("view")?.execution,
-        grapt_client::ExecutionState::Settled { .. }
-    ));
-    frame(&mut client, "busy", None, 105)?;
-    let session = client.selected().ok_or("session")?.clone();
-    client.reconcile(&session)?;
-    assert_eq!(
-        client.view().ok_or("view")?.terminal_stamp(),
-        FactStamp::default()
-    );
-    assert_eq!(selected_activity(&client), Some(true));
-    Ok(())
-}
-
-#[test]
 fn review_presented_pairs_order_running_and_failed_against_live_facts() -> TestResult {
-    let mut client = client(false)?;
-    client.peer_mut().frame = Some(FramePoll::Positioned {
-        id: "activity-epoch".into(),
-        data:
-            serde_json::json!({"id":"evt_activity_connected","type":"server.connected","data":{}})
-                .to_string(),
-    });
-    client.pump_at(Duration::ZERO)?;
+    let mut client = client()?;
     for (revision, kind, running) in [(20, "running", true), (30, "failed", false)] {
         let session = client.peer_mut().session.clone();
         let member = if running { "failed" } else { "started" };

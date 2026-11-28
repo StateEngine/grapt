@@ -295,3 +295,38 @@ fn primary_picker_excludes_subagent_only_rows_but_preserves_saved_sessions(
     assert!(client.saved_agent_offered(&child));
     Ok(())
 }
+
+#[test]
+fn a_refusal_settles_a_waiting_mcp_read_with_its_reason() -> Result<(), Box<dyn std::error::Error>>
+{
+    let mut client = Client::new(
+        Peer {
+            inner: ContractDouble::new(),
+            pending: None,
+            location: None,
+            answered: false,
+            form_id: "frm_startup",
+            human_wait: false,
+        },
+        Bounds::PRODUCTION,
+    );
+    client.refresh_projects()?;
+    let project = client.projects().first().cloned().ok_or("project")?;
+    client.select_project(&project)?;
+    client.refresh_mcp_inspection()?;
+    assert!(client.mcp_catalog_pending());
+    client.settle_refused("session snapshots");
+    assert!(
+        !client.mcp_catalog_pending(),
+        "the waiting command never settles"
+    );
+    assert!(
+        client.peer_mut().pending.is_none(),
+        "the read was not cancelled"
+    );
+    assert!(client
+        .mcp_refusal()
+        .is_some_and(|refusal| refusal.contains("Upgrade")));
+    assert_eq!(client.recovery_wait(), None);
+    Ok(())
+}

@@ -29,6 +29,10 @@ impl<C: Connection> Client<C> {
             .watch_session(Some(crate::wire::Typed::typed(session)));
         self.subagent_model = None;
         self.forms.clear();
+        // The forms and asks just cleared are what a snapshot installed; until
+        // this selection installs its own, the session is not ready again,
+        // even when it is the session that was selected before.
+        self.positions.forget_installed();
         self.location_forms_dirty = true;
         self.raise_session_forms(true);
         Ok(())

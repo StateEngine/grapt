@@ -84,8 +84,6 @@ impl<C: Connection> Client<C> {
         self.recovery.history = None;
         self.reset_history_window();
         self.views.remove(&session);
-        self.quiescence_fact_epoch.remove(&session);
-        self.quiescence_terminal_epoch.remove(&session);
         // The rebuilt conversation subscribes afresh, never as a resume.
         self.drop_resume();
         self.offer_resume();

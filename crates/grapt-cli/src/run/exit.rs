@@ -56,11 +56,14 @@ impl crate::ApiClientError {
             | ApiClientError::AwsCredentials
             | ApiClientError::AwsProfileConfiguration => ExitClass::Authentication,
             ApiClientError::ProviderVerificationFailed
+            | ApiClientError::EndpointRefused(_)
             | ApiClientError::Transport(_)
             | ApiClientError::TransportStalled { .. }
             | ApiClientError::EmbeddedServiceExited { .. }
             | ApiClientError::EventClosed => ExitClass::Remote,
-            ApiClientError::InvalidEndpoint | ApiClientError::PromptBound => ExitClass::Usage,
+            ApiClientError::InvalidEndpoint
+            | ApiClientError::PromptBound
+            | ApiClientError::ProviderSetup => ExitClass::Usage,
             ApiClientError::Tls(_)
             | ApiClientError::Build(_)
             | ApiClientError::Encode

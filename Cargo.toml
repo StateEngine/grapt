@@ -53,6 +53,7 @@ members = [
     "crates/grapt-mcp-host",
     "crates/grapt-product",
     "crates/grapt-stateengine-api",
+    "crates/grapt-stateengine-ipc",
     "crates/grapt-cli",
     "crates/grapt-client",
     "crates/grapt-client-transport",

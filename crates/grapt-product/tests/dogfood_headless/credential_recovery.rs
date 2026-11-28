@@ -142,6 +142,9 @@ fn a_chatgpt_sign_in_rotation_recovers_in_the_running_headless_service(
         account: "account-a".into(),
         expires_at: grapt_types::Timestamp::from_millis(8_000_000_000_000),
     };
+    // The service reads the sealed sign-in through the same test keystore.
+    let keystore = grapt_login::profile_security::isolate_test_keystore()?;
+    let keystore = keystore.to_str().ok_or("test keystore path is not UTF-8")?;
     grapt_login::chatgpt::save(&root, &tokens)?;
     let entered = Arc::new(Barrier::new(2));
     let release = Arc::new(Barrier::new(2));
@@ -153,7 +156,14 @@ fn a_chatgpt_sign_in_rotation_recovers_in_the_running_headless_service(
         },
         Script::SuccessText("recovered sign-in generation"),
     ]);
-    let mut child = spawn(&root, provider.address);
+    let mut child = process_fixture::spawn_with(
+        &root,
+        provider.address,
+        &[(
+            grapt_login::profile_security::TEST_KEYSTORE_VARIABLE,
+            keystore,
+        )],
+    );
     let address = await_ready(&root, &mut child);
     let session = create(address);
     prompt(

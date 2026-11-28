@@ -6,6 +6,10 @@ use grapt_api::u3a::{
     IntegrationOAuthStatusResponseDto,
 };
 
+/// The service's own provider checks bound a connect: its model list and the
+/// completion check on a loading local model, with room for the reads after.
+const CONNECT_ALLOWANCE: std::time::Duration = grapt_api::u3a::INTEGRATION_KEY_CONNECT_WAIT;
+
 impl ApiClient {
     pub(crate) async fn authentication_status(
         &self,
@@ -27,8 +31,12 @@ impl ApiClient {
                 maximum: self.limits.values().stdin_bytes,
             });
         }
+        // A connect checks a completion on the provider before it answers,
+        // and a server on this machine may load the model first: the
+        // ordinary request allowance would cut that answer off.
         let mut request = self
             .request(Method::POST, path)?
+            .timeout(CONNECT_ALLOWANCE)
             .header(reqwest::header::CONTENT_TYPE, "application/json")
             .body(bytes);
         if let Some(connection) = connection {
@@ -69,6 +77,17 @@ impl ApiClient {
                         kind.as_str() == grapt_api::u3a::INTEGRATION_KEY_REJECTED_KIND
                     }) {
                         return Err(ApiClientError::ProviderKeyRejected);
+                    }
+                    if error.kind().as_value().is_some_and(|kind| {
+                        kind.as_str() == grapt_api::u3a::INTEGRATION_ENDPOINT_KIND
+                    }) {
+                        let message = error.message().get().as_str();
+                        if !message.is_empty()
+                            && message.len() <= 1024
+                            && !message.chars().any(char::is_control)
+                        {
+                            return Err(ApiClientError::EndpointRefused(message.to_owned()));
+                        }
                     }
                     if error
                         .kind()

@@ -247,37 +247,7 @@ fn dispatch_normalized<C: Connection>(
             argument(text, "/export").unwrap_or_default(),
             &mut done,
         ),
-        Parsed::Commands => {
-            let mut lines = vec!["WORKSPACE COMMANDS".into()];
-            lines.extend(client.commands().iter().map(|row| {
-                if let Some(reason) = &row.unavailable {
-                    return format!("/{} unavailable: {} ({})", row.name, reason, row.source);
-                }
-                format!(
-                    "/{} [{}]  {}{}",
-                    crate::actions::command_name(row),
-                    match row.origin {
-                        grapt_client::wire::CommandOrigin::Builtin => "server-owned",
-                        grapt_client::wire::CommandOrigin::Mcp => "MCP prompt",
-                        _ => "workspace template",
-                    },
-                    row.description,
-                    if row.unsupported {
-                        " (specialized execution unavailable in R)"
-                    } else {
-                        ""
-                    }
-                )
-            }));
-            if let Some(note) = client.commands_status() {
-                lines.push(note.into());
-            }
-            lines.push("Tab completes a command. Enter runs built-ins and MCP prompts; workspace templates open a preview.".into());
-            lines.push("Workspace preview: Esc back to the staged draft, edit, then Enter to send. Reloading workspace commands…".into());
-            client.refresh_commands();
-            done.consume = true;
-            done.view = Some(View::Text(lines));
-        }
+        Parsed::Commands => list_commands(client, &mut done),
         Parsed::Help => {
             done.view = Some(View::Text(help_lines()));
             done.consume = true;
@@ -642,6 +612,42 @@ fn custom<C: Connection>(
         Err(error) => done.notice = error,
     }
     Some(done)
+}
+
+/// `/commands`: the workspace commands and their status, then a reload unless
+/// the service was refused.
+fn list_commands<C: Connection>(client: &mut Client<C>, done: &mut Completion) {
+    let mut lines = vec!["WORKSPACE COMMANDS".into()];
+    lines.extend(client.commands().iter().map(|row| {
+        if let Some(reason) = &row.unavailable {
+            return format!("/{} unavailable: {} ({})", row.name, reason, row.source);
+        }
+        format!(
+            "/{} [{}]  {}{}",
+            crate::actions::command_name(row),
+            match row.origin {
+                grapt_client::wire::CommandOrigin::Builtin => "server-owned",
+                grapt_client::wire::CommandOrigin::Mcp => "MCP prompt",
+                _ => "workspace template",
+            },
+            row.description,
+            if row.unsupported {
+                " (specialized execution unavailable in R)"
+            } else {
+                ""
+            }
+        )
+    }));
+    if let Some(note) = client.commands_status() {
+        lines.push(note.into());
+    }
+    if !client.commands_refused() {
+        lines.push("Tab completes a command. Enter runs built-ins and MCP prompts; workspace templates open a preview.".into());
+        lines.push("Workspace preview: Esc back to the staged draft, edit, then Enter to send. Reloading workspace commands…".into());
+        client.refresh_commands();
+    }
+    done.consume = true;
+    done.view = Some(View::Text(lines));
 }
 
 fn resume<C: Connection>(client: &mut Client<C>, target: &str, done: &mut Completion) {

@@ -146,6 +146,7 @@ fn a_still_pending_overwrite_survives_a_real_reconnect() {
     reconnected
         .select(&session)
         .unwrap_or_else(|error| panic!("pending permission reconnect failed: {error}"));
+    prove_positions(&mut reconnected);
     assert_eq!(reconnected.permissions().len(), 1);
     assert_eq!(reconnected.permissions()[0].request_id, permission);
     assert_eq!(server_permissions(&mut reconnected), vec![permission]);

@@ -222,7 +222,7 @@ mod tests {
         let valid = Arc::new(AtomicBool::new(true));
         let mismatch = ResumeToken {
             id: "fixture-1".into(),
-            binding: StreamBinding::new("another endpoint", 0, None, true),
+            binding: StreamBinding::new("another endpoint", 0, None),
         };
         for offer in [None, Some(mismatch)] {
             let mut suppress = record(&custody, &valid, &stream, offer, 3);

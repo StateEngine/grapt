@@ -11,6 +11,10 @@ fn copied_cli_interrupt_during_browser_launch_cancels_the_borrowed_services_atte
     let (binary, product) = installed(&root)?;
     let profile = root.join("profile");
     assert!(grapt_service::launcher_environment::command(&product)
+        .env(
+            grapt_login::profile_security::TEST_KEYSTORE_VARIABLE,
+            grapt_login::profile_security::isolate_test_keystore()?
+        )
         .args(["init-profile", "--service"])
         .arg(&profile)
         .output()?
@@ -21,6 +25,10 @@ fn copied_cli_interrupt_during_browser_launch_cancels_the_borrowed_services_atte
     let endpoint = format!("http://{}", issuer.local_addr()?);
     let mut service = RestartProcess(
         grapt_service::launcher_environment::command(&product)
+            .env(
+                grapt_login::profile_security::TEST_KEYSTORE_VARIABLE,
+                grapt_login::profile_security::isolate_test_keystore()?,
+            )
             .args(["serve-terminal", "--service"])
             .arg(&profile)
             .args(["--port", "0"])
@@ -66,6 +74,10 @@ select.select([], [], [], 30)
         reader,
     } = read_progress(RestartProcess(
         grapt_service::launcher_environment::command(&binary)
+            .env(
+                grapt_login::profile_security::TEST_KEYSTORE_VARIABLE,
+                grapt_login::profile_security::isolate_test_keystore()?,
+            )
             .args([
                 "login",
                 "chatgpt",

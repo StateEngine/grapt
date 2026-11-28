@@ -161,12 +161,8 @@ pub struct SessionView {
     /// The durable seq of the frame that set `idle`; only the running edge has one.
     pub(crate) idle_seq: Option<u64>,
     /// The server stamp of the newest TERMINAL frame this view applied live.
-    ///
-    /// A durable rebuild carries no stamp, so this stays `None` on a view
-    /// built from the re-list alone. It exists to order a carried quiescence
-    /// fact against the terminal the rebuild speaks of: a fact stamped after
-    /// the last live terminal is the settle's own word and survives the
-    /// rebuild; one stamped before it is stale.
+    /// A durable rebuild carries no stamp. It orders the view's terminal
+    /// against the newest activity facts.
     pub terminal_created: Option<u64>,
     /// The durable seq of that live terminal.
     pub(crate) terminal_seq: Option<u64>,
@@ -306,8 +302,6 @@ impl SessionView {
     }
 }
 
-pub use offset::StreamMode;
-
 /// What applying one event did.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Applied {
@@ -334,8 +328,6 @@ pub enum ProjectionError {
     OffsetGap { kind: SliceKind },
     #[error("a {kind:?} block's end does not match the bytes it admitted")]
     EndUnproven { kind: SliceKind },
-    #[error("a {kind:?} end arrived with no matching opened block")]
-    EndWithoutOpen { kind: SliceKind },
     #[error("a second {kind:?} block opened while one was still open")]
     OverlappingOpen { kind: SliceKind },
     #[error("a {kind:?} frame named a different block than the open one")]
@@ -381,16 +373,6 @@ impl SessionView {
         envelope: &EventEnvelope,
         bounds: Bounds,
     ) -> Result<Applied, ProjectionError> {
-        self.apply_in(envelope, bounds, StreamMode::Legacy)
-    }
-
-    /// Apply one decoded event that arrived on a stream of `mode`.
-    pub fn apply_in(
-        &mut self,
-        envelope: &EventEnvelope,
-        bounds: Bounds,
-        mode: StreamMode,
-    ) -> Result<Applied, ProjectionError> {
         let Some(member) = envelope.member else {
             return Ok(Applied::Ignored);
         };
@@ -405,14 +387,14 @@ impl SessionView {
         }
         match member {
             EventMember::ServerConnected | EventMember::SessionCreated => Ok(Applied::Ignored),
-            EventMember::TextStarted => self.open(SliceKind::Text, envelope, bounds, mode),
-            EventMember::TextDelta => self.delta(SliceKind::Text, envelope, bounds, mode),
-            EventMember::TextEnded => self.close(SliceKind::Text, envelope, bounds, mode),
-            EventMember::ReasoningStarted => {
-                self.open(SliceKind::Reasoning, envelope, bounds, mode)
+            EventMember::TextStarted => self.open(SliceKind::Text, envelope, bounds),
+            EventMember::TextDelta => self.delta(SliceKind::Text, envelope, bounds),
+            EventMember::TextEnded => self.close_positioned(SliceKind::Text, envelope, bounds),
+            EventMember::ReasoningStarted => self.open(SliceKind::Reasoning, envelope, bounds),
+            EventMember::ReasoningDelta => self.delta(SliceKind::Reasoning, envelope, bounds),
+            EventMember::ReasoningEnded => {
+                self.close_positioned(SliceKind::Reasoning, envelope, bounds)
             }
-            EventMember::ReasoningDelta => self.delta(SliceKind::Reasoning, envelope, bounds, mode),
-            EventMember::ReasoningEnded => self.close(SliceKind::Reasoning, envelope, bounds, mode),
             EventMember::UsageUpdated => {
                 self.usage = Usage {
                     input: field_u64(envelope, "input"),
@@ -557,7 +539,6 @@ impl SessionView {
         kind: SliceKind,
         envelope: &EventEnvelope,
         bounds: Bounds,
-        mode: StreamMode,
     ) -> Result<Applied, ProjectionError> {
         // A live start of the adopted kind proves the read caught that block
         // already complete, between it and the next one.
@@ -570,10 +551,7 @@ impl SessionView {
         // the next block opens. Only the same block opening twice overlaps.
         if self.open_by_identity(kind, &identity).is_some() {
             // A retained start the snapshot already opened is a duplicate.
-            if mode == StreamMode::Positions {
-                return Ok(Applied::Ignored);
-            }
-            return Err(ProjectionError::OverlappingOpen { kind });
+            return Ok(Applied::Ignored);
         }
         self.push_open(kind, identity, String::new(), 0, bounds);
         Ok(Applied::Changed)
@@ -622,7 +600,6 @@ impl SessionView {
         kind: SliceKind,
         envelope: &EventEnvelope,
         bounds: Bounds,
-        mode: StreamMode,
     ) -> Result<Applied, ProjectionError> {
         let text = envelope
             .data
@@ -634,14 +611,10 @@ impl SessionView {
         let index =
             match self.claim_open(kind, envelope, ProjectionError::DeltaWithoutOpen { kind }) {
                 Ok(index) => index,
-                Err(_)
-                    if mode == StreamMode::Positions && self.superseded_delta(envelope, kind) =>
-                {
-                    return Ok(Applied::Ignored);
-                }
+                Err(_) if self.superseded_delta(envelope, kind) => return Ok(Applied::Ignored),
                 Err(error) => return Err(error),
             };
-        let Some(text) = self.admit_delta(kind, index, envelope, text, mode)? else {
+        let Some(text) = self.admit_delta(kind, index, envelope, text)? else {
             return Ok(Applied::Ignored);
         };
         let slice = &mut self.slices[index];
@@ -662,27 +635,6 @@ impl SessionView {
             self.streamed_text_bytes = self
                 .streamed_text_bytes
                 .map(|bytes| bytes.saturating_add(text.len()));
-        }
-        Ok(Applied::Changed)
-    }
-
-    fn close(
-        &mut self,
-        kind: SliceKind,
-        envelope: &EventEnvelope,
-        bounds: Bounds,
-        mode: StreamMode,
-    ) -> Result<Applied, ProjectionError> {
-        if mode == StreamMode::Positions {
-            return self.close_positioned(kind, envelope, bounds);
-        }
-        let index = self.claim_open(kind, envelope, ProjectionError::EndWithoutOpen { kind })?;
-        let slice = &mut self.slices[index];
-        slice.closed = true;
-        let ordinal = slice.ordinal;
-        self.slice_wires.remove(&ordinal);
-        if self.adopted == Some(kind) {
-            self.adopted = None;
         }
         Ok(Applied::Changed)
     }

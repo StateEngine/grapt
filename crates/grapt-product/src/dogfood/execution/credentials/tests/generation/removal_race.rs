@@ -46,6 +46,7 @@ async fn paused_current_and_recovery_refuse_disconnect_without_recreating_locks(
         )));
         std::fs::create_dir(&profile.0)?;
         grapt_login::profile_security::protect_directory(&profile.0)?;
+        grapt_login::profile_security::isolate_test_keystore()?;
         std::fs::write(
             profile.0.join("grapt.jsonc"),
             br#"{"store":{"authority":"open-ready"},"product":{"build":"disconnect-race"}}"#,
