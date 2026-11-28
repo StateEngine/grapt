@@ -48,7 +48,11 @@ fn run_child(fixture: &Fixture, document: &Value, mode: &str) -> TestResult {
     std::fs::write(&adc, serde_json::to_vec(document)?)?;
     let mut command = Command::new(std::env::current_exe()?);
     command
-        .args(["--exact", "indirect_source_child", "--nocapture"])
+        .args([
+            "--exact",
+            &crate::exact(module_path!(), "indirect_source_child"),
+            "--nocapture",
+        ])
         .env_clear()
         .env(CHILD, mode)
         .env("GOOGLE_CLOUD_QUOTA_PROJECT", "fixture-override-quota")

@@ -1,9 +1,36 @@
 [package]
 name = "grapt-client"
+autotests = false
 version = "0.1.0"
 edition.workspace = true
 license = "MIT OR Apache-2.0"
 description = "Shared typed client, projection and presentation helpers for terminal consumers of the versioned product API."
+
+[[test]]
+name = "integration"
+path = "tests/integration/main.rs"
+
+# Compile-fail fixtures need a target of their own.
+[[test]]
+name = "compile_fail"
+path = "tests/compile_fail.rs"
+
+# Mutation manifests and evidence select these targets by name.
+[[test]]
+name = "allowed_external_dependencies"
+path = "tests/allowed_external_dependencies.rs"
+
+[[test]]
+name = "dogfood_journey"
+path = "tests/dogfood_journey.rs"
+
+[[test]]
+name = "single_ingress"
+path = "tests/single_ingress.rs"
+
+[[test]]
+name = "typed_identity"
+path = "tests/typed_identity.rs"
 
 [dependencies]
 # Clients observe product truth through the versioned DTO/protocol surface,

@@ -78,29 +78,14 @@
     "grapt-cli": {
       "total": 28.566
     },
-    "grapt-cli::bypass_preset": {
-      "total": 0.01
-    },
     "grapt-cli::contracts": {
       "total": 17.694
     },
     "grapt-cli::ephemeral": {
       "total": 0.017
     },
-    "grapt-cli::executable_preparation": {
-      "total": 0.02
-    },
-    "grapt-cli::first_run_command": {
-      "total": 0.32100000000000006
-    },
-    "grapt-cli::import_commands": {
-      "total": 0.096
-    },
-    "grapt-cli::import_files": {
-      "total": 2.178
-    },
-    "grapt-cli::login_chatgpt": {
-      "total": 0.065
+    "grapt-cli::integration": {
+      "total": 2.69
     },
     "grapt-cli::mcp_commands": {
       "total": 0.014
@@ -117,9 +102,6 @@
     "grapt-client-transport::allowed_external_dependencies": {
       "total": 0.013000000000000001
     },
-    "grapt-client::after_cut_recovery": {
-      "total": 0.09400000000000003
-    },
     "grapt-client::allowed_external_dependencies": {
       "total": 0.188
     },
@@ -129,26 +111,11 @@
     "grapt-client::dogfood_journey": {
       "total": 27.904999999999994
     },
-    "grapt-client::held_identity_routing": {
-      "total": 0.036
-    },
-    "grapt-client::held_reasoning": {
-      "total": 0.025
-    },
-    "grapt-client::positions_negotiation": {
-      "total": 0.09000000000000001
-    },
-    "grapt-client::positions_snapshot": {
-      "total": 0.041
+    "grapt-client::integration": {
+      "total": 0.931
     },
     "grapt-client::single_ingress": {
       "total": 0.134
-    },
-    "grapt-client::slice_identity": {
-      "total": 0.126
-    },
-    "grapt-client::snapshot_join": {
-      "total": 0.5190000000000001
     },
     "grapt-client::typed_identity": {
       "total": 0.48900000000000005
@@ -261,20 +228,8 @@
     "grapt-login": {
       "total": 4.445999999999998
     },
-    "grapt-login::aws_selection": {
-      "total": 0.16500000000000004
-    },
-    "grapt-login::azure_cli_boundaries": {
-      "total": 0.037000000000000005
-    },
-    "grapt-login::google_adc_sources": {
-      "total": 0.052000000000000005
-    },
-    "grapt-login::vault_diagnostics": {
-      "total": 0.017
-    },
-    "grapt-login::vertex_adc_sources": {
-      "total": 0.074
+    "grapt-login::integration": {
+      "total": 0.345
     },
     "grapt-mail-transport": {
       "total": 1.2619999999999998
@@ -312,23 +267,11 @@
     "grapt-platform": {
       "total": 1.0280000000000005
     },
-    "grapt-platform::aws_credential_owner": {
-      "total": 0.118
-    },
-    "grapt-platform::connection_startup": {
-      "total": 0.294
-    },
-    "grapt-platform::google_adc_bootstrap": {
-      "total": 0.948
+    "grapt-platform::integration": {
+      "total": 1.412
     },
     "grapt-platform::platform_vertical": {
       "total": 16.402
-    },
-    "grapt-platform::profile_approval": {
-      "total": 0.02
-    },
-    "grapt-platform::profile_connection_migration": {
-      "total": 0.032
     },
     "grapt-plugin": {
       "total": 67.82

@@ -59,7 +59,11 @@ fn run(name: &str) -> TestResult {
         }
     }
     let status = command
-        .args(["--exact", name, "--nocapture"])
+        .args([
+            "--exact",
+            &crate::exact(module_path!(), name),
+            "--nocapture",
+        ])
         .current_dir(&fixture.0)
         .env(CHILD, name)
         .env("HOME", &fixture.0)

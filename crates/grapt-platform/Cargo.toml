@@ -1,9 +1,19 @@
 [package]
 name = "grapt-platform"
+autotests = false
 version = "0.1.0"
 edition.workspace = true
 license.workspace = true
 description = "Dogfood-0 platform bootstrap: first-contact store authority, published configuration, catalog issuance, and credential custody."
+
+[[test]]
+name = "integration"
+path = "tests/integration/main.rs"
+
+# Mutation manifests and the mutation inventory select this target by name.
+[[test]]
+name = "platform_vertical"
+path = "tests/platform_vertical.rs"
 
 [dependencies]
 reqwest = { workspace = true }
