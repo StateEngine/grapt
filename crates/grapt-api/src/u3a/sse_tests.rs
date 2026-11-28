@@ -947,45 +947,57 @@ async fn a_session_invalidation_ends_a_window_bound_to_another_session() -> Resu
 }
 
 #[test]
-fn a_host_subscription_hydrates_without_holding_the_hub() -> Result<(), Box<dyn std::error::Error>>
-{
-    let limits = limits(2, 16, MAX_SSE_EVENT_BYTES, MAX_SSE_FRAME_BYTES)?;
-    let hub = Arc::new(DogfoodEventHub::try_new(limits, connected("hold"))?);
+fn a_host_snapshot_precedes_every_live_frame_published_while_it_is_taken(
+) -> Result<(), Box<dyn std::error::Error>> {
+    let limits = limits(1, 16, MAX_SSE_EVENT_BYTES, MAX_SSE_FRAME_BYTES)?;
+    let hub = Arc::new(DogfoodEventHub::try_new(limits, connected("order"))?);
     let (entered, entering) = std::sync::mpsc::channel();
     let (release, released) = std::sync::mpsc::channel::<()>();
     let released = std::sync::Mutex::new(released);
-    let busy = status_event("hold_busy", SessionStatusInfo::busy());
+    let busy = status_event("order_busy", SessionStatusInfo::busy());
     assert!(hub.install_status_hydrator(Box::new(move || {
         let _ = entered.send(());
         let _ = released.lock().map(|released| released.recv());
         vec![busy.clone()]
     })));
-    // A live frame published while hydration runs follows it.
     let subscribing = std::thread::spawn({
         let hub = Arc::clone(&hub);
         move || hub.subscribe_host()
     });
     entering.recv()?;
-    let live = status_event("hold_live", SessionStatusInfo::idle());
-    assert_eq!(hub.publish(&live)?.delivered, 1);
-    release.send(())?;
-    let first = subscribing.join().map_err(|_| "subscriber panicked")??;
-    let order = host_frames(&first, 3);
-    assert!(order[1].contains("evt_hold_busy") && order[2].contains("evt_hold_live"));
-    // A shutdown during hydration returns at once and ends the stream.
-    let subscribing = std::thread::spawn({
+    // Published while the snapshot is taken: it waits, then follows it.
+    let publishing = std::thread::spawn({
         let hub = Arc::clone(&hub);
-        move || hub.subscribe_host()
+        let idle = status_event("order_idle", SessionStatusInfo::idle());
+        move || {
+            hub.publish_if(&idle, || true)
+                .map(|receipt| receipt.delivered)
+        }
     });
-    entering.recv()?;
-    hub.shutdown();
     release.send(())?;
-    let second = subscribing.join().map_err(|_| "subscriber panicked")??;
-    assert_eq!(
-        host_frames(&second, 3).len(),
-        1,
-        "only server.connected precedes the end"
-    );
+    let subscription = subscribing.join().map_err(|_| "subscriber panicked")??;
+    assert_eq!(publishing.join().map_err(|_| "publisher panicked")??, 1);
+    let frames = host_frames(&subscription, 3);
+    assert!(frames[1].contains("evt_order_busy") && frames[2].contains("evt_order_idle"));
+    Ok(())
+}
+
+#[test]
+fn a_host_snapshot_that_does_not_fit_is_refused_and_never_registered(
+) -> Result<(), Box<dyn std::error::Error>> {
+    let limits = limits(1, 2, MAX_SSE_EVENT_BYTES, MAX_SSE_FRAME_BYTES)?;
+    let hub = DogfoodEventHub::try_new(limits, connected("whole"))?;
+    let statuses: Vec<_> = (0..3)
+        .map(|index| status_event(&format!("whole_{index}"), SessionStatusInfo::busy()))
+        .collect();
+    assert!(hub.install_status_hydrator(Box::new(move || statuses.clone())));
+    for _ in 0..2 {
+        // Refused for its size each time, never for a slot a refusal kept.
+        assert!(matches!(
+            hub.subscribe_host(),
+            Err(SseError::SubscriberOverflow)
+        ));
+    }
     Ok(())
 }
 

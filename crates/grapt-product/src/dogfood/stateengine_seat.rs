@@ -153,12 +153,11 @@ impl Stop {
                     *current = Some(Arc::clone(&subscription));
                     return Some(subscription);
                 }
-                Err(SseError::SubscriberBound) => {
+                // No room yet, or a snapshot too large to queue whole: both
+                // can pass, so ask again later.
+                Err(error @ (SseError::SubscriberBound | SseError::SubscriberOverflow)) => {
                     if wait == FIRST_RESUBSCRIBE {
-                        warn(
-                            "subscription-full",
-                            "the event hub has no subscriber room yet",
-                        );
+                        warn("subscription-deferred", &error.to_string());
                     }
                     self.pause(wait);
                     wait = (wait * 2).min(LAST_RESUBSCRIBE);
