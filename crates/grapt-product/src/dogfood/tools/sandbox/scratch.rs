@@ -10,7 +10,9 @@ mod unix;
 #[cfg(unix)]
 use unix::PinnedScratch;
 #[cfg(unix)]
-pub(super) use unix::{ensure_unix_scratch_anchor, unix_scratch_anchor_path};
+pub(super) use unix::{
+    ensure_unix_scratch_anchor, unix_scratch_anchor_name, unix_scratch_anchor_path,
+};
 
 #[cfg(windows)]
 mod windows;

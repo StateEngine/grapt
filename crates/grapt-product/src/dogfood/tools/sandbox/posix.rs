@@ -211,6 +211,21 @@ pub(crate) fn helper_main(arguments: &[String]) -> Option<i32> {
     }))
 }
 
+fn ensure_protected_scratch_anchors(policy: &grapt_sandbox::Policy) -> Result<(), String> {
+    // Derive anchor parents directly from policy.protected_paths rather than
+    // re-reading std::env::temp_dir() inside the env-cleared helper so custom
+    // TMPDIR configurations are preserved.
+    let expected_name = super::scratch::unix_scratch_anchor_name();
+    for entry in &policy.protected_paths {
+        if entry.file_name().and_then(|name| name.to_str()) == Some(expected_name.as_str()) {
+            if let Some(parent) = entry.parent() {
+                super::scratch::ensure_unix_scratch_anchor(parent)?;
+            }
+        }
+    }
+    Ok(())
+}
+
 fn run(path: &str) -> Result<i32, String> {
     let mut interrupts = grapt_sandbox::LinuxInterrupts::new().map_err(|e| e.to_string())?;
     let mut channel = std::os::unix::net::UnixStream::connect(path)
@@ -239,16 +254,11 @@ fn run(path: &str) -> Result<i32, String> {
     let scratch =
         super::scratch::PrivateScratch::attach(&request.plan, &mut policy, &mut environment)?;
     // When private_temp_parent is disabled because a write target overlaps the
-    // host temp directory, ensure the protected Unix 0700 scratch anchor exists
-    // at launch time (never during Plan::read) before Linux synthetic mount
-    // targets (`targets.rs`) could otherwise create it with default umask 0755.
+    // host temp directory, ensure protected Unix 0700 scratch anchors exist at
+    // launch time before Linux synthetic mount targets can create them with
+    // default umask 0755.
     if scratch.is_none() {
-        if let Ok(temp_parent) = super::config::canonical_temp_dir() {
-            let anchor = super::scratch::unix_scratch_anchor_path(&temp_parent);
-            if policy.protected_paths.iter().any(|path| path == &anchor) {
-                super::scratch::ensure_unix_scratch_anchor(&temp_parent)?;
-            }
-        }
+        ensure_protected_scratch_anchors(&policy)?;
     }
     let targets = match grants::receive(&channel, &policy, &request.write_targets) {
         Ok(targets) => targets,

@@ -327,9 +327,22 @@ fn windows_scratch_cleans_readonly_preserves_hardlink_readonly_and_leaf_reparse(
     // (b) Multiply-linked read-only hard link inside scratch.
     std::fs::hard_link(&outside_ro, scratch_path.join("hard-ro.txt")).map_err(|e| e.to_string())?;
 
-    // (c) Reparse point / directory symlink leaf inside scratch (when host allows symlink creation).
+    // (c) Reparse point / NTFS directory junction leaf inside scratch (standard-user safe).
     let link_path = scratch_path.join("link-dir");
-    let _ = std::os::windows::fs::symlink_dir(&outside_target, &link_path);
+    let mklink = std::process::Command::new("cmd")
+        .arg("/C")
+        .arg("mklink")
+        .arg("/J")
+        .arg(&link_path)
+        .arg(&outside_target)
+        .output()
+        .map_err(|e| format!("failed to invoke cmd mklink /J: {e}"))?;
+    assert!(
+        mklink.status.success(),
+        "mklink /J failed: stdout={} stderr={}",
+        String::from_utf8_lossy(&mklink.stdout),
+        String::from_utf8_lossy(&mklink.stderr)
+    );
 
     scratch.cleanup()?;
     assert!(

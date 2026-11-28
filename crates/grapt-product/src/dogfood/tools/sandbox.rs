@@ -99,6 +99,38 @@ impl Plan {
         }
     }
 
+    /// Policy used when previewing scoped write grants before approval: guards
+    /// the Unix per-UID scratch anchor even when `private_temp_parent` is still
+    /// active, matching `Plan::filesystem()` so overlapping grants fail before
+    /// approval rather than later during `WriteTarget::from_file`.
+    pub(super) fn preview_policy(&self) -> grapt_sandbox::Policy {
+        let mut policy = self.policy();
+        policy.protected_paths = self.protected_paths_with_scratch_anchor();
+        policy
+    }
+
+    fn protected_paths_with_scratch_anchor(&self) -> Vec<PathBuf> {
+        #[cfg(unix)]
+        {
+            let mut protected = self.protected.clone();
+            let temp_parent = self
+                .private_temp_parent
+                .clone()
+                .or_else(|| config::canonical_temp_dir().ok());
+            if let Some(parent) = temp_parent {
+                let anchor = scratch::unix_scratch_anchor_path(&parent);
+                if !protected.iter().any(|existing| existing == &anchor) {
+                    protected.push(anchor);
+                }
+            }
+            protected
+        }
+        #[cfg(not(unix))]
+        {
+            self.protected.clone()
+        }
+    }
+
     pub(super) fn path_count(&self) -> usize {
         self.readable.len()
             + self.writable.len()
@@ -136,23 +168,7 @@ impl Plan {
                 .map(|path| grapt_types::PathIdentity::canonical(super::path_text(path)))
                 .collect()
         };
-        #[cfg(unix)]
-        let protected = {
-            let mut protected = self.protected.clone();
-            let temp_parent = self
-                .private_temp_parent
-                .clone()
-                .or_else(|| config::canonical_temp_dir().ok());
-            if let Some(parent) = temp_parent {
-                let anchor = scratch::unix_scratch_anchor_path(&parent);
-                if !protected.iter().any(|existing| existing == &anchor) {
-                    protected.push(anchor);
-                }
-            }
-            protected
-        };
-        #[cfg(not(unix))]
-        let protected = &self.protected;
+        let protected = self.protected_paths_with_scratch_anchor();
         grapt_types::FilesystemAuthority::new(
             identities(&self.readable),
             identities(&self.writable),

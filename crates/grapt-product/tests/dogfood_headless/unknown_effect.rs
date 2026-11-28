@@ -648,7 +648,7 @@ fn g24_auto_resume_stops_at_crash_loop_cap_with_durable_notice() {
         .unwrap_or_else(|error| panic!("global-config: {error}"));
     write(
         &journey.service.join("global-config/grapt.json"),
-        r#"{"permission":{"*":"allow"}}"#,
+        r#"{"permission":{"execute":"allow","nested_hold":"allow"}}"#,
     );
 
     // Restart 1 -> auto-resume attempt 1 -> crashes again.

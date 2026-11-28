@@ -50,8 +50,12 @@ fn parent_dir_search_flag() -> OFlag {
     }
 }
 
+pub(in crate::dogfood::tools::sandbox) fn unix_scratch_anchor_name() -> String {
+    format!("grapt-scratch-{}", geteuid().as_raw())
+}
+
 pub(in crate::dogfood::tools::sandbox) fn unix_scratch_anchor_path(parent: &Path) -> PathBuf {
-    parent.join(format!("grapt-scratch-{}", geteuid().as_raw()))
+    parent.join(unix_scratch_anchor_name())
 }
 
 pub(in crate::dogfood::tools::sandbox) fn ensure_unix_scratch_anchor(

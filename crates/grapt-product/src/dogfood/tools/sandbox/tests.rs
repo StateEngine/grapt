@@ -420,6 +420,39 @@ fn workspace_under_temp_dir_never_exposes_ancestor_or_obstructs_sibling() -> Res
     Ok(())
 }
 
+#[cfg(unix)]
+#[test]
+fn scoped_grant_preview_rejects_target_inside_unix_scratch_anchor() -> Result<(), String> {
+    use std::os::unix::fs::PermissionsExt as _;
+
+    let dir = tempfile::Builder::new()
+        .prefix("grapt-sandbox-preview-anchor-")
+        .tempdir()
+        .map_err(|e| e.to_string())?;
+    let workspace = dir.path().join("workspace");
+    let isolated_temp = dir.path().join("isolated-temp");
+    std::fs::create_dir(&workspace).map_err(|e| e.to_string())?;
+    std::fs::create_dir(&isolated_temp).map_err(|e| e.to_string())?;
+    std::fs::set_permissions(&isolated_temp, std::fs::Permissions::from_mode(0o700))
+        .map_err(|e| e.to_string())?;
+    let isolated_anchor = scratch::ensure_unix_scratch_anchor(&isolated_temp)?;
+    let nested_in_anchor = isolated_anchor.join("nested-grant-target");
+    std::fs::create_dir(&nested_in_anchor).map_err(|e| e.to_string())?;
+
+    let sources = CatalogSources::read(&workspace, CatalogEnvironment::isolated(dir.path()))?;
+    let mut plan = Plan::read(&workspace, &sources)?.ok_or("sandbox plan absent")?;
+    plan.private_temp_parent = Some(isolated_temp);
+    let preview_error =
+        grapt_sandbox::WriteTarget::resolve(&plan.preview_policy(), &nested_in_anchor)
+            .err()
+            .ok_or("preview must reject scoped write target inside grapt-scratch-<euid>")?;
+    assert!(
+        preview_error.to_lowercase().contains("protected"),
+        "preview rejection should explain protected scratch anchor: {preview_error}"
+    );
+    Ok(())
+}
+
 #[test]
 fn instruction_slots_targets_and_denied_ssh_enter_policy_and_fingerprint() -> Result<(), String> {
     let root = std::env::temp_dir().join(format!(
