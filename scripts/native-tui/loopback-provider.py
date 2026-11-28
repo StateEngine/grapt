@@ -582,11 +582,16 @@ def _extract_stream_scope(
     """Identify which measured terminal/run owns this provider stream so traffic on
     another socket can never satisfy a quiet T5 echo probe.
 
-    Scope attribution uses only a unique per-measured-run/per-terminal identifier
-    (dedicated `/scopes/<id>/...` path prefix, `stream_scope` query param, dedicated
-    headers, or explicit `stream_scope`/`metadata.session_id` body fields). Shared
-    `prompt_cache_key` values are deliberately ignored because forked sessions and
-    project-scoped requests share cache keys."""
+    Precedence: explicit per-request headers (`X-Grapt-Stream-Scope`,
+    `X-Grapt-Session-Id`) win over the URL path prefix (`/scopes/<id>/...`) and
+    `stream_scope` query param, followed by explicit `stream_scope` or
+    `metadata.session_id` body fields. Shared `prompt_cache_key` values are
+    deliberately ignored because forked sessions and project-scoped requests
+    share cache keys."""
+    for header in ("x-grapt-stream-scope", "x-grapt-session-id"):
+        value = headers.get(header, "").strip()
+        if value:
+            return value
     if request_target:
         parsed = urllib.parse.urlsplit(request_target)
         parts = [segment for segment in parsed.path.split("/") if segment]
@@ -598,10 +603,6 @@ def _extract_stream_scope(
         for value in query.get("stream_scope", ()):
             if value.strip():
                 return value.strip()
-    for header in ("x-grapt-stream-scope", "x-grapt-session-id"):
-        value = headers.get(header, "").strip()
-        if value:
-            return value
     try:
         decoded = json.loads(body.decode("utf-8"))
     except (UnicodeDecodeError, json.JSONDecodeError):

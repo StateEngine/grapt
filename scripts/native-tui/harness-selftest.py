@@ -1116,22 +1116,90 @@ def t5_budget_witnesses() -> None:
             f"metrics={cache_metrics!r} detail={cache_detail!r} budget={cache_budget!r}",
         )
 
-        # (c) Traffic scoped to `measured_scope` via dedicated request path
-        # passes T5 budgets without /state stream_tokens.
-        lb_kind, lb_detail, _ = CMP.apply_step(
-            _InstantEchoObserver(
-                "LOOPBACK_ECHO",
-                on_paste=lambda: _run_scoped_provider_stream(
-                    path="/scopes/measured_scope/responses"
-                ),
-            ),
-            {"echo": "LOOPBACK_ECHO", "stream_scope": "measured_scope"},
+        # (c) A second socket using the same `/scopes/<id>/` URL path but an
+        # explicitly different `X-Grapt-Stream-Scope` header must attribute to
+        # the explicit header and NOT satisfy the quiet URL-scoped probe.
+        hdr_thread = threading.Thread(
+            target=_run_scoped_provider_stream,
+            kwargs={
+                "path": "/scopes/quiet_header_scope/responses",
+                "scope_header": "other_header_scope",
+            },
+        )
+        hdr_thread.start()
+        hdr_kind, hdr_detail, _ = CMP.apply_step(
+            _InstantEchoObserver("HDR_PRECEDENCE_ECHO"),
+            {"echo": "HDR_PRECEDENCE_ECHO", "stream_scope": "quiet_header_scope"},
             "native",
             Path("."),
             Path("."),
             set(),
             stream_metrics_path=metrics_path,
         )
+        hdr_thread.join(timeout=5)
+        hdr_budget = CMP.evaluate_t5_budgets(
+            [
+                {
+                    "client": "native",
+                    "steps": [
+                        {
+                            "kind": hdr_kind,
+                            "t5_echo": True,
+                            "elapsed_ms": hdr_detail["echo_ms"],
+                            "detail": hdr_detail,
+                        }
+                    ],
+                    "idle_cpu_seconds": 0.10,
+                }
+            ]
+        )
+        hdr_metrics = json.loads(metrics_path.read_text(encoding="utf-8"))["scopes"]
+        check(
+            "explicit X-Grapt-Stream-Scope header overrides shared /scopes/<id>/ URL prefix",
+            hdr_metrics.get("other_header_scope", 0) > 0
+            and hdr_metrics.get("quiet_header_scope", 0) == 0
+            and hdr_detail.get("streaming_observed") is False
+            and hdr_budget["status"] == "not-measured",
+            f"metrics={hdr_metrics!r} detail={hdr_detail!r} budget={hdr_budget!r}",
+        )
+
+        # (d) Traffic scoped to `measured_scope` via dedicated request path
+        # passes T5 budgets without /state stream_tokens. Use a controlled clock
+        # on `CMP.time` so disk/provider I/O latency inside the test harness
+        # never causes echo-budget jitter while the real provider stream writes
+        # validated tokens to `metrics_path`.
+        class _ControlledClock:
+            def __init__(self, ticks: list[float], base_time: object) -> None:
+                self._ticks = iter(ticks)
+                self._last = ticks[-1]
+                self._base_time = base_time
+
+            def monotonic(self) -> float:
+                self._last = next(self._ticks, self._last)
+                return self._last
+
+            def sleep(self, seconds: float) -> None:
+                self._base_time.sleep(seconds)
+
+        orig_cmp_time = CMP.time
+        CMP.time = _ControlledClock([100.0, 100.005], orig_cmp_time)
+        try:
+            lb_kind, lb_detail, _ = CMP.apply_step(
+                _InstantEchoObserver(
+                    "LOOPBACK_ECHO",
+                    on_paste=lambda: _run_scoped_provider_stream(
+                        path="/scopes/measured_scope/responses"
+                    ),
+                ),
+                {"echo": "LOOPBACK_ECHO", "stream_scope": "measured_scope"},
+                "native",
+                Path("."),
+                Path("."),
+                set(),
+                stream_metrics_path=metrics_path,
+            )
+        finally:
+            CMP.time = orig_cmp_time
         lb_budget = CMP.evaluate_t5_budgets(
             [
                 {
@@ -1153,6 +1221,7 @@ def t5_budget_witnesses() -> None:
         check(
             "scoped end-to-end loopback-provider stream-metrics witness passes T5 budgets",
             lb_detail.get("streaming_observed") is True
+            and lb_detail.get("echo_ms") == 5.0
             and float(lb_detail.get("observed_tok_per_s", 0.0)) >= 200.0
             and lb_budget["status"] == "pass"
             and lb_budget["concurrent_streaming_tok_per_s"]["status"] == "pass",
