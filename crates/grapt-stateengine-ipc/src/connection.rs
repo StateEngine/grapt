@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 //! An authenticated connection: one request at a time, each answer checked
 //! against its request and bounded by the negotiated reply size.
-use crate::activity::{Activity, ActivityReceipt, ExternalRequest, ACTIVITY_CAPABILITY};
+use crate::activity::{
+    Activity, ActivityReceipt, AgentSelector, ExternalRequest, ACTIVITY_CAPABILITY,
+};
 use crate::events::{EventStream, SubscribeRequest, EVENTS_CAPABILITY, MIN_BATCH_BYTES};
 use crate::frame::{decode, encode, read_frame, write_frame};
 use crate::handshake::{handshake, HandshakeOptions, Session};
@@ -10,7 +12,7 @@ use crate::server_peer::VerifiedPeer;
 use crate::turn::{PublishTurn, PublishTurnReceipt, PUBLISH_TURN_CAPABILITY};
 use crate::wire::{CliSelections, IpcEnvelope, IpcResponse, IpcResult, Operation, Output, Request};
 use crate::{IpcError, API_VERSION, MAX_FRAME_BYTES};
-use grapt_stateengine_api::{AgentId, IdempotencyKey, ProjectId};
+use grapt_stateengine_api::{IdempotencyKey, ProjectId};
 use serde::de::DeserializeOwned;
 use serde_json::Value;
 use tokio::io::{AsyncRead, AsyncWrite};
@@ -111,16 +113,16 @@ impl<S: AsyncRead + AsyncWrite + Unpin> Connection<S> {
         receipt(output, crate::turn::RECEIPT_SCHEMA)
     }
 
-    /// Report an external seat's turn state, naming its agent and
-    /// optionally its project.
+    /// Report an external seat's turn state, naming its agent and project:
+    /// owner authority starts at the registry.
     pub async fn report_activity(
         &mut self,
-        agent: &AgentId,
-        project: Option<&ProjectId>,
+        agent: &AgentSelector,
+        project: &ProjectId,
         state: Activity,
     ) -> Result<ActivityReceipt, IpcError> {
         self.require(ACTIVITY_CAPABILITY)?;
-        if agent.0.is_empty() {
+        if agent.is_empty() {
             return Err(IpcError::Invalid(
                 "an owner report names the seat's agent".into(),
             ));
@@ -128,7 +130,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin> Connection<S> {
         let output = self
             .exchange(
                 Request::External(ExternalRequest::SessionActivity {
-                    project: project.cloned(),
+                    project: Some(project.clone()),
                     agent: Some(agent.clone()),
                     state,
                 }),

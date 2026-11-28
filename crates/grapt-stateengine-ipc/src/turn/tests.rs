@@ -51,3 +51,24 @@ fn prose_bounds_count_the_escaped_json() {
     assert!(turn(&quoted, None).check().is_err());
     assert_eq!(turn(&"a".repeat(MAX_PROSE_BYTES / 2), None).check(), Ok(()));
 }
+
+#[test]
+fn the_decision_and_paths_bound_counts_the_stored_object() {
+    let with_paths = |bytes: usize| PublishTurn {
+        diff_summary: Some(TurnDiff {
+            files_changed: 2,
+            insertions: 0,
+            deletions: 0,
+            paths: vec!["a".repeat(bytes - 1), "b".into()],
+        }),
+        ..turn("done", None)
+    };
+    // `{"paths":["…","b"]}` takes the paths' own bytes plus 17.
+    assert_eq!(
+        with_paths(MAX_DECISION_AND_PATHS_BYTES - 17).check(),
+        Ok(())
+    );
+    assert!(with_paths(MAX_DECISION_AND_PATHS_BYTES - 16)
+        .check()
+        .is_err());
+}

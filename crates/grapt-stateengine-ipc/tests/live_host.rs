@@ -4,9 +4,9 @@
 //! at a project registered there, then run with `--ignored`.
 #![cfg(target_os = "linux")]
 use grapt_stateengine_ipc::{
-    connect, discover, observe_self, verify_binary, Activity, AgentId, Capabilities, Connection,
-    EventKind, HandshakeOptions, IdempotencyKey, IpcError, ProjectId, PublishTurn, SessionId,
-    Sha256Hex, StreamFrame, SubscribeRequest, TurnModel, TurnRole, DEFAULT_REPLY_BYTES,
+    connect, discover, observe_self, verify_binary, Activity, AgentId, AgentSelector, Capabilities,
+    Connection, EventKind, HandshakeOptions, IdempotencyKey, IpcError, ProjectId, PublishTurn,
+    SessionId, Sha256Hex, StreamFrame, SubscribeRequest, TurnModel, TurnRole, DEFAULT_REPLY_BYTES,
 };
 use std::path::PathBuf;
 use std::time::Duration;
@@ -60,20 +60,25 @@ async fn a_live_host_offers_and_answers_the_live_methods() -> TestResult {
         LIVE.iter().all(|name| offered.iter().any(|o| o == name)),
         "{offered:?}"
     );
-    // A host without an active external seat for the agent refuses with its
-    // own typed error: the request decoded, and nothing was recorded.
+    // With its project, an owner report reaches the seat lookup: a host
+    // without an active external seat for the agent refuses with its own
+    // typed error, and nothing was recorded.
     let project = ProjectId(
         required("GRAPT_SE_LIVE_PROJECT")?
             .to_string_lossy()
             .into_owned(),
     );
     let activity = connection
-        .report_activity(&AgentId("main".into()), Some(&project), Activity::Idle)
+        .report_activity(
+            &AgentSelector::Name("main".into()),
+            &project,
+            Activity::Idle,
+        )
         .await;
-    assert!(
-        matches!(activity, Err(IpcError::Refused(_))),
-        "{activity:?}"
-    );
+    let Err(IpcError::Refused(refusal)) = activity else {
+        return Err(format!("{activity:?}").into());
+    };
+    assert_eq!(refusal.detail["argument"], "external seat", "{refusal:?}");
     let turn = PublishTurn {
         idempotency_key: IdempotencyKey("live-turn".into()),
         target_agent_id: Some(AgentId("ag_00000000-0000-7000-8000-000000000000".into())),

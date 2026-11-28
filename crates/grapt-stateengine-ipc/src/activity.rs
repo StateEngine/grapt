@@ -15,16 +15,41 @@ pub enum Activity {
     Idle,
 }
 
+/// How an owner names a seat's agent: the host accepts its ID or its name.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AgentSelector {
+    Id(AgentId),
+    Name(String),
+}
+
+impl AgentSelector {
+    fn text(&self) -> &str {
+        match self {
+            Self::Id(id) => &id.0,
+            Self::Name(name) => name,
+        }
+    }
+
+    pub(crate) fn is_empty(&self) -> bool {
+        self.text().is_empty()
+    }
+}
+
+impl Serialize for AgentSelector {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(self.text())
+    }
+}
+
 /// The external-seat requests this client sends.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(tag = "op", rename_all = "snake_case", deny_unknown_fields)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(tag = "op", rename_all = "snake_case")]
 pub enum ExternalRequest {
-    /// An owner connection names the seat's agent; `project` narrows it.
+    /// An owner connection names the seat's agent and its project.
     SessionActivity {
-        #[serde(default, with = "crate::ids::option")]
+        #[serde(with = "crate::ids::option")]
         project: Option<ProjectId>,
-        #[serde(default, with = "crate::ids::option")]
-        agent: Option<AgentId>,
+        agent: Option<AgentSelector>,
         state: Activity,
     },
 }

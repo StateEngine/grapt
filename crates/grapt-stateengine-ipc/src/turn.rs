@@ -61,13 +61,19 @@ pub struct TurnDecision {
     pub scope: String,
 }
 
+/// The harness's own name for a nested agent. It is not a StateEngine
+/// agent: the host keeps it as the harness reported it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(transparent)]
+pub struct NestedAgentLabel(pub String);
+
 /// A nested agent's turn, under the StateEngine session it ran in.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct TurnNesting {
     #[serde(with = "crate::ids")]
     pub parent_session_id: SessionId,
-    #[serde(with = "crate::ids")]
-    pub nested_agent_id: AgentId,
+    #[serde(rename = "nested_agent_id")]
+    pub nested_agent: NestedAgentLabel,
     pub depth: u32,
 }
 
@@ -132,24 +138,64 @@ impl PublishTurn {
         {
             return Err("a nesting depth is not 1 to 64".into());
         }
-        // The host bounds the serialized prose, escapes included.
-        let decision_and_paths = serialized(&self.decision)? + serialized(&paths)?;
-        if decision_and_paths > MAX_DECISION_AND_PATHS_BYTES {
+        let mut prose = StoredProse {
+            body_text: None,
+            decision: self.decision.as_ref(),
+            paths,
+        };
+        if !prose.within(MAX_DECISION_AND_PATHS_BYTES)? {
             return Err("the decision and paths together exceed 64 KiB".into());
         }
-        let body = serialized(&self.body_text)?;
-        if body + decision_and_paths > MAX_PROSE_BYTES {
+        prose.body_text = self.body_text.as_deref();
+        if !prose.within(MAX_PROSE_BYTES)? {
             return Err("the body, decision and paths together exceed 1 MiB".into());
         }
         Ok(())
     }
 }
 
-/// The bytes `value` takes as JSON.
-fn serialized<T: Serialize>(value: &T) -> Result<usize, String> {
-    serde_json::to_vec(value)
-        .map(|bytes| bytes.len())
-        .map_err(|error| error.to_string())
+/// The prose the host stores for a turn, as the JSON object it bounds:
+/// field names, braces and escapes included.
+#[derive(Serialize)]
+struct StoredProse<'a> {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    body_text: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    decision: Option<&'a TurnDecision>,
+    paths: &'a [String],
+}
+
+impl StoredProse<'_> {
+    /// Whether the object fits in `limit` bytes, counted without buffering
+    /// and abandoned at the first byte past it.
+    fn within(&self, limit: usize) -> Result<bool, String> {
+        let mut counter = ByteCounter { bytes: 0, limit };
+        match serde_json::to_writer(&mut counter, self) {
+            Ok(()) => Ok(true),
+            Err(_) if counter.bytes > limit => Ok(false),
+            Err(error) => Err(error.to_string()),
+        }
+    }
+}
+
+/// Counts written bytes, refusing a write once they pass `limit`.
+struct ByteCounter {
+    bytes: usize,
+    limit: usize,
+}
+
+impl std::io::Write for ByteCounter {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        self.bytes = self.bytes.saturating_add(buf.len());
+        if self.bytes > self.limit {
+            return Err(std::io::Error::other("over the byte bound"));
+        }
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
 }
 
 /// Whether the host recorded the turn now or replayed an earlier commit.

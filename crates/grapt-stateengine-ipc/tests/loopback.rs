@@ -4,10 +4,10 @@
 #![cfg(target_os = "linux")]
 use grapt_stateengine_ipc::wire::StartIdentity;
 use grapt_stateengine_ipc::{
-    connect, discover, observe_self, read_frame, write_frame, Activity, AgentId, Capabilities,
-    CommitState, Connection, Endpoint, EventCursor, EventKind, HandshakeOptions, IdempotencyKey,
-    IpcError, PeerBinding, Principal, ProjectId, PublishTurn, SessionId, StreamFrame,
-    SubscribeRequest, TurnModel, TurnRole, VerifiedPeer,
+    connect, discover, observe_self, read_frame, write_frame, Activity, AgentId, AgentSelector,
+    Capabilities, CommitState, Connection, Endpoint, EventCursor, EventKind, HandshakeOptions,
+    IdempotencyKey, IpcError, PeerBinding, Principal, ProjectId, PublishTurn, SessionId,
+    StreamFrame, SubscribeRequest, TurnModel, TurnRole, VerifiedPeer,
 };
 use serde_json::{json, Value};
 use std::os::unix::fs::PermissionsExt;
@@ -551,7 +551,7 @@ async fn a_host_without_a_capability_never_receives_its_request() -> TestResult 
         Err(IpcError::Unsupported("session.publish_turn"))
     ));
     let refused = connection
-        .report_activity(&AgentId("agent".into()), None, Activity::Busy)
+        .report_activity(&selector(), &project(), Activity::Busy)
         .await;
     assert!(matches!(
         refused,
@@ -601,11 +601,7 @@ async fn turns_and_activity_carry_their_keys_and_typed_receipts() -> TestResult 
     let client_side = async {
         let receipt = connection.publish_turn(&project(), &turn("key-a")?).await?;
         let activity = connection
-            .report_activity(
-                &AgentId("agent-fixture".into()),
-                Some(&project()),
-                Activity::Idle,
-            )
+            .report_activity(&selector(), &project(), Activity::Idle)
             .await?;
         TestResult::Ok((receipt, activity))
     };
@@ -681,6 +677,10 @@ async fn a_subscription_asks_for_its_filter_and_reads_the_first_frame() -> TestR
 
 fn project() -> ProjectId {
     ProjectId("prj_fixture".into())
+}
+
+fn selector() -> AgentSelector {
+    AgentSelector::Id(AgentId("agent-fixture".into()))
 }
 
 fn subscribed_request() -> SubscribeRequest {

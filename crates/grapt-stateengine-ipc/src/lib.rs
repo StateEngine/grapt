@@ -32,7 +32,9 @@ mod strict;
 mod turn;
 pub mod wire;
 
-pub use activity::{Activity, ActivityReceipt, ExternalRequest, ACTIVITY_CAPABILITY};
+pub use activity::{
+    Activity, ActivityReceipt, AgentSelector, ExternalRequest, ACTIVITY_CAPABILITY,
+};
 pub use binary::verify_binary;
 pub use connection::Connection;
 pub use digest::Sha256Hex;
@@ -52,8 +54,8 @@ pub use peer::{PeerBinding, Principal};
 pub use server_peer::connect;
 pub use server_peer::VerifiedPeer;
 pub use turn::{
-    CommitState, PublishTurn, PublishTurnReceipt, TurnCommit, TurnDecision, TurnDiff, TurnModel,
-    TurnNesting, TurnRole, TurnUsage, PUBLISH_TURN_CAPABILITY,
+    CommitState, NestedAgentLabel, PublishTurn, PublishTurnReceipt, TurnCommit, TurnDecision,
+    TurnDiff, TurnModel, TurnNesting, TurnRole, TurnUsage, PUBLISH_TURN_CAPABILITY,
 };
 
 use std::time::Duration;
