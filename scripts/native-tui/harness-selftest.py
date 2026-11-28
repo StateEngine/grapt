@@ -770,6 +770,34 @@ def t5_budget_witnesses() -> None:
         unobserved is None,
         f"got={unobserved!r}",
     )
+    decreased_readings = iter(
+        [
+            {"observed": True, "processor_seconds": 2.50},
+            {"observed": True, "processor_seconds": 1.10},
+        ]
+    )
+    decreased = CMP.measure_idle_cpu_delta(
+        1234, 0.001, sampler=lambda _pid: next(decreased_readings)
+    )
+    check(
+        "measure_idle_cpu_delta fails closed (None) instead of clamping decreased counters to zero",
+        decreased is None,
+        f"got={decreased!r}",
+    )
+    check(
+        "is_quit_step identifies quit keys so idle CPU is sampled before quit",
+        CMP.is_quit_step({"key": "Ctrl+c"}, "native")
+        and not CMP.is_quit_step({"key": "Enter"}, "native"),
+    )
+    non_t5_rejected = False
+    try:
+        CMP.validate_t5_scenario({"name": "j02"}, [{"key": "Enter"}])
+    except CMP.HarnessError:
+        non_t5_rejected = True
+    check(
+        "validate_t5_scenario rejects non-T5 scenarios under --enforce-t5-budgets",
+        non_t5_rejected,
+    )
 
 
 def main() -> int:

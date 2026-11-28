@@ -678,10 +678,10 @@ fn unsettled_tool_outcome<O: AttemptOwner>(
                 cancelled_tool_outcome(InterruptionSource::ManagedShutdown)
             }
             None => ToolOutcome::Failed {
-                reason: ToolFailureReason::EffectFailed,
+                reason: ToolFailureReason::EffectUnknown,
                 detail: capture_cause(
                     owner,
-                    "runtime infrastructure failure: tool execution ended without producing a terminal result",
+                    "tool execution ended without producing a terminal result",
                 ),
             },
         }

@@ -261,7 +261,8 @@ impl Workers {
         if children.len() >= 3 || children.contains_key(&key) {
             return Err(ToolFailureReason::AuthorityUnavailable);
         }
-        let executable = std::env::current_exe().map_err(|_| ToolFailureReason::EffectFailed)?;
+        let executable =
+            std::env::current_exe().map_err(|_| ToolFailureReason::AuthorityUnavailable)?;
         let mut command = Command::new(executable);
         command
             .arg(grapt_codemode::WORKER_ARGUMENT)
@@ -277,7 +278,8 @@ impl Workers {
             }
             command.creation_flags(0x0800_0000);
         }
-        let group = processkit::ProcessGroup::new().map_err(|_| ToolFailureReason::EffectFailed)?;
+        let group =
+            processkit::ProcessGroup::new().map_err(|_| ToolFailureReason::AuthorityUnavailable)?;
         // On Windows the group's own spawn resets the creation flags to
         // CREATE_SUSPENDED alone, dropping CREATE_NO_WINDOW. The worker starts
         // nothing until it reads its first request, written only after this
@@ -286,16 +288,16 @@ impl Workers {
         let mut child = {
             let child = command
                 .spawn()
-                .map_err(|_| ToolFailureReason::EffectFailed)?;
+                .map_err(|_| ToolFailureReason::AuthorityUnavailable)?;
             group
                 .adopt(&child)
-                .map_err(|_| ToolFailureReason::EffectFailed)?;
+                .map_err(|_| ToolFailureReason::AuthorityUnavailable)?;
             child
         };
         #[cfg(not(windows))]
         let mut child = group
             .spawn(command)
-            .map_err(|_| ToolFailureReason::EffectFailed)?;
+            .map_err(|_| ToolFailureReason::AuthorityUnavailable)?;
         let pipes = child.stdin.take().zip(child.stdout.take());
         let jobs = Arc::new(tokio::sync::Mutex::new(JoinSet::new()));
         children.insert(

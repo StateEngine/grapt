@@ -218,6 +218,8 @@ test('evaluateReleaseGates reports honest Criterion #3 and #5 verdicts', async (
 
   const matchedPass = evaluateReleaseGates(
     {
+      window: { from: '2026-11-28T00:00:00Z', until: '2026-11-29T00:00:00Z' },
+      model: 'gpt-6.1-sol',
       totals: { read_share_percent: 98.8 },
       operations: {
         tool_calls: { count: 100, failed: 20, infrastructure_failed: 2 },
@@ -226,7 +228,11 @@ test('evaluateReleaseGates reports honest Criterion #3 and #5 verdicts', async (
       },
     },
     {
-      codexReport: { totals: { read_share_percent: 98.5 } },
+      codexReport: {
+        window: { from: '2026-11-28T00:00:00Z', until: '2026-11-29T00:00:00Z' },
+        model: 'gpt-6.1-sol',
+        totals: { read_share_percent: 98.5 },
+      },
       matchedTasks: {
         count: 3,
         grapt_accepted_tasks: 3,
@@ -241,13 +247,68 @@ test('evaluateReleaseGates reports honest Criterion #3 and #5 verdicts', async (
   assert.equal(matchedPass.criterion_3.status, 'pass');
   assert.equal(matchedPass.criterion_5.status, 'pass');
 
-  const singleTaskRejected = evaluateReleaseGates(
+  const mismatchedDay = evaluateReleaseGates(
     {
+      window: { from: '2026-11-28T00:00:00Z' }, model: 'gpt-6.1-sol',
       totals: { read_share_percent: 99.0 },
       operations: { tool_calls: { count: 100, failed: 0, infrastructure_failed: 0 } },
     },
     {
-      codexReport: { totals: { read_share_percent: 98.5 } },
+      codexReport: { window: { from: '2026-11-27T00:00:00Z' }, model: 'gpt-6.1-sol', totals: { read_share_percent: 98.5 } },
+      matchedTasks: {
+        count: 3, grapt_accepted_tasks: 3,
+        grapt_first_review_accept_rate: 0.9, codex_first_review_accept_rate: 0.9,
+        grapt_tokens_per_accepted_task: 10000, codex_tokens_per_accepted_task: 10000,
+      },
+    },
+  );
+  assert.equal(mismatchedDay.criterion_3.status, 'fail');
+  assert.equal(mismatchedDay.criterion_3.reason, 'mismatched-comparison-day');
+
+  const mismatchedModel = evaluateReleaseGates(
+    {
+      window: { from: '2026-11-28T00:00:00Z' }, model: 'gpt-6.1-sol',
+      totals: { read_share_percent: 99.0 },
+      operations: { tool_calls: { count: 100, failed: 0, infrastructure_failed: 0 } },
+    },
+    {
+      codexReport: { window: { from: '2026-11-28T00:00:00Z' }, model: 'other-model', totals: { read_share_percent: 98.5 } },
+      matchedTasks: {
+        count: 3, grapt_accepted_tasks: 3,
+        grapt_first_review_accept_rate: 0.9, codex_first_review_accept_rate: 0.9,
+        grapt_tokens_per_accepted_task: 10000, codex_tokens_per_accepted_task: 10000,
+      },
+    },
+  );
+  assert.equal(mismatchedModel.criterion_3.status, 'fail');
+  assert.equal(mismatchedModel.criterion_3.reason, 'mismatched-comparison-model');
+
+  const invalidBounds = evaluateReleaseGates(
+    {
+      window: { from: '2026-11-28T00:00:00Z' }, model: 'gpt-6.1-sol',
+      totals: { read_share_percent: 99.0 },
+      operations: { tool_calls: { count: 100, failed: 0, infrastructure_failed: 0 } },
+    },
+    {
+      codexReport: { window: { from: '2026-11-28T00:00:00Z' }, model: 'gpt-6.1-sol', totals: { read_share_percent: 98.5 } },
+      matchedTasks: {
+        count: 3, grapt_accepted_tasks: 3,
+        grapt_first_review_accept_rate: 1.5, codex_first_review_accept_rate: 0.9,
+        grapt_tokens_per_accepted_task: -500, codex_tokens_per_accepted_task: 10000,
+      },
+    },
+  );
+  assert.equal(invalidBounds.criterion_3.status, 'fail');
+  assert.equal(invalidBounds.criterion_3.reason, 'invalid-matched-task-metrics');
+
+  const singleTaskRejected = evaluateReleaseGates(
+    {
+      window: { from: '2026-11-28T00:00:00Z' }, model: 'gpt-6.1-sol',
+      totals: { read_share_percent: 99.0 },
+      operations: { tool_calls: { count: 100, failed: 0, infrastructure_failed: 0 } },
+    },
+    {
+      codexReport: { window: { from: '2026-11-28T00:00:00Z' }, model: 'gpt-6.1-sol', totals: { read_share_percent: 98.5 } },
       matchedTasks: {
         count: 1,
         grapt_accepted_tasks: 1,
@@ -263,11 +324,12 @@ test('evaluateReleaseGates reports honest Criterion #3 and #5 verdicts', async (
 
   const unacceptedRejected = evaluateReleaseGates(
     {
+      window: { from: '2026-11-28T00:00:00Z' }, model: 'gpt-6.1-sol',
       totals: { read_share_percent: 99.0 },
       operations: { tool_calls: { count: 100, failed: 0, infrastructure_failed: 0 } },
     },
     {
-      codexReport: { totals: { read_share_percent: 98.5 } },
+      codexReport: { window: { from: '2026-11-28T00:00:00Z' }, model: 'gpt-6.1-sol', totals: { read_share_percent: 98.5 } },
       matchedTasks: {
         count: 3,
         grapt_accepted_tasks: 2,
@@ -283,11 +345,12 @@ test('evaluateReleaseGates reports honest Criterion #3 and #5 verdicts', async (
 
   const outsideMarginRejected = evaluateReleaseGates(
     {
+      window: { from: '2026-11-28T00:00:00Z' }, model: 'gpt-6.1-sol',
       totals: { read_share_percent: 99.0 },
       operations: { tool_calls: { count: 100, failed: 0, infrastructure_failed: 0 } },
     },
     {
-      codexReport: { totals: { read_share_percent: 98.5 } },
+      codexReport: { window: { from: '2026-11-28T00:00:00Z' }, model: 'gpt-6.1-sol', totals: { read_share_percent: 98.5 } },
       matchedTasks: {
         count: 3,
         grapt_accepted_tasks: 3,
@@ -300,8 +363,10 @@ test('evaluateReleaseGates reports honest Criterion #3 and #5 verdicts', async (
   );
   assert.equal(outsideMarginRejected.criterion_3.status, 'fail');
 
-  // Prove operationalReport counts supervisor-synthesized missing-terminal
-  // effect-failed outcomes as infrastructure failures (4/100 = 4% > 3% FAIL).
+  // Prove operationalReport classifies strictly by typed outcome/reason:
+  // 4 typed effect-unknown missing-terminal failures out of 100 = 4% (>3% FAIL),
+  // even when detail artifact is unavailable, while regular effect-failed prose
+  // is never miscounted as an infrastructure failure.
   const { operationalReport } = await import('./seat-day-operations.mjs');
   const events = [];
   for (let i = 0; i < 100; i++) {
@@ -311,8 +376,10 @@ test('evaluateReleaseGates reports honest Criterion #3 and #5 verdicts', async (
       type: 'session.tool.input.started.2', data: { callID: call, name: 'shell' },
     });
     const outcome = i < 4
-      ? { kind: 'failed', reason: 'effect-failed', detail: { id: 'a'.repeat(64), length: 10, digest: 'b'.repeat(64) } }
-      : { kind: 'completed', output: null };
+      ? { kind: 'failed', reason: 'effect-unknown', detail: { id: 'a'.repeat(64), length: 10, digest: 'b'.repeat(64) } }
+      : (i < 10
+          ? { kind: 'failed', reason: 'effect-failed', detail: { id: 'c'.repeat(64), length: 10, digest: 'd'.repeat(64) } }
+          : { kind: 'completed', output: null });
     events.push({
       id: `evt_e_${i}`, session: 'ses_1', seq: i * 2 + 2, created: 1001 + i,
       type: 'session.tool.terminal.1', data: { attempt: 'att_1', call, outcome },
@@ -321,7 +388,7 @@ test('evaluateReleaseGates reports honest Criterion #3 and #5 verdicts', async (
   const ops = await operationalReport(
     events,
     [],
-    async () => ({ status: 'observed', text: 'runtime infrastructure failure: tool execution ended without producing a terminal result', disposition: 'complete' }),
+    async () => ({ status: 'observed', text: 'tool execution ended without producing a terminal result', disposition: 'complete' }),
   );
   assert.equal(ops.tool_calls.infrastructure_failed, 4);
   const missingTerminalGate = evaluateReleaseGates({

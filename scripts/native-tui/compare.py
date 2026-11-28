@@ -416,12 +416,17 @@ def execution_failures(service_root: Path, sessions: list[str] | None) -> dict:
     return {"observed": True, "sessions": len(sessions), "failed": failed}
 
 
+DEFAULT_T5_STREAMING_MIN_TOK_PER_S = 200.0
+
+
 def measure_idle_cpu_delta(
     pid: int,
     window_seconds: float,
     sampler=None,
 ) -> float | None:
-    """Measure CPU seconds consumed across a quiet idle window (delta, never cumulative)."""
+    """Measure CPU seconds consumed across a quiet idle window while the live app
+    is running. Fails closed (returns None) if either sample is unobserved or if
+    the process-tree counter decreased (never clamps negative deltas to zero)."""
     if window_seconds <= 0.0:
         return None
     probe = resources if sampler is None else sampler
@@ -433,7 +438,38 @@ def measure_idle_cpu_delta(
     if not after.get("observed") or after.get("processor_seconds") is None:
         return None
     delta = float(after["processor_seconds"]) - float(before["processor_seconds"])
-    return round(max(0.0, delta), 6)
+    if delta < 0.0:
+        return None
+    return round(delta, 6)
+
+
+def is_quit_step(step: dict, label: str) -> bool:
+    """True when `step` terminates the client so idle CPU is sampled BEFORE quit."""
+    if step.get("quit") is True:
+        return True
+    if "key" in step:
+        key, _ = resolve(step["key"], label)
+        if isinstance(key, str) and key.lower() in ("ctrl+c", "ctrl+d"):
+            return True
+    return False
+
+
+def validate_t5_scenario(scenario: dict, steps: list[dict]) -> None:
+    """Refuse --enforce-t5-budgets on non-T5 scenarios that declare no streaming-echo probes."""
+    has_echo = any(step.get("t5_echo") is True or "echo" in step for step in steps)
+    rate = scenario.get("t5_streaming_tok_per_s")
+    if rate is None:
+        rates = [
+            float(step["streaming_tok_per_s"])
+            for step in steps
+            if step.get("streaming_tok_per_s") is not None
+        ]
+        rate = min(rates) if rates else None
+    if not has_echo or rate is None or float(rate) < DEFAULT_T5_STREAMING_MIN_TOK_PER_S:
+        raise HarnessError(
+            "--enforce-t5-budgets requires a T5 streaming-echo scenario declaring at least one "
+            "t5_echo/echo step and streaming rate >= 200 tok/s"
+        )
 
 
 def run_client(
@@ -521,17 +557,18 @@ def run_client(
     timings: list[dict] = []
     failure: str | None = None
     usage = {"observed": False, "reason": "not sampled"}
+    idle_cpu_seconds = None
     try:
         for index, step in enumerate(steps, start=1):
-            at = time.monotonic()
-            # Sampled BEFORE each step, while the client is certainly alive.
-            # Sampling once at the end read nothing at all, because the last
-            # step of every journey is the quit key: the counters describe a
-            # process that no longer exists, and an unobserved resource figure
-            # beside a real one is worse than no figure.
+            # Sample idle CPU while the live app sits idle BEFORE executing any quit step.
+            if idle_cpu_seconds is None and idle_window_seconds > 0.0 and is_quit_step(step, label):
+                idle_cpu_seconds = measure_idle_cpu_delta(int(ready["pid"]), idle_window_seconds)
+            # Sampled BEFORE starting the step timer so PowerShell/OS resource
+            # probe overhead never inflates step or echo latency.
             sample = resources(int(ready["pid"]))
             if sample.get("observed"):
                 usage = sample
+            at = time.monotonic()
             kind, detail, shared = apply_step(
                 observer, step, label, effect_root, service_root, sessions_before
             )
@@ -549,11 +586,15 @@ def run_client(
             }
             if step.get("t5_echo") is True or kind == "echo":
                 timing_row["t5_echo"] = True
+                if isinstance(detail, dict) and detail.get("echo_ms") is not None:
+                    timing_row["elapsed_ms"] = float(detail["echo_ms"])
+                if step.get("streaming_tok_per_s") is not None:
+                    timing_row["streaming_tok_per_s"] = float(step["streaming_tok_per_s"])
             timings.append(timing_row)
-        idle_cpu_seconds = measure_idle_cpu_delta(int(ready["pid"]), idle_window_seconds)
+        if idle_cpu_seconds is None and idle_window_seconds > 0.0:
+            idle_cpu_seconds = measure_idle_cpu_delta(int(ready["pid"]), idle_window_seconds)
     except HarnessError as error:
         failure = str(error)
-        idle_cpu_seconds = None
         sample = resources(int(ready["pid"]))
         if sample.get("observed"):
             usage = sample
@@ -751,6 +792,22 @@ def apply_step(
     service_root: Path,
     sessions_before: set[str] | None,
 ) -> tuple[str, object, bool]:
+    if "echo" in step:
+        text, shared = resolve(step["echo"], label)
+        if text is None:
+            return "echo", {"skipped": "this client does not take this echo probe"}, shared
+        expect_text = step.get("expect", text)
+        echo_start = time.monotonic()
+        observer.action({"kind": "paste", "text": text})
+        polls = int(step.get("polls", EXPECT_POLLS))
+        for _ in range(polls):
+            if expect_text in screen_text(observer.state()):
+                echo_ms = round((time.monotonic() - echo_start) * 1000.0, 3)
+                return "echo", {"text": text, "observed": True, "echo_ms": echo_ms}, shared
+            time.sleep(0.002)
+        raise HarnessError(
+            f"[{label}] composer echo `{expect_text}` never rendered within {polls} polls"
+        )
     if "key" in step:
         key, shared = resolve(step["key"], label)
         if key is None:
@@ -1096,6 +1153,8 @@ def main() -> int:
     steps = scenario.get("steps")
     if not isinstance(steps, list) or not steps:
         raise HarnessError(f"{arguments.scenario} declares no steps")
+    if arguments.enforce_t5_budgets:
+        validate_t5_scenario(scenario, steps)
 
     store_root = arguments.store_root or arguments.service_root
     endpoint = read_endpoint(arguments.service_root)

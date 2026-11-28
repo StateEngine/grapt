@@ -135,6 +135,21 @@ export function summarize(reports, window = null) {
   };
 }
 
+function extractDay(report, explicitDay) {
+  if (typeof explicitDay === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(explicitDay)) return explicitDay;
+  const from = report?.window?.from;
+  if (typeof from === 'string' && /^\d{4}-\d{2}-\d{2}/.test(from)) return from.slice(0, 10);
+  if (typeof from === 'number' && Number.isFinite(from)) return new Date(from).toISOString().slice(0, 10);
+  return null;
+}
+
+function extractModel(report, explicitModel) {
+  if (typeof explicitModel === 'string' && explicitModel.trim().length > 0) return explicitModel.trim();
+  if (typeof report?.model === 'string' && report.model.trim().length > 0) return report.model.trim();
+  const models = report?.by_model && typeof report.by_model === 'object' ? Object.keys(report.by_model) : [];
+  return models.length === 1 ? models[0] : null;
+}
+
 export const CRITERION_3_MIN_MATCHED_TASKS = 3;
 export const CRITERION_3_MAX_VARIANCE_RATIO = 0.20;
 export const CRITERION_5_MAX_INFRA_FAILURE_PERCENT = 3.0;
@@ -207,8 +222,9 @@ export function evaluateReleaseGates(graptReport, comparison = null) {
   } else {
     const cacheShareOk = graptShare >= codexShare;
     const hasMatchedTasks = matchedTasks !== null
-      && Number.isSafeInteger(matchedTasks.count) && matchedTasks.count > 0
-      && Number.isSafeInteger(matchedTasks.grapt_accepted_tasks)
+      && typeof matchedTasks === 'object'
+      && typeof matchedTasks.count === 'number'
+      && typeof matchedTasks.grapt_accepted_tasks === 'number'
       && typeof matchedTasks.grapt_first_review_accept_rate === 'number'
       && typeof matchedTasks.codex_first_review_accept_rate === 'number'
       && typeof matchedTasks.grapt_tokens_per_accepted_task === 'number'
@@ -223,18 +239,49 @@ export function evaluateReleaseGates(graptReport, comparison = null) {
         cache_share_delta_percent: Number((graptShare - codexShare).toFixed(4)),
       };
     } else {
+      const graptDay = extractDay(graptReport, matchedTasks.grapt_day);
+      const codexDay = extractDay(codexReport, matchedTasks.codex_day);
+      const graptModel = extractModel(graptReport, matchedTasks.grapt_model);
+      const codexModel = extractModel(codexReport, matchedTasks.codex_model);
+      const validCounts = Number.isSafeInteger(matchedTasks.count) && matchedTasks.count > 0
+        && Number.isSafeInteger(matchedTasks.grapt_accepted_tasks)
+        && matchedTasks.grapt_accepted_tasks >= 0
+        && matchedTasks.grapt_accepted_tasks <= matchedTasks.count;
+      const validRates = Number.isFinite(matchedTasks.grapt_first_review_accept_rate)
+        && matchedTasks.grapt_first_review_accept_rate >= 0
+        && matchedTasks.grapt_first_review_accept_rate <= 1
+        && Number.isFinite(matchedTasks.codex_first_review_accept_rate)
+        && matchedTasks.codex_first_review_accept_rate >= 0
+        && matchedTasks.codex_first_review_accept_rate <= 1;
+      const validTokens = Number.isFinite(matchedTasks.grapt_tokens_per_accepted_task)
+        && matchedTasks.grapt_tokens_per_accepted_task > 0
+        && Number.isFinite(matchedTasks.codex_tokens_per_accepted_task)
+        && matchedTasks.codex_tokens_per_accepted_task > 0;
+      const sameDay = graptDay !== null && codexDay !== null && graptDay === codexDay;
+      const sameModel = graptModel !== null && codexModel !== null && graptModel === codexModel;
       const enoughTasks = matchedTasks.count >= CRITERION_3_MIN_MATCHED_TASKS;
       const allAccepted = matchedTasks.grapt_accepted_tasks === matchedTasks.count;
       const acceptFloor = matchedTasks.codex_first_review_accept_rate * (1 - CRITERION_3_MAX_VARIANCE_RATIO);
       const tokensCeiling = matchedTasks.codex_tokens_per_accepted_task * (1 + CRITERION_3_MAX_VARIANCE_RATIO);
       const acceptOk = matchedTasks.grapt_first_review_accept_rate >= acceptFloor - 1e-12;
       const tokensOk = matchedTasks.grapt_tokens_per_accepted_task <= tokensCeiling + 1e-12;
-      const passed = enoughTasks && allAccepted && cacheShareOk && acceptOk && tokensOk;
+      const reason = (!validCounts || !validRates || !validTokens)
+        ? 'invalid-matched-task-metrics'
+        : (!sameDay
+            ? 'mismatched-comparison-day'
+            : (!sameModel
+                ? 'mismatched-comparison-model'
+                : (!enoughTasks
+                    ? 'insufficient-matched-tasks'
+                    : (!allAccepted ? 'unaccepted-matched-tasks' : null))));
+      const passed = reason === null && cacheShareOk && acceptOk && tokensOk;
       criterion_3 = {
         status: passed ? 'pass' : 'fail',
-        reason: !enoughTasks
-          ? 'insufficient-matched-tasks'
-          : (!allAccepted ? 'unaccepted-matched-tasks' : null),
+        reason,
+        grapt_day: graptDay,
+        codex_day: codexDay,
+        grapt_model: graptModel,
+        codex_model: codexModel,
         matched_tasks: matchedTasks.count,
         min_matched_tasks: CRITERION_3_MIN_MATCHED_TASKS,
         grapt_accepted_tasks: matchedTasks.grapt_accepted_tasks,
