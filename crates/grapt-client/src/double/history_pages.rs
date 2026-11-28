@@ -60,6 +60,46 @@ fn parse(token: &str) -> Option<(bool, usize)> {
     Some((ascending, from.parse().ok()?))
 }
 
+/// How many of a page's rows, in reading order, fit the product's page byte
+/// bound, counted as the product counts them: each row's encoded bytes, a
+/// comma between rows, and the empty page framed with the cursor that page
+/// would carry. A first row that cannot fit alone is refused, as the product
+/// refuses it.
+pub(super) fn rows_within_page_bytes(
+    rows: &[grapt_api::u3a::SessionMessageInfoDto],
+    indices: &[usize],
+    ascending: bool,
+) -> Result<usize, crate::wire::WireError> {
+    let bound = grapt_api::u3a::U3A_PRODUCTION_LIMITS.page_bytes;
+    let limits = crate::wire::limits()?;
+    let order = if ascending { "asc" } else { "desc" };
+    let mut row_bytes = 0usize;
+    let mut kept = 0usize;
+    for (row, index) in rows.iter().zip(indices) {
+        let Ok(encoded) = grapt_api::u3a::encode_page(row, limits).map(|raw| raw.len()) else {
+            break;
+        };
+        let continues = if ascending { index + 1 } else { *index };
+        let framing = crate::wire::encode_messages(Vec::new(), Some(&token(order, continues)))?;
+        let bytes = row_bytes
+            .saturating_add(encoded)
+            .saturating_add(kept)
+            .saturating_add(framing.len());
+        if bytes > bound {
+            break;
+        }
+        row_bytes += encoded;
+        kept += 1;
+    }
+    if kept == 0 && !rows.is_empty() {
+        return Err(crate::wire::WireError::Invalid {
+            what: "message page",
+            value: "a row exceeds the page byte bound".to_owned(),
+        });
+    }
+    Ok(kept)
+}
+
 impl ContractDouble {
     /// Message pages read so far.
     pub fn message_list_calls(&self) -> usize {
@@ -304,7 +344,7 @@ impl ContractDouble {
             None => self.sessions.get(session).map_or(0, |e| e.messages.len()),
         };
         // This page's history indices, in reading order.
-        let indices: Vec<usize> = if ascending {
+        let mut indices: Vec<usize> = if ascending {
             let start = from.unwrap_or(0);
             (start..total.min(start.saturating_add(limit))).collect()
         } else {
@@ -327,6 +367,13 @@ impl ContractDouble {
                     }
                 }
             }
+        }
+        // The product keeps rows in reading order while the page fits its
+        // byte bound, and its cursor continues after the last kept.
+        if rows.len() == indices.len() {
+            let kept = rows_within_page_bytes(&rows, &indices, ascending)?;
+            rows.truncate(kept);
+            indices.truncate(kept);
         }
         let order = if ascending { "asc" } else { "desc" };
         let continues = match (ascending, indices.last()) {

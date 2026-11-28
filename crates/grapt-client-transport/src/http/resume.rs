@@ -10,25 +10,21 @@ const MAX_RESUME_ID_BYTES: usize = 128;
 
 impl HttpConnection {
     /// The binding a subscribe opened now would have.
-    pub(super) fn binding_for(&self, positions: bool) -> StreamBinding {
+    pub(super) fn binding_for(&self) -> StreamBinding {
         let mut fingerprint = std::hash::DefaultHasher::new();
         self.credential.header_value().hash(&mut fingerprint);
         StreamBinding::new(
             self.address.to_string(),
             fingerprint.finish(),
             self.watched_session().cloned(),
-            positions,
         )
     }
 
-    /// The id a subscribe with this query resumes from: the offered token's,
-    /// when the subscribe's binding is exactly the token's.
-    pub(super) fn resume_header(&self, query: &[(String, String)]) -> Option<&str> {
+    /// The id a subscribe resumes from: the offered token's, when the
+    /// subscribe's binding is exactly the token's.
+    pub(super) fn resume_header(&self) -> Option<&str> {
         let token = self.resume.as_ref()?;
-        let positions = query
-            .iter()
-            .any(|(key, value)| key == "positions" && value == "1");
-        (token.binding == self.binding_for(positions)).then_some(token.id.as_str())
+        (token.binding == self.binding_for()).then_some(token.id.as_str())
     }
 
     /// Keep a token only when its id is a safe header value.

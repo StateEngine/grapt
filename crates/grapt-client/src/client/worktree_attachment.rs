@@ -24,7 +24,9 @@ impl Phase {
             Self::Models => Operation::ModelList,
             Self::Default => Operation::ModelDefault,
             Self::Permissions => Operation::PermissionRequestList,
-            Self::History => Operation::MessageList,
+            // The session's coherent snapshot, which also proves the service
+            // serves snapshots before the session goes live.
+            Self::History => Operation::SessionSnapshot,
             Self::Subagents => Operation::SessionSubagentModelGet,
             Self::Forms => Operation::SessionFormList,
             Self::Preset => Operation::SessionPresetGet,
@@ -95,15 +97,8 @@ impl Attachment {
         })
     }
 
-    fn request(&self, windowed: bool) -> Result<WireRequest, ClientError> {
+    fn request(&self) -> Result<WireRequest, ClientError> {
         let operation = self.phase.operation();
-        if matches!(self.phase, Phase::History) {
-            return Ok(if windowed {
-                paged_history::window_request(&self.saved.id, None, true)?
-            } else {
-                WireRequest::new(operation, Some(&self.saved.id), None)?.with_query("order", "desc")
-            });
-        }
         let mut request = WireRequest::new(operation, Some(&self.saved.id), None)?;
         let directory = match self.phase {
             Phase::Project | Phase::LocationForms => Some(&self.directory),
@@ -176,8 +171,8 @@ impl Attachment {
                 self.permissions = bytes;
             }
             Phase::History => {
-                let page = crate::wire::decode_messages(&bytes)?;
-                history::tail_window(&self.saved.id, &page, bounds)?;
+                let snapshot = super::snapshot::decode(&bytes)?;
+                history::tail_window(&self.saved.id, &snapshot.page, bounds)?;
                 self.history = bytes;
             }
             // Subagent/preset DTOs have no session identity member; requests are
@@ -274,8 +269,7 @@ impl<C: Connection> Client<C> {
         } else {
             // Host-started I/O never coexists with a pending resume.
             self.abandon_resume();
-            self.connection
-                .begin_operator(&attachment.request(self.history_window.is_some())?)?
+            self.connection.begin_operator(&attachment.request()?)?
         };
         let Some(response) = response else {
             attachment.waiting = true;
@@ -306,7 +300,6 @@ impl<C: Connection> Client<C> {
     ) -> Result<Vec<String>, ClientError> {
         let id = attachment.saved.id.clone();
         let location = attachment.location();
-        let page = crate::wire::decode_messages(&attachment.history)?;
         let preset = attachment.preset.take().ok_or(ClientError::InvalidInput(
             "Attachment preset was not acquired.",
         ))?;
@@ -362,8 +355,8 @@ impl<C: Connection> Client<C> {
         if self.preset.launch.is_none() {
             self.preset.job = None;
         }
-        self.quiescence_gen = self.quiescence_gen.saturating_add(1);
-        self.adopt_tail(&id, &page, attachment.history.len())?;
+        // Installed at the snapshot's committed position, never at zero.
+        self.install_snapshot(&id, &attachment.history)?;
         self.request_queued_inputs(&id);
         self.draft_creation = creation::Draft::Inactive;
         self.sessions.retain(|row| row.id != id);

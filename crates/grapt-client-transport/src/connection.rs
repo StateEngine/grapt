@@ -1,8 +1,8 @@
 //! The connection a client drives: a transport that can also stream.
 use crate::transport::{FramePoll, Transport, TransportError, WireRequest, WireResponse};
 
-/// What a stream was opened for: its endpoint, credential, watched Session and
-/// position class. A resume may continue a stream only under the same binding.
+/// What a stream was opened for: its endpoint, credential and watched
+/// Session. A resume may continue a stream only under the same binding.
 /// Connections build it; the client only compares.
 #[derive(Clone, PartialEq, Eq)]
 pub struct StreamBinding {
@@ -10,7 +10,6 @@ pub struct StreamBinding {
     /// A fingerprint, never the credential itself.
     credential: u64,
     session: Option<grapt_types::SessionId>,
-    positions: bool,
 }
 
 impl StreamBinding {
@@ -18,13 +17,11 @@ impl StreamBinding {
         endpoint: impl Into<String>,
         credential: u64,
         session: Option<grapt_types::SessionId>,
-        positions: bool,
     ) -> Self {
         Self {
             endpoint: endpoint.into(),
             credential,
             session,
-            positions,
         }
     }
 }
@@ -35,7 +32,6 @@ impl core::fmt::Debug for StreamBinding {
             .debug_struct("StreamBinding")
             .field("endpoint", &self.endpoint)
             .field("session", &self.session)
-            .field("positions", &self.positions)
             .finish_non_exhaustive()
     }
 }
@@ -60,14 +56,6 @@ pub trait Connection: Transport {
     /// subscription. Every shipped connection implements it; the default
     /// serves test peers that own no stream.
     fn retire_stream(&mut self) {}
-    /// The service has no snapshot (404): subscribe without positions from
-    /// now until the legacy stream this installs is lost, retiring the
-    /// current stream first. The HTTP connection and the bridge latch it;
-    /// the default serves connections that never ask for positions.
-    fn refuse_positions(&mut self) {
-        self.retire_stream();
-    }
-
     /// Name the Session this window is watching, so the service can tell when
     /// its last window is gone. A transport with no live attachment ignores
     /// this, and a later `resubscribe` re-sends the current name.

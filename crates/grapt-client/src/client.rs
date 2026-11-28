@@ -278,31 +278,6 @@ pub struct Client<C: Connection> {
     /// two, so a key that admitted two spellings of one identity would render
     /// one session twice and reconcile neither.
     views: BTreeMap<SessionWireId, SessionView>,
-    /// The client's observation epoch: each pump and each direct history
-    /// read consumes one, so a live quiescence observation can be ordered
-    /// against the install that first carried the terminal it must survive
-    ///. Wire stamps cannot
-    /// order this: a producer clock can run behind the one that stamped
-    /// the durable terminal it is newer than, so ordering is by observation
-    /// order, not by stamp.
-    quiescence_gen: u64,
-    /// The sessions whose newest quiescence fact this client observed on
-    /// the LIVE stream, and the epoch of that observation. A busy fact
-    /// survives a relist of an already-held terminal only when it was
-    /// observed after that terminal entered the installed history: the
-    /// next preparation's busy survives the relist of the preceding
-    /// execution's terminal, and a turn's own busy yields to its terminal.
-    /// A stream cut clears the map with the facts. Bounded by the sessions
-    /// this client holds views for.
-    quiescence_fact_epoch: std::collections::HashMap<SessionWireId, u64>,
-    /// The sessions whose newest terminal is known to this client, and the
-    /// epoch that terminal was first known: a live terminal frame records
-    /// its own observation, an install the epoch at which a terminal it
-    /// newly carries first enters the history. A newer terminal replaces
-    /// the record; repeated relists of one terminal advance nothing, so
-    /// they never age out a fact genuinely newer than it. Bounded the same
-    /// way.
-    quiescence_terminal_epoch: std::collections::HashMap<SessionWireId, u64>,
     sessions: Vec<SessionSummary>,
     catalog_reach: CatalogReach,
     permissions: Vec<PermissionAsk>,
@@ -411,9 +386,6 @@ impl<C: Connection> Client<C> {
             observations: BTreeMap::new(),
             history_window: None,
             views: BTreeMap::new(),
-            quiescence_gen: 0,
-            quiescence_fact_epoch: std::collections::HashMap::new(),
-            quiescence_terminal_epoch: std::collections::HashMap::new(),
             sessions: Vec::new(),
             catalog_reach: CatalogReach::Read,
             permissions: Vec::new(),
@@ -777,45 +749,19 @@ impl<C: Connection> Client<C> {
     /// and stayed reconciling unless the walk finished: past 64 pages a session
     /// never went live, and recovery re-walked all 64 about once a second.
     pub fn reconcile(&mut self, session: &SessionWireId) -> Result<(), ClientError> {
-        // A direct history read is its own epoch: a live observation made
-        // between two such reads is newer than everything the later read
-        // carries.
-        self.quiescence_gen = self.quiescence_gen.saturating_add(1);
         self.begin_tail();
-        // One decision with the queued read. A wait is queued, and the
-        // queued read applies its bound (this caller has no clock).
-        match self.messages_read(None) {
-            None => {
-                self.request_history();
-                return Ok(());
-            }
-            Some(recovery::MessagesRead::Snapshot) if self.read_snapshot(session)? => {
-                self.request_queued_inputs(session);
-                return Ok(());
-            }
-            Some(_) => {}
+        // The snapshot is read once this stream's first frame has arrived. A
+        // wait is queued, and the queued read applies its bound (this caller
+        // has no clock).
+        if !self.positions.proven {
+            self.request_history();
+            return Ok(());
         }
-        let unproven = self.positions.mode.is_none();
-        let bytes = self.ingest(
-            Operation::MessageList,
-            Some(session),
-            None,
-            None,
-            None,
-            Some(if self.history_window.is_some() {
-                Page::Window {
-                    cursor: None,
-                    descending: true,
-                }
-            } else {
-                Page::First { order: "desc" }
-            }),
-        )?;
-        let page = crate::wire::decode_messages(&bytes)?;
-        self.refresh_permissions()?;
-        self.adopt_tail(session, &page, bytes.len())?;
-        self.positions.legacy_unproven |= unproven;
-        self.request_queued_inputs(session);
+        self.read_snapshot(session)?;
+        // A snapshot queued for retry reads the queued inputs after it.
+        if !self.history_blocks_stream() {
+            self.request_queued_inputs(session);
+        }
         Ok(())
     }
 

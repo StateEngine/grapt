@@ -100,6 +100,7 @@ fn real_compaction_completed_label_and_summary_survive_client_restart() {
     reopened
         .select(&session)
         .unwrap_or_else(|error| panic!("restart selection: {error}"));
+    prove_positions(&mut reopened);
     assert!(
         has_retained_summary(&reopened),
         "reopened compaction lost its summary"

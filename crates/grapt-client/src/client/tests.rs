@@ -30,6 +30,20 @@ fn client() -> Client<ContractDouble> {
 /// `create_session` returns `Option` now, because the producer's session store
 /// is bounded. A witness that silently ignored a refusal here would be
 /// measuring an empty double.
+/// Pump until the stream's positioned connect has proved it, so the next
+/// reconcile reads the snapshot.
+pub(crate) fn prove<C: Connection>(client: &mut Client<C>) {
+    for _ in 0..8 {
+        if client.positions.proven {
+            return;
+        }
+        if let Err(error) = client.pump() {
+            panic!("pump: {error}");
+        }
+    }
+    panic!("the stream never opened with its positioned connect");
+}
+
 fn seed(double: &mut ContractDouble, title: &str) -> crate::wire::SessionWireId {
     double
         .create_session(title)
@@ -83,9 +97,10 @@ fn a_created_session_is_selected_and_listed() {
     };
     assert_eq!(client.selected(), Some(&id));
     assert!(client.sessions().iter().any(|s| s.id == id));
+    prove(&mut client);
     assert!(
         client.stream_state().is_live(),
-        "selecting reconciles, which is what earns liveness"
+        "the proved stream's snapshot is what earns liveness"
     );
 }
 
@@ -507,6 +522,7 @@ fn mail_attention_survives_relist_but_stream_loss_invalidates_it(
     use grapt_api::u3a::{MailAttentionInfo, MailPendingCount};
     let mut client = client();
     let session = client.create_session()?;
+    prove(&mut client);
     let attention = MailAttentionInfo::Ready {
         pending: MailPendingCount::new(7).ok_or("pending")?,
         incomplete: true,
@@ -527,6 +543,7 @@ fn an_install_keeps_only_this_connections_continuity_level(
     use grapt_api::u3a::{ContinuityAttentionInfo, ContinuityDegradedReason};
     let mut client = client();
     let session = client.create_session()?;
+    prove(&mut client);
     let degraded = ContinuityAttentionInfo::Degraded {
         reason: ContinuityDegradedReason::Capability,
     };

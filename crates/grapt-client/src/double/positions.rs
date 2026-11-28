@@ -3,44 +3,20 @@
 //! A positioned double stamps every frame with `id: <epoch>-<seq>`, places
 //! each live delta at its block's byte offset (`from`), reports each session's
 //! execution state as a revisioned `state` on its status frames, and answers
-//! the coherent session snapshot. Every double serves this class unless a
-//! witness asks for [`ContractDouble::legacy`], an older service that keeps
-//! its frames byte for byte and has no snapshot.
+//! the coherent session snapshot, as every current service does.
 
 use super::*;
 
 /// The positions class of the double's one subscription.
 #[derive(Debug)]
 pub(super) struct Positions {
-    enabled: bool,
     /// The serving process's epoch: a restart starts a new one.
     epoch: u64,
     /// The last position stamped in this epoch, shared by every stream of it.
     seq: u64,
-    /// Bytes already sent per live block, while it is live.
-    offsets: BTreeMap<Block, u64>,
-}
-
-/// One live block's whole identity: its session, assistant message, kind
-/// (reasoning or not) and ordinal. Message ids repeat across sessions, and
-/// each kind numbers its own blocks.
-type Block = (String, String, bool, u64);
-
-/// The live block a slice frame names, if it is one and names it fully.
-fn block(member: EventMember, data: &serde_json::Value) -> Option<Block> {
-    let reasoning = match member {
-        EventMember::ReasoningStarted
-        | EventMember::ReasoningDelta
-        | EventMember::ReasoningEnded => true,
-        EventMember::TextStarted | EventMember::TextDelta | EventMember::TextEnded => false,
-        _ => return None,
-    };
-    Some((
-        data.get("sessionID")?.as_str()?.to_owned(),
-        data.get("assistantMessageID")?.as_str()?.to_owned(),
-        reasoning,
-        data.get("ordinal")?.as_u64()?,
-    ))
+    /// What each live block has been sent, so a delta is placed at its
+    /// offset and an end carries its whole text.
+    placer: Placer,
 }
 
 /// One session's execution state, at the committed position that reported it.
@@ -73,18 +49,14 @@ impl Positions {
     /// The class a current service serves.
     pub(super) fn served() -> Self {
         Self {
-            enabled: true,
             epoch: 0,
             seq: 0,
-            offsets: BTreeMap::new(),
+            placer: Placer::default(),
         }
     }
 
-    /// Wrap one frame for the subscription: positioned when this class is on.
+    /// Wrap one frame for the subscription at the next position.
     pub(super) fn stamp(&mut self, frame: String) -> FramePoll {
-        if !self.enabled {
-            return FramePoll::Frame(frame);
-        }
         self.seq = self.seq.saturating_add(1);
         FramePoll::Positioned {
             id: format!("double{}-{}", self.epoch, self.seq),
@@ -97,110 +69,82 @@ impl Positions {
     pub(super) fn restart(&mut self) {
         self.epoch = self.epoch.saturating_add(1);
         self.seq = 0;
-        self.offsets.clear();
+        self.placer = Placer::default();
     }
 
-    /// The session-less frame a positions stream ends a reconcile with; a
-    /// legacy stream just ends.
-    pub(super) fn resync(&mut self) -> Option<FramePoll> {
-        self.enabled.then(|| {
-            let frame = serde_json::json!({
-                "type": "stream.resync",
-                "data": {"epoch": format!("double{}", self.epoch)},
-            });
-            self.stamp(frame.to_string())
-        })
-    }
-
-    /// Place one delta at its block's offset, as the product's positioned
-    /// frame carries it. A legacy double leaves the delta as it was, and a
-    /// frame that names no whole block passes unchanged.
-    fn place(&mut self, member: EventMember, data: &mut serde_json::Value) {
-        if !self.enabled {
-            return;
-        }
-        let Some(key) = block(member, data) else {
-            return;
-        };
-        let bytes = data["delta"].as_str().map_or(0, str::len) as u64;
-        let offset = self.offsets.entry(key).or_insert(0);
-        data["from"] = serde_json::json!(*offset);
-        *offset = offset.saturating_add(bytes);
-    }
-
-    /// A block ended: it is live no more, and nothing keeps its offset.
-    fn retire(&mut self, member: EventMember, data: &serde_json::Value) {
-        if let Some(key) = block(member, data) {
-            self.offsets.remove(&key);
-        }
+    /// The session-less frame a positions stream ends a reconcile with.
+    pub(super) fn resync(&mut self) -> FramePoll {
+        let frame = serde_json::json!({
+            "type": "stream.resync",
+            "data": {"epoch": format!("double{}", self.epoch)},
+        });
+        self.stamp(frame.to_string())
     }
 }
 
 impl ContractDouble {
-    /// An older service: legacy frames only and no session snapshot.
-    pub fn legacy(mut self) -> Self {
-        self.positions.enabled = false;
-        self
-    }
-
-    /// Serve one frame a witness wrote as this double serves its own: on a
-    /// positioned double it takes the next position, and a live delta that
-    /// names no offset is placed at its block's. A legacy double passes it
-    /// through.
+    /// Serve one frame a witness wrote as this double serves its own: it
+    /// takes the next position, a live delta that names no offset is placed
+    /// at its block's, and an end that names no text carries its block's.
     pub fn serve(&mut self, frame: FramePoll) -> FramePoll {
         let FramePoll::Frame(text) = frame else {
             return frame;
         };
-        if !self.positions.enabled {
-            return FramePoll::Frame(text);
-        }
         let text = match serde_json::from_str::<serde_json::Value>(&text) {
-            Ok(mut value) => {
+            Ok(mut value) if value["data"].is_object() => {
                 let member = value["type"].as_str().and_then(EventMember::parse);
-                match member {
-                    Some(member @ (EventMember::TextEnded | EventMember::ReasoningEnded)) => {
-                        self.positions.retire(member, &value["data"]);
-                        text
-                    }
-                    Some(member)
-                        if value["data"]["delta"].is_string()
-                            && value["data"].get("from").is_none() =>
-                    {
-                        self.positions.place(member, &mut value["data"]);
-                        value.to_string()
-                    }
-                    _ => text,
-                }
+                self.positions.placer.place_data(member, &mut value["data"]);
+                value.to_string()
             }
-            Err(_) => text,
+            _ => text,
         };
         self.positions.stamp(text)
     }
 
-    pub(super) fn positions_enabled(&self) -> bool {
-        self.positions.enabled
+    /// The positioned `server.connected` this subscription still owes: every
+    /// stream opens with it once, before any other frame, including a
+    /// witness's own.
+    pub fn connect(&mut self) -> Option<FramePoll> {
+        if std::mem::replace(&mut self.connected_sent, true) {
+            return None;
+        }
+        let frame = Self::render(
+            EventMember::ServerConnected,
+            &serde_json::json!({}),
+            None,
+            self.next_id,
+        );
+        Some(self.positions.stamp(frame))
     }
 
-    /// Queue one live delta, placed at its offset on a positioned double.
-    pub(super) fn delta(&mut self, member: EventMember, mut data: serde_json::Value) {
-        self.positions.place(member, &mut data);
-        self.live(member, data);
+    /// Report `session` running `execution` at its committed position, as
+    /// the product reports a turn still in flight.
+    #[cfg(test)]
+    pub(crate) fn report_running(&mut self, session: &SessionWireId, execution: &str) {
+        self.observe_state(session, "running", Some(execution.to_owned()));
     }
 
-    /// Append one block's durable end, retiring the block's live offset.
+    /// Append one block's durable end, carrying its whole text and retiring
+    /// the block's live offset.
     pub(super) fn end_block(
         &mut self,
         session: &SessionWireId,
         member: EventMember,
-        data: serde_json::Value,
+        mut data: serde_json::Value,
     ) {
-        self.positions.retire(member, &data);
+        self.positions.placer.place_data(Some(member), &mut data);
         self.append(session, member, data);
     }
 
-    /// Record a session's execution state at its committed position. A
-    /// positioned double also reports it on a status frame; `busy` is the
-    /// status a legacy reader of the same frame folds.
+    /// Queue one live delta, placed at its offset.
+    pub(super) fn delta(&mut self, member: EventMember, mut data: serde_json::Value) {
+        self.positions.placer.place_data(Some(member), &mut data);
+        self.live(member, data);
+    }
+
+    /// Record a session's execution state at its committed position and
+    /// report it on a status frame, beside the `busy`/`idle` status the
+    /// product sends with it.
     pub(super) fn observe_state(
         &mut self,
         session: &SessionWireId,
@@ -216,17 +160,15 @@ impl ContractDouble {
             execution,
         };
         entry.state = Some(state.clone());
-        if self.positions.enabled {
-            let status = if kind == "running" { "busy" } else { "idle" };
-            self.live(
-                EventMember::SessionStatus,
-                serde_json::json!({
-                    "sessionID": session.spelled(),
-                    "status": {"type": status},
-                    "state": state.dto(),
-                }),
-            );
-        }
+        let status = if kind == "running" { "busy" } else { "idle" };
+        self.live(
+            EventMember::SessionStatus,
+            serde_json::json!({
+                "sessionID": session.spelled(),
+                "status": {"type": status},
+                "state": state.dto(),
+            }),
+        );
     }
 
     /// The coherent snapshot: the newest page, the open asks and forms, and
@@ -294,6 +236,41 @@ impl ContractDouble {
         );
         Ok(Some(encode_page(&snapshot, limits)?))
     }
+}
+
+/// A witness's own newest message page, answered as the snapshot `request`
+/// reads at committed position `seq`: its rows and cursor, no open asks or
+/// forms, no live blocks, and no reported execution state.
+pub fn page_snapshot(
+    request: &WireRequest,
+    page: &[u8],
+    seq: u64,
+) -> Result<Vec<u8>, crate::wire::WireError> {
+    use grapt_api::u3a::{
+        decode_page, encode_page, BoundedVec, SessionMessagesResponseDto,
+        SessionSnapshotExecutionDto, SessionSnapshotResponseDto, SessionSnapshotRevisionDto,
+    };
+    use grapt_schema::Required;
+    let limits = crate::wire::limits()?;
+    let page: SessionMessagesResponseDto = decode_page(page, limits)?;
+    let execution: SessionSnapshotExecutionDto =
+        decode_page(&json_bytes(&serde_json::json!({}))?, limits)?;
+    let aggregate = ContractDouble::session_of(request.path())
+        .and_then(|session| grapt_api::u3a::WireId::parse(session.spelled().to_owned()))
+        .ok_or_else(|| invalid("session identity"))?;
+    let snapshot = SessionSnapshotResponseDto::new(
+        Required::new(SessionSnapshotRevisionDto::new(
+            Required::new(aggregate),
+            Required::new(seq.into()),
+        )),
+        Required::new(page.data().get().clone()),
+        Required::new(page.cursor().get().clone()),
+        Required::new(BoundedVec::try_new(Vec::new()).map_err(invalid)?),
+        Required::new(BoundedVec::try_new(Vec::new()).map_err(invalid)?),
+        Required::new(execution),
+        Required::new(BoundedVec::try_new(Vec::new()).map_err(invalid)?),
+    );
+    Ok(encode_page(&snapshot, limits)?)
 }
 
 fn json_bytes(value: &serde_json::Value) -> Result<Vec<u8>, crate::wire::WireError> {

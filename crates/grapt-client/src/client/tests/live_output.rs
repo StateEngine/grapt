@@ -1,70 +1,14 @@
-//! Re-listing history never contributes to observed live output. An install
+//! Re-reading history never contributes to observed live output. An install
 //! that finds the execution running while the estimate is unknown (after a
 //! cut) starts a new zero baseline: it counts only bytes since recovery.
 use super::*;
-
-#[test]
-fn history_rebuild_carries_output_only_for_the_same_observed_execution(
-) -> Result<(), Box<dyn std::error::Error>> {
-    let mut client = client();
-    let session = client.create_session()?;
-    let execution_id = crate::wire::execution_id("exe_live_output")?;
-    let mut previous = SessionView::new(&session);
-    previous.execution = ExecutionState::Running { execution_id };
-    previous.streamed_text_bytes = Some(9);
-    client.views.insert(session.clone(), previous);
-    let mut history = SessionView::new(&session);
-    history.apply_durable(
-        &crate::wire::DurableMessage::User {
-            text: "old input".into(),
-        },
-        Bounds::PRODUCTION,
-    )?;
-    history.apply_durable(
-        &crate::wire::DurableMessage::Assistant {
-            footer: None,
-            items: vec![crate::wire::MessageItem::Text(
-                "old answer is not fresh output".into(),
-            )],
-            finish: None,
-            error: None,
-            usage: None,
-            cache: Default::default(),
-        },
-        Bounds::PRODUCTION,
-    )?;
-    for row in &mut history.slices {
-        row.ordinal += 100;
-    }
-    client.install_history(&session, history, None, history::OlderHistory::Complete, 0)?;
-    assert_eq!(
-        client.view().and_then(SessionView::streamed_text_bytes),
-        Some(9)
-    );
-    client
-        .views
-        .get_mut(&session)
-        .ok_or("live view")?
-        .invalidate_live_quiescence();
-    client.install_history(
-        &session,
-        SessionView::new(&session),
-        None,
-        history::OlderHistory::Complete,
-        0,
-    )?;
-    assert_eq!(
-        client.view().and_then(SessionView::streamed_text_bytes),
-        Some(0),
-        "the lost bytes never carry; the install counts from zero"
-    );
-    Ok(())
-}
 
 #[derive(Debug)]
 struct ProgressPeer {
     inner: ContractDouble,
     frames: std::collections::VecDeque<Result<FramePoll, TransportError>>,
+    /// Whether this stream has ended, cut or refused.
+    ended: bool,
 }
 impl Transport for ProgressPeer {
     fn call(&mut self, request: &WireRequest) -> Result<crate::WireResponse, TransportError> {
@@ -73,13 +17,25 @@ impl Transport for ProgressPeer {
 }
 impl Connection for ProgressPeer {
     fn subscribed(&self) -> bool {
-        true
+        !self.ended
     }
-    fn resubscribe(&mut self) {}
+    fn resubscribe(&mut self) {
+        self.ended = false;
+        self.inner.resubscribe();
+    }
+    /// The double's own stream, with one injected defect served first once
+    /// the stream has opened.
     fn poll_frame(&mut self) -> Result<FramePoll, TransportError> {
-        self.frames
-            .pop_front()
-            .map_or(Ok(FramePoll::Idle), |frame| frame)
+        if let Some(connect) = self.inner.connect() {
+            return Ok(connect);
+        }
+        match self.frames.pop_front() {
+            Some(frame) => frame.map(|frame| {
+                self.ended = matches!(frame, FramePoll::Closed | FramePoll::Gap);
+                self.inner.serve(frame)
+            }),
+            None => self.inner.poll_frame(),
+        }
     }
 }
 
@@ -90,18 +46,24 @@ fn live_output_client() -> Result<(Client<ProgressPeer>, SessionWireId), Box<dyn
         ProgressPeer {
             inner: ContractDouble::new(),
             frames: Default::default(),
+            ended: false,
         },
         Bounds::PRODUCTION,
     );
     client.select_first_offer()?;
     let session = client.create_session()?;
-    let mut previous = SessionView::new(&session);
-    previous.execution = ExecutionState::Running {
-        execution_id: crate::wire::execution_id("exe_progress_pump")?,
-    };
-    previous.streamed_text_bytes = Some(9);
-    client.views.insert(session.clone(), previous);
+    prove(&mut client);
+    client
+        .connection
+        .inner
+        .report_running(&session, "exe_progress_pump");
     client.reconcile(&session)?;
+    // Nine bytes of prose already streamed under the running execution.
+    client
+        .views
+        .get_mut(&session)
+        .ok_or("live view")?
+        .streamed_text_bytes = Some(9);
     Ok((client, session))
 }
 
@@ -191,6 +153,7 @@ fn live_output_pump_recovery_invalidates_loss_but_not_an_ordinary_refresh(
         // `a_refusal_raises_gap_recovery_and_a_baseline_ends_it` below: this
         // double answers the history read inside the same pump, so by here the
         // flag is correctly already healed.
+        prove(&mut client);
         client.reconcile(&session)?;
         // A re-read baseline ends the recovery wherever it started.
         assert!(
@@ -224,6 +187,7 @@ fn a_refusal_raises_gap_recovery_and_a_baseline_ends_it() -> Result<(), Box<dyn 
     let mut client = Client::new(ContractDouble::new(), Bounds::PRODUCTION);
     client.select_first_offer()?;
     let session = client.create_session()?;
+    prove(&mut client);
     client.reconcile(&session)?;
     assert!(
         !client.gap_recovery_pending(),

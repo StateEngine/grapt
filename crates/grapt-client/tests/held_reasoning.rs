@@ -5,7 +5,7 @@
 use grapt_client::{
     bounds::Bounds,
     contract::EventEnvelope,
-    projection::{Applied, ProjectionError, SessionView, SliceKind},
+    projection::{Applied, SessionView, SliceKind},
     wire,
 };
 use serde_json::json;
@@ -28,6 +28,7 @@ fn frame(step: &str, ordinal: u64, delta: Option<&str>) -> TestResult<EventEnvel
 #[test]
 fn a_held_reasoning_block_does_not_refuse_the_next_one() -> TestResult {
     let mut view = SessionView::new(&wire::session_id(SESSION)?);
+    let mut placer = grapt_client::double::Placer::default();
     for envelope in [
         frame("started", 0, None)?,
         frame("delta", 0, Some("first"))?,
@@ -39,11 +40,11 @@ fn a_held_reasoning_block_does_not_refuse_the_next_one() -> TestResult {
         frame("ended", 0, None)?,
         frame("ended", 1, None)?,
     ] {
+        let kind = envelope.kind_raw.clone();
         assert_eq!(
-            view.apply(&envelope, Bounds::default()),
+            view.apply(&placer.place(envelope), Bounds::default()),
             Ok(Applied::Changed),
-            "a held reasoning block made the stream relist at {}",
-            envelope.kind_raw
+            "a held reasoning block made the stream relist at {kind}"
         );
     }
     let reasoning: Vec<(&str, bool)> = view
@@ -53,21 +54,5 @@ fn a_held_reasoning_block_does_not_refuse_the_next_one() -> TestResult {
         .map(|slice| (slice.text.as_str(), slice.closed))
         .collect();
     assert_eq!(reasoning, vec![("first late", true), ("second", true)]);
-    Ok(())
-}
-
-#[test]
-fn the_same_reasoning_block_opening_twice_is_refused() -> TestResult {
-    let mut view = SessionView::new(&wire::session_id(SESSION)?);
-    assert_eq!(
-        view.apply(&frame("started", 0, None)?, Bounds::default()),
-        Ok(Applied::Changed)
-    );
-    assert_eq!(
-        view.apply(&frame("started", 0, None)?, Bounds::default()),
-        Err(ProjectionError::OverlappingOpen {
-            kind: SliceKind::Reasoning
-        })
-    );
     Ok(())
 }

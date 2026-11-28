@@ -21,6 +21,16 @@ impl Transport for ProgressPeer {
         &mut self,
         request: &WireRequest,
     ) -> Result<crate::transport::WireResponse, TransportError> {
+        if request.operation() == Operation::SessionSnapshot {
+            self.reads += 1;
+            let unavailable = |error: &dyn std::fmt::Display| TransportError::Unavailable {
+                reason: error.to_string(),
+            };
+            let page = newest_first(&self.page).map_err(|error| unavailable(&error))?;
+            let body = crate::double::page_snapshot(request, &page, 0)
+                .map_err(|error| unavailable(&error))?;
+            return Ok(crate::transport::WireResponse { status: 200, body });
+        }
         if request.operation() == Operation::MessageList {
             assert!(
                 request
@@ -67,15 +77,20 @@ impl Connection for ProgressPeer {
         !self.closed
     }
     fn poll_frame(&mut self) -> Result<FramePoll, TransportError> {
+        if let Some(connect) = self.inner.connect() {
+            return Ok(connect);
+        }
         let frame = self.frames.pop_front().unwrap_or(FramePoll::Idle);
         if matches!(frame, FramePoll::Closed) {
             self.closed = true;
+            return Ok(frame);
         }
-        Ok(frame)
+        Ok(self.inner.serve(frame))
     }
     fn resubscribe(&mut self) {
         self.subscriptions += 1;
         self.closed = false;
+        self.inner.resubscribe();
     }
 }
 
@@ -136,6 +151,7 @@ fn codemode_progress_coalesces_preserves_live_text_and_reconnects_to_history(
     };
     let mut client = Client::new(peer, Bounds::PRODUCTION);
     client.selected = Some(session.clone());
+    prove(&mut client);
     client.reconcile(&session)?;
     let frame = |kind: &str, data: serde_json::Value| {
         let mut value = serde_json::json!({
@@ -159,7 +175,7 @@ fn codemode_progress_coalesces_preserves_live_text_and_reconnects_to_history(
         ),
         (
             "session.text.delta",
-            serde_json::json!({"assistantMessageID":"msg_fixture_answer","ordinal":0,"sessionID":session.as_inner().as_str(),"delta":"UNFINISHED"}),
+            serde_json::json!({"assistantMessageID":"msg_fixture_answer","ordinal":0,"sessionID":session.as_inner().as_str(),"delta":"UNFINISHED","from":0}),
         ),
     ] {
         let envelope = EventEnvelope::decode(&frame(kind, data))?;
@@ -226,6 +242,7 @@ fn codemode_progress_coalesces_preserves_live_text_and_reconnects_to_history(
     client.peer_mut().frames.push_back(FramePoll::Closed);
     assert!(client.pump()?);
     assert_eq!(client.peer_mut().subscriptions, 1);
+    prove(&mut client);
     let page = crate::wire::decode_messages(&progress_page(true)?)?;
     let mut expected = history::tail_window(&session, &page, Bounds::PRODUCTION)?;
     expected.cache.history_complete(true);
@@ -727,6 +744,7 @@ fn mcp_progress_is_displayed_without_history_writes_and_clears_on_recovery_or_co
     };
     let mut client = Client::new(peer, Bounds::PRODUCTION);
     client.selected = Some(session.clone());
+    prove(&mut client);
     client.reconcile(&session)?;
     let event = |owner: &str, message: &str| {
         serde_json::json!({
@@ -803,6 +821,7 @@ fn mcp_progress_is_displayed_without_history_writes_and_clears_on_recovery_or_co
         client.pump()?;
         assert_ne!(result(&client).as_deref(), Some(message));
     }
+    prove(&mut client);
     client.reconcile(&session)?;
     assert_ne!(result(&client).as_deref(), Some("42%"));
     // A first progress hint may beat hydration of its durable call row.
@@ -816,6 +835,7 @@ fn mcp_progress_is_displayed_without_history_writes_and_clears_on_recovery_or_co
     client.pump()?;
     assert_eq!(result(&client).as_deref(), Some("Staging"));
     client.peer_mut().page = progress_page(true)?;
+    prove(&mut client);
     client.reconcile(&session)?;
     let settled = client.view().cloned();
     client.peer_mut().reads = 0;

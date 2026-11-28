@@ -127,6 +127,8 @@ struct Peer {
     calls: Vec<Operation>,
     fail: bool,
     disabled: bool,
+    /// Answer snapshots with a transient 503.
+    defer_snapshot: bool,
 }
 impl Transport for Peer {
     fn call(&mut self, request: &WireRequest) -> std::result::Result<WireResponse, TransportError> {
@@ -136,6 +138,12 @@ impl Transport for Peer {
             return Ok(WireResponse {
                 status: if self.fail { 503 } else { 200 },
                 body: self.saved.clone(),
+            });
+        }
+        if self.defer_snapshot && request.operation() == Operation::SessionSnapshot {
+            return Ok(WireResponse {
+                status: 503,
+                body: Vec::new(),
             });
         }
         let mut response = self.inner.call(request)?;
@@ -177,6 +185,7 @@ fn client() -> Result<(Client<Peer>, SessionWireId)> {
             calls: vec![],
             fail: false,
             disabled: false,
+            defer_snapshot: false,
         },
         Bounds::PRODUCTION,
     );
@@ -203,13 +212,29 @@ fn client() -> Result<(Client<Peer>, SessionWireId)> {
     Ok((client, session))
 }
 
+/// Attach, then pump until the attached Session's snapshot settles readiness.
+fn attached(
+    client: &mut Client<Peer>,
+    session: &SessionWireId,
+) -> std::result::Result<Readiness, Box<dyn std::error::Error>> {
+    let mut readiness = attach(client, session)?;
+    for _ in 0..8 {
+        if readiness != Readiness::Loading {
+            break;
+        }
+        client.pump()?;
+        readiness = crate::launch::readiness(client);
+    }
+    Ok(readiness)
+}
+
 #[test]
 fn attachment_restores_exact_effort_without_selection_or_creation_writes() -> Result {
     let (mut client, session) = client()?;
     client.peer_mut().fail = true;
     assert!(attach(&mut client, &session).is_err());
     client.peer_mut().fail = false;
-    assert_eq!(attach(&mut client, &session)?, Readiness::Ready);
+    assert_eq!(attached(&mut client, &session)?, Readiness::Ready);
     assert_eq!(
         client
             .peer_mut()
@@ -236,6 +261,30 @@ fn attachment_restores_exact_effort_without_selection_or_creation_writes() -> Re
             | Operation::SessionModelSelect
             | Operation::SessionPresetSelect
     )));
+    Ok(())
+}
+
+#[test]
+fn readiness_waits_for_the_selected_sessions_own_snapshot() -> Result {
+    let (mut client, session) = client()?;
+    assert_eq!(attached(&mut client, &session)?, Readiness::Ready);
+    let other = client
+        .peer_mut()
+        .inner
+        .create_session("second")
+        .ok_or("session bound")?;
+    client.refresh_sessions()?;
+    // The stream stays live while the newly selected Session's own snapshot
+    // is deferred.
+    client.peer_mut().defer_snapshot = true;
+    client.select(&other)?;
+    assert!(client.stream_state().is_live());
+    assert_eq!(readiness(&client), Readiness::Loading);
+    client.peer_mut().defer_snapshot = false;
+    for _ in 0..4 {
+        client.pump()?;
+    }
+    assert_eq!(readiness(&client), Readiness::Ready);
     Ok(())
 }
 
@@ -270,7 +319,7 @@ fn missing_choices_and_forms_never_authorize_automatic_submission() -> Result {
             }
         }
         let readiness =
-            attach(&mut client, &session).map_err(|error| format!("{case}: {error}"))?;
+            attached(&mut client, &session).map_err(|error| format!("{case}: {error}"))?;
         assert_eq!(readiness, Readiness::Manual, "{case}");
         assert!(!client.peer_mut().calls.contains(&Operation::SessionPrompt));
     }
@@ -280,7 +329,7 @@ fn missing_choices_and_forms_never_authorize_automatic_submission() -> Result {
 #[test]
 fn submission_rechecks_new_and_externally_settled_requests_without_replaying() -> Result {
     let (mut client, session) = client()?;
-    assert_eq!(attach(&mut client, &session)?, Readiness::Ready);
+    assert_eq!(attached(&mut client, &session)?, Readiness::Ready);
     client
         .peer_mut()
         .inner

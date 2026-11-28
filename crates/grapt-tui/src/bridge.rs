@@ -37,7 +37,7 @@ enum Delivery {
     Frame(FramePoll),
     // An ordered barrier in the event handoff, carrying the verified RPC peer
     // and the selection generation it was built for.
-    Replacement(Result<Box<Attachment>, String>, u64),
+    Replacement(Result<Box<Attachment>, TransportError>, u64),
     /// A replacement abandoned because the selection moved during its
     /// handshake. It carries no attachment, so the backend only re-arms.
     Stale,
@@ -56,12 +56,6 @@ pub struct Bridge {
     /// replacement of the current generation installs, `poll_frame` delivers
     /// nothing and `poll_reconnect` alone drains the retired stream's frames.
     retired: bool,
-    /// After a snapshot 404, replacements subscribe without positions; shared
-    /// with the reader, which reads it at each build.
-    legacy: Arc<AtomicBool>,
-    /// The generation whose verified install was the legacy stream. Only a
-    /// reconnect after that stream is lost clears the latch and re-probes.
-    legacy_generation: Option<u64>,
     /// The Session this window watches, shared with the reader thread so every
     /// (re)subscription it opens names the same Session. `None` until a Session
     /// is selected: an unnamed subscription is not a window on anything.
@@ -202,8 +196,6 @@ impl Bridge {
         // reconnect inside the grace keeps its attachment.
         let session = watched_session(&config);
         let refusal = first_subscribe(&mut stream, &session);
-        let legacy = Arc::new(AtomicBool::new(false));
-        let reader_legacy = Arc::clone(&legacy);
         let reader_session = Arc::clone(&session);
         let selection = Arc::new(AtomicU64::new(0));
         let reader_generation = Arc::clone(&selection);
@@ -224,7 +216,6 @@ impl Bridge {
             bounds,
             session: reader_session,
             generation: reader_generation,
-            legacy: reader_legacy,
             stream,
             valid: reader_valid,
             handoff: tx,
@@ -249,7 +240,6 @@ impl Bridge {
             bridge.state = supervise::Connection::Replacing { attempt: 1 };
         }
         bridge.report(refusal);
-        bridge.legacy = legacy;
         bridge.fence = fence;
         bridge.authority_dirty = authority_dirty;
         bridge.sessions_dirty = sessions_dirty;
@@ -272,8 +262,6 @@ impl Bridge {
             reconnect,
             replacement_requested: false,
             retired: false,
-            legacy: Arc::new(AtomicBool::new(false)),
-            legacy_generation: None,
             session: Arc::new(std::sync::Mutex::new(WatchedSessions::default())),
             generation: Arc::new(AtomicU64::new(0)),
             stream_cancel: None,
@@ -425,10 +413,6 @@ impl Connection for Bridge {
 
     fn begin_reconnect(&mut self) -> Result<Option<bool>, TransportError> {
         self.observe_fence();
-        // Replacing an installed legacy stream means it was lost: probe again.
-        if self.legacy_generation.take().is_some() {
-            self.legacy.store(false, Ordering::Release);
-        }
         if !self.replacement_requested {
             // The current attachment keeps serving commands until a verified
             // replacement is installed; a closed one was already invalidated.
@@ -489,11 +473,16 @@ impl Connection for Bridge {
         }
         let Attachment { rpc, cancel, valid } = match result {
             Ok(attachment) => *attachment,
-            Err(reason) => {
+            Err(refusal) => {
                 // No verified replacement: the service may have restarted as a
                 // different product, so the old attachment refuses commands too.
                 self.fence.store(false, Ordering::Release);
-                self.observe(if unverified(&reason) {
+                let reason = refusal.to_string();
+                // A service older than this client refuses every retry the
+                // same way, so it is refused like another product, never
+                // retried as an outage, and keeps its typed refusal.
+                let too_old = matches!(refusal, TransportError::ServerTooOld { .. });
+                self.observe(if too_old || unverified(&reason) {
                     Event::Unverified {
                         reason: reason.clone(),
                     }
@@ -502,7 +491,11 @@ impl Connection for Bridge {
                         reason: reason.clone(),
                     }
                 });
-                return Err(TransportError::Unavailable { reason });
+                return Err(if too_old {
+                    refusal
+                } else {
+                    TransportError::Unavailable { reason }
+                });
             }
         };
         // Copyright 2023-2026 SpaceXAI. Modified: install the verified profile
@@ -517,9 +510,6 @@ impl Connection for Bridge {
         // A verified replacement of the current generation is the only thing
         // that ends a retirement.
         self.retired = false;
-        if self.legacy.load(Ordering::Acquire) {
-            self.legacy_generation = Some(generation);
-        }
         self.observe(Event::Attached);
         // Raises the permission and session refreshes, unless this build
         // carried the resume offer: then they wait for the first frame.
@@ -673,13 +663,6 @@ impl Connection for Bridge {
         if !self.subscribed() {
             let _ = self.begin_reconnect();
         }
-    }
-    fn refuse_positions(&mut self) {
-        // The next replacement subscribes without positions; the retired
-        // positioned stream cannot clear the latch, only a lost legacy one.
-        self.legacy.store(true, Ordering::Release);
-        self.legacy_generation = None;
-        self.retire_stream();
     }
     fn retire_stream(&mut self) {
         // The retired attachment never reads live again. Any barrier built

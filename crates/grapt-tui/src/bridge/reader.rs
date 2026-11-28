@@ -24,30 +24,31 @@ fn build_replacement(
     session: &Arc<std::sync::Mutex<WatchedSessions>>,
     expected: u64,
     shared: &AtomicU64,
-    legacy: bool,
     offer: Option<grapt_client::client::ResumeToken>,
-) -> Result<Option<Built>, String> {
-    let (rpc, mut next) = config.connect(bounds)?;
+) -> Result<Option<Built>, TransportError> {
+    let unavailable = |reason: String| TransportError::Unavailable { reason };
+    let (rpc, mut next) = config.connect(bounds).map_err(unavailable)?;
     // Every replacement adopts the Sessions this window watches, so a
     // reconnect inside the grace keeps every claim instead of starting fresh.
     next.adopt_watched(current_watched(session));
-    if legacy {
-        next.refuse_positions();
-    }
     // The subscribe carries the client's offer only under the token's binding.
     next.resume_from(offer);
     next.resubscribe();
     if !next.subscribed() {
-        // The subscribe's own refusal (a 401, say), never a vague failure.
-        return Err(next.poll_frame().err().map_or_else(
-            || "service event subscription unavailable".into(),
-            |refusal| refusal.to_string(),
-        ));
+        // The subscribe's own refusal (a 401, say), never a vague failure; a
+        // service too old for this client keeps its typed refusal.
+        return Err(match next.poll_frame().err() {
+            Some(refusal @ TransportError::ServerTooOld { .. }) => refusal,
+            Some(refusal) => unavailable(refusal.to_string()),
+            None => unavailable("service event subscription unavailable".into()),
+        });
     }
     if shared.load(Ordering::Acquire) != expected {
         return Ok(None);
     }
-    let cancel = next.stream_cancellation().map_err(|e| e.to_string())?;
+    let cancel = next
+        .stream_cancellation()
+        .map_err(|e| unavailable(e.to_string()))?;
     Ok(Some(Built {
         rpc,
         stream: next,
@@ -71,7 +72,6 @@ pub(super) struct Reader {
     pub(super) bounds: Bounds,
     pub(super) session: Arc<std::sync::Mutex<WatchedSessions>>,
     pub(super) generation: Arc<AtomicU64>,
-    pub(super) legacy: Arc<AtomicBool>,
     pub(super) stream: HttpConnection,
     pub(super) valid: Arc<AtomicBool>,
     pub(super) handoff: SyncSender<Delivery>,
@@ -94,7 +94,6 @@ fn deliver_replacement(reader: &mut Reader) -> Replacement {
         &reader.session,
         built,
         &reader.generation,
-        reader.legacy.load(Ordering::Acquire),
         offer.clone(),
     );
     let (result, next_step) = match result {

@@ -145,6 +145,7 @@ fn kss_session_management_targets_rows_and_preserves_state_until_deletion_is_ack
     client.select_first_offer()?;
     let first = client.create_session()?;
     let second = client.create_session()?;
+    prove(&mut client);
     client.submit_prompt("already queued before deletion")?;
     let third = client.create_session()?;
     client.select(&first)?;

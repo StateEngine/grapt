@@ -13,10 +13,19 @@ impl Transport for Peer {
     }
 }
 impl Connection for Peer {
+    /// The witness's frames on the double's own positioned stream.
     fn poll_frame(&mut self) -> Result<FramePoll, TransportError> {
-        Ok(self.frames.pop_front().unwrap_or(FramePoll::Idle))
+        if let Some(connect) = self.inner.connect() {
+            return Ok(connect);
+        }
+        match self.frames.pop_front() {
+            Some(frame) => Ok(self.inner.serve(frame)),
+            None => self.inner.poll_frame(),
+        }
     }
-    fn resubscribe(&mut self) {}
+    fn resubscribe(&mut self) {
+        self.inner.resubscribe();
+    }
     fn subscribed(&self) -> bool {
         true
     }
@@ -32,6 +41,25 @@ fn status(session: &SessionWireId, state: &str, stamp: u64) -> FramePoll {
         serde_json::json!({
             "id": format!("evt_status_{stamp}"), "type": "session.status", "created": stamp,
             "data": { "sessionID": session.spelled(), "status": status }
+        })
+        .to_string(),
+    )
+}
+
+/// A status edge for an observed session, carrying its typed state at
+/// committed position `revision`.
+fn stated(
+    session: &SessionWireId,
+    status: &str,
+    state: serde_json::Value,
+    revision: u64,
+) -> FramePoll {
+    let mut state = state;
+    state["revision"] = revision.into();
+    FramePoll::Frame(
+        serde_json::json!({
+            "id": format!("evt_state_{revision}"), "type": "session.status", "created": revision,
+            "data": { "sessionID": session.spelled(), "status": {"type": status}, "state": state }
         })
         .to_string(),
     )
@@ -60,6 +88,7 @@ fn all_eight_children_update_without_switching_or_changing_the_selected_transcri
     );
     client.refresh_sessions()?;
     client.select(&parent)?;
+    crate::client::tests::prove(&mut client);
     let before = client.view().cloned();
     let cursor = client.stream_state().clone();
     let reconciliations = client.diagnostics().reconciliations;
@@ -112,12 +141,13 @@ fn all_eight_children_update_without_switching_or_changing_the_selected_transcri
         );
     }
     // Unlisted identities cannot grow or displace the bounded picker observations.
+    let listed = client.activity.len();
     for n in 0..300 {
         let id = crate::wire::session_id(&format!("ses_unknown_{n}"))?;
         client.peer_mut().frames.push_back(status(&id, "busy", 400));
         client.pump_at(std::time::Duration::ZERO)?;
     }
-    assert_eq!(client.activity.len(), 8);
+    assert_eq!(client.activity.len(), listed);
     client.peer_mut().frames.push_back(FramePoll::Closed);
     client.pump_at(std::time::Duration::ZERO)?;
     assert!(
@@ -149,6 +179,7 @@ fn a_nonselected_child_reports_waiting_for_capacity_without_changing_the_parent(
     );
     client.refresh_sessions()?;
     client.select(&parent)?;
+    crate::client::tests::prove(&mut client);
     let before = client.view().cloned();
     client.pump_at(std::time::Duration::ZERO)?;
     assert_eq!(
@@ -173,12 +204,19 @@ fn compaction_phase_is_busy_and_does_not_fabricate_history_or_completion(
     );
     client.refresh_sessions()?;
     client.select(&id)?;
+    crate::client::tests::prove(&mut client);
     let before = client.view().ok_or("view")?.slices.clone();
-    client.peer_mut().frames.push_back(FramePoll::Frame(
-        serde_json::json!({"id":"evt_compaction_phase","type":"session.status","created":10,
-        "data":{"sessionID":id.spelled(),"status":{"type":"busy"},"phase":"compacting"}})
-        .to_string(),
-    ));
+    let running = |reason: Option<&str>| {
+        let mut state = serde_json::json!({"type": "running", "executionID": "exe_compaction"});
+        if let Some(reason) = reason {
+            state["reason"] = reason.into();
+        }
+        state
+    };
+    client
+        .peer_mut()
+        .frames
+        .push_back(stated(&id, "busy", running(Some("compacting")), 10));
     client.pump_at(std::time::Duration::ZERO)?;
     assert_eq!(
         client.observed_activity(&id),
@@ -186,13 +224,21 @@ fn compaction_phase_is_busy_and_does_not_fabricate_history_or_completion(
     );
     assert_eq!(client.view().ok_or("view")?.idle, Some(false));
     assert_eq!(client.view().ok_or("view")?.slices, before);
-    client.peer_mut().frames.push_back(status(&id, "busy", 11));
+    client
+        .peer_mut()
+        .frames
+        .push_back(stated(&id, "busy", running(None), 11));
     client.pump_at(std::time::Duration::ZERO)?;
     assert_eq!(
         client.observed_activity(&id),
         Some(SessionActivity::Running)
     );
-    client.peer_mut().frames.push_back(status(&id, "idle", 12));
+    client.peer_mut().frames.push_back(stated(
+        &id,
+        "idle",
+        serde_json::json!({"type": "idle"}),
+        12,
+    ));
     client.pump_at(std::time::Duration::ZERO)?;
     assert_eq!(client.observed_activity(&id), Some(SessionActivity::Idle));
     assert!(!matches!(

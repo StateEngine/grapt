@@ -7,8 +7,7 @@
 //! A fact changes what the window shows only when it is strictly newer than the
 //! pair, and then replaces both halves together, so the pair always describes
 //! one fact. Everything shown (the view's idle, execution and feedback, and the
-//! picker's activity) is derived from that pair alone. A legacy stream keeps
-//! today's folds and stores nothing here.
+//! picker's activity) is derived from that pair alone.
 use super::*;
 use crate::contract::EventMember;
 use grapt_api::u3a::{SessionStateDto, SessionStateKind as Kind, SessionStateReason as Reason};
@@ -102,7 +101,7 @@ impl<C: Connection> Client<C> {
         let Some(session) = envelope.session_id.clone() else {
             return Ok(Admission::Ordinary);
         };
-        if !self.positions_mode() || !self.tracks(&session) {
+        if !self.tracks(&session) {
             return Ok(Admission::Ordinary);
         }
         // An unpositioned idle cannot outrank the pair.
@@ -169,8 +168,7 @@ impl<C: Connection> Client<C> {
                 | EventMember::ExecutionSucceeded
                 | EventMember::ExecutionFailed
                 | EventMember::ExecutionInterrupted
-        ) || !self.positions_mode()
-        {
+        ) {
             return Lifecycle::NotOwned;
         }
         let Some(anchor) = self.anchor(session) else {

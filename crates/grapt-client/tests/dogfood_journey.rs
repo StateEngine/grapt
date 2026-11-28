@@ -627,10 +627,9 @@ fn credential() -> BasicCredential {
         .unwrap_or_else(|error| panic!("witness credential must construct: {error}"))
 }
 
-/// A session selected before its stream proved positions is re-read as a
-/// snapshot once that proof arrives. Settle that re-read before a witness
-/// counts reloads, so the launch read can't stand in for, or race, the one
-/// the witness measures.
+/// A session selected before its stream's first frame is read as a snapshot
+/// once that frame arrives. Settle that read before a witness counts reloads,
+/// so the launch read can't stand in for, or race, the one it measures.
 fn prove_positions<C: Connection>(client: &mut Client<C>) {
     let unproven = client.diagnostics().reconciliations;
     for _ in 0..JOURNEY_POLLS {
@@ -642,7 +641,7 @@ fn prove_positions<C: Connection>(client: &mut Client<C>) {
         }
         thread::sleep(JOURNEY_SLEEP);
     }
-    panic!("the positions proof must replace the unproven page");
+    panic!("the stream's first frame must let the snapshot read");
 }
 
 fn connect(address: SocketAddr, bounds: Bounds) -> Client<HttpConnection> {
@@ -758,9 +757,10 @@ fn the_real_process_serves_the_whole_essential_journey_over_a_real_socket() {
     );
     assert_eq!(client.selected(), Some(&id));
 
-    // 3. A COMPLETE, READABLE DURABLE PAGE EARNS LIVENESS. `create_session`
-    //    selects, and selecting reconciles, so the client has already read the
-    //    real `v2.message.list` by this point.
+    // 3. A COMPLETE, READABLE SNAPSHOT EARNS LIVENESS. `create_session`
+    //    selects, and the snapshot is read once the stream's first frame
+    //    arrives.
+    prove_positions(&mut client);
     assert_eq!(
         client.stream_state(),
         &StreamState::Live,

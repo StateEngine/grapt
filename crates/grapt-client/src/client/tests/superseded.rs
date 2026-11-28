@@ -1,7 +1,7 @@
 //! A delta retained from before a snapshot is superseded only by the exact
 //! block the snapshot holds durably: anything else on that row is a gap.
 use super::*;
-use crate::projection::{Applied, StreamMode};
+use crate::projection::Applied;
 
 /// The view a snapshot installs for one finished assistant row: a reasoning
 /// block, then a text block, each first of its kind.
@@ -42,11 +42,7 @@ fn a_delta_inside_the_held_block_is_superseded() -> Result<(), Box<dyn std::erro
     for (kind, text) in [("reasoning", "consider"), ("text", "done")] {
         let mut view = held()?;
         assert_eq!(
-            view.apply_in(
-                &delta(kind, 0, 0, text)?,
-                Bounds::PRODUCTION,
-                StreamMode::Positions
-            ),
+            view.apply(&delta(kind, 0, 0, text)?, Bounds::PRODUCTION),
             Ok(Applied::Ignored),
             "{kind}"
         );
@@ -67,12 +63,8 @@ fn an_absent_block_or_bytes_past_the_held_block_stay_a_gap(
         let mut view = held()?;
         let before = view.slices.clone();
         assert!(
-            view.apply_in(
-                &delta(kind, ordinal, from, text)?,
-                Bounds::PRODUCTION,
-                StreamMode::Positions
-            )
-            .is_err(),
+            view.apply(&delta(kind, ordinal, from, text)?, Bounds::PRODUCTION)
+                .is_err(),
             "{kind} {ordinal} at {from} must be a gap"
         );
         assert_eq!(view.slices, before, "and change nothing shown");

@@ -27,6 +27,8 @@ fn seeded(bounds: Bounds, rows: Vec<Synthetic>) -> (Client<HeldPeer>, crate::wir
     let Ok(id) = client.create_session() else {
         panic!("create")
     };
+    // The stream opens with its positioned connect before any history.
+    let Ok(_) = client.pump() else { panic!("pump") };
     client.peer_mut().inner.seed_history(&id, rows);
     (client, id)
 }
@@ -134,7 +136,15 @@ impl HeldPeer {
             "id": format!("evt_status_{created}"),
             "type": "session.status",
             "created": created,
-            "data": { "sessionID": session.as_inner().as_str(), "status": { "type": kind } }
+            "data": {
+                "sessionID": session.as_inner().as_str(),
+                "status": { "type": kind },
+                "state": {
+                    "type": if kind == "busy" { "running" } else { "idle" },
+                    "revision": created,
+                    "executionID": "exe_1",
+                },
+            }
         });
         self.frames.push_back(FramePoll::Frame(frame.to_string()));
     }
@@ -173,6 +183,8 @@ impl HeldPeer {
     fn text(&mut self, session: &crate::wire::SessionWireId, seq: u64, kind: &str, delta: bool) {
         let data = if delta {
             serde_json::json!({ "delta": "LIVE TAIL" })
+        } else if kind.ends_with(".ended") {
+            serde_json::json!({ "text": "LIVE TAIL" })
         } else {
             serde_json::json!({})
         };
@@ -183,6 +195,9 @@ impl HeldPeer {
         &mut self,
         request: &WireRequest,
     ) -> Result<crate::transport::WireResponse, TransportError> {
+        if request.operation() == Operation::SessionSnapshot {
+            self.tail_reads += 1;
+        }
         if request.operation() == Operation::MessageList {
             if !continuation(request) {
                 self.tail_reads += 1;
@@ -215,14 +230,21 @@ impl Connection for HeldPeer {
         !self.closed
     }
     fn poll_frame(&mut self) -> Result<FramePoll, TransportError> {
-        let frame = self.frames.pop_front().unwrap_or(FramePoll::Idle);
-        if matches!(frame, FramePoll::Closed) {
-            self.closed = true;
+        if let Some(connect) = self.inner.connect() {
+            return Ok(connect);
         }
-        Ok(frame)
+        match self.frames.pop_front() {
+            Some(FramePoll::Closed) => {
+                self.closed = true;
+                Ok(FramePoll::Closed)
+            }
+            Some(frame) => Ok(self.inner.serve(frame)),
+            None => Ok(FramePoll::Idle),
+        }
     }
     fn resubscribe(&mut self) {
         self.closed = false;
+        self.inner.resubscribe();
     }
     fn begin_read(
         &mut self,
@@ -258,18 +280,22 @@ impl Connection for HeldPeer {
 fn a_session_goes_live_on_one_page_however_long_it_is() {
     for rows in [100, 3_200, 20_000] {
         let (mut client, id) = seeded(Bounds::PRODUCTION, turns(rows));
-        let before = client.peer_mut().inner.message_list_calls();
+        let before = client.peer_mut().tail_reads;
         let Ok(()) = client.reconcile(&id) else {
             panic!("reconcile {rows}")
         };
         assert_eq!(
-            client.peer_mut().inner.message_list_calls() - before,
+            client.peer_mut().tail_reads - before,
             1,
-            "{rows} rows: live after exactly one page"
+            "{rows} rows: live after exactly one snapshot"
         );
         assert!(client.stream_state().is_live(), "{rows} rows: live");
-        // Paint now, before any older page is read: the newest rows show.
-        assert_eq!(texts(&client), expected_turns(rows, 50), "{rows} rows");
+        // Paint now, before any older page is read: the snapshot's rows show.
+        assert_eq!(
+            texts(&client),
+            expected_turns(rows, rows.min(200)),
+            "{rows} rows"
+        );
         assert_eq!(client.older_history(), &OlderHistory::Loading);
     }
 }
@@ -372,7 +398,7 @@ fn a_tail_that_fills_retention_reads_nothing_older() {
     assert_eq!(client.older_history(), &OlderHistory::Bounded);
     assert_eq!(
         client.peer_mut().inner.message_list_calls() - before,
-        1,
+        0,
         "no older page was requested"
     );
     assert_eq!(texts(&client), expected_retained_turns(1_000, 40));
@@ -384,7 +410,7 @@ fn a_tail_that_fills_retention_reads_nothing_older() {
 
 #[test]
 fn a_live_frame_during_a_held_older_page_lands_on_the_tail() {
-    let (mut client, id) = seeded(Bounds::PRODUCTION, turns(100));
+    let (mut client, id) = seeded(Bounds::PRODUCTION, turns(300));
     let Ok(()) = client.reconcile(&id) else {
         panic!("reconcile")
     };
@@ -392,9 +418,11 @@ fn a_live_frame_during_a_held_older_page_lands_on_the_tail() {
 
     client
         .peer_mut()
-        .text(&id, 1, "session.text.started", false);
-    client.peer_mut().text(&id, 2, "session.text.delta", true);
-    client.peer_mut().text(&id, 3, "session.text.ended", false);
+        .text(&id, 501, "session.text.started", false);
+    client.peer_mut().text(&id, 502, "session.text.delta", true);
+    client
+        .peer_mut()
+        .text(&id, 503, "session.text.ended", false);
     let Ok(_) = client.pump() else { panic!("pump") };
     assert_eq!(
         texts(&client).last().map(String::as_str),
@@ -404,14 +432,14 @@ fn a_live_frame_during_a_held_older_page_lands_on_the_tail() {
 
     client.peer_mut().hold = false;
     pump_until_settled(&mut client);
-    let mut expected = expected_turns(100, 100);
+    let mut expected = expected_turns(300, 300);
     expected.push("LIVE TAIL".to_owned());
     assert_eq!(texts(&client), expected, "older rows went in front of it");
 }
 
 #[test]
 fn switching_sessions_cancels_a_held_older_page() {
-    let (mut client, first) = seeded(Bounds::PRODUCTION, turns(200));
+    let (mut client, first) = seeded(Bounds::PRODUCTION, turns(300));
     let Ok(()) = client.reconcile(&first) else {
         panic!("reconcile")
     };
@@ -435,7 +463,7 @@ fn switching_sessions_cancels_a_held_older_page() {
 
 #[test]
 fn a_restarted_tail_read_fences_out_the_previous_walk() {
-    let (mut client, id) = seeded(Bounds::PRODUCTION, turns(200));
+    let (mut client, id) = seeded(Bounds::PRODUCTION, turns(300));
     let Ok(()) = client.reconcile(&id) else {
         panic!("reconcile")
     };
@@ -454,14 +482,14 @@ fn a_restarted_tail_read_fences_out_the_previous_walk() {
     pump_until_settled(&mut client);
     assert_eq!(
         texts(&client),
-        expected_turns(200, 200),
+        expected_turns(300, 300),
         "each row once: nothing from the cancelled walk was spliced"
     );
 }
 
 #[test]
 fn a_foreground_read_takes_the_lane_and_the_walk_resumes_from_its_cursor() {
-    let (mut client, id) = seeded(Bounds::PRODUCTION, turns(200));
+    let (mut client, id) = seeded(Bounds::PRODUCTION, turns(300));
     let Ok(()) = client.reconcile(&id) else {
         panic!("reconcile")
     };
@@ -479,7 +507,7 @@ fn a_foreground_read_takes_the_lane_and_the_walk_resumes_from_its_cursor() {
     client.peer_mut().hold = false;
     pump_until_settled(&mut client);
     assert_eq!(client.older_history(), &OlderHistory::Complete);
-    assert_eq!(texts(&client), expected_turns(200, 200));
+    assert_eq!(texts(&client), expected_turns(300, 300));
 }
 
 // ---------------------------------------------------------------------------
@@ -521,7 +549,7 @@ fn settled(client: &Client<HeldPeer>) -> bool {
 }
 
 #[test]
-fn a_same_prompt_terminal_with_no_user_row_on_the_page_clears_stale_busy() {
+fn a_same_prompt_terminal_with_no_user_row_on_the_page_settles() {
     let mut rows = vec![Synthetic::User];
     rows.extend(std::iter::repeat_n(Synthetic::Step, 120));
     let (mut client, id) = seeded(Bounds::PRODUCTION, rows);
@@ -529,7 +557,7 @@ fn a_same_prompt_terminal_with_no_user_row_on_the_page_clears_stale_busy() {
         panic!("reconcile")
     };
     pump_until_settled(&mut client);
-    busy(&mut client, &id, 1_791_695_001_000);
+    busy(&mut client, &id, 801);
 
     client
         .peer_mut()
@@ -537,22 +565,17 @@ fn a_same_prompt_terminal_with_no_user_row_on_the_page_clears_stale_busy() {
         .extend_history(&id, &[Synthetic::Step, Synthetic::Reply]);
     finish_live(&mut client, &id);
     assert!(settled(&client), "the newest page carries the terminal");
-    assert_eq!(
-        client.view().map(|view| view.idle),
-        Some(None),
-        "with no user row on the page, the new terminal still clears stale busy"
-    );
 }
 
 #[test]
-fn a_later_turn_finishing_after_backfill_to_retention_clears_stale_busy() {
+fn a_later_turn_finishing_after_backfill_to_retention_settles() {
     let (mut client, id) = seeded(Bounds::PRODUCTION, turns(2_000));
     let Ok(()) = client.reconcile(&id) else {
         panic!("reconcile")
     };
     pump_until_settled(&mut client);
     assert_eq!(client.older_history(), &OlderHistory::Bounded);
-    busy(&mut client, &id, 1_791_695_002_000);
+    busy(&mut client, &id, 802);
 
     client
         .peer_mut()
@@ -560,7 +583,6 @@ fn a_later_turn_finishing_after_backfill_to_retention_clears_stale_busy() {
         .extend_history(&id, &[Synthetic::User, Synthetic::Step, Synthetic::Reply]);
     finish_live(&mut client, &id);
     assert!(settled(&client));
-    assert_eq!(client.view().map(|view| view.idle), Some(None));
 }
 
 #[test]
@@ -572,7 +594,6 @@ fn backfill_alone_never_produces_a_terminal() {
     let Ok(()) = client.reconcile(&id) else {
         panic!("reconcile")
     };
-    busy(&mut client, &id, 1_791_695_003_000);
     pump_until_settled(&mut client);
     assert_eq!(client.older_history(), &OlderHistory::Complete);
     let Some(view) = client.view() else {
@@ -580,7 +601,6 @@ fn backfill_alone_never_produces_a_terminal() {
     };
     assert_eq!(view.execution, ExecutionState::Idle, "nothing settled");
     assert_eq!(view.held_terminal, None, "and no terminal is held");
-    assert_eq!(view.idle, Some(false), "so the busy observation stands");
 }
 
 #[test]
@@ -590,7 +610,7 @@ fn an_unchanged_reread_keeps_busy_observed_after_the_held_terminal() {
         panic!("reconcile")
     };
     assert!(settled(&client));
-    busy(&mut client, &id, 1_791_695_004_000);
+    busy(&mut client, &id, 804);
     let Ok(()) = client.reconcile(&id) else {
         panic!("relist")
     };
@@ -606,7 +626,6 @@ fn an_error_only_record_is_a_terminal() {
     let Ok(()) = client.reconcile(&id) else {
         panic!("reconcile")
     };
-    busy(&mut client, &id, 1_791_695_005_000);
     client
         .peer_mut()
         .inner
@@ -621,7 +640,6 @@ fn an_error_only_record_is_a_terminal() {
             .map(|(_, outcome)| outcome),
         Some(&Outcome::Failed)
     );
-    assert_eq!(client.view().map(|view| view.idle), Some(None));
 }
 
 #[test]
@@ -639,7 +657,6 @@ fn a_tool_call_step_continues_the_turn_and_settles_nothing() {
     let Ok(()) = client.reconcile(&id) else {
         panic!("relist")
     };
-    busy(&mut client, &id, 1_791_695_006_000);
     client
         .peer_mut()
         .inner
@@ -656,7 +673,6 @@ fn a_tool_call_step_continues_the_turn_and_settles_nothing() {
         Some(&ExecutionState::Idle),
         "a step that called a tool settles nothing"
     );
-    assert_eq!(client.view().map(|view| view.idle), Some(Some(false)));
 }
 
 #[test]
@@ -665,7 +681,6 @@ fn a_later_row_with_no_lifecycle_does_not_hide_the_terminal() {
     let Ok(()) = client.reconcile(&id) else {
         panic!("reconcile")
     };
-    busy(&mut client, &id, 1_791_695_007_000);
     client
         .peer_mut()
         .inner
@@ -684,7 +699,6 @@ fn a_later_row_with_no_lifecycle_does_not_hide_the_terminal() {
         Some(&reply),
         "the terminal under the notice is the one held"
     );
-    assert_eq!(client.view().map(|view| view.idle), Some(None));
 }
 
 // ---------------------------------------------------------------------------
@@ -736,7 +750,7 @@ fn an_older_window_never_overwrites_newer_accounting() {
 
 #[test]
 fn a_live_observation_made_while_an_older_page_is_held_stays_newest() {
-    let (mut client, id) = seeded(Bounds::PRODUCTION, turns(100));
+    let (mut client, id) = seeded(Bounds::PRODUCTION, turns(300));
     let Ok(()) = client.reconcile(&id) else {
         panic!("reconcile")
     };
@@ -757,7 +771,7 @@ fn a_live_observation_made_while_an_older_page_is_held_stays_newest() {
 
 #[test]
 fn a_reconnect_installs_the_tail_and_live_frames_flow_while_an_older_page_is_held() {
-    let (mut client, id) = seeded(Bounds::PRODUCTION, turns(200));
+    let (mut client, id) = seeded(Bounds::PRODUCTION, turns(300));
     let Ok(()) = client.reconcile(&id) else {
         panic!("reconcile")
     };
@@ -781,15 +795,17 @@ fn a_reconnect_installs_the_tail_and_live_frames_flow_while_an_older_page_is_hel
     assert_eq!(client.older_history(), &OlderHistory::Loading);
     assert_eq!(
         texts(&client),
-        expected_turns(200, 200),
+        expected_turns(300, 300),
         "the scrollback stays on screen while the walk re-reads it"
     );
 
     client
         .peer_mut()
-        .text(&id, 1, "session.text.started", false);
-    client.peer_mut().text(&id, 2, "session.text.delta", true);
-    client.peer_mut().text(&id, 3, "session.text.ended", false);
+        .text(&id, 501, "session.text.started", false);
+    client.peer_mut().text(&id, 502, "session.text.delta", true);
+    client
+        .peer_mut()
+        .text(&id, 503, "session.text.ended", false);
     let Ok(_) = client.pump() else { panic!("pump") };
     assert_eq!(
         texts(&client).last().map(String::as_str),
@@ -801,7 +817,7 @@ fn a_reconnect_installs_the_tail_and_live_frames_flow_while_an_older_page_is_hel
     client.peer_mut().hold_older = false;
     pump_until_settled(&mut client);
     assert_eq!(client.older_history(), &OlderHistory::Complete);
-    let mut expected = expected_turns(200, 200);
+    let mut expected = expected_turns(300, 300);
     expected.push("LIVE TAIL".to_owned());
     assert_eq!(
         texts(&client),
@@ -811,7 +827,7 @@ fn a_reconnect_installs_the_tail_and_live_frames_flow_while_an_older_page_is_hel
     assert!(
         client
             .view()
-            .is_some_and(|view| view.cache.status().contains("100 messages unreported")),
+            .is_some_and(|view| view.cache.status().contains("150 messages unreported")),
         "each reply accounted once: {:?}",
         client.view().map(|view| view.cache.status())
     );
@@ -819,7 +835,7 @@ fn a_reconnect_installs_the_tail_and_live_frames_flow_while_an_older_page_is_hel
 
 #[test]
 fn an_unreadable_older_page_fails_only_the_older_history() {
-    let (mut client, id) = seeded(Bounds::PRODUCTION, turns(200));
+    let (mut client, id) = seeded(Bounds::PRODUCTION, turns(300));
     let Ok(()) = client.reconcile(&id) else {
         panic!("reconcile")
     };
@@ -843,7 +859,7 @@ fn an_unreadable_older_page_fails_only_the_older_history() {
         reads + 1,
         "and the tail is not fetched again and again"
     );
-    assert_eq!(texts(&client), expected_turns(200, 50));
+    assert_eq!(texts(&client), expected_turns(300, 200));
 }
 
 // ---------------------------------------------------------------------------
@@ -852,7 +868,7 @@ fn an_unreadable_older_page_fails_only_the_older_history() {
 
 #[test]
 fn a_durable_append_while_an_older_page_is_held_shifts_nothing() {
-    let (mut client, id) = seeded(Bounds::PRODUCTION, turns(200));
+    let (mut client, id) = seeded(Bounds::PRODUCTION, turns(300));
     let Ok(()) = client.reconcile(&id) else {
         panic!("reconcile")
     };
@@ -863,15 +879,17 @@ fn a_durable_append_while_an_older_page_is_held_shifts_nothing() {
         .extend_history(&id, &[Synthetic::User, Synthetic::Reply]);
     client
         .peer_mut()
-        .text(&id, 1, "session.text.started", false);
-    client.peer_mut().text(&id, 2, "session.text.delta", true);
-    client.peer_mut().text(&id, 3, "session.text.ended", false);
+        .text(&id, 501, "session.text.started", false);
+    client.peer_mut().text(&id, 502, "session.text.delta", true);
+    client
+        .peer_mut()
+        .text(&id, 503, "session.text.ended", false);
     let Ok(_) = client.pump() else { panic!("pump") };
     client.peer_mut().hold = false;
     pump_until_settled(&mut client);
 
     assert_eq!(client.older_history(), &OlderHistory::Complete);
-    let mut expected = expected_turns(200, 200);
+    let mut expected = expected_turns(300, 300);
     expected.push("LIVE TAIL".to_owned());
     assert_eq!(
         texts(&client),
@@ -881,7 +899,7 @@ fn a_durable_append_while_an_older_page_is_held_shifts_nothing() {
     assert!(
         client
             .view()
-            .is_some_and(|view| view.cache.status().contains("100 messages unreported")),
+            .is_some_and(|view| view.cache.status().contains("150 messages unreported")),
         "each reply accounted once: {:?}",
         client.view().map(|view| view.cache.status())
     );

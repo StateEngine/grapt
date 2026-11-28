@@ -104,7 +104,7 @@ fn long_retained_ids_drop_the_oldest_to_fit_the_query_bound() -> TestResult {
     for index in 0..=grapt_api::u3a::MAX_RETAINED_SESSIONS {
         connection.watch_session(Some(long(index).parse()?));
     }
-    let request = connection.subscribe_request(true)?;
+    let request = connection.subscribe_request()?;
     assert!(
         HttpConnection::encoded_query_bytes(request.query()) <= grapt_api::u3a::MAX_QUERY_BYTES
     );

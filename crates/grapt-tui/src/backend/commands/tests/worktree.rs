@@ -11,7 +11,8 @@ struct WorktreePeer {
     commit_before_reply: bool,
     lost: bool,
     release_create: bool,
-    fail_history: bool,
+    /// The status and body the attachment's snapshot read is refused with.
+    history_refusal: Option<(u16, &'static [u8])>,
     held: Option<WireRequest>,
     release_reads: bool,
     nonblocking_only: bool,
@@ -109,11 +110,13 @@ impl Connection for WorktreePeer {
             return Ok(None);
         }
         let request = self.held.take().ok_or(TransportError::NotConnected)?;
-        if self.fail_history && operation == Operation::MessageList {
+        if let Some((status, body)) = self
+            .history_refusal
+            .filter(|_| operation == Operation::SessionSnapshot)
+        {
             return Ok(Some(WireResponse {
-                status: 400,
-                body: br#"{"_tag":"InvalidRequestError","message":"History attachment failed"}"#
-                    .to_vec(),
+                status,
+                body: body.to_vec(),
             }));
         }
         self.inner.call(&request).map(Some)
@@ -156,7 +159,7 @@ fn prepared() -> TestResult<Client<WorktreePeer>> {
             commit_before_reply: false,
             lost: false,
             release_create: false,
-            fail_history: false,
+            history_refusal: None,
             held: None,
             release_reads: false,
             nonblocking_only: false,
@@ -677,7 +680,7 @@ fn worktree_open_creates_a_new_session_and_keeps_its_completion() -> TestResult 
             .peer_mut()
             .held
             .as_ref()
-            .is_some_and(|request| request.operation() == Operation::MessageList)
+            .is_some_and(|request| request.operation() == Operation::SessionSnapshot)
         {
             break;
         }
@@ -688,7 +691,7 @@ fn worktree_open_creates_a_new_session_and_keeps_its_completion() -> TestResult 
         .peer_mut()
         .held
         .as_ref()
-        .is_some_and(|request| request.operation() == Operation::MessageList));
+        .is_some_and(|request| request.operation() == Operation::SessionSnapshot));
     client.peer_mut().release_reads = false;
     let ask = client
         .peer_mut()
@@ -758,7 +761,10 @@ fn worktree_open_creates_a_new_session_and_keeps_its_completion() -> TestResult 
     let mut submissions = Submissions::default();
     let text = format!("/worktree open {}", serde_json::to_string(&directory)?);
     submissions.submit(&mut client, text, false, CommandId::TEST);
-    client.peer_mut().fail_history = true;
+    client.peer_mut().history_refusal = Some((
+        400,
+        br#"{"_tag":"InvalidRequestError","message":"History attachment failed"}"#,
+    ));
     client.peer_mut().nonblocking_only = true;
     client.peer_mut().release_create = true;
     client.peer_mut().release_reads = true;
@@ -779,6 +785,31 @@ fn worktree_open_creates_a_new_session_and_keeps_its_completion() -> TestResult 
     );
     assert_eq!(client.peer_mut().inner.session_count(), 2);
     assert_eq!(client.peer_mut().mutations(), 1);
+
+    // A service too old for snapshots answers the read with a bare 404: the
+    // attachment is refused naming the upgrade, and the source stays.
+    let mut client = prepared()?;
+    let source = client.selected().cloned();
+    let mut submissions = Submissions::default();
+    let text = format!("/worktree open {}", serde_json::to_string(&directory)?);
+    submissions.submit(&mut client, text, false, CommandId::TEST);
+    client.peer_mut().history_refusal = Some((404, b""));
+    client.peer_mut().nonblocking_only = true;
+    client.peer_mut().release_create = true;
+    client.peer_mut().release_reads = true;
+    assert!(submissions.advance(&mut client).is_none());
+    finish_attachment(&mut submissions, &mut client)?;
+    let done = submissions
+        .command
+        .take()
+        .map(|(_, done)| done)
+        .ok_or("too-old attachment")?;
+    assert!(
+        done.notice.contains("Upgrade the Grapt server"),
+        "{}",
+        done.notice
+    );
+    assert_eq!(client.selected(), source.as_ref());
 
     let mut client = prepared()?;
     let source = client.selected().cloned().ok_or("source")?;
@@ -804,7 +835,7 @@ fn worktree_open_creates_a_new_session_and_keeps_its_completion() -> TestResult 
             .peer_mut()
             .held
             .as_ref()
-            .is_some_and(|request| request.operation() == Operation::MessageList)
+            .is_some_and(|request| request.operation() == Operation::SessionSnapshot)
         {
             break;
         }
@@ -815,7 +846,7 @@ fn worktree_open_creates_a_new_session_and_keeps_its_completion() -> TestResult 
         .peer_mut()
         .held
         .as_ref()
-        .is_some_and(|request| request.operation() == Operation::MessageList));
+        .is_some_and(|request| request.operation() == Operation::SessionSnapshot));
     client.peer_mut().nonblocking_only = false; // Explicit send-only public API, not attachment I/O.
     client.send_permission_reply(
         &source,

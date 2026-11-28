@@ -411,3 +411,34 @@ fn each_session_and_kind_places_its_own_blocks_from_zero() {
         "the witness needs the reused message id"
     );
 }
+
+#[test]
+fn a_page_keeps_every_row_the_product_byte_bound_keeps() -> Result<(), crate::wire::WireError> {
+    // Rows sized so a page of `count` fills the bound but for about a
+    // kilobyte, counted exactly: a flat framing reserve would push the last
+    // row to the next page, where the product keeps it.
+    let bound = grapt_api::u3a::U3A_PRODUCTION_LIMITS.page_bytes;
+    let limits = crate::wire::limits()?;
+    let row = |index: usize, len: usize| {
+        crate::wire::assistant_message(
+            &format!("msg_{index:012x}"),
+            &[crate::wire::MessageItem::Text("x".repeat(len))],
+            Some(crate::wire::DurableFinish::Stop),
+            None,
+            None,
+        )
+    };
+    let overhead = grapt_api::u3a::encode_page(&row(0, 0)?, limits)?.len();
+    let count = 100usize;
+    let framing = crate::wire::encode_messages(Vec::new(), Some("h-desc-0"))?.len() + 8;
+    let len = (bound - framing - count - 1_000) / count - overhead;
+    let rows = (0..=count)
+        .map(|index| row(index, len))
+        .collect::<Result<Vec<_>, _>>()?;
+    let indices: Vec<usize> = (0..=count).rev().collect();
+    let kept = history_pages::rows_within_page_bytes(&rows, &indices, false)?;
+    assert_eq!(kept, count, "every row that fits stays on the page");
+    let page = crate::wire::encode_messages(rows[..kept].to_vec(), Some("h-desc-1"))?;
+    assert!(page.len() <= bound, "and the page is within the bound");
+    Ok(())
+}

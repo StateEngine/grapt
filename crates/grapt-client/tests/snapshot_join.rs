@@ -19,18 +19,12 @@ struct Peer {
     frames: VecDeque<FramePoll>,
     snapshot: WireResponse,
     snapshots: usize,
-    legacy_on_refusal: bool,
-    legacy_pending: bool,
-    legacy_reads: usize,
 }
 impl Transport for Peer {
     fn call(&mut self, request: &WireRequest) -> Result<WireResponse, TransportError> {
         if request.operation() == Operation::SessionSnapshot {
             self.snapshots += 1;
             return Ok(self.snapshot.clone());
-        }
-        if request.operation() == Operation::MessageList {
-            self.legacy_reads += 1;
         }
         self.inner.call(request)
     }
@@ -40,27 +34,8 @@ impl Connection for Peer {
         Ok(self.frames.pop_front().unwrap_or(FramePoll::Idle))
     }
     fn resubscribe(&mut self) {}
-    fn refuse_positions(&mut self) {
-        if self.legacy_on_refusal {
-            self.frames.clear();
-            self.frames.push_back(if self.legacy_pending {
-                FramePoll::Closed
-            } else {
-                FramePoll::Frame(
-                    json!({"id":"evt_legacy_replacement","type":"server.connected","data":{}})
-                        .to_string(),
-                )
-            });
-        }
-    }
     fn subscribed(&self) -> bool {
-        !self.legacy_pending
-    }
-    fn begin_reconnect(&mut self) -> Result<Option<bool>, TransportError> {
-        Ok((!self.legacy_pending).then_some(true))
-    }
-    fn poll_reconnect(&mut self) -> Result<Option<bool>, TransportError> {
-        Ok((!self.legacy_pending).then_some(true))
+        true
     }
 }
 fn connected() -> FramePoll {
@@ -76,24 +51,23 @@ fn client_bounded(
     prefix: Option<&str>,
     bounds: Bounds,
 ) -> TestResult<(Client<Peer>, SessionWireId)> {
-    client_at(prefix, bounds, 100, true)
+    client_at(prefix, bounds, 100)
 }
 fn client_at(
     prefix: Option<&str>,
     bounds: Bounds,
     position: u64,
-    positioned: bool,
 ) -> TestResult<(Client<Peer>, SessionWireId)> {
     let mut inner = ContractDouble::new();
     let session = inner
         .create_session("snapshot join")
         .ok_or("session bound")?;
-    let legacy = inner.call(&WireRequest::new(
+    let rows = inner.call(&WireRequest::new(
         Operation::MessageList,
         Some(&session),
         None,
     )?)?;
-    let page: serde_json::Value = serde_json::from_slice(&legacy.body)?;
+    let page: serde_json::Value = serde_json::from_slice(&rows.body)?;
     let provisional: Vec<_> = prefix.into_iter().map(|text| json!({
         "assistantMessageID":MESSAGE,"kind":"text","ordinal":0,"text":text,"bytes":text.len()
     })).collect();
@@ -107,19 +81,9 @@ fn client_at(
     let mut client = Client::new(
         Peer {
             inner,
-            frames: VecDeque::from([if positioned {
-                connected()
-            } else {
-                FramePoll::Frame(
-                    json!({"id":"evt_legacy_connected","type":"server.connected","data":{}})
-                        .to_string(),
-                )
-            }]),
+            frames: VecDeque::from([connected()]),
             snapshot,
             snapshots: 0,
-            legacy_on_refusal: false,
-            legacy_pending: false,
-            legacy_reads: 0,
         },
         bounds,
     );
@@ -139,8 +103,8 @@ fn client_at(
     client.select(&session)?;
     assert_eq!(
         client.peer_mut().snapshots,
-        usize::from(positioned),
-        "fixture did not use its negotiated history path"
+        1,
+        "fixture did not read its snapshot"
     );
     Ok((client, session))
 }
@@ -226,7 +190,7 @@ fn positioned_delta_without_offset_recovers_instead_of_appending() -> TestResult
     client.pump()?;
     assert!(
         !rendered(&client).contains("unpositioned"),
-        "missing offset appended as legacy"
+        "missing offset appended unplaced"
     );
     assert!(
         client.diagnostics().gaps_observed > 0,
@@ -733,7 +697,7 @@ fn observation_snapshot_forms_clear_older_pairs_and_preserve_newer_pairs_atomica
             json!({"stateError":{"code":"unreadable","message":"state unavailable"}}),
             json!({"state":{"type":"idle","revision":100}}),
         ] {
-            let (mut client, session) = client_at(None, Bounds::PRODUCTION, 80, true)?;
+            let (mut client, session) = client_at(None, Bounds::PRODUCTION, 80)?;
             push_observation(&mut client, &session, "running", held)?;
             snapshot_state(&mut client, 100, section.clone())?;
             client.reconcile(&session)?;
@@ -875,117 +839,6 @@ fn observation_unselected_terminal_pair_survives_an_older_snapshot() -> TestResu
     assert_eq!(
         client.observed_activity(&other),
         Some(SessionActivity::Succeeded)
-    );
-    Ok(())
-}
-
-#[test]
-fn observation_legacy_status_remains_ungated_by_typed_state() -> TestResult {
-    let (mut client, session) = client_at(None, Bounds::PRODUCTION, 100, false)?;
-    client.refresh_sessions()?;
-    let FramePoll::Positioned { data, .. } = observation_frame(&session, "completed", 110) else {
-        return Err("state fixture".into());
-    };
-    client.peer_mut().frames.push_back(FramePoll::Frame(data));
-    client.pump()?;
-    assert_eq!(
-        client.view().ok_or("view")?.idle,
-        Some(false),
-        "legacy busy status retains its existing fold"
-    );
-    assert_eq!(
-        client.observed_activity(&session),
-        Some(grapt_client::client::SessionActivity::Running)
-    );
-    assert_eq!(client.peer_mut().snapshots, 0);
-    Ok(())
-}
-
-fn downgrade_progress(recovery: bool) -> TestResult {
-    let (mut client, session) = client(None)?;
-    let before = client.peer_mut().legacy_reads;
-    client.peer_mut().legacy_on_refusal = true;
-    client.peer_mut().snapshot.status = 404;
-    if recovery {
-        let FramePoll::Positioned { id, data } = observation_frame(&session, "running", 111) else {
-            return Err("state fixture".into());
-        };
-        let mut malformed: serde_json::Value = serde_json::from_str(&data)?;
-        malformed["data"]["state"]["revision"] = json!("invalid");
-        client.peer_mut().frames.push_back(FramePoll::Positioned {
-            id,
-            data: malformed.to_string(),
-        });
-        client.pump()?;
-    } else {
-        client.reconcile(&session)?;
-    }
-    assert_eq!(
-        client.peer_mut().snapshots,
-        2,
-        "the snapshot refusal was not exercised"
-    );
-    assert_eq!(
-        client.peer_mut().frames.len(),
-        1,
-        "the verified legacy replacement has no first frame"
-    );
-    assert_eq!(
-        client.peer_mut().legacy_reads,
-        before,
-        "legacy history preceded its replacement frame"
-    );
-    for tick in 1..=5 {
-        client.pump_at(std::time::Duration::from_secs(tick))?;
-    }
-    assert!(
-        client.peer_mut().frames.is_empty(),
-        "queued history blocked the legacy stream's first frame"
-    );
-    assert!(
-        client.peer_mut().legacy_reads > before,
-        "the installed legacy stream never resumed history"
-    );
-    Ok(())
-}
-
-#[test]
-fn downgrade_404_direct_read_resumes_after_legacy_install() -> TestResult {
-    downgrade_progress(false)
-}
-
-#[test]
-fn downgrade_404_recovery_read_resumes_after_legacy_install() -> TestResult {
-    downgrade_progress(true)
-}
-
-#[test]
-fn downgrade_404_direct_read_waits_through_closed_until_legacy_installs() -> TestResult {
-    let (mut client, session) = client(None)?;
-    let before = client.peer_mut().legacy_reads;
-    client.peer_mut().legacy_on_refusal = true;
-    client.peer_mut().legacy_pending = true;
-    client.peer_mut().snapshot.status = 404;
-    client.reconcile(&session)?;
-    assert_eq!(client.peer_mut().legacy_reads, before);
-    // The wait starts at the first pump (1 s) and is bounded at four seconds.
-    for tick in 1..=4 {
-        client.pump_at(std::time::Duration::from_secs(tick))?;
-    }
-    assert!(
-        client.peer_mut().frames.is_empty(),
-        "the retired HTTP stream's Closed was not observed"
-    );
-    assert_eq!(
-        client.peer_mut().legacy_reads,
-        before,
-        "Closed cleared the downgrade barrier before a legacy replacement installed"
-    );
-    client.pump_at(std::time::Duration::from_secs(5))?;
-    assert_eq!(
-        client.peer_mut().legacy_reads,
-        before + 1,
-        "history waited past the bound on a silent legacy stream"
     );
     Ok(())
 }

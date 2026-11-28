@@ -28,6 +28,11 @@ fn fixture(frames: Receiver<Delivery>, reconnect: SyncSender<()>) -> Result<Brid
     bridge.fence = Arc::new(AtomicBool::new(false));
     Ok(bridge)
 }
+fn unavailable(reason: &str) -> TransportError {
+    TransportError::Unavailable {
+        reason: reason.to_owned(),
+    }
+}
 fn replacement() -> Result<Delivery> {
     replacement_at(0)
 }
@@ -40,29 +45,6 @@ fn replacement_at(generation: u64) -> Result<Delivery> {
         })),
         generation,
     ))
-}
-
-#[test]
-fn legacy_latch_survives_retired_and_stale_barriers_until_installed_loss() -> Result {
-    let (events, _retry, mut bridge) = live()?;
-    bridge.refuse_positions();
-    assert!(bridge.legacy.load(Ordering::Acquire));
-    events.send(Delivery::Frame(FramePoll::Closed))?;
-    events.send(replacement_at(0)?)?;
-    assert_eq!(bridge.poll_reconnect()?, None);
-    assert!(bridge.legacy.load(Ordering::Acquire));
-    assert_eq!(bridge.legacy_generation, None);
-    events.send(replacement_at(bridge.generation.load(Ordering::Acquire))?)?;
-    assert_eq!(bridge.poll_reconnect()?, Some(true));
-    assert!(bridge.legacy.load(Ordering::Acquire));
-    assert!(bridge.legacy_generation.is_some());
-    // The backend refreshes its catalog before admitting the installed stream.
-    bridge.sessions_dirty.store(false, Ordering::Release);
-    events.send(Delivery::Frame(FramePoll::Closed))?;
-    assert_eq!(bridge.poll_frame()?, FramePoll::Closed);
-    assert_eq!(bridge.begin_reconnect()?, None);
-    assert!(!bridge.legacy.load(Ordering::Acquire));
-    Ok(())
 }
 
 #[test]
@@ -93,13 +75,19 @@ fn queued_stop_reason_survives_closure_before_the_first_client_pump() -> Result 
     let (reconnect, _retry) = mpsc::sync_channel(1);
     let mut bridge = fixture(frames, reconnect)?;
     bridge.state = State::Live;
-    events.send(Delivery::Frame(FramePoll::Frame(
-        serde_json::json!({
+    events.send(Delivery::Frame(FramePoll::Positioned {
+        id: "stop-1".into(),
+        data: serde_json::json!({"id":"evt_connected","type":"server.connected","data":{}})
+            .to_string(),
+    }))?;
+    events.send(Delivery::Frame(FramePoll::Positioned {
+        id: "stop-2".into(),
+        data: serde_json::json!({
             "id":"evt_service_stop", "type":"server.stopping", "created":1,
             "data":{"reason":"service-stopped"}
         })
         .to_string(),
-    )))?;
+    }))?;
     events.send(Delivery::Frame(FramePoll::Closed))?;
     let mut client = grapt_client::Client::new(bridge, Bounds::PRODUCTION);
     client.pump_at(Duration::ZERO)?;
@@ -232,7 +220,10 @@ fn recovery_installs_a_queued_replacement_before_reading_as_subscribed() -> Resu
 #[test]
 fn a_failed_replacement_fences_the_old_attachment() -> Result {
     let (events, _retry, mut bridge) = live()?;
-    events.send(Delivery::Replacement(Err("different product".into()), 0))?;
+    events.send(Delivery::Replacement(
+        Err(unavailable("different product")),
+        0,
+    ))?;
     assert!(bridge.begin_reconnect().is_err());
     assert!(!bridge.fence.load(Ordering::Acquire));
     assert!(matches!(
@@ -265,10 +256,29 @@ fn a_pending_reconnect_holds_multi_step_work_but_not_one_shot_calls() -> Result 
 }
 
 #[test]
+fn a_service_too_old_keeps_its_typed_refusal_and_is_not_retried_as_an_outage() -> Result {
+    let (events, _retry, mut bridge) = live()?;
+    events.send(Delivery::Replacement(
+        Err(TransportError::ServerTooOld {
+            missing: "stream positions",
+        }),
+        0,
+    ))?;
+    assert!(matches!(
+        bridge.begin_reconnect(),
+        Err(TransportError::ServerTooOld { .. })
+    ));
+    assert!(matches!(bridge.connection().state, State::Refused { .. }));
+    Ok(())
+}
+
+#[test]
 fn a_replacement_from_another_product_is_refused_not_retried_as_an_outage() -> Result {
     let (events, _retry, mut bridge) = live()?;
     events.send(Delivery::Replacement(
-        Err("ready service differs from the launcher-selected product".into()),
+        Err(unavailable(
+            "ready service differs from the launcher-selected product",
+        )),
         0,
     ))?;
     assert!(bridge.begin_reconnect().is_err());
@@ -304,14 +314,19 @@ fn a_refused_service_keeps_its_refusal_through_retries_until_one_verifies() -> R
             State::Refused { reason } if reason.contains("launcher-selected"))
     };
     events.send(Delivery::Replacement(
-        Err("ready service differs from the launcher-selected product".into()),
+        Err(unavailable(
+            "ready service differs from the launcher-selected product",
+        )),
         0,
     ))?;
     assert!(bridge.begin_reconnect().is_err());
     assert!(refused(&bridge));
     // Recovery probes again; an outage on the way keeps the refusal.
     retry.try_recv()?;
-    events.send(Delivery::Replacement(Err("connection refused".into()), 0))?;
+    events.send(Delivery::Replacement(
+        Err(unavailable("connection refused")),
+        0,
+    ))?;
     assert!(bridge.begin_reconnect().is_err());
     assert!(refused(&bridge));
     assert!(bridge.call(&listed()?).is_err_and(|e| reconnecting(&e)));
@@ -544,7 +559,10 @@ fn retired_catalog_text_waits_through_stale_and_failed_barriers() -> Result {
             "stale build suffix".into(),
         )))?;
         if failed {
-            events.send(Delivery::Replacement(Err("replacement refused".into()), 1))?;
+            events.send(Delivery::Replacement(
+                Err(unavailable("replacement refused")),
+                1,
+            ))?;
             assert!(bridge.poll_reconnect().is_err());
             events.send(Delivery::Frame(FramePoll::Frame(
                 "failed build suffix".into(),

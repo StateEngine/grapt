@@ -62,16 +62,7 @@ pub(super) struct History {
     session: SessionWireId,
     permissions: bool,
     messages: bool,
-    /// Which messages read is in flight; decided when it starts.
-    read: MessagesRead,
     pub(super) pending: bool,
-}
-
-/// The legacy page read, or a snapshot on a positions connection.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum MessagesRead {
-    Legacy,
-    Snapshot,
 }
 
 impl ClientError {
@@ -248,7 +239,6 @@ impl<C: Connection> Client<C> {
                 session,
                 permissions: true,
                 messages: true,
-                read: MessagesRead::Legacy,
                 pending: false,
             });
         }
@@ -261,15 +251,15 @@ impl<C: Connection> Client<C> {
             .is_some_and(|history| history.permissions || history.messages)
     }
 
-    /// The queued messages read is waiting for the next stream to prove its
-    /// mode, so that stream must be read until its first frame arrives.
+    /// The queued snapshot read is waiting for the stream's first frame, so
+    /// that stream must be read until it arrives.
     pub(super) fn waiting_for_mode(&self) -> bool {
-        self.needs_mode_proof()
+        !self.positions.proven
             && self
                 .recovery
                 .history
                 .as_ref()
-                .is_some_and(|history| !history.pending && !history.permissions && history.messages)
+                .is_some_and(|history| !history.pending && history.messages)
     }
 
     pub(super) fn defer_queued_inputs(&mut self) {
@@ -301,7 +291,6 @@ impl<C: Connection> Client<C> {
                 session: session.clone(),
                 permissions: false,
                 messages: false,
-                read: MessagesRead::Legacy,
                 pending: false,
             });
         }
@@ -324,27 +313,20 @@ impl<C: Connection> Client<C> {
             let Some(mut history) = self.recovery.history.take() else {
                 return Ok(false);
             };
-            if !history.pending {
-                history.read = if !history.permissions && history.messages {
-                    // The messages read waits, bounded, for a stream to prove
-                    // its mode; the deadline starts with the first wait.
-                    let Some(read) = self.messages_read(Some(now)) else {
-                        self.positions.handshake_since.get_or_insert(now);
-                        self.recovery.history = Some(history);
-                        return Ok(false);
-                    };
-                    read
-                } else {
-                    MessagesRead::Legacy
-                };
+            // The snapshot waits, bounded, for this stream's first frame: a
+            // read before the subscription is open could miss what it carries.
+            if !history.pending
+                && !history.permissions
+                && history.messages
+                && !self.first_frame_seen(now)
+            {
+                self.recovery.history = Some(history);
+                return Ok(false);
             }
-            let snapshot = history.read == MessagesRead::Snapshot;
             let operation = if history.permissions {
                 Operation::PermissionRequestList
-            } else if snapshot {
-                Operation::SessionSnapshot
             } else if history.messages {
-                Operation::MessageList
+                Operation::SessionSnapshot
             } else {
                 Operation::SessionPendingList
             };
@@ -353,13 +335,8 @@ impl<C: Connection> Client<C> {
             } else {
                 let request = if history.permissions {
                     WireRequest::new(operation, None, None)?
-                } else if !history.messages || snapshot {
-                    WireRequest::new(operation, Some(&history.session), None)?
-                } else if self.history_window.is_some() {
-                    super::paged_history::window_request(&history.session, None, true)?
                 } else {
                     WireRequest::new(operation, Some(&history.session), None)?
-                        .with_query("order", "desc")
                 };
                 self.connection.begin_read(&request)
             };
@@ -387,16 +364,7 @@ impl<C: Connection> Client<C> {
                 }
                 return Ok(true);
             }
-            let bytes = match self.accept_response(operation, response) {
-                // This service has no snapshot: legacy mode for this connection.
-                Err(error) if snapshot && super::snapshot::unsupported(&error) => {
-                    // Kept queued: it reads once the legacy stream arrives.
-                    self.recovery.history = Some(history);
-                    self.refuse_snapshot();
-                    return Ok(true);
-                }
-                accepted => accepted?,
-            };
+            let bytes = self.accept_response(operation, response)?;
             if history.permissions {
                 self.accept_permissions(bytes)?;
                 history.permissions = false;
@@ -404,13 +372,7 @@ impl<C: Connection> Client<C> {
                 continue;
             }
             if history.messages {
-                if snapshot {
-                    self.install_snapshot(&history.session, &bytes)?;
-                } else {
-                    let page = crate::wire::decode_messages(&bytes)?;
-                    self.adopt_tail(&history.session, &page, bytes.len())?;
-                    self.positions.legacy_unproven |= self.positions.mode.is_none();
-                }
+                self.install_snapshot(&history.session, &bytes)?;
                 self.recovery.history_delay = RETRY_MIN;
                 self.recovery.history_due = now.saturating_add(Duration::from_secs(1));
                 history.messages = false;
