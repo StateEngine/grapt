@@ -72,3 +72,29 @@ fn the_decision_and_paths_bound_counts_the_stored_object() {
         .check()
         .is_err());
 }
+
+#[test]
+fn absent_paths_take_no_bytes_at_either_bound() {
+    let no_paths = |rationale: usize, body: usize| PublishTurn {
+        decision: Some(TurnDecision {
+            title: String::new(),
+            rationale: "r".repeat(rationale),
+            scope: String::new(),
+        }),
+        diff_summary: Some(TurnDiff {
+            files_changed: 0,
+            insertions: 0,
+            deletions: 0,
+            paths: Vec::new(),
+        }),
+        ..turn(&"t".repeat(body), None)
+    };
+    // `{"decision":{"title":"","rationale":"…","scope":""}}` is 51 bytes
+    // around the rationale; `,"text":"…"` adds 10 around the body.
+    let full = MAX_DECISION_AND_PATHS_BYTES - 51;
+    assert_eq!(no_paths(full, 0).check(), Ok(()));
+    assert!(no_paths(full + 1, 0).check().is_err());
+    let body = MAX_PROSE_BYTES - MAX_DECISION_AND_PATHS_BYTES - 10;
+    assert_eq!(no_paths(full, body).check(), Ok(()));
+    assert!(no_paths(full, body + 1).check().is_err());
+}

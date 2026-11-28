@@ -139,14 +139,14 @@ impl PublishTurn {
             return Err("a nesting depth is not 1 to 64".into());
         }
         let mut prose = StoredProse {
-            body_text: None,
             decision: self.decision.as_ref(),
             paths,
+            text: None,
         };
         if !prose.within(MAX_DECISION_AND_PATHS_BYTES)? {
             return Err("the decision and paths together exceed 64 KiB".into());
         }
-        prose.body_text = self.body_text.as_deref();
+        prose.text = self.body_text.as_deref();
         if !prose.within(MAX_PROSE_BYTES)? {
             return Err("the body, decision and paths together exceed 1 MiB".into());
         }
@@ -159,10 +159,11 @@ impl PublishTurn {
 #[derive(Serialize)]
 struct StoredProse<'a> {
     #[serde(skip_serializing_if = "Option::is_none")]
-    body_text: Option<&'a str>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     decision: Option<&'a TurnDecision>,
+    #[serde(skip_serializing_if = "<[String]>::is_empty")]
     paths: &'a [String],
+    #[serde(skip_serializing_if = "Option::is_none")]
+    text: Option<&'a str>,
 }
 
 impl StoredProse<'_> {
