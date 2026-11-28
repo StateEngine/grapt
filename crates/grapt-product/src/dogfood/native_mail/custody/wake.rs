@@ -3,7 +3,7 @@
 // canonical input claims, existing service custody, and authenticated rebind fences.
 //! Wake admission runs between driver selects and never waits for that driver.
 use super::*;
-use crate::dogfood::{input_events, DogfoodApplication};
+use crate::dogfood::{input_events, ServerApplication};
 use grapt_inbox::{AdmitOutcome, PendingInput, SyntheticAdmitRequest};
 use grapt_store::{MailBindingExpectation, RemoteMailWakeClaim};
 use grapt_types::{DeliveryMode, MessageId};
@@ -43,7 +43,7 @@ impl NativeWakeFence {
 
     pub(in crate::dogfood) async fn settle(
         &self,
-        application: &DogfoodApplication,
+        application: &ServerApplication,
         refusal: Option<NativeWakeRefusal>,
     ) {
         match self {
@@ -132,7 +132,7 @@ impl TransportWakeFence {
 
     pub(in crate::dogfood) async fn settle(
         &self,
-        application: &DogfoodApplication,
+        application: &ServerApplication,
         refusal: Option<NativeWakeRefusal>,
     ) {
         let context = self.owner.context.lock().await;
@@ -177,7 +177,7 @@ impl NativeMailOwners {
 
     pub(in crate::dogfood) fn attach_wake_application(
         &self,
-        application: std::sync::Weak<DogfoodApplication>,
+        application: std::sync::Weak<ServerApplication>,
     ) {
         // The composition root is the sole writer, after constructing its Arc.
         let _attached = self.wake_application.set(application);
@@ -257,7 +257,7 @@ impl NativeMailOwners {
     #[expect(clippy::too_many_lines, reason = "legacy")]
     fn enqueue_one(
         &self,
-        application: &DogfoodApplication,
+        application: &ServerApplication,
         owner: &Arc<Owner>,
         context: &mut NativeMailContext,
         revision: Arc<()>,
@@ -475,7 +475,7 @@ impl NativeMailOwners {
     }
 
     fn commit_wake(
-        application: &DogfoodApplication,
+        application: &ServerApplication,
         context: &NativeMailContext,
         capability: &Arc<Secret<String>>,
         claim: &RemoteMailWakeClaim,

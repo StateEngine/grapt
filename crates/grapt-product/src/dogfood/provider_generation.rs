@@ -40,7 +40,7 @@ impl Publication {
     }
 }
 
-impl super::DogfoodApplication {
+impl super::ServerApplication {
     pub(crate) fn catalog_snapshot(&self) -> Arc<CatalogProjection> {
         Arc::clone(&self.providers.snapshot().catalog)
     }

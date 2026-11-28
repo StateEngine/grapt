@@ -324,7 +324,7 @@ pub trait SessionEditApplicationPort {
     ) -> ApplicationFuture<super::SessionReconcileResponseDto, SessionReconcileApplicationError>;
 }
 
-pub trait DogfoodApplicationPort:
+pub trait ApplicationPort:
     SessionEditApplicationPort
     + super::HostControlApplicationPort
     + super::SessionSnapshotApplicationPort

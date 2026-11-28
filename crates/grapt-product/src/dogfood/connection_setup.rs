@@ -1,7 +1,7 @@
 //! In-app setup owns connections before the first execution application exists.
 use super::{
     support::{decode, invalid},
-    DogfoodApplication,
+    ServerApplication,
 };
 use grapt_api::{u3a::*, SealedPrincipal};
 use grapt_connections::{
@@ -31,7 +31,7 @@ pub(crate) struct ConnectionSetup {
     activate: bool,
     external_host: bool,
     oauth: Arc<oauth::Runtime>,
-    application: Arc<Mutex<Option<Arc<DogfoodApplication>>>>,
+    application: Arc<Mutex<Option<Arc<ServerApplication>>>>,
     mutation: Arc<Mutex<()>>,
     operations: Arc<tokio::sync::Semaphore>,
     ports: Arc<ApplicationSlot>,
@@ -109,7 +109,7 @@ impl ConnectionSetup {
 
     pub(crate) fn configured(
         root: &Path,
-        application: Arc<DogfoodApplication>,
+        application: Arc<ServerApplication>,
         ports: Arc<ApplicationSlot>,
         hub: Arc<DogfoodEventHub>,
         limits: super::production::ProductionProviderLimits,
@@ -134,7 +134,7 @@ impl ConnectionSetup {
         Arc::clone(&self.ports)
     }
 
-    fn application(&self) -> Option<Arc<DogfoodApplication>> {
+    fn application(&self) -> Option<Arc<ServerApplication>> {
         match self.application.lock() {
             Ok(application) => application.clone(),
             Err(poisoned) => poisoned.into_inner().clone(),

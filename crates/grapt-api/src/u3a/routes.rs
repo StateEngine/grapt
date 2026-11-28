@@ -28,6 +28,7 @@ use thiserror::Error;
 
 use crate::{ApiRefusal, ApiRouterBuilder, RouteMethod, RoutePath, SealedPrincipal};
 
+use super::application::{ApplicationPort, ApplicationUnavailable};
 #[cfg(test)]
 use super::application::{
     ApplicationRequest, CatalogApplicationError, FormCancelApplicationError,
@@ -35,7 +36,6 @@ use super::application::{
     PermissionApplicationError, SessionListApplicationError, SessionLookupApplicationError,
     SessionMessagesApplicationError, SessionPromptApplicationError,
 };
-use super::application::{ApplicationUnavailable, DogfoodApplicationPort};
 #[cfg(test)]
 use super::{
     InterruptRequestDto, PermissionCreateRequestDto, PermissionReplyRequestDto,
@@ -203,7 +203,7 @@ impl Endpoint {
 /// routes remain present and answer with the typed unavailable vocabulary.
 pub fn register_dogfood_routes(
     builder: &mut ApiRouterBuilder,
-    application: Arc<dyn DogfoodApplicationPort>,
+    application: Arc<dyn ApplicationPort>,
 ) -> Result<(), DogfoodRouteRegistrationError> {
     register_selected(builder, application, Endpoint::ALL.iter().copied())
 }
@@ -213,7 +213,7 @@ pub fn register_dogfood_routes(
 /// deliberately absent rather than delegated to persistent product handlers.
 pub fn register_ephemeral_dogfood_routes(
     builder: &mut ApiRouterBuilder,
-    application: Arc<dyn DogfoodApplicationPort>,
+    application: Arc<dyn ApplicationPort>,
 ) -> Result<(), DogfoodRouteRegistrationError> {
     register_selected(
         builder,
@@ -256,7 +256,7 @@ pub fn register_ephemeral_dogfood_routes(
 
 fn register_selected(
     builder: &mut ApiRouterBuilder,
-    application: Arc<dyn DogfoodApplicationPort>,
+    application: Arc<dyn ApplicationPort>,
     endpoints: impl Iterator<Item = Endpoint>,
 ) -> Result<(), DogfoodRouteRegistrationError> {
     register_binding(builder, ApplicationBinding::Fixed(application), endpoints)

@@ -13,7 +13,7 @@ pub(super) fn refusal(reason: impl ToString) -> SessionPromptApplicationError {
     SessionPromptApplicationError::Conflict(conflict(reason))
 }
 
-impl grapt_api::u3a::HostControlApplicationPort for DogfoodApplication {
+impl grapt_api::u3a::HostControlApplicationPort for ServerApplication {
     fn host_control(
         &self,
         principal: SealedPrincipal,
@@ -48,7 +48,7 @@ impl grapt_api::u3a::HostControlApplicationPort for DogfoodApplication {
     }
 }
 
-impl DogfoodApplication {
+impl ServerApplication {
     pub(super) fn host_service_identity(
         &self,
     ) -> Result<HostServiceIdentityDto, SessionPromptApplicationError> {
@@ -154,13 +154,10 @@ impl DogfoodApplication {
         .map_err(refusal)
     }
 
-    #[expect(clippy::too_many_lines, reason = "legacy")]
-    async fn offer_host_notice(
+    fn prepare_host_notice(
         &self,
-        principal: SealedPrincipal,
-        session: SessionId,
-        request: NativeNoticeRequestDto,
-    ) -> Result<HostInputReadbackDto, SessionPromptApplicationError> {
+        request: &NativeNoticeRequestDto,
+    ) -> Result<(String, serde_json::Value), SessionPromptApplicationError> {
         let service = self.host_service_identity()?;
         if service.incarnation().get() != request.incarnation().get()
             || service.service_instance().get() != request.service_instance().get()
@@ -204,6 +201,16 @@ impl DogfoodApplication {
             "hostNotice":true,
             "messages":ids.iter().map(|id| json!({"source_message":id})).collect::<Vec<_>>(),
         });
+        Ok((text, metadata))
+    }
+
+    async fn offer_host_notice(
+        &self,
+        principal: SealedPrincipal,
+        session: SessionId,
+        request: NativeNoticeRequestDto,
+    ) -> Result<HostInputReadbackDto, SessionPromptApplicationError> {
+        let (text, metadata) = self.prepare_host_notice(&request)?;
         self.ensure_session_writer(&session).map_err(refusal)?;
         let input = request.id().get().as_inner().clone();
         let record = self.get_record(&session).map_err(refusal)?;
@@ -367,7 +374,7 @@ impl ExternalNoticeFence {
 
     pub(in crate::dogfood) async fn settle(
         &self,
-        _application: &DogfoodApplication,
+        _application: &ServerApplication,
         _refusal: Option<native_mail::custody::NativeWakeRefusal>,
     ) {
         // The canonical queue retains the original key. Only an authenticated
@@ -377,7 +384,7 @@ impl ExternalNoticeFence {
 
 /// Prepare peer writers through the same carry admission as any Session mutation.
 pub(super) fn prepare_binding(
-    application: &DogfoodApplication,
+    application: &ServerApplication,
     session: &SessionId,
 ) -> Result<(), String> {
     if application.external_host {
@@ -394,7 +401,7 @@ pub(super) fn prepare_binding(
 
 /// Capability replacement establishes a new target; old notices keep their old fence.
 pub(super) fn select_binding(
-    application: &DogfoodApplication,
+    application: &ServerApplication,
     inbox: &mut grapt_inbox::Inbox,
     session: &SessionId,
 ) -> Result<(), String> {

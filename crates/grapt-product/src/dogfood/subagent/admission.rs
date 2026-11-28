@@ -10,7 +10,7 @@ use grapt_types::{
     SessionId, SubagentOperationId, ToolCallId,
 };
 
-use super::{child_routing, AdmittedChild, DogfoodApplication};
+use super::{child_routing, AdmittedChild, ServerApplication};
 
 /// Options for the shared admission seam. Placement defaults to the parent.
 #[derive(Debug)]
@@ -36,7 +36,7 @@ impl ChildOptions {
 
     pub(in crate::dogfood) async fn with_worktree(
         mut self,
-        application: &DogfoodApplication,
+        application: &ServerApplication,
         parent: &SessionId,
     ) -> Result<Self, String> {
         if self.worktree.is_some() {
@@ -59,7 +59,7 @@ impl ChildOptions {
 /// A later admission failure leaves an inert, visible Session for inspection.
 #[expect(clippy::too_many_lines, reason = "legacy")]
 pub(in crate::dogfood) fn admit_with_options(
-    application: &DogfoodApplication,
+    application: &ServerApplication,
     parent: &SessionId,
     agent: &AgentId,
     description: &str,

@@ -14,7 +14,7 @@ fn failure(error: impl std::fmt::Display) -> PermissionApplicationError {
 }
 
 fn session_record(
-    application: &DogfoodApplication,
+    application: &ServerApplication,
     session: &SessionId,
 ) -> Result<grapt_session::SessionRecord, PermissionApplicationError> {
     let inbox = application.lock_inbox();
@@ -27,13 +27,13 @@ fn session_record(
 }
 
 fn terminals(
-    application: &DogfoodApplication,
+    application: &ServerApplication,
 ) -> std::sync::Arc<super::super::tools::TerminalRegistry> {
     application.executor.0.terminals()
 }
 
 pub(crate) fn list(
-    application: &DogfoodApplication,
+    application: &ServerApplication,
     session: SessionId,
 ) -> Result<SandboxGrantListResponseDto, PermissionApplicationError> {
     let record = session_record(application, &session)?;
@@ -73,7 +73,7 @@ pub(crate) fn list(
 
 #[expect(clippy::too_many_lines, reason = "legacy")]
 pub(crate) fn revoke(
-    application: &DogfoodApplication,
+    application: &ServerApplication,
     principal: SealedPrincipal,
     session: SessionId,
     request: SandboxGrantDto,

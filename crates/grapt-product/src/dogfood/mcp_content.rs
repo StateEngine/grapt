@@ -1,5 +1,5 @@
 //! Native operator content reads use the same Session selection as MCP controls.
-use super::{connections, decode, invalid, session_config, DogfoodApplication};
+use super::{connections, decode, invalid, session_config, ServerApplication};
 use grapt_api::u3a::{
     ApplicationFuture, InvalidRequestErrorDto, McpContentRequestDto, McpContentResponseDto,
     McpResourcesResponseDto, ProjectCurrentLocationQueryDto,
@@ -10,7 +10,7 @@ use serde_json::{json, Value};
 use grapt_mcp_host::user_content;
 
 pub(crate) fn respond(
-    application: DogfoodApplication,
+    application: ServerApplication,
     server: String,
     query: ProjectCurrentLocationQueryDto,
     request: McpContentRequestDto,
@@ -123,7 +123,7 @@ pub(crate) async fn resource_catalog(
 }
 
 pub(crate) fn all_resources(
-    application: DogfoodApplication,
+    application: ServerApplication,
     query: ProjectCurrentLocationQueryDto,
 ) -> ApplicationFuture<McpResourcesResponseDto, InvalidRequestErrorDto> {
     Box::pin(async move {

@@ -90,7 +90,7 @@ fn bounded_error(error: impl std::fmt::Display) -> String {
     value
 }
 
-fn now(application: &super::super::DogfoodApplication) -> i64 {
+fn now(application: &super::super::ServerApplication) -> i64 {
     application.clock.now().as_millis()
 }
 
@@ -106,7 +106,7 @@ fn expiry(created: i64, requested: Option<i64>) -> Result<i64, String> {
         .unwrap_or(default))
 }
 
-fn mint(application: &super::super::DogfoodApplication, prefix: &str) -> String {
+fn mint(application: &super::super::ServerApplication, prefix: &str) -> String {
     format!("{prefix}_{}", application.ids.mint().as_str())
 }
 
@@ -174,7 +174,7 @@ impl ProductPluginHost {
     pub(crate) fn integration_credentials(
         &self,
         operation: HostOperation,
-        application: &super::super::DogfoodApplication,
+        application: &super::super::ServerApplication,
         authorized: &Authorized<'_>,
         payload: &Value,
     ) -> Result<Value, String> {
@@ -252,7 +252,7 @@ impl ProductPluginHost {
         &self,
         context: &PluginHostContext,
         operation: HostOperation,
-        application: &super::super::DogfoodApplication,
+        application: &super::super::ServerApplication,
         authorized: &Authorized<'_>,
         payload: &Value,
     ) -> Result<Value, String> {
@@ -286,7 +286,7 @@ impl ProductPluginHost {
     fn oauth_connect(
         &self,
         context: &PluginHostContext,
-        application: &super::super::DogfoodApplication,
+        application: &super::super::ServerApplication,
         authorized: &Authorized<'_>,
         payload: &Value,
     ) -> Result<Value, String> {
@@ -400,7 +400,7 @@ impl ProductPluginHost {
     fn oauth_complete(
         &self,
         context: &PluginHostContext,
-        application: &super::super::DogfoodApplication,
+        application: &super::super::ServerApplication,
         authorized: &Authorized<'_>,
         payload: &Value,
     ) -> Result<Value, String> {
@@ -467,7 +467,7 @@ impl ProductPluginHost {
 
     fn persist_oauth(
         &self,
-        application: &super::super::DogfoodApplication,
+        application: &super::super::ServerApplication,
         attempt: &OauthAttempt,
         credential: Value,
     ) -> Result<(), String> {
@@ -500,7 +500,7 @@ impl ProductPluginHost {
     fn oauth_status(
         &self,
         context: &PluginHostContext,
-        application: &super::super::DogfoodApplication,
+        application: &super::super::ServerApplication,
         authorized: &Authorized<'_>,
         payload: &Value,
     ) -> Result<Value, String> {
@@ -537,7 +537,7 @@ impl ProductPluginHost {
         &self,
         context: &PluginHostContext,
         operation: HostOperation,
-        application: &super::super::DogfoodApplication,
+        application: &super::super::ServerApplication,
         authorized: &Authorized<'_>,
         payload: &Value,
     ) -> Result<Value, String> {
@@ -604,7 +604,7 @@ impl ProductPluginHost {
     fn command_connect(
         &self,
         context: &PluginHostContext,
-        application: &super::super::DogfoodApplication,
+        application: &super::super::ServerApplication,
         authorized: &Authorized<'_>,
         payload: &Value,
     ) -> Result<Value, String> {

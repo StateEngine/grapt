@@ -4,7 +4,7 @@ use serde_json::Value;
 
 fn bind_artifacts(
     fixture: &mut Fixture,
-    app: &Arc<crate::dogfood::DogfoodApplication>,
+    app: &Arc<crate::dogfood::ServerApplication>,
 ) -> Result<(), String> {
     fixture.inbox = Some(Arc::clone(&app.inbox));
     fixture.artifacts = Some(Arc::new(
@@ -32,7 +32,7 @@ fn compact(fixture: &Fixture, ordinal: u32) -> Result<(), String> {
 }
 
 fn traverse(
-    app: &crate::dogfood::DogfoodApplication,
+    app: &crate::dogfood::ServerApplication,
     session: &SessionId,
     order: &str,
 ) -> Result<Vec<Value>, String> {

@@ -14,7 +14,7 @@ macro_rules! never {
     };
 }
 
-impl DogfoodApplicationPort for NeverApplication {
+impl ApplicationPort for NeverApplication {
     fn global_form_get(
         &self,
         _principal: SealedPrincipal,
@@ -639,7 +639,7 @@ impl DogfoodApplicationPort for NeverApplication {
     }
 }
 
-pub(super) fn never_application() -> Arc<dyn DogfoodApplicationPort> {
+pub(super) fn never_application() -> Arc<dyn ApplicationPort> {
     Arc::new(NeverApplication)
 }
 

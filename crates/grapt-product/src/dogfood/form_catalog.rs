@@ -2,7 +2,7 @@
 use super::{
     locations,
     support::{decode, invalid},
-    DogfoodApplication,
+    ServerApplication,
 };
 use grapt_api::u3a::{
     ApplicationFuture, FormListResponseDto, InvalidRequestErrorDto, ProjectCurrentLocationQueryDto,
@@ -13,7 +13,7 @@ use serde_json::json;
 use std::sync::Arc;
 
 pub(crate) fn list(
-    application: DogfoodApplication,
+    application: ServerApplication,
     query: ProjectCurrentLocationQueryDto,
 ) -> ApplicationFuture<FormListResponseDto, InvalidRequestErrorDto> {
     let inbox = Arc::clone(&application.inbox);

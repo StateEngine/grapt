@@ -18,7 +18,7 @@ use serde_json::{json, Value};
 
 use super::context;
 use super::support::{decode, invalid, not_found, static_dto};
-use super::DogfoodApplication;
+use super::ServerApplication;
 
 #[cfg(test)]
 #[path = "form_tests.rs"]
@@ -59,7 +59,7 @@ pub(crate) fn form_invalid_answer(
 /// the session so a form cannot be reached through a session that does not own
 /// it.
 fn record(
-    application: &DogfoodApplication,
+    application: &ServerApplication,
     session: &SessionId,
     id: &FormId,
 ) -> Result<FormRecord, FormLookupApplicationError> {
@@ -84,7 +84,7 @@ fn record(
 /// already been answered, and `state` is the route that answers the other
 /// question.
 pub(crate) fn get(
-    application: &DogfoodApplication,
+    application: &ServerApplication,
     session: SessionId,
     id: FormId,
 ) -> Result<grapt_api::u3a::FormResponseDto, FormLookupApplicationError> {
@@ -101,7 +101,7 @@ pub(crate) fn get(
 /// This is the read a client polls after replying, so an answered form has to
 /// hand its answer back rather than report absence.
 pub(crate) fn state(
-    application: &DogfoodApplication,
+    application: &ServerApplication,
     session: SessionId,
     id: FormId,
 ) -> Result<grapt_api::u3a::FormStateResponseDto, FormLookupApplicationError> {
@@ -144,7 +144,7 @@ pub(crate) fn state_response(
 }
 
 pub(crate) fn create_and_notify(
-    application: &DogfoodApplication,
+    application: &ServerApplication,
     session: SessionId,
     request: grapt_api::u3a::FormCreateRequestDto,
 ) -> ApplicationFuture<grapt_api::u3a::FormResponseDto, FormCreateApplicationError> {
@@ -170,7 +170,7 @@ pub(crate) fn create_and_notify(
 }
 
 pub(crate) fn create(
-    application: &DogfoodApplication,
+    application: &ServerApplication,
     session: SessionId,
     request: grapt_api::u3a::FormCreateRequestDto,
 ) -> Result<grapt_api::u3a::FormResponseDto, FormCreateApplicationError> {
@@ -249,7 +249,7 @@ pub(crate) fn create(
 }
 
 pub(crate) fn reply(
-    application: &DogfoodApplication,
+    application: &ServerApplication,
     session: SessionId,
     id: FormId,
     request: grapt_api::u3a::FormReplyRequestDto,
@@ -305,7 +305,7 @@ pub(crate) fn reply(
 }
 
 pub(crate) fn cancel(
-    application: &DogfoodApplication,
+    application: &ServerApplication,
     session: SessionId,
     id: FormId,
 ) -> Result<NoContent, FormCancelApplicationError> {
@@ -367,7 +367,7 @@ pub(crate) fn cancel_lookup(error: FormLookupApplicationError) -> FormCancelAppl
     }
 }
 
-impl DogfoodApplication {
+impl ServerApplication {
     fn mint_form(&self) -> Result<FormId, String> {
         format!("frm_{}", self.ids.mint().as_str())
             .parse()

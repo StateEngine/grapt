@@ -44,7 +44,7 @@ pub(crate) struct PromptDriver {
     /// The writer that builds the mailbox scan indexes once, after readiness.
     scan_indexes: Option<Arc<Mutex<grapt_inbox::Inbox>>>,
     /// Post-readiness automatic resume for crash-interrupted turns.
-    auto_resume_app: Option<Arc<super::DogfoodApplication>>,
+    auto_resume_app: Option<Arc<super::ServerApplication>>,
     auto_resume_principal: Option<grapt_api::SealedPrincipal>,
     /// The hub whose window registry decides when a Session's last window is
     /// gone, and the stop applied when it is.
@@ -273,7 +273,7 @@ impl PromptDriver {
     pub(super) fn attach_scan_indexes(&mut self, inbox: Arc<Mutex<grapt_inbox::Inbox>>) {
         self.scan_indexes = Some(inbox);
     }
-    pub(super) fn attach_auto_resume_app(&mut self, application: Arc<super::DogfoodApplication>) {
+    pub(super) fn attach_auto_resume_app(&mut self, application: Arc<super::ServerApplication>) {
         self.auto_resume_app = Some(application);
     }
     pub(crate) fn attach_auto_resume_principal(&mut self, principal: grapt_api::SealedPrincipal) {

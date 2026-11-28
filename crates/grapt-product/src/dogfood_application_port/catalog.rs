@@ -18,11 +18,11 @@ use serde_json::{json, Value};
 use crate::dogfood::support::{decode, invalid, ready};
 use crate::dogfood::{
     catalogs, form_catalog, hook_import, locations, plugins, projects, selection, workspace_diff,
-    workspace_worktree, DogfoodApplication,
+    workspace_worktree, ServerApplication,
 };
 
 async fn resolve_transformed_catalog<Q: Serialize>(
-    application: DogfoodApplication,
+    application: ServerApplication,
     query: Q,
 ) -> Result<(Value, Value), CatalogApplicationError> {
     let plugins = application.plugins_runtime();
@@ -43,7 +43,7 @@ async fn resolve_transformed_catalog<Q: Serialize>(
 }
 
 pub(super) fn shell_list(
-    application: &DogfoodApplication,
+    application: &ServerApplication,
     query: ProjectCurrentLocationQueryDto,
 ) -> ApplicationFuture<ShellListResponseDto, InvalidRequestErrorDto> {
     let application = application.clone();
@@ -60,21 +60,21 @@ pub(super) fn shell_list(
 }
 
 pub(super) fn plugin_list(
-    application: &DogfoodApplication,
+    application: &ServerApplication,
     query: ProjectCurrentLocationQueryDto,
 ) -> ApplicationFuture<PluginListResponseDto, InvalidRequestErrorDto> {
     plugins::list(application, query)
 }
 
 pub(super) fn workspace_diff(
-    application: &DogfoodApplication,
+    application: &ServerApplication,
     query: ProjectCurrentLocationQueryDto,
 ) -> ApplicationFuture<WorkspaceDiffResponseDto, InvalidRequestErrorDto> {
     workspace_diff::response(Arc::clone(&application.catalog_snapshot()), query)
 }
 
 pub(super) fn workspace_worktree(
-    application: &DogfoodApplication,
+    application: &ServerApplication,
     query: ProjectCurrentLocationQueryDto,
     request: WorkspaceWorktreeRequestDto,
 ) -> ApplicationFuture<WorkspaceWorktreeResponseDto, InvalidRequestErrorDto> {
@@ -82,7 +82,7 @@ pub(super) fn workspace_worktree(
 }
 
 pub(super) fn hook_import(
-    application: &DogfoodApplication,
+    application: &ServerApplication,
     query: ProjectCurrentLocationQueryDto,
     request: HookImportRequestDto,
 ) -> ApplicationFuture<HookImportResponseDto, InvalidRequestErrorDto> {
@@ -90,7 +90,7 @@ pub(super) fn hook_import(
 }
 
 pub(super) fn question_request_list(
-    application: &DogfoodApplication,
+    application: &ServerApplication,
     query: ProjectCurrentLocationQueryDto,
 ) -> ApplicationFuture<QuestionListResponseDto, InvalidRequestErrorDto> {
     let catalog = Arc::clone(&application.catalog_snapshot());
@@ -105,28 +105,28 @@ pub(super) fn question_request_list(
 }
 
 pub(super) fn form_request_list(
-    application: &DogfoodApplication,
+    application: &ServerApplication,
     query: ProjectCurrentLocationQueryDto,
 ) -> ApplicationFuture<FormListResponseDto, InvalidRequestErrorDto> {
     form_catalog::list(application.clone(), query)
 }
 
 pub(super) fn command_inspect(
-    application: &DogfoodApplication,
+    application: &ServerApplication,
     query: ProjectCurrentLocationQueryDto,
 ) -> ApplicationFuture<CommandInspectionResponseDto, InvalidRequestErrorDto> {
     catalogs::command_response(application.clone(), query, true)
 }
 
 pub(super) fn command_list(
-    application: &DogfoodApplication,
+    application: &ServerApplication,
     query: ProjectCurrentLocationQueryDto,
 ) -> ApplicationFuture<CommandListResponseDto, InvalidRequestErrorDto> {
     catalogs::command_response(application.clone(), query, false)
 }
 
 pub(super) fn skill_list(
-    application: &DogfoodApplication,
+    application: &ServerApplication,
     query: ProjectCurrentLocationQueryDto,
 ) -> ApplicationFuture<SkillListResponseDto, InvalidRequestErrorDto> {
     catalogs::transformed_response(
@@ -138,7 +138,7 @@ pub(super) fn skill_list(
 }
 
 pub(super) fn reference_list(
-    application: &DogfoodApplication,
+    application: &ServerApplication,
     query: ProjectCurrentLocationQueryDto,
 ) -> ApplicationFuture<ReferenceListResponseDto, InvalidRequestErrorDto> {
     catalogs::transformed_response(
@@ -150,7 +150,7 @@ pub(super) fn reference_list(
 }
 
 pub(super) fn location_get(
-    application: &DogfoodApplication,
+    application: &ServerApplication,
     query: ProjectCurrentLocationQueryDto,
 ) -> ApplicationFuture<LocationInfoDto, InvalidRequestErrorDto> {
     let catalog = Arc::clone(&application.catalog_snapshot());
@@ -163,13 +163,13 @@ pub(super) fn location_get(
 }
 
 pub(super) fn project_list(
-    application: &DogfoodApplication,
+    application: &ServerApplication,
 ) -> ApplicationFuture<ProjectListResponseDto, InvalidRequestErrorDto> {
     ready(projects::list(application).map_err(invalid))
 }
 
 pub(super) fn project_current(
-    application: &DogfoodApplication,
+    application: &ServerApplication,
     query: ProjectCurrentLocationQueryDto,
 ) -> ApplicationFuture<ProjectCurrentDto, InvalidRequestErrorDto> {
     let application = application.clone();
@@ -183,7 +183,7 @@ pub(super) fn project_current(
 }
 
 pub(super) fn provider_list(
-    application: &DogfoodApplication,
+    application: &ServerApplication,
     query: ProviderLocationQueryDto,
 ) -> ApplicationFuture<ProviderListResponseDto, CatalogApplicationError> {
     let application = application.clone();
@@ -205,7 +205,7 @@ pub(super) fn provider_list(
 }
 
 pub(super) fn model_list(
-    application: &DogfoodApplication,
+    application: &ServerApplication,
     query: ModelLocationQueryDto,
 ) -> ApplicationFuture<ModelListResponseDto, CatalogApplicationError> {
     let application = application.clone();
@@ -227,7 +227,7 @@ pub(super) fn model_list(
 }
 
 pub(super) fn model_default(
-    application: &DogfoodApplication,
+    application: &ServerApplication,
     query: ModelDefaultLocationQueryDto,
 ) -> ApplicationFuture<ModelDefaultResponseDto, CatalogApplicationError> {
     let application = application.clone();
@@ -251,7 +251,7 @@ pub(super) fn model_default(
 }
 
 pub(super) fn agent_list(
-    application: &DogfoodApplication,
+    application: &ServerApplication,
     query: AgentLocationQueryDto,
 ) -> ApplicationFuture<AgentListResponseDto, InvalidRequestErrorDto> {
     let plugins = application.plugins_runtime();

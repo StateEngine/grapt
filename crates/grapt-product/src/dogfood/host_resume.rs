@@ -3,7 +3,7 @@ use super::host_control::refusal;
 use super::*;
 use grapt_api::u3a::{HostNoticeBindingDto, NativeMailResumeRequestDto};
 
-impl DogfoodApplication {
+impl ServerApplication {
     pub(super) fn resume_host_native_mail(
         &self,
         session: &SessionId,

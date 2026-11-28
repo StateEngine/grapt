@@ -1,7 +1,7 @@
 //! Volatile application construction; the persistent constructor remains unchanged.
 use super::*;
 
-impl DogfoodApplication {
+impl ServerApplication {
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn open_ephemeral(
         service_root: &Path,
@@ -13,7 +13,7 @@ impl DogfoodApplication {
         limits: ProductionProviderLimits,
         hub: Arc<DogfoodEventHub>,
         plugins: Arc<plugins::PluginRuntime>,
-    ) -> Result<(Arc<Self>, prompt_driver::PromptDriver), DogfoodRefusal> {
+    ) -> Result<(Arc<Self>, prompt_driver::PromptDriver), ServerRefusal> {
         Self::open_production_mode(
             service_root,
             store,

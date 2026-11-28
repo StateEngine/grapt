@@ -14,7 +14,7 @@ pub(super) fn rendered_row() {
     RENDERED_ROWS.with(|rows| rows.set(rows.get() + 1));
 }
 
-impl DogfoodApplication {
+impl ServerApplication {
     pub(super) fn assistant_json(
         &self,
         session: &SessionId,
@@ -23,7 +23,6 @@ impl DogfoodApplication {
         self.assistant_json_with_tools(session, message, None, false)
     }
 
-    #[expect(clippy::too_many_lines, reason = "legacy")]
     pub(super) fn assistant_json_with_tools(
         &self,
         session: &SessionId,
@@ -61,76 +60,7 @@ impl DogfoodApplication {
             );
         let request_metadata = super::metadata_bound::bounded(request_metadata);
         let request_metadata = format!(",\"metadata\":{request_metadata}");
-        let mut content = Vec::new();
-        if let Some(items) = &message.content {
-            for held in items.items() {
-                if matches!(held.item.kind(), grapt_types::ContentKind::Opaque) {
-                    continue;
-                }
-                let durable_text = self.read_artifact(held.item.payload())?;
-                if let grapt_types::ContentKind::Tool { call } = held.item.kind() {
-                    let individual;
-                    let projection = match projections.and_then(|projections| projections.get(call))
-                    {
-                        Some(projection) => projection.as_ref().map_err(Clone::clone)?,
-                        None => {
-                            individual = continuation::tool_projection(
-                                &self.inbox,
-                                self.executor.artifacts(),
-                                session,
-                                call,
-                            )?;
-                            &individual
-                        }
-                    };
-                    let tool_created_ms = held
-                        .committed
-                        .as_ref()
-                        .map(|position| position.created_ms)
-                        .ok_or_else(|| format!("tool {call} has no durable commit position"))?;
-                    let call =
-                        serde_json::to_string(call.as_str()).map_err(|error| error.to_string())?;
-                    let name = serde_json::to_string(&projection.name)
-                        .map_err(|error| error.to_string())?;
-                    let state = tool_state_json(
-                        projection,
-                        self.executor.artifacts(),
-                        message.terminal.is_some(),
-                    )?;
-                    content.push(format!(
-                        "{{\"type\":\"tool\",\"id\":{call},\"name\":{name},\"state\":{state},\"time\":{{\"created\":{tool_created_ms}}}}}"
-                    ));
-                    continue;
-                }
-                let public_text = public_content(&durable_text);
-                let public_truncated = public_text.len() < durable_text.len();
-                let kind = match held.item.kind() {
-                    grapt_types::ContentKind::Text => "text",
-                    grapt_types::ContentKind::Reasoning => "reasoning",
-                    grapt_types::ContentKind::Tool { .. } => {
-                        return Err("tool projection did not take the typed tool path".to_owned());
-                    }
-                    grapt_types::ContentKind::Opaque => {
-                        return Err("opaque content reached text projection".into())
-                    }
-                };
-                let text = serde_json::to_string(public_text).map_err(|error| error.to_string())?;
-                let capture = match held.disposition {
-                    grapt_types::CaptureDisposition::Complete => "complete",
-                    grapt_types::CaptureDisposition::TruncatedAtBoundary { .. } => "truncated",
-                };
-                let state = serde_json::to_string(&json!({
-                    "durableCapture": capture,
-                    "durableBytes": durable_text.len(),
-                    "publicProjection": if public_truncated { "truncated" } else { "complete" },
-                    "publicBoundBytes": PUBLIC_CONTENT_BYTES,
-                }))
-                .map_err(|error| error.to_string())?;
-                content.push(format!(
-                    "{{\"type\":\"{kind}\",\"text\":{text},\"state\":{state}}}"
-                ));
-            }
-        }
+        let content = self.render_assistant_content(session, message, projections)?;
         let (finish, error) = public_terminal(&message.terminal);
 
         let id =
@@ -179,6 +109,85 @@ impl DogfoodApplication {
             "{{\"type\":\"assistant\",\"id\":{id},\"time\":{{\"created\":{created_ms}.0{completed}}},\"agent\":{agent},\"model\":{model},\"content\":[{}],\"observedUsage\":{observed_usage}{request_metadata}{finish}{tokens}{error}}}",
             content.join(","),
         ))
+    }
+
+    fn render_assistant_content(
+        &self,
+        session: &SessionId,
+        message: &AssistantMessage,
+        projections: Option<&continuation::ToolProjections>,
+    ) -> Result<Vec<String>, String> {
+        let mut content = Vec::new();
+        let Some(items) = &message.content else {
+            return Ok(content);
+        };
+        for held in items.items() {
+            if matches!(held.item.kind(), grapt_types::ContentKind::Opaque) {
+                continue;
+            }
+            let durable_text = self.read_artifact(held.item.payload())?;
+            if let grapt_types::ContentKind::Tool { call } = held.item.kind() {
+                let individual;
+                let projection = match projections.and_then(|projections| projections.get(call)) {
+                    Some(projection) => projection.as_ref().map_err(Clone::clone)?,
+                    None => {
+                        individual = continuation::tool_projection(
+                            &self.inbox,
+                            self.executor.artifacts(),
+                            session,
+                            call,
+                        )?;
+                        &individual
+                    }
+                };
+                let tool_created_ms = held
+                    .committed
+                    .as_ref()
+                    .map(|position| position.created_ms)
+                    .ok_or_else(|| format!("tool {call} has no durable commit position"))?;
+                let call =
+                    serde_json::to_string(call.as_str()).map_err(|error| error.to_string())?;
+                let name =
+                    serde_json::to_string(&projection.name).map_err(|error| error.to_string())?;
+                let state = tool_state_json(
+                    projection,
+                    self.executor.artifacts(),
+                    message.terminal.is_some(),
+                )?;
+                content.push(format!(
+                    "{{\"type\":\"tool\",\"id\":{call},\"name\":{name},\"state\":{state},\"time\":{{\"created\":{tool_created_ms}}}}}"
+                ));
+                continue;
+            }
+            let public_text = public_content(&durable_text);
+            let public_truncated = public_text.len() < durable_text.len();
+            let kind = match held.item.kind() {
+                grapt_types::ContentKind::Text => "text",
+                grapt_types::ContentKind::Reasoning => "reasoning",
+                grapt_types::ContentKind::Tool { .. } => {
+                    return Err("tool projection did not take the typed tool path".to_owned());
+                }
+                grapt_types::ContentKind::Opaque => {
+                    return Err("opaque content reached text projection".into())
+                }
+            };
+            let text = serde_json::to_string(public_text).map_err(|error| error.to_string())?;
+            let capture = match held.disposition {
+                grapt_types::CaptureDisposition::Complete => "complete",
+                grapt_types::CaptureDisposition::TruncatedAtBoundary { .. } => "truncated",
+            };
+            let state = serde_json::to_string(&json!({
+                "durableCapture": capture,
+                "durableBytes": durable_text.len(),
+                "publicProjection": if public_truncated { "truncated" } else { "complete" },
+                "publicBoundBytes": PUBLIC_CONTENT_BYTES,
+            }))
+            .map_err(|error| error.to_string())?;
+            content.push(format!(
+                "{{\"type\":\"{kind}\",\"text\":{text},\"state\":{state}}}"
+            ));
+        }
+        Ok(content)
     }
 }
 

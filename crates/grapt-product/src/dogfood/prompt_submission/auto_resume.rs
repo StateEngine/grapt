@@ -15,7 +15,7 @@ pub(in crate::dogfood) enum AutoResumeAdmission {
     Superseded(&'static str),
 }
 
-impl DogfoodApplication {
+impl ServerApplication {
     #[allow(
         clippy::too_many_arguments,
         reason = "typed auto-resume admission coordinates"
@@ -112,7 +112,7 @@ impl DogfoodApplication {
 /// atomically verifies no newer human input arrived while admitting the
 /// deterministic synthetic resume prompt.
 pub(in crate::dogfood) async fn drive(
-    application: Arc<DogfoodApplication>,
+    application: Arc<ServerApplication>,
     principal: SealedPrincipal,
 ) {
     let mut cursor = String::new();
@@ -146,7 +146,7 @@ pub(in crate::dogfood) async fn drive(
 }
 
 fn settle_drive_outcome(
-    application: &DogfoodApplication,
+    application: &ServerApplication,
     row: &PendingRow,
     attempt: u32,
     state: ResumeState,
@@ -179,7 +179,7 @@ fn settle_drive_outcome(
 }
 
 async fn drive_one(
-    application: &Arc<DogfoodApplication>,
+    application: &Arc<ServerApplication>,
     principal: &SealedPrincipal,
     row: PendingRow,
 ) {
@@ -267,7 +267,7 @@ enum ClaimOutcome {
 }
 
 fn claim_next_attempt(
-    application: &DogfoodApplication,
+    application: &ServerApplication,
     store: &mut EventStore,
     session: &SessionId,
     current: &StoredRow,
@@ -306,7 +306,7 @@ fn claim_next_attempt(
 }
 
 fn claim_row(
-    application: &DogfoodApplication,
+    application: &ServerApplication,
     store: &mut EventStore,
     row: &PendingRow,
 ) -> Result<ClaimOutcome, String> {

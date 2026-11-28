@@ -215,7 +215,7 @@ fn ineligible_reason(
     Ok(None)
 }
 
-/// Atomic pre-admission guard called under `DogfoodApplication::lock_inbox()`
+/// Atomic pre-admission guard called under `ServerApplication::lock_inbox()`
 /// right before `admit_synthetic`, preventing a race with a concurrent user
 /// prompt or newly-active execution.
 pub(in crate::dogfood) fn verify_before_admission(

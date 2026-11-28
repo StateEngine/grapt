@@ -1,5 +1,5 @@
 //! Run a whole durable projection on one private snapshot off async workers.
-use super::{DogfoodApplication, Inbox};
+use super::{Inbox, ServerApplication};
 use grapt_api::u3a::ApplicationFuture;
 use grapt_store::read_pool::ReadPool;
 use std::sync::{Arc, Mutex};
@@ -173,7 +173,7 @@ pub(crate) fn discard(inbox: Arc<Mutex<Inbox>>) {
     }
 }
 
-impl DogfoodApplication {
+impl ServerApplication {
     pub(crate) fn read_projection<T: Send + 'static, E: Send + 'static>(
         &self,
         project: impl FnOnce(&Self) -> Result<T, E> + Send + 'static,
@@ -247,7 +247,7 @@ impl DogfoodApplication {
     }
 }
 
-impl DogfoodApplication {
+impl ServerApplication {
     pub(crate) fn read_session(
         &self,
         session: grapt_types::SessionId,

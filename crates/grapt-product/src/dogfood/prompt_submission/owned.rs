@@ -1,7 +1,7 @@
 //! Shared service-owned execution and terminal publication for admitted work.
 use super::*;
 
-impl DogfoodApplication {
+impl ServerApplication {
     pub(in crate::dogfood) async fn execute_owned_prompt(
         &self,
         request: ExecutionRequest,

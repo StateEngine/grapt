@@ -1,6 +1,6 @@
 //! Background terminals belong to the existing service-owned prompt future.
 
-use super::{backend_result::ExecutionFailure, subagent, DogfoodApplication};
+use super::{backend_result::ExecutionFailure, subagent, ServerApplication};
 use grapt_subagent::{
     OperationStatus, SubagentCancelReason, SubagentMode, SubagentService, SubagentTerminal,
 };
@@ -8,7 +8,7 @@ use grapt_types::{ExecutionId, SessionId, SubagentOperationId};
 use tokio::sync::watch;
 
 pub(super) struct BackgroundChild {
-    application: DogfoodApplication,
+    application: ServerApplication,
     operation: SubagentOperationId,
     child: SessionId,
     admitted_seq: u64,
@@ -20,7 +20,7 @@ pub(super) struct BackgroundChild {
 
 impl BackgroundChild {
     pub(super) fn for_prompt(
-        application: &DogfoodApplication,
+        application: &ServerApplication,
         child: &SessionId,
         admitted_seq: u64,
         cancellation: watch::Receiver<bool>,
@@ -53,7 +53,7 @@ impl BackgroundChild {
     }
 
     pub(super) fn for_execution(
-        application: &DogfoodApplication,
+        application: &ServerApplication,
         child: &SessionId,
         admitted_seq: u64,
         execution: &ExecutionId,
@@ -69,7 +69,7 @@ impl BackgroundChild {
     /// The atomic claim already validated this new background run. Construct
     /// its drop owner before the next await can abandon the claimed operation.
     pub(super) fn for_followup(
-        application: &DogfoodApplication,
+        application: &ServerApplication,
         run: &grapt_subagent::FollowupRun,
         cancellation: watch::Receiver<bool>,
         wake_cancellation: watch::Receiver<bool>,

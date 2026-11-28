@@ -1461,7 +1461,7 @@
    "poison_recovery": "certain",
    "suggested_exempt": null,
    "test": false,
-   "guard_type": "Option<Arc<DogfoodApplication>>",
+   "guard_type": "Option<Arc<ServerApplication>>",
    "scope": "single-scope",
    "action": "needs-review",
    "reason": "Single-scope state (a session, connection or request); if confirmed as a plain value, recover by re-establishing that scope rather than swallowing a poisoned guard.",

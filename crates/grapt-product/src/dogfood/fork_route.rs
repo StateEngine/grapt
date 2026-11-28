@@ -2,7 +2,7 @@
 use super::*;
 use grapt_api::u3a::SessionForkRequestDto;
 
-impl DogfoodApplication {
+impl ServerApplication {
     pub(crate) fn fork_session_request(
         &self,
         parent: SessionId,

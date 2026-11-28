@@ -4,7 +4,7 @@ use super::*;
 const IDENTITY: &str = r#"{"scope":"project","project_id":"fixture-project","agent_id":"fixture-recipient","mail_transport_protocol":"remote-seat-mail-transport/v2"}"#;
 
 async fn create(
-    application: &Arc<DogfoodApplication>,
+    application: &Arc<ServerApplication>,
     root: &Root,
 ) -> Result<SessionId, Box<dyn std::error::Error>> {
     let body = serde_json::json!({"location":{"directory":root.0}}).to_string();
@@ -26,7 +26,7 @@ async fn create(
         .parse()?)
 }
 
-async fn delete(application: &Arc<DogfoodApplication>, session: &SessionId) -> TestResult {
+async fn delete(application: &Arc<ServerApplication>, session: &SessionId) -> TestResult {
     let response = ingress::call(
         application,
         "DELETE",
@@ -43,7 +43,7 @@ async fn delete(application: &Arc<DogfoodApplication>, session: &SessionId) -> T
 }
 
 async fn bind(
-    application: &Arc<DogfoodApplication>,
+    application: &Arc<ServerApplication>,
     session: &SessionId,
     ordinal: usize,
 ) -> TestResult {
@@ -63,7 +63,7 @@ async fn bind(
 }
 
 async fn bind_owner(
-    application: &Arc<DogfoodApplication>,
+    application: &Arc<ServerApplication>,
     session: &SessionId,
     ordinal: usize,
 ) -> TestResult {

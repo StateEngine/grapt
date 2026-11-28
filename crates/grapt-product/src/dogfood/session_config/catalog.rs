@@ -1,6 +1,6 @@
 //! One Session selection for MCP inspection, resources and operator actions.
 use super::{registry_key, revision, sources, CatalogEnvironment, CatalogSources};
-use crate::dogfood::{context, locations, DogfoodApplication};
+use crate::dogfood::{context, locations, ServerApplication};
 use grapt_api::u3a::ProjectCurrentLocationQueryDto;
 use grapt_types::SessionId;
 use std::path::Path;
@@ -16,7 +16,7 @@ pub(in crate::dogfood) struct Selection {
 
 impl Selection {
     /// A response that awaited transport startup must not report an old binding.
-    pub fn validate_current(&self, application: &DogfoodApplication) -> Result<(), String> {
+    pub fn validate_current(&self, application: &ServerApplication) -> Result<(), String> {
         if let Some(session) = &self.session {
             context::session_record(application, session)
                 .map_err(|_| "MCP catalog Session ended")?;
@@ -29,7 +29,7 @@ impl Selection {
 }
 
 pub(in crate::dogfood) async fn select(
-    application: &DogfoodApplication,
+    application: &ServerApplication,
     query: &ProjectCurrentLocationQueryDto,
 ) -> Result<Selection, String> {
     let roots_revision = application.mcp.roots_revision()?;

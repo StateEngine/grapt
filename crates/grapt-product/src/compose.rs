@@ -2,8 +2,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use grapt_api::{
-    CaptureApplicationPort, DogfoodApplicationPort, DogfoodEventHub, PreparedApiHost,
-    TokioDeadlineDriver,
+    ApplicationPort, CaptureApplicationPort, DogfoodEventHub, PreparedApiHost, TokioDeadlineDriver,
 };
 use grapt_service::{AuthenticatedHealthProbe, HealthExpectation, ServiceController};
 use grapt_store::SystemClock;
@@ -25,7 +24,7 @@ use crate::startup::Admission;
 mod composition;
 mod endpoint;
 mod setup;
-pub(crate) use composition::DogfoodComposition;
+pub(crate) use composition::ServerComposition;
 mod driver;
 pub(crate) use driver::ServiceDriver;
 pub(crate) mod ephemeral;
@@ -170,7 +169,7 @@ async fn run_ready_with_dogfood(
     config: ServiceConfig,
     credential: Credential,
     probe_secret: String,
-    dogfood: DogfoodComposition,
+    dogfood: ServerComposition,
     handover: Admission,
     lifetime: Lifetime,
 ) -> Result<LaunchReceipt, ProductRefusal> {
@@ -214,7 +213,7 @@ async fn run_ready_on_listener_inner(
     credential: Credential,
     probe_secret: String,
     listener: grapt_location::BoundListener,
-    mut dogfood: Option<DogfoodComposition>,
+    mut dogfood: Option<ServerComposition>,
     (handover, lifetime): (Admission, Lifetime),
 ) -> Result<LaunchReceipt, ProductRefusal> {
     let pid = ProcessId::new(std::process::id())

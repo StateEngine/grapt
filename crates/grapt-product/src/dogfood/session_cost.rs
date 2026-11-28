@@ -1,5 +1,5 @@
 //! Session cost is a bounded read projection; no estimated bill is persisted.
-use super::{DogfoodApplication, SessionId};
+use super::{ServerApplication, SessionId};
 use crate::{cache_accounting::CostTruth, usage_accounting::pricing};
 use grapt_session::history::{accounting::AccountingSnapshot, SessionHistoryStore};
 use grapt_types::MoneyUsd;
@@ -14,7 +14,7 @@ fn wire(amount: Option<MoneyUsd>, status: &str) -> Map<String, Value> {
 }
 
 pub(crate) fn project(
-    application: &DogfoodApplication,
+    application: &ServerApplication,
     snapshot: Option<&AccountingSnapshot>,
     metrics_complete: bool,
 ) -> Map<String, Value> {
@@ -35,7 +35,7 @@ pub(crate) fn project(
 }
 
 pub(crate) fn accounting(
-    application: &DogfoodApplication,
+    application: &ServerApplication,
     session: &SessionId,
 ) -> Result<AccountingSnapshot, String> {
     if let Some(pool) = &application.readers {
@@ -63,7 +63,7 @@ pub(crate) fn accounting(
 }
 
 fn estimate(
-    application: &DogfoodApplication,
+    application: &ServerApplication,
     snapshot: &AccountingSnapshot,
 ) -> Result<Map<String, Value>, String> {
     let Some(inventory) = &application.catalog_snapshot().inventory else {

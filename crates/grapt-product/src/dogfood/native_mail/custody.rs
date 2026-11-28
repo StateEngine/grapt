@@ -44,7 +44,7 @@ pub(in crate::dogfood) struct NativeMailOwners {
     service_root: std::path::PathBuf,
     owners: Mutex<BTreeMap<SessionId, Arc<Owner>>>,
     changed: Arc<Notify>,
-    wake_application: std::sync::OnceLock<std::sync::Weak<super::super::DogfoodApplication>>,
+    wake_application: std::sync::OnceLock<std::sync::Weak<super::super::ServerApplication>>,
     wake_cursor: Mutex<Option<SessionId>>,
     wake_capacity_waiting: AtomicBool,
     retirement_cleanup_failed: AtomicBool,

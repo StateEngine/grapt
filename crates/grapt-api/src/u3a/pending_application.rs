@@ -1,6 +1,6 @@
 //! The first successful connection installs the application exactly once.
 use super::{
-    CaptureApplicationPort, DogfoodApplicationPort, DogfoodEventHub, DogfoodRouteRegistrationError,
+    ApplicationPort, CaptureApplicationPort, DogfoodEventHub, DogfoodRouteRegistrationError,
 };
 use crate::{ApiRefusal, ApiRouterBuilder, RouteMethod, RoutePath};
 use axum::{body::Body, http::Request};
@@ -10,7 +10,7 @@ use std::sync::{Arc, OnceLock};
 pub struct ApplicationSlot(OnceLock<ApplicationPorts>);
 
 struct ApplicationPorts {
-    application: Arc<dyn DogfoodApplicationPort>,
+    application: Arc<dyn ApplicationPort>,
     capture: Arc<dyn CaptureApplicationPort>,
 }
 
@@ -25,7 +25,7 @@ impl std::fmt::Debug for ApplicationSlot {
 
 impl ApplicationSlot {
     pub fn ready(
-        application: Arc<dyn DogfoodApplicationPort>,
+        application: Arc<dyn ApplicationPort>,
         capture: Arc<dyn CaptureApplicationPort>,
     ) -> Self {
         Self(OnceLock::from(ApplicationPorts {
@@ -35,7 +35,7 @@ impl ApplicationSlot {
     }
     pub fn install(
         &self,
-        application: Arc<dyn DogfoodApplicationPort>,
+        application: Arc<dyn ApplicationPort>,
         capture: Arc<dyn CaptureApplicationPort>,
     ) -> Result<(), &'static str> {
         self.0
@@ -46,7 +46,7 @@ impl ApplicationSlot {
             .map_err(|_| "application already installed")
     }
 
-    pub fn application(&self) -> Option<Arc<dyn DogfoodApplicationPort>> {
+    pub fn application(&self) -> Option<Arc<dyn ApplicationPort>> {
         self.0.get().map(|ports| Arc::clone(&ports.application))
     }
 }
@@ -158,7 +158,7 @@ pub(super) struct RouteState {
 }
 
 pub(super) enum ApplicationBinding {
-    Fixed(Arc<dyn DogfoodApplicationPort>),
+    Fixed(Arc<dyn ApplicationPort>),
     Pending(
         Arc<super::ApplicationSlot>,
         Option<Arc<dyn super::IntegrationApplicationPort>>,

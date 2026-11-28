@@ -105,8 +105,8 @@ mod session_context;
 pub use session_context::*;
 
 pub use application::{
-    ApplicationFuture, ApplicationRequest, ApplicationUnavailable, ApplicationUnavailableError,
-    CaptureApplicationPort, CatalogApplicationError, DogfoodApplicationPort,
+    ApplicationFuture, ApplicationPort, ApplicationRequest, ApplicationUnavailable,
+    ApplicationUnavailableError, CaptureApplicationPort, CatalogApplicationError,
     FormCancelApplicationError, FormCreateApplicationError, FormLookupApplicationError,
     FormReplyApplicationError, MessageListView, PermissionApplicationError,
     SessionActiveApplicationError, SessionCompactApplicationError, SessionEditApplicationPort,

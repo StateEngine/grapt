@@ -20,11 +20,11 @@ use grapt_types::{MessageId, SessionId, SessionLaunch};
 
 use crate::dogfood::support::{active_read_failure, invalid, ready};
 use crate::dogfood::{
-    context, history, list, sandbox_worktree_config, selection, session_title, DogfoodApplication,
+    context, history, list, sandbox_worktree_config, selection, session_title, ServerApplication,
 };
 
 pub(super) fn session_rename(
-    application: &DogfoodApplication,
+    application: &ServerApplication,
     session_id: WireId<SessionId>,
     request: SessionRenameRequestDto,
 ) -> ApplicationFuture<NoContent, SessionLookupApplicationError> {
@@ -36,7 +36,7 @@ pub(super) fn session_rename(
 }
 
 pub(super) fn session_agent_select(
-    application: &DogfoodApplication,
+    application: &ServerApplication,
     session_id: WireId<SessionId>,
     request: SessionAgentSelectDto,
 ) -> ApplicationFuture<NoContent, SessionLookupApplicationError> {
@@ -48,7 +48,7 @@ pub(super) fn session_agent_select(
 }
 
 pub(super) fn session_model_select(
-    application: &DogfoodApplication,
+    application: &ServerApplication,
     session_id: WireId<SessionId>,
     request: SessionModelSelectDto,
 ) -> ApplicationFuture<NoContent, SessionLookupApplicationError> {
@@ -60,14 +60,14 @@ pub(super) fn session_model_select(
 }
 
 pub(super) fn session_preset_get(
-    application: &DogfoodApplication,
+    application: &ServerApplication,
     session_id: WireId<SessionId>,
 ) -> ApplicationFuture<SessionPresetResponseDto, SessionLookupApplicationError> {
     ready(selection::preset_get(application, session_id.into_inner()))
 }
 
 pub(super) fn session_preset_select(
-    application: &DogfoodApplication,
+    application: &ServerApplication,
     session_id: WireId<SessionId>,
     request: SessionPresetSelectDto,
 ) -> ApplicationFuture<NoContent, SessionLookupApplicationError> {
@@ -79,7 +79,7 @@ pub(super) fn session_preset_select(
 }
 
 pub(super) fn session_subagent_model_get(
-    application: &DogfoodApplication,
+    application: &ServerApplication,
     session_id: WireId<SessionId>,
 ) -> ApplicationFuture<SessionSubagentModelResponseDto, SessionLookupApplicationError> {
     ready(selection::subagent_get(
@@ -89,7 +89,7 @@ pub(super) fn session_subagent_model_get(
 }
 
 pub(super) fn session_subagent_model_set(
-    application: &DogfoodApplication,
+    application: &ServerApplication,
     session_id: WireId<SessionId>,
     request: Option<SessionModelSelectDto>,
 ) -> ApplicationFuture<NoContent, SessionLookupApplicationError> {
@@ -101,14 +101,14 @@ pub(super) fn session_subagent_model_set(
 }
 
 pub(super) fn session_pending_list(
-    application: &DogfoodApplication,
+    application: &ServerApplication,
     session_id: WireId<SessionId>,
 ) -> ApplicationFuture<SessionPendingListResponseDto, SessionLookupApplicationError> {
     ready(application.pending_list(session_id))
 }
 
 pub(super) fn session_capability_put(
-    application: &DogfoodApplication,
+    application: &ServerApplication,
     principal: SealedPrincipal,
     session_id: WireId<SessionId>,
     request: SessionCapabilityPutDto,
@@ -122,21 +122,21 @@ pub(super) fn session_capability_put(
 }
 
 pub(super) fn instruction_entry_list(
-    application: &DogfoodApplication,
+    application: &ServerApplication,
     session_id: WireId<SessionId>,
 ) -> ApplicationFuture<InstructionEntryListDto, SessionLookupApplicationError> {
     ready(context::entries(application, session_id.into_inner()))
 }
 
 pub(super) fn instruction_inspect(
-    application: &DogfoodApplication,
+    application: &ServerApplication,
     session_id: WireId<SessionId>,
 ) -> ApplicationFuture<InstructionInspectionDto, SessionLookupApplicationError> {
     ready(context::inspect(application, session_id.into_inner()))
 }
 
 pub(super) fn instruction_entry_put(
-    application: &DogfoodApplication,
+    application: &ServerApplication,
     session_id: WireId<SessionId>,
     key: InstructionEntryKeyDto,
     request: InstructionEntryPutDto,
@@ -150,7 +150,7 @@ pub(super) fn instruction_entry_put(
 }
 
 pub(super) fn instruction_entry_remove(
-    application: &DogfoodApplication,
+    application: &ServerApplication,
     session_id: WireId<SessionId>,
     key: InstructionEntryKeyDto,
 ) -> ApplicationFuture<NoContent, SessionLookupApplicationError> {
@@ -158,7 +158,7 @@ pub(super) fn instruction_entry_remove(
 }
 
 pub(super) fn session_list(
-    application: &DogfoodApplication,
+    application: &ServerApplication,
     query: SessionListQueryDto,
 ) -> ApplicationFuture<SessionsResponseDto, SessionListApplicationError> {
     application.read_projection(
@@ -168,7 +168,7 @@ pub(super) fn session_list(
 }
 
 pub(super) fn session_active(
-    application: &DogfoodApplication,
+    application: &ServerApplication,
 ) -> ApplicationFuture<SessionActiveResponseDto, SessionActiveApplicationError> {
     application.read_projection(
         // Both the projection's own refusal and the reader wait go through one
@@ -183,7 +183,7 @@ pub(super) fn session_active(
 }
 
 pub(super) fn session_create(
-    application: &DogfoodApplication,
+    application: &ServerApplication,
     request: SessionCreateRequestDto,
     launch: Option<SessionLaunch>,
 ) -> ApplicationFuture<SessionResponseDto, InvalidRequestErrorDto> {
@@ -209,21 +209,21 @@ pub(super) fn session_create(
 }
 
 pub(super) fn session_get(
-    application: &DogfoodApplication,
+    application: &ServerApplication,
     session_id: WireId<SessionId>,
 ) -> ApplicationFuture<SessionResponseDto, SessionLookupApplicationError> {
     application.read_session(session_id.into_inner())
 }
 
 pub(super) fn session_sandbox_worktree_config_get(
-    application: &DogfoodApplication,
+    application: &ServerApplication,
     session: WireId<SessionId>,
 ) -> ApplicationFuture<SandboxWorktreeConfigResponseDto, SessionLookupApplicationError> {
     sandbox_worktree_config::get(application.clone(), session.into_inner())
 }
 
 pub(super) fn session_sandbox_worktree_config_create(
-    application: &DogfoodApplication,
+    application: &ServerApplication,
     session: WireId<SessionId>,
     request: SandboxWorktreeConfigRequestDto,
 ) -> ApplicationFuture<SandboxWorktreeConfigResponseDto, SessionLookupApplicationError> {
@@ -231,7 +231,7 @@ pub(super) fn session_sandbox_worktree_config_create(
 }
 
 pub(super) fn session_delete(
-    application: &DogfoodApplication,
+    application: &ServerApplication,
     session_id: WireId<SessionId>,
 ) -> ApplicationFuture<NoContent, SessionLookupApplicationError> {
     ready(context::delete_session(
@@ -241,7 +241,7 @@ pub(super) fn session_delete(
 }
 
 pub(super) fn side_question(
-    application: &DogfoodApplication,
+    application: &ServerApplication,
     session_id: WireId<SessionId>,
     request: SideQuestionRequestDto,
 ) -> ApplicationFuture<SideQuestionResponseDto, SessionLookupApplicationError> {
@@ -249,7 +249,7 @@ pub(super) fn side_question(
 }
 
 pub(super) fn session_fork(
-    application: &DogfoodApplication,
+    application: &ServerApplication,
     session_id: WireId<SessionId>,
     request: SessionForkRequestDto,
 ) -> ApplicationFuture<SessionResponseDto, SessionLookupApplicationError> {
@@ -257,7 +257,7 @@ pub(super) fn session_fork(
 }
 
 pub(super) fn session_messages_view(
-    application: &DogfoodApplication,
+    application: &ServerApplication,
     session_id: WireId<SessionId>,
     query: MessageListQueryDto,
     view: MessageListView,
@@ -271,7 +271,7 @@ pub(super) fn session_messages_view(
 }
 
 pub(super) fn session_message(
-    application: &DogfoodApplication,
+    application: &ServerApplication,
     session_id: WireId<SessionId>,
     message_id: WireId<MessageId>,
 ) -> ApplicationFuture<SessionMessageResponseDto, SessionMessageApplicationError> {
@@ -288,7 +288,7 @@ pub(super) fn session_message(
 }
 
 pub(super) fn session_prompt(
-    application: &DogfoodApplication,
+    application: &ServerApplication,
     principal: SealedPrincipal,
     session_id: WireId<SessionId>,
     request: PromptRequestDto,
@@ -297,7 +297,7 @@ pub(super) fn session_prompt(
 }
 
 pub(super) fn session_interrupt(
-    application: &DogfoodApplication,
+    application: &ServerApplication,
     principal: SealedPrincipal,
     session_id: WireId<SessionId>,
     request: InterruptRequestDto,
@@ -306,7 +306,7 @@ pub(super) fn session_interrupt(
 }
 
 pub(super) fn session_compact(
-    application: &DogfoodApplication,
+    application: &ServerApplication,
     session_id: WireId<SessionId>,
     request: CompactRequestDto,
 ) -> ApplicationFuture<CompactResponseDto, SessionCompactApplicationError> {

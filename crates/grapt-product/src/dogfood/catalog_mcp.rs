@@ -1,5 +1,5 @@
 //! Server prompt provenance is appended after the plugin/file command fold.
-use super::{connections, mcp::content::prompt_command_name, session_config, DogfoodApplication};
+use super::{connections, mcp::content::prompt_command_name, session_config, ServerApplication};
 use grapt_mcp::content::CatalogKind;
 use serde_json::{json, Value};
 use std::collections::{BTreeMap, BTreeSet};
@@ -14,7 +14,7 @@ pub(super) fn scope(registry_key: &str) -> String {
 
 #[expect(clippy::too_many_lines, reason = "legacy")]
 pub(super) async fn append(
-    application: &DogfoodApplication,
+    application: &ServerApplication,
     selection: &session_config::catalog::Selection,
     rows: &mut Vec<Value>,
     mut warnings: Vec<String>,

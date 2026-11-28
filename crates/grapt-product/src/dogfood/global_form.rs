@@ -2,7 +2,7 @@
 use super::{
     form, locations,
     support::{decode, invalid},
-    DogfoodApplication,
+    ServerApplication,
 };
 use grapt_api::u3a::*;
 use grapt_form::{
@@ -18,7 +18,7 @@ use serde_json::json;
 mod tests;
 
 async fn record(
-    app: &DogfoodApplication,
+    app: &ServerApplication,
     id: &FormId,
     query: &ProjectCurrentLocationQueryDto,
 ) -> Result<GlobalFormRecord, FormLookupApplicationError> {
@@ -48,7 +48,7 @@ pub(crate) fn projected_info(mut record: GlobalFormRecord) -> serde_json::Value 
 }
 
 pub(crate) async fn get(
-    app: DogfoodApplication,
+    app: ServerApplication,
     id: FormId,
     query: ProjectCurrentLocationQueryDto,
 ) -> Result<FormResponseDto, FormLookupApplicationError> {
@@ -63,7 +63,7 @@ pub(crate) async fn get(
 }
 
 pub(crate) async fn state(
-    app: DogfoodApplication,
+    app: ServerApplication,
     id: FormId,
     query: ProjectCurrentLocationQueryDto,
 ) -> Result<FormStateResponseDto, FormLookupApplicationError> {
@@ -72,7 +72,7 @@ pub(crate) async fn state(
 }
 
 pub(crate) async fn reply(
-    app: DogfoodApplication,
+    app: ServerApplication,
     id: FormId,
     query: ProjectCurrentLocationQueryDto,
     request: FormReplyRequestDto,
@@ -117,7 +117,7 @@ pub(crate) async fn reply(
 }
 
 pub(crate) async fn cancel(
-    app: DogfoodApplication,
+    app: ServerApplication,
     id: FormId,
     query: ProjectCurrentLocationQueryDto,
 ) -> Result<NoContent, FormCancelApplicationError> {

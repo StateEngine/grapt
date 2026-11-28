@@ -245,7 +245,7 @@ async fn one_request_reads_past_a_page_of_skipped_rows() -> Result<(), String> {
 }
 
 async fn served(
-    app: &Arc<crate::dogfood::DogfoodApplication>,
+    app: &Arc<crate::dogfood::ServerApplication>,
     path: &str,
 ) -> Result<String, String> {
     let host = grapt_api::PreparedApiHost::new(

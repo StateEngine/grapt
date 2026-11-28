@@ -1,12 +1,12 @@
 //! Session information projection, separate from application composition.
 use super::usage::{aggregate_usage, CompleteUsage};
-use super::{session_cost, usage::usage_float, DogfoodApplication, SessionMetrics};
+use super::{session_cost, usage::usage_float, ServerApplication, SessionMetrics};
 use grapt_types::SessionId;
 use serde_json::{json, Value};
 
 /// Keep metadata storage failures typed while refusing structurally incomplete carry.
 pub(crate) fn lookup(
-    application: &DogfoodApplication,
+    application: &ServerApplication,
     session: &SessionId,
 ) -> Result<grapt_api::u3a::SessionResponseDto, grapt_api::u3a::SessionLookupApplicationError> {
     use grapt_api::u3a::SessionLookupApplicationError as Error;
@@ -28,7 +28,7 @@ pub(crate) fn lookup(
         .map_err(|_| Error::Unavailable)
 }
 
-impl DogfoodApplication {
+impl ServerApplication {
     pub(crate) fn active_session_response(
         &self,
     ) -> Result<grapt_api::u3a::SessionActiveResponseDto, String> {

@@ -32,7 +32,7 @@ struct Sections {
     execution: SessionSnapshotExecutionDto,
 }
 
-impl grapt_api::u3a::SessionSnapshotApplicationPort for DogfoodApplication {
+impl grapt_api::u3a::SessionSnapshotApplicationPort for ServerApplication {
     fn session_snapshot(
         &self,
         principal: SealedPrincipal,
@@ -62,7 +62,7 @@ impl grapt_api::u3a::SessionSnapshotApplicationPort for DogfoodApplication {
 
 /// Every durable section, on the pinned lease, at the position read first.
 fn sections(
-    application: &DogfoodApplication,
+    application: &ServerApplication,
     principal: &SealedPrincipal,
     session: &SessionId,
 ) -> Result<Sections, Error> {

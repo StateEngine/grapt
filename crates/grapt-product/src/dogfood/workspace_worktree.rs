@@ -11,10 +11,10 @@ use serde_json::json;
 
 use super::execution::WorkspaceIdleReservation;
 use super::support::{bounded_message, decode, invalid, static_dto};
-use super::{locations, DogfoodApplication};
+use super::{locations, ServerApplication};
 
 pub(crate) fn response(
-    application: DogfoodApplication,
+    application: ServerApplication,
     query: ProjectCurrentLocationQueryDto,
     request: WorkspaceWorktreeRequestDto,
 ) -> ApplicationFuture<WorkspaceWorktreeResponseDto, InvalidRequestErrorDto> {
@@ -58,7 +58,7 @@ pub(crate) fn response(
 
 // None selects the already validated source cwd; only create returns a new cwd.
 async fn operate(
-    application: &DogfoodApplication,
+    application: &ServerApplication,
     source: &Path,
     request: WorkspaceWorktreeRequestDto,
 ) -> Result<(Option<PathBuf>, &'static str), OperationFailure> {
@@ -189,7 +189,7 @@ fn repository_root(directory: &Path) -> Result<PathBuf, String> {
 }
 
 fn reserve_affected(
-    application: &DogfoodApplication,
+    application: &ServerApplication,
     source: &Path,
     checkout: &Path,
 ) -> Result<Vec<WorkspaceIdleReservation>, String> {

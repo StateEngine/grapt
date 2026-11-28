@@ -3,7 +3,7 @@ use super::*;
 use grapt_types::ExecutionId;
 
 pub(in crate::dogfood) fn child_output_for_execution(
-    application: &DogfoodApplication,
+    application: &ServerApplication,
     child: &SessionId,
     execution: &ExecutionId,
 ) -> Result<String, ChildOutcome> {
@@ -90,7 +90,7 @@ pub(in crate::dogfood) fn child_output_for_execution(
 /// the closed, public capacity diagnosis so the parent can resume that child.
 /// An initial child accepts one prompt; the admission floor excludes old rows.
 pub(super) fn capacity_failure_after_admission(
-    application: &DogfoodApplication,
+    application: &ServerApplication,
     child: &SessionId,
     admitted_seq: u64,
 ) -> Result<Option<String>, ChildOutcome> {

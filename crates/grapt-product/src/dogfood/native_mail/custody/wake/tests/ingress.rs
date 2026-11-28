@@ -4,7 +4,7 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 
 pub(super) async fn bind_capability(
-    application: &Arc<DogfoodApplication>,
+    application: &Arc<ServerApplication>,
     session: &SessionId,
 ) -> TestResult {
     let response = call(
@@ -22,7 +22,7 @@ pub(super) async fn bind_capability(
 }
 
 pub(super) async fn call(
-    application: &Arc<DogfoodApplication>,
+    application: &Arc<ServerApplication>,
     method: &str,
     path: &str,
     body: &str,
@@ -41,7 +41,7 @@ pub(super) async fn call(
         close_grace_ms: None,
         max_inflight_streams: None,
     };
-    let composition = crate::compose::DogfoodComposition::ready(
+    let composition = crate::compose::ServerComposition::ready(
         application.clone(),
         application.clone(),
         application.hub.clone(),

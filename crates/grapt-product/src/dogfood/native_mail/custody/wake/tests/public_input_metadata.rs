@@ -4,7 +4,7 @@ use serde_json::{json, Value};
 
 type Prepared = (
     Root,
-    Arc<DogfoodApplication>,
+    Arc<ServerApplication>,
     SessionId,
     grapt_types::MessageId,
     u64,
@@ -53,7 +53,7 @@ async fn prepare(metadata: &Value) -> Result<Prepared, Box<dyn std::error::Error
 }
 
 fn durable_data(
-    application: &DogfoodApplication,
+    application: &ServerApplication,
     session: &SessionId,
     seq: u64,
 ) -> Result<String, Box<dyn std::error::Error>> {

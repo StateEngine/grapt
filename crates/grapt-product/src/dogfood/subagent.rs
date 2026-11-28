@@ -8,7 +8,7 @@ use std::sync::{Arc, Mutex};
 use grapt_subagent::{SubagentMode, SubagentService};
 use grapt_types::{AgentId, ClockAuthority, SessionId, SubagentOperationId, ToolCallId};
 
-use super::DogfoodApplication;
+use super::ServerApplication;
 
 mod admission;
 mod placement;
@@ -61,7 +61,7 @@ impl ChildOutcome {
 /// application owns the executor that owns this, and an `Arc` here would be a
 /// cycle that never drops. A seam that cannot be upgraded means the application
 /// is gone, which is a refusal, never a silently skipped child.
-pub(super) type ChildSeam = Arc<std::sync::OnceLock<std::sync::Weak<DogfoodApplication>>>;
+pub(super) type ChildSeam = Arc<std::sync::OnceLock<std::sync::Weak<ServerApplication>>>;
 
 /// One admitted subagent operation and the Session it will run in.
 #[derive(Debug, Clone)]
@@ -75,7 +75,7 @@ pub(super) struct AdmittedChild {
 
 /// Admit a foreground child in its parent's directory.
 pub(super) fn admit(
-    application: &DogfoodApplication,
+    application: &ServerApplication,
     parent: &SessionId,
     agent: &AgentId,
     description: &str,
@@ -103,7 +103,7 @@ struct ChildRouting {
 /// Explicit Subagent model selection wins, then the named definition's model,
 /// then the parent's target. Unusable selections refuse before creating a child.
 fn child_routing(
-    application: &DogfoodApplication,
+    application: &ServerApplication,
     parent: &SessionId,
     parent_model: Option<&serde_json::Value>,
     definition_model: Option<&serde_json::Value>,
@@ -163,7 +163,7 @@ pub(super) fn adopt_runtime(
 /// Only the initial tool submission claims the operation. Its answer and
 /// cancellation are bound to the execution minted by that caller.
 pub(super) fn claim_single_prompt(
-    application: &DogfoodApplication,
+    application: &ServerApplication,
     session: &SessionId,
 ) -> Result<(), String> {
     use grapt_types::CasOutcome;
@@ -203,7 +203,7 @@ pub(super) fn claim_single_prompt(
 /// Human input uses the normal Session inbox once initial custody is claimed.
 /// Never let it race the tool for the operation's first execution.
 pub(super) fn allow_human_prompt(
-    application: &DogfoodApplication,
+    application: &ServerApplication,
     session: &SessionId,
 ) -> Result<(), String> {
     use grapt_subagent::OperationStatus;
@@ -237,7 +237,7 @@ pub(super) fn allow_human_prompt(
 /// Resolve a direct child for interruption, cancelling an unclaimed prompt
 /// while the same inbox guard excludes `claim_single_prompt`.
 pub(super) fn interrupt_target_context(
-    application: &DogfoodApplication,
+    application: &ServerApplication,
     parent: &SessionId,
     child: &SessionId,
 ) -> Result<grapt_subagent::ChildOperationContext, String> {
@@ -293,7 +293,7 @@ pub(super) fn interrupt_target_context(
 /// an operation that stayed `admitted` after its child had already run would be
 /// replayed by a later reconcile as work still to do.
 pub(super) fn settle(
-    application: &DogfoodApplication,
+    application: &ServerApplication,
     operation: &SubagentOperationId,
     terminal: &grapt_subagent::SubagentTerminal,
 ) -> Result<(), String> {
@@ -331,7 +331,7 @@ pub(super) fn settle(
 /// durable output and the tool's terminal artifact are two different facts with
 /// two different owners, so each captures its own.
 pub(super) fn completed(
-    application: &DogfoodApplication,
+    application: &ServerApplication,
     answer: &str,
 ) -> Result<grapt_subagent::SubagentTerminal, String> {
     use grapt_artifact::{ArtifactKind, ArtifactStore, CaptureBound, Sensitivity};
@@ -392,7 +392,7 @@ const CHILD_POLL: std::time::Duration = std::time::Duration::from_millis(20);
 /// alone misses fast runs and may already describe a human followup instead.
 /// Capacity remains a synchronous refusal; no inbox lock survives a poll.
 pub(super) async fn run_child(
-    application: &DogfoodApplication,
+    application: &ServerApplication,
     principal: grapt_api::SealedPrincipal,
     parent: &SessionId,
     child: &SessionId,
@@ -420,7 +420,7 @@ pub(super) async fn run_child(
 /// it is decided rather than re-derived from a message later.
 #[allow(clippy::too_many_arguments)]
 async fn waited(
-    application: &DogfoodApplication,
+    application: &ServerApplication,
     principal: grapt_api::SealedPrincipal,
     parent: &SessionId,
     child: &SessionId,
@@ -505,7 +505,7 @@ async fn waited(
 
 /// Cancellation follows the original execution, never a later human followup.
 struct CancelChildOnDrop<'a> {
-    application: &'a DogfoodApplication,
+    application: &'a ServerApplication,
     child: &'a SessionId,
     execution: &'a grapt_types::ExecutionId,
     armed: std::cell::Cell<bool>,
@@ -537,7 +537,7 @@ impl Drop for CancelChildOnDrop<'_> {
 ///
 /// The tool and active-session API read the same live execution registry.
 fn live_execution(
-    application: &DogfoodApplication,
+    application: &ServerApplication,
     session: &SessionId,
 ) -> Option<grapt_types::ExecutionId> {
     application
@@ -551,7 +551,7 @@ fn live_execution(
 /// Poll without blocking the async tool on an inbox owned by the child.
 /// A closed observation is final even if a successor is already active.
 fn settled_execution(
-    application: &DogfoodApplication,
+    application: &ServerApplication,
     child: &SessionId,
     execution: &grapt_types::ExecutionId,
 ) -> Result<bool, String> {
@@ -568,7 +568,7 @@ fn settled_execution(
 /// accumulates while watching: a result assembled from live frames would be a
 /// second transcript that could disagree with the one the child actually has.
 pub(super) fn child_output(
-    application: &DogfoodApplication,
+    application: &ServerApplication,
     child: &SessionId,
     admitted_seq: u64,
     mode: SubagentMode,

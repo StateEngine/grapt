@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use grapt_api::u3a::DogfoodApplicationPort as _;
+use grapt_api::u3a::ApplicationPort as _;
 use grapt_types::IdAuthority as _;
 use serde_json::{json, Value};
 
@@ -15,7 +15,7 @@ const MAX_SHELL_EXPANSIONS: usize = 16;
 impl ProductPluginHost {
     pub(crate) fn session_command(
         &self,
-        application: &Arc<super::super::DogfoodApplication>,
+        application: &Arc<super::super::ServerApplication>,
         authorized: &Authorized<'_>,
         payload: &Value,
     ) -> Result<Value, String> {
@@ -191,7 +191,7 @@ fn evaluate_arguments(template: &str, input: &str) -> String {
 }
 
 async fn evaluate_shell(
-    application: &super::super::DogfoodApplication,
+    application: &super::super::ServerApplication,
     session: grapt_types::SessionId,
     message: grapt_types::MessageId,
     principal: grapt_api::SealedPrincipal,

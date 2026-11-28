@@ -69,11 +69,11 @@ pub(super) enum KeySource {
 pub(super) enum Prepared {
     Pending,
     First(
-        Arc<DogfoodApplication>,
+        Arc<ServerApplication>,
         super::super::prompt_driver::PromptDriver,
     ),
     Update(
-        Arc<DogfoodApplication>,
+        Arc<ServerApplication>,
         super::super::provider_generation::Generation,
     ),
 }

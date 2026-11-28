@@ -13,7 +13,7 @@ use grapt_types::{CaptureDisposition, CompactionSummary, CompactionTrigger, Sess
 use serde_json::json;
 
 use super::continuation::recent::MAX_RECENT_ID_BYTES;
-use super::DogfoodApplication;
+use super::ServerApplication;
 
 pub(super) struct ReportedCompaction {
     recent: serde_json::Value,
@@ -35,7 +35,7 @@ pub(super) struct CommittedCompaction {
     data: Option<String>,
 }
 
-impl DogfoodApplication {
+impl ServerApplication {
     /// One selected descriptor, independent of the number of prior compactions.
     pub(super) fn compaction_at(
         &self,
@@ -224,7 +224,7 @@ impl PageRecent {
 
     pub(super) fn through(
         &mut self,
-        application: &DogfoodApplication,
+        application: &ServerApplication,
         session: &SessionId,
         through: u64,
     ) -> Result<&std::collections::HashMap<String, ReportedCompaction>, String> {

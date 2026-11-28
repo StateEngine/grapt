@@ -1,7 +1,7 @@
 //! Esc stops the current owner before already-admitted human input can restart.
 use super::*;
 
-impl DogfoodApplication {
+impl ServerApplication {
     /// What any stop owes after an execution has been interrupted.
     ///
     /// An interrupted execution is not a stopped Session. A native mail signal

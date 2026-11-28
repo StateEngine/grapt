@@ -1,6 +1,6 @@
 //! Real authenticated capability ingress and the unmodified driver select.
 use super::*;
-use crate::dogfood::{production::tests::projection_target, DogfoodApplication};
+use crate::dogfood::{production::tests::projection_target, ServerApplication};
 use grapt_store::EventStore;
 use grapt_types::{DeterministicAuthorities, SessionId};
 #[path = "ingress.rs"]
@@ -62,7 +62,7 @@ impl Drop for Root {
 
 type Fixture = (
     Root,
-    Arc<DogfoodApplication>,
+    Arc<ServerApplication>,
     crate::dogfood::prompt_driver::PromptDriver,
     SessionId,
 );

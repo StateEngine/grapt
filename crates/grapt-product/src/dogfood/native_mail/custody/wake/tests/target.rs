@@ -4,7 +4,7 @@ use super::*;
 const IDENTITY: &str = r#"{"scope":"project","project_id":"secode","agent_id":"coder","mail_transport_protocol":"remote-seat-mail-transport/v2"}"#;
 
 async fn another(
-    application: &Arc<DogfoodApplication>,
+    application: &Arc<ServerApplication>,
     root: &Root,
     identity: &str,
 ) -> Result<SessionId, Box<dyn std::error::Error>> {

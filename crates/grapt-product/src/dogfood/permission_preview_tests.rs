@@ -13,7 +13,7 @@ fn permission_preview_survives_polling_and_store_reopen() -> TestResult {
     let preview = serde_json::json!({"type":"shell","command":"pwd", "cwd":"/repo", "shell":"/bin/sh", "truncated":false});
     let metadata = serde_json::json!({"tool":"shell", "request":{"approvalPreview":preview}});
     ask(&app, &owner, &session, 980, Some(&metadata))?;
-    let check = |app: &DogfoodApplication| -> TestResult {
+    let check = |app: &ServerApplication| -> TestResult {
         let page =
             polling_page(app, &owner, Some(&session)).map_err(|error| format!("{error:?}"))?;
         assert_eq!(page.requests.len(), 1);

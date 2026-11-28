@@ -5,7 +5,7 @@ use grapt_artifact::{ArtifactKind, ArtifactStore, CaptureBound, Sensitivity};
 use grapt_types::{ArtifactRef, CaptureDisposition};
 
 pub(super) fn capture(
-    app: &DogfoodApplication,
+    app: &ServerApplication,
     request: &Value,
 ) -> Result<Vec<ArtifactRef>, String> {
     let files = request

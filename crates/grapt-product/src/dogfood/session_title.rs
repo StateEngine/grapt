@@ -4,7 +4,7 @@ use super::*;
 use grapt_session::title::{name_from_first_prompt, rename_session, TitleError};
 use grapt_session::SessionStoreError;
 
-pub(crate) fn automatic(application: &DogfoodApplication, session: &SessionId) {
+pub(crate) fn automatic(application: &ServerApplication, session: &SessionId) {
     let authorities = DeterministicAuthorities::new(&*application.clock, &*application.ids);
     let mut held = application.lock_inbox();
     let result = name_from_first_prompt(held.store_mut(), &authorities, session);
@@ -23,7 +23,7 @@ pub(crate) fn automatic(application: &DogfoodApplication, session: &SessionId) {
 }
 
 pub(crate) fn manual(
-    application: &DogfoodApplication,
+    application: &ServerApplication,
     session: SessionId,
     request: grapt_api::u3a::SessionRenameRequestDto,
 ) -> Result<NoContent, SessionLookupApplicationError> {
@@ -48,7 +48,7 @@ pub(crate) fn manual(
     Ok(NoContent)
 }
 
-fn announce(application: &DogfoodApplication, session: &SessionId) {
+fn announce(application: &ServerApplication, session: &SessionId) {
     use grapt_api::u3a::{DogfoodEvent, FiniteF64, LiveEvent, SessionTitleChangedData, WireId};
     let event = (|| -> Result<_, String> {
         let id = WireId::parse(format!("evt_{}", application.ids.mint().as_str()))

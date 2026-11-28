@@ -34,7 +34,7 @@ pub(crate) fn validate_agent(
 }
 
 pub(crate) fn resolve_model(
-    application: &DogfoodApplication,
+    application: &ServerApplication,
     model: &Value,
 ) -> Result<Value, String> {
     model_inventory::resolve(&application.catalog_snapshot(), model)
@@ -51,7 +51,7 @@ fn failure(error: SelectionError, session: &SessionId) -> SessionLookupApplicati
 }
 
 pub(crate) fn subagent_get(
-    application: &DogfoodApplication,
+    application: &ServerApplication,
     session: SessionId,
 ) -> Result<grapt_api::u3a::SessionSubagentModelResponseDto, SessionLookupApplicationError> {
     let held = application.lock_inbox();
@@ -62,7 +62,7 @@ pub(crate) fn subagent_get(
 }
 
 pub(crate) fn subagent_set(
-    application: &DogfoodApplication,
+    application: &ServerApplication,
     session: SessionId,
     request: Option<grapt_api::u3a::SessionModelSelectDto>,
 ) -> Result<NoContent, SessionLookupApplicationError> {
@@ -91,7 +91,7 @@ pub(crate) fn subagent_set(
 }
 
 pub(crate) fn agent(
-    application: &DogfoodApplication,
+    application: &ServerApplication,
     session: SessionId,
     request: grapt_api::u3a::SessionAgentSelectDto,
 ) -> Result<NoContent, SessionLookupApplicationError> {
@@ -136,7 +136,7 @@ pub(crate) fn agent(
 /// Read selection and effective trust from the same resolver used at execution
 /// admission. Release each store read before looking up an ancestor.
 pub(crate) fn preset_get(
-    application: &DogfoodApplication,
+    application: &ServerApplication,
     session: SessionId,
 ) -> Result<grapt_api::u3a::SessionPresetResponseDto, SessionLookupApplicationError> {
     let authorities = DeterministicAuthorities::new(&*application.clock, &*application.ids);
@@ -159,7 +159,7 @@ pub(crate) fn preset_get(
 /// rather than leaving the user believing a trust level is in force. The
 /// selection has no live event: clients read it from the Session.
 pub(crate) fn preset(
-    application: &DogfoodApplication,
+    application: &ServerApplication,
     session: SessionId,
     request: grapt_api::u3a::SessionPresetSelectDto,
 ) -> Result<NoContent, SessionLookupApplicationError> {
@@ -186,7 +186,7 @@ pub(crate) fn preset(
 }
 
 pub(crate) fn model(
-    application: &DogfoodApplication,
+    application: &ServerApplication,
     session: SessionId,
     request: grapt_api::u3a::SessionModelSelectDto,
 ) -> Result<NoContent, SessionLookupApplicationError> {

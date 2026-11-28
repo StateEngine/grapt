@@ -586,7 +586,6 @@
     },
     "crates/grapt-product/src/dogfood/history_json.rs": {
       "fn tool_state_json :: clippy::too_many_lines": 1,
-      "impl DogfoodApplication::fn assistant_json_with_tools :: clippy::too_many_lines": 1,
       "mod recovery_tests::fn sr_h02_public_failure_detail_is_actionable_bounded_and_selective :: clippy::too_many_lines": 1
     },
     "crates/grapt-product/src/dogfood/history_notices.rs": {
@@ -594,9 +593,6 @@
     },
     "crates/grapt-product/src/dogfood/hooks/mod.rs": {
       "impl HookRuntime::fn dispatch :: clippy::too_many_lines": 1
-    },
-    "crates/grapt-product/src/dogfood/host_control.rs": {
-      "impl DogfoodApplication::fn offer_host_notice :: clippy::too_many_lines": 1
     },
     "crates/grapt-product/src/dogfood/input_events.rs": {
       "fn project :: clippy::too_many_lines": 1
@@ -636,9 +632,6 @@
     "crates/grapt-product/src/dogfood/mcp/tests/producer_version.rs": {
       "fn a_keyed_send_replays_once_only_with_advertised_support_and_retains_its_receipt :: clippy::too_many_lines": 1,
       "fn location_churn_keeps_a_bound_producer_and_unsent_routes_recover_safely :: clippy::too_many_lines": 1
-    },
-    "crates/grapt-product/src/dogfood/mod.rs": {
-      "impl DogfoodApplication::fn open_production_mode :: clippy::too_many_lines": 1
     },
     "crates/grapt-product/src/dogfood/native_mail.rs": {
       "struct NativeMailContext :: clippy::struct_excessive_bools": 1
@@ -707,10 +700,6 @@
     "crates/grapt-product/src/dogfood/prompt_driver.rs": {
       "impl PromptDriver::fn run_until_shutdown :: clippy::cognitive_complexity": 1,
       "impl PromptDriver::fn run_until_shutdown :: clippy::too_many_lines": 1
-    },
-    "crates/grapt-product/src/dogfood/prompt_submission.rs": {
-      "impl DogfoodApplication::fn schedule_admitted :: clippy::too_many_lines": 1,
-      "impl DogfoodApplication::fn submit_prompt_run :: clippy::too_many_lines": 1
     },
     "crates/grapt-product/src/dogfood/session_config/tests.rs": {
       "fn authenticated_config_binding_survives_restart_without_cross_seat_inheritance :: clippy::too_many_lines": 1,

@@ -28,7 +28,7 @@ fn long_session(
 ) -> Result<
     (
         Fixture,
-        Arc<crate::dogfood::DogfoodApplication>,
+        Arc<crate::dogfood::ServerApplication>,
         crate::dogfood::prompt_driver::PromptDriver,
     ),
     String,
@@ -75,7 +75,7 @@ fn long_session(
 /// Commit one assistant text Step, `answer {step}`, to the application's
 /// Session.
 fn text_step(
-    app: &crate::dogfood::DogfoodApplication,
+    app: &crate::dogfood::ServerApplication,
     fixture: &Fixture,
     step: u32,
 ) -> Result<(), String> {
@@ -133,7 +133,7 @@ fn text_step(
 
 /// One page of the Session's history, and how many rows the read rendered.
 fn page(
-    app: &crate::dogfood::DogfoodApplication,
+    app: &crate::dogfood::ServerApplication,
     session: &SessionId,
     query: serde_json::Value,
 ) -> Result<(serde_json::Value, usize), String> {

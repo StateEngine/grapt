@@ -47,7 +47,7 @@ use grapt_types::{
 use serde_json::Value;
 
 use super::support::{decode, ready};
-use super::DogfoodApplication;
+use super::ServerApplication;
 
 #[cfg(test)]
 #[path = "capture_agent_mail_tests.rs"]
@@ -56,7 +56,7 @@ mod agent_mail_tests;
 #[path = "capture_permission_tests.rs"]
 mod permission_tests;
 
-impl CaptureApplicationPort for DogfoodApplication {
+impl CaptureApplicationPort for ServerApplication {
     fn capture_page(
         &self,
         _principal: SealedPrincipal,

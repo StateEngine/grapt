@@ -4,7 +4,7 @@ use grapt_types::{EventId, EventVersion};
 use serde_json::{json, Value};
 
 fn source_call(
-    application: &DogfoodApplication,
+    application: &ServerApplication,
     parent: &SessionId,
 ) -> Result<ToolCallId, Box<dyn std::error::Error>> {
     let mut held = application.lock_inbox();
@@ -208,7 +208,7 @@ fn historical_operation_mail_does_not_become_a_child_receipt_or_wake() -> TestRe
     Ok(())
 }
 
-fn present_historical_result(app: &DogfoodApplication, parent: &SessionId) -> TestResult {
+fn present_historical_result(app: &ServerApplication, parent: &SessionId) -> TestResult {
     use grapt_store::{AttemptRecordCeiling, ReserveInput, TerminalCoordinates};
     use grapt_types::{
         BoundedAttemptId, BoundedSessionId, DurableAttemptReceipt, PhysicalAttemptId,

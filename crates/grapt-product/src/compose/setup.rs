@@ -63,7 +63,7 @@ fn run_owned(
             matches!(host_mode, HostMode::External),
         )
     };
-    let composition = DogfoodComposition {
+    let composition = ServerComposition {
         ports: owner.ports(),
         integrations: Some(owner),
         installer: Some(Arc::new(crate::dogfood::claude_plugins::Installer::new(

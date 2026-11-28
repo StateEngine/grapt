@@ -84,7 +84,7 @@ pub(crate) fn record(
     Ok(())
 }
 
-pub(crate) async fn observe(application: &DogfoodApplication, session: &SessionId, root: &Path) {
+pub(crate) async fn observe(application: &ServerApplication, session: &SessionId, root: &Path) {
     let result = inspect(root, Path::new(&application.catalog_snapshot().directory)).await;
     let warning = match result {
         Ok(Some(_)) => Some(WARNING.to_owned()),
@@ -160,7 +160,7 @@ fn response(
 }
 
 pub(crate) fn get(
-    application: DogfoodApplication,
+    application: ServerApplication,
     session: SessionId,
 ) -> ApplicationFuture<
     grapt_api::u3a::SandboxWorktreeConfigResponseDto,
@@ -215,7 +215,7 @@ async fn create_missing(
 }
 
 pub(crate) fn create(
-    application: DogfoodApplication,
+    application: ServerApplication,
     session: SessionId,
     request: grapt_api::u3a::SandboxWorktreeConfigRequestDto,
 ) -> ApplicationFuture<

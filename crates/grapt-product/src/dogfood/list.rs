@@ -16,7 +16,7 @@ use serde_json::{json, Value};
 use std::sync::Arc;
 
 use super::support::{decode, invalid};
-use super::DogfoodApplication;
+use super::ServerApplication;
 
 const MAX_CURSOR_BYTES: usize = 16_384;
 const DEFAULT_ROWS: usize = 50;
@@ -251,7 +251,7 @@ fn degraded_reason(row: &grapt_session::SessionListDegradedRow) -> String {
 }
 
 pub(crate) fn response(
-    application: &DogfoodApplication,
+    application: &ServerApplication,
     query: SessionListQueryDto,
 ) -> Result<SessionsResponseDto, SessionListApplicationError> {
     let request = PageRequest::parse(query)?;

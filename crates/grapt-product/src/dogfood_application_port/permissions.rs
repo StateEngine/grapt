@@ -9,17 +9,17 @@ use grapt_api::SealedPrincipal;
 use grapt_types::{PermissionId, ProjectId, SessionId};
 
 use crate::dogfood::support::ready;
-use crate::dogfood::{permission, DogfoodApplication};
+use crate::dogfood::{permission, ServerApplication};
 
 pub(super) fn sandbox_grant_list(
-    application: &DogfoodApplication,
+    application: &ServerApplication,
     session: WireId<SessionId>,
 ) -> ApplicationFuture<SandboxGrantListResponseDto, PermissionApplicationError> {
     ready(permission::grants::list(application, session.into_inner()))
 }
 
 pub(super) fn sandbox_grant_revoke(
-    application: &DogfoodApplication,
+    application: &ServerApplication,
     principal: SealedPrincipal,
     session: WireId<SessionId>,
     request: SandboxGrantDto,
@@ -28,7 +28,7 @@ pub(super) fn sandbox_grant_revoke(
 }
 
 pub(super) fn permission_saved_list(
-    application: &DogfoodApplication,
+    application: &ServerApplication,
     project: Option<WireId<ProjectId>>,
 ) -> ApplicationFuture<PermissionSavedListResponseDto, InvalidRequestErrorDto> {
     ready(permission::saved(
@@ -38,7 +38,7 @@ pub(super) fn permission_saved_list(
 }
 
 pub(super) fn permission_list(
-    application: &DogfoodApplication,
+    application: &ServerApplication,
     principal: SealedPrincipal,
     query: PermissionLocationQueryDto,
 ) -> ApplicationFuture<PermissionGlobalListResponseDto, PermissionApplicationError> {
@@ -46,7 +46,7 @@ pub(super) fn permission_list(
 }
 
 pub(super) fn session_permission_create(
-    application: &DogfoodApplication,
+    application: &ServerApplication,
     principal: SealedPrincipal,
     session_id: WireId<SessionId>,
     request: PermissionCreateRequestDto,
@@ -55,7 +55,7 @@ pub(super) fn session_permission_create(
 }
 
 pub(super) fn session_permission_list(
-    application: &DogfoodApplication,
+    application: &ServerApplication,
     principal: SealedPrincipal,
     session_id: WireId<SessionId>,
 ) -> ApplicationFuture<PermissionListResponseDto, PermissionApplicationError> {
@@ -63,7 +63,7 @@ pub(super) fn session_permission_list(
 }
 
 pub(super) fn session_permission_get(
-    application: &DogfoodApplication,
+    application: &ServerApplication,
     principal: SealedPrincipal,
     session_id: WireId<SessionId>,
     request_id: WireId<PermissionId>,
@@ -72,7 +72,7 @@ pub(super) fn session_permission_get(
 }
 
 pub(super) fn session_permission_reply(
-    application: &DogfoodApplication,
+    application: &ServerApplication,
     principal: SealedPrincipal,
     session_id: WireId<SessionId>,
     request_id: WireId<PermissionId>,
