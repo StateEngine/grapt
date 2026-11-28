@@ -272,9 +272,11 @@ fn dispatch_normalized<C: Connection>(
             if let Some(note) = client.commands_status() {
                 lines.push(note.into());
             }
-            lines.push("Tab completes a command. Enter runs built-ins and MCP prompts; workspace templates open a preview.".into());
-            lines.push("Workspace preview: Esc back to the staged draft, edit, then Enter to send. Reloading workspace commands…".into());
-            client.refresh_commands();
+            if !client.commands_refused() {
+                lines.push("Tab completes a command. Enter runs built-ins and MCP prompts; workspace templates open a preview.".into());
+                lines.push("Workspace preview: Esc back to the staged draft, edit, then Enter to send. Reloading workspace commands…".into());
+                client.refresh_commands();
+            }
             done.consume = true;
             done.view = Some(View::Text(lines));
         }
