@@ -394,7 +394,7 @@ async fn embedded_client_mode(
     let launched = launched(ready, child, child_pid, limits).await;
     match (launched, startup) {
         (Ok(client), Some(startup)) => {
-            startup.into_log(&profile);
+            client.keep_stderr(startup.into_log(&profile));
             Ok(client)
         }
         (Err((class, message)), Some(startup)) => Err((class, startup.refusal(message).await)),

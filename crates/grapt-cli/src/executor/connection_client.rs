@@ -215,10 +215,22 @@ fn product_binary() -> Result<PathBuf, Failure> {
     Ok(product)
 }
 
+/// How long shutdown waits, after the child is gone, for its last stderr to
+/// reach the server log.
+const STDERR_FINISH: Duration = Duration::from_secs(2);
+
 pub(super) async fn close(client: &ApiClient) -> Result<(), Failure> {
-    let Some(mut child) = client.take_embedded_child().await else {
+    let Some(child) = client.take_embedded_child().await else {
         return Ok(());
     };
+    let closed = stop(child).await;
+    if let Some(forward) = client.take_stderr() {
+        forward.finish(STDERR_FINISH).await;
+    }
+    closed
+}
+
+async fn stop(mut child: tokio::process::Child) -> Result<(), Failure> {
     drop(child.stdin.take());
     if let Ok(Ok(status)) = tokio::time::timeout(Duration::from_secs(15), child.wait()).await {
         if status.success() {

@@ -66,15 +66,49 @@ async fn a_ready_service_keeps_startup_and_later_output_in_its_log() -> TestResu
     {
         tokio::task::yield_now().await;
     }
-    startup.into_log(&profile);
+    let forward = startup.into_log(&profile);
     writer.write_all(b"serving\n").await?;
+    // The child exits; shutdown finishes the forward before this command does.
     drop(writer);
-    let log = crate::server_log::path(&profile);
-    for _ in 0..1000 {
-        if std::fs::read_to_string(&log)? == "starting\nserving\n" {
-            return Ok(());
-        }
-        tokio::task::yield_now().await;
-    }
-    Err(format!("server log holds {:?}", std::fs::read_to_string(&log)?).into())
+    forward.finish(Duration::from_secs(5)).await;
+    let log = std::fs::read_to_string(crate::server_log::path(&profile))?;
+    assert_eq!(log, "starting\nserving\n");
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_blank_tail_still_reports_the_output_it_dropped() -> TestResult {
+    let (mut writer, reader) = tokio::io::duplex(1024);
+    let startup = StartupStderr::capture(reader);
+    writer.write_all(b"the cause\n").await?;
+    writer.write_all(&vec![b' '; TAIL_BYTES]).await?;
+    drop(writer);
+    let refusal = startup.refusal("refused".into()).await;
+    assert_eq!(
+        refusal,
+        format!(
+            "refused\nservice stderr: 10 earlier bytes were not kept, and the last {TAIL_BYTES} are blank"
+        )
+    );
+    Ok(())
+}
+
+#[test]
+fn a_stalled_log_writer_never_holds_the_reader() -> TestResult {
+    let (chunks, mut pending) = channel(1);
+    let mut sink = Sink::Log { chunks, lost: 0 };
+    sink.accept(b"first");
+    // The writer takes nothing: the next chunk is counted, not waited on.
+    sink.accept(b"second");
+    assert!(matches!(sink, Sink::Log { lost: 6, .. }));
+    assert_eq!(pending.try_recv()?, (None, b"first".to_vec()));
+    sink.accept(b"third");
+    assert_eq!(
+        pending.try_recv()?,
+        (
+            Some("[6 bytes of service output were not written]\n".to_owned()),
+            b"third".to_vec()
+        )
+    );
+    Ok(())
 }
