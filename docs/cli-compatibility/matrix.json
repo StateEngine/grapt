@@ -455,13 +455,14 @@
         "flag:run:--model",
         "flag:run:--agent"
       ],
-      "class": "refused",
+      "class": "implemented",
       "typescript": "`-m/--model`, `--agent`",
-      "rust": "refused",
+      "rust": "`grapt run --model <provider/model> --agent <id> <message>` selects both atomically when it creates the Session; existing, resumed and forked Sessions refuse these flags, and no profile default changes",
       "evidence": [
-        "test:crates/grapt-cli/tests/public_seams/compatibility.rs::every_typescript_surface_outside_the_contract_is_refused_by_name"
-      ],
-      "refusal": "--agent/--model"
+        "test:crates/grapt-cli/tests/public_seams/selection.rs::startup_selection_is_atomic_and_a_catalog_refusal_admits_no_prompt",
+        "test:crates/grapt-cli/tests/public_seams/selection.rs::explicit_choices_are_new_session_only_and_bad_values_fail_before_connection",
+        "test:crates/grapt-cli/tests/public_seams/selection.rs::selected_and_default_session_creation_preserve_other_defaults"
+      ]
     },
     {
       "id": "CCM-RUN-06",
