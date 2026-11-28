@@ -1,6 +1,15 @@
 //! Attach the launcher's exact session, applying an explicit effort override once.
 use super::*;
 
+/// The saved choices a Session restores once it is selected.
+pub(super) struct SavedChoice {
+    model: Option<crate::wire::ModelRow>,
+    wanted: (
+        Option<crate::wire::AgentWireId>,
+        Option<crate::wire::ModelRow>,
+    ),
+}
+
 impl<C: Connection> Client<C> {
     /// I/O-free selection baseline shared with staged worktree attachment.
     /// Clear session-scoped caches before either caller installs target data.
@@ -108,6 +117,30 @@ impl<C: Connection> Client<C> {
             }
             saved.project.worktree = worktree;
         }
+        if override_effort {
+            if let Some(model) = &mut saved.model {
+                model.variant = None;
+            }
+        }
+        let choice = self.adopt_saved(session, saved, &bytes, directory)?;
+        if let Err(error) = self.select(session) {
+            self.model = None;
+            return Err(error);
+        }
+        self.restore_saved_model(choice);
+        Ok(())
+    }
+
+    /// Adopt a saved Session's project, catalog binding and agent, detaching
+    /// the current one; the caller selects the Session. Refused, with nothing
+    /// changed, when it is not in the launch directory.
+    pub(super) fn adopt_saved(
+        &mut self,
+        session: &SessionWireId,
+        saved: crate::wire::SessionAttachment,
+        row: &[u8],
+        directory: String,
+    ) -> Result<SavedChoice, ClientError> {
         if self.launch_project.as_ref().is_some_and(|project| {
             project.id != saved.project.id || project.worktree != saved.project.worktree
         }) {
@@ -115,7 +148,7 @@ impl<C: Connection> Client<C> {
                 what: "session in launch directory",
             });
         }
-        let row = crate::wire::decode_session(&bytes)?;
+        let row = crate::wire::decode_session(row)?;
         self.remember_session(SessionSummary {
             id: row.id,
             title: row.title,
@@ -124,13 +157,7 @@ impl<C: Connection> Client<C> {
         });
         // A failed lookup must not detach the current conversation.
         self.clear_attachment();
-        if override_effort {
-            if let Some(model) = &mut saved.model {
-                model.variant = None;
-            }
-        }
-        let wanted_agent = saved.agent.clone();
-        let wanted_model = saved.model.clone();
+        let wanted = (saved.agent.clone(), saved.model.clone());
         self.catalog_refresh.binding = Some(catalog_refresh::Binding {
             session: session.clone(),
             project: saved.project.clone(),
@@ -138,13 +165,17 @@ impl<C: Connection> Client<C> {
         });
         self.select_project(&saved.project)?;
         self.agent = saved.agent.filter(|id| self.saved_agent_offered(id));
-        if let Err(error) = self.select(session) {
-            self.model = None;
-            return Err(error);
-        }
-        // Ordinary opens can retain an unavailable model or use a default.
-        // A prepared launch requires its complete saved choice to remain offered.
-        self.model = saved.model.and_then(|model| {
+        Ok(SavedChoice {
+            model: saved.model,
+            wanted,
+        })
+    }
+
+    /// Restore a selected Session's saved model. Ordinary opens can retain an
+    /// unavailable model or use a default; a prepared launch requires its
+    /// complete saved choice to remain offered.
+    pub(super) fn restore_saved_model(&mut self, choice: SavedChoice) {
+        self.model = choice.model.and_then(|model| {
             self.models
                 .iter()
                 .find(|row| {
@@ -156,9 +187,8 @@ impl<C: Connection> Client<C> {
                 .cloned()
         });
         if self.catalog_in_background() {
-            self.remember_catalog_selection(wanted_agent, wanted_model);
+            self.remember_catalog_selection(choice.wanted.0, choice.wanted.1);
         }
-        Ok(())
     }
 
     pub(super) fn clear_attachment(&mut self) {

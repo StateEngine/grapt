@@ -7,6 +7,10 @@
 //! per kind, so at most one read of each kind is in flight. A hint that
 //! arrives meanwhile is held by its poll and starts exactly one more read
 //! after this one settles.
+//!
+//! The worker also carries one command at a time, a permission reply or a
+//! step of a Session open, in its own slot. It is sent before any waiting
+//! read, and never waits behind the operator's long requests.
 use super::{catalog::CatalogRefresh, forms};
 use crate::bridge::{Bridge, ReadPeer};
 use grapt_client::{
@@ -36,11 +40,16 @@ fn slot(read: PeriodicRead) -> usize {
     }
 }
 
-/// The worker's side: a request and an answer slot per kind.
+type Answer = Result<WireResponse, TransportError>;
+
+/// The worker's side: a request and an answer slot per kind, and one for
+/// the command.
 #[derive(Default)]
 struct Slots {
     requests: [Option<(ReadPeer, WireRequest)>; 4],
-    answers: [Option<Result<WireResponse, TransportError>>; 4],
+    answers: [Option<Answer>; 4],
+    command: Option<(ReadPeer, WireRequest)>,
+    command_answer: Option<Answer>,
     closed: bool,
 }
 
@@ -56,6 +65,7 @@ struct Ticket {
 pub(super) struct Reads {
     shared: Shared,
     in_flight: [Option<Ticket>; 4],
+    commanding: bool,
 }
 
 impl std::fmt::Debug for Reads {
@@ -63,6 +73,7 @@ impl std::fmt::Debug for Reads {
         let in_flight: Vec<_> = KINDS.iter().filter(|read| self.busy(**read)).collect();
         f.debug_struct("Reads")
             .field("in_flight", &in_flight)
+            .field("commanding", &self.commanding)
             .finish()
     }
 }
@@ -82,7 +93,41 @@ impl Reads {
         Ok(Self {
             shared,
             in_flight: Default::default(),
+            commanding: false,
         })
+    }
+
+    /// Send one command on the worker. Refused while another is in flight.
+    pub(super) fn command(
+        &mut self,
+        client: &mut Client<Bridge>,
+        request: WireRequest,
+    ) -> Result<(), ClientError> {
+        if self.commanding {
+            return Err(ClientError::NotOffered {
+                what: "A reply or Session open is already in progress.",
+            });
+        }
+        let peer = client.peer_mut().read_peer()?;
+        let mut slots = lock(&self.shared);
+        if slots.closed {
+            return Err(TransportError::Unavailable {
+                reason: "the read worker stopped".into(),
+            }
+            .into());
+        }
+        slots.command = Some((peer, request));
+        drop(slots);
+        self.shared.1.notify_one();
+        self.commanding = true;
+        Ok(())
+    }
+
+    /// The command's answer, once it has arrived.
+    pub(super) fn commanded(&mut self) -> Option<Answer> {
+        let answer = lock(&self.shared).command_answer.take();
+        self.commanding &= answer.is_none();
+        answer
     }
 
     pub(super) fn busy(&self, read: PeriodicRead) -> bool {
@@ -201,8 +246,8 @@ impl Drop for Reads {
     }
 }
 
-/// The worker: take the next filled request slot, send it, and leave the
-/// answer in that kind's answer slot.
+/// The worker: take the command, or else the next filled request slot, send
+/// it, and leave the answer in its answer slot.
 fn work(shared: &Shared, wake: &SyncSender<()>) {
     loop {
         let (index, (peer, request)) = {
@@ -211,11 +256,13 @@ fn work(shared: &Shared, wake: &SyncSender<()>) {
                 if slots.closed {
                     return;
                 }
-                let next = slots
-                    .requests
-                    .iter_mut()
-                    .enumerate()
-                    .find_map(|(index, held)| held.take().map(|job| (index, job)));
+                let next = slots.command.take().map(|job| (None, job)).or_else(|| {
+                    slots
+                        .requests
+                        .iter_mut()
+                        .enumerate()
+                        .find_map(|(index, held)| held.take().map(|job| (Some(index), job)))
+                });
                 if let Some(next) = next {
                     break next;
                 }
@@ -223,7 +270,12 @@ fn work(shared: &Shared, wake: &SyncSender<()>) {
             }
         };
         let answer = peer.call(&request);
-        lock(shared).answers[index] = Some(answer);
+        let mut slots = lock(shared);
+        match index {
+            Some(index) => slots.answers[index] = Some(answer),
+            None => slots.command_answer = Some(answer),
+        }
+        drop(slots);
         let _ = wake.try_send(());
     }
 }

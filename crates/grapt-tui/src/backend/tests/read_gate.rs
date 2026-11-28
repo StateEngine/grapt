@@ -1,4 +1,4 @@
-//! A bounded, cancellable hold of one periodic HTTP answer.
+//! A bounded, cancellable hold of one periodic or command HTTP answer.
 use grapt_client::Operation;
 use std::sync::{Condvar, Mutex};
 use std::time::Duration;
@@ -8,7 +8,7 @@ struct State {
     held: Option<Operation>,
     blocked: bool,
     allow_expired: bool,
-    calls: [usize; 4],
+    calls: [usize; 6],
 }
 #[derive(Default)]
 pub(super) struct Gate {
@@ -21,6 +21,8 @@ fn index(operation: Operation) -> Option<usize> {
         Operation::SessionList => Some(1),
         Operation::SessionFormList => Some(2),
         Operation::FormRequestList => Some(3),
+        Operation::SessionPermissionReply => Some(4),
+        Operation::SessionGet => Some(5),
         _ => None,
     }
 }

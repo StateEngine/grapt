@@ -2,6 +2,7 @@ mod ledger;
 use super::*;
 mod boundary;
 mod boundary_fixture;
+mod command_lane;
 mod periodic;
 mod read_gate;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};

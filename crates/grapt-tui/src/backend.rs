@@ -32,6 +32,7 @@ use rows::RowSync;
 mod activity;
 use activity::{selected_activity, selected_running};
 mod catalog;
+mod command_lane;
 mod setup;
 pub(super) use catalog::CatalogRefresh;
 
@@ -238,6 +239,7 @@ fn serve(
     let mut publish = true;
     let mut catalog = CatalogRefresh::default();
     let mut reads = reads::Reads::start(wake.clone())?;
+    let mut lane = command_lane::Lane::default();
     let mut family = family::Family::default();
     let mut published = tokio::time::Instant::now() - crate::FRAME_INTERVAL;
     let _ = wake.try_send(());
@@ -441,7 +443,7 @@ fn serve(
         let held = client.resume_pending();
         idle::pause(
             (updates, ui_wake, &ready),
-            backlog,
+            backlog || lane.ready(),
             [
                 startup.attached().then(|| client.recovery_wait()).flatten(),
                 (startup.attached() && !held)
@@ -459,15 +461,17 @@ fn serve(
             ],
         )?;
         // Adjacent view requests have no effects between them: attach only the
-        // newest one. Preserve ordering around submissions, replies and stops.
-        let mut batch = Vec::new();
+        // newest one. Preserve ordering around submissions, replies and stops:
+        // commands behind a reply or open wait, in the channel, for it.
+        let mut batch = lane.take_held();
         if updates.refresh_requested() {
             batch.push(updates.envelope(Command::RefreshModels));
         }
         // Commands never wait for the UI to take a view: a full chunk leaves
         // a backlog, and the next pass begins without sleeping.
-        backlog = true;
-        for _ in 0..16 {
+        let room = if lane.busy() { 0 } else { 16 };
+        backlog = room > 0;
+        for _ in 0..room {
             let Ok(command) = commands.try_recv() else {
                 backlog = false;
                 break;
@@ -481,7 +485,7 @@ fn serve(
             batch.push(command);
         }
         let mark = ledger.len();
-        for (id, command) in batch {
+        for (id, command) in lane.admit(batch) {
             // Each command's results leave their holders before the next
             // command runs, so none can replace another's.
             ledger.collect(
@@ -609,16 +613,13 @@ fn serve(
                     }
                 }
                 Command::Select(request) => {
-                    selection = Some(id);
                     navigation = None;
                     startup = crate::launch::Readiness::Manual;
                     roster = None;
-                    let result = setup::select(&mut client, &mut directory, &request.id);
-                    if matches!(&result, Err(grapt_client::ClientError::Status { operation, status: 404 })
-                        if *operation == grapt_client::contract::Operation::SessionGet.operation_id())
-                    {
-                        session_messages
-                            .push((id, crate::sessions::Message::Unavailable { id: request.id }));
+                    let lanes = (&mut client, &mut reads);
+                    let result = lane.open(lanes, &mut directory, id, &request.id);
+                    if result.is_err() {
+                        selection = Some(id);
                     }
                     result
                 }
@@ -628,9 +629,7 @@ fn serve(
                     submissions.command = Some((id, done));
                     continue;
                 }
-                Command::Reply(ask, choice) => {
-                    client.reply_permission(&ask.session_id, &ask.request_id, choice)
-                }
+                Command::Reply(ask, choice) => lane.reply(&mut client, &mut reads, &ask, choice),
                 command @ (Command::Interrupt(_)
                 | Command::InterruptAndResume(_)
                 | Command::InterruptSession(_)) => {
@@ -827,6 +826,8 @@ fn serve(
             reads.settle(&mut client, polls, tokio::time::Instant::now(), &wake);
         publish |= settled;
         status = notice.unwrap_or(status);
+        let answered = lane.settle(&mut client, &mut reads);
+        publish |= answered.apply(&mut session_messages, &mut selection, &mut status);
         if !client.catalog_pending() {
             if models_requested {
                 models = Some(client.models().to_vec());

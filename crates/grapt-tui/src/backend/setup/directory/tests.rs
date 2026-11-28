@@ -149,7 +149,8 @@ fn selecting_a_session_cancels_both_delayed_directory_success_and_refusal(
             .advance(&mut client)
             .is_none());
         assert!(client.peer_mut().pending);
-        super::super::select(&mut client, &mut directory, &session)?;
+        super::super::leave_directory(&mut client, &mut directory);
+        client.resume_session(&session)?;
         assert!(directory.is_none());
         assert!(!client.peer_mut().pending);
         let project = client.project().cloned();

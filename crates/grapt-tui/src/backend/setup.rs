@@ -70,15 +70,10 @@ pub fn retry<C: Connection>(
 }
 
 /// Explicit Session navigation owns startup even when the old read is unfinished.
-pub fn select<C: Connection>(
-    client: &mut Client<C>,
-    directory: &mut Option<Directory>,
-    session: &SessionWireId,
-) -> Result<(), ClientError> {
+pub fn leave_directory<C: Connection>(client: &mut Client<C>, directory: &mut Option<Directory>) {
     if let Some(mut previous) = directory.take() {
         previous.cancel(client);
     }
-    client.resume_session(session)
 }
 
 pub fn roster<C: Connection>(client: &Client<C>) -> Option<Vec<AgentRow>> {

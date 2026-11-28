@@ -709,13 +709,7 @@ impl<C: Connection> Client<C> {
     /// Select a session, establishing its durable baseline.
     /// Always reconcile: a previous partial history is not a durable baseline.
     pub fn select(&mut self, session: &SessionWireId) -> Result<(), ClientError> {
-        if self.selected.as_ref() != Some(session) {
-            self.cancel_mcp_catalog();
-            self.cancel_operator_request();
-            self.mcp_login = None;
-            self.mcp_approval = None;
-        }
-        self.prepare_session_selection(session)?;
+        self.enter_session(session)?;
         // A view is a prerequisite for the rest, so this one stops the open.
         self.reconcile(session)?;
         if self.rewind_uncertain.as_ref() == Some(session) {
@@ -736,6 +730,18 @@ impl<C: Connection> Client<C> {
             .refresh_selected_model(session)
             .and_then(|()| self.apply_launch_effort());
         subagent.and(forms).and(effort)
+    }
+
+    /// The I/O-free start of selecting `session`: leaving another Session
+    /// ends its operator work and session-scoped state.
+    pub(super) fn enter_session(&mut self, session: &SessionWireId) -> Result<(), ClientError> {
+        if self.selected.as_ref() != Some(session) {
+            self.cancel_mcp_catalog();
+            self.cancel_operator_request();
+            self.mcp_login = None;
+            self.mcp_approval = None;
+        }
+        self.prepare_session_selection(session)
     }
 
     /// Rebuild one session's projection from durable truth, newest first.
@@ -934,6 +940,8 @@ mod workspace_diff;
 
 mod offloop;
 pub use offloop::{PeriodicRead, PreparedRead};
+mod offloop_commands;
+pub use offloop_commands::{PreparedOpen, PreparedReply};
 mod refusal;
 mod response;
 mod snapshot;
