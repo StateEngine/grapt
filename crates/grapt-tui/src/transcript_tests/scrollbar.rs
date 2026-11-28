@@ -1,4 +1,5 @@
-use grapt_client::{Slice, SliceKind};
+use crate::backend::CommandId;
+use grapt_client::{client::HistoryMove, Slice, SliceKind};
 use ratatui::{backend::TestBackend, Terminal};
 
 // Synthetic rows, duplicated from the transcript crate's scrollbar unit tests.
@@ -17,6 +18,13 @@ fn row(text: String, kind: SliceKind, closed: bool) -> Slice {
         footer: None,
         truncated_bytes: 0,
     }
+}
+
+/// One update carrying a page move, applied as the frame loop applies it.
+fn paged(ui: &mut crate::ui::Ui, rows: Vec<Slice>, (id, movement): (CommandId, HistoryMove)) {
+    let moves = [(id, movement, true)];
+    ui.transcript_update((true, 0, rows, false), &moves);
+    ui.settle_navigation(&moves, &[]);
 }
 
 fn lines(count: usize) -> String {
@@ -58,7 +66,7 @@ fn cold_paged_thumb_drag_keeps_the_grab_under_the_pointer() -> Result<(), String
             handoff.envelope(crate::backend::Command::Models).0,
             handoff.envelope(crate::backend::Command::Models).0,
         );
-        ui.navigation.jump(grapt_client::client::HistoryMove::Older);
+        ui.navigation.jump(HistoryMove::Older);
         ui.navigation.sent(older);
         mouse::handle(
             report(MouseEventKind::Down(MouseButton::Left), bar.thumb.y),
@@ -105,28 +113,12 @@ fn cold_paged_thumb_drag_keeps_the_grab_under_the_pointer() -> Result<(), String
                 .collect(),
         );
         if page_before_release {
-            ui.transcript_update(
-                true,
-                0,
+            paged(
+                &mut ui,
                 incoming.take().ok_or("missing page")?,
-                false,
-                Some((grapt_client::client::HistoryMove::Older, true)),
+                (older, HistoryMove::Older),
             );
-            ui.navigation.complete(
-                (older, grapt_client::client::HistoryMove::Older, true),
-                &mut ui.transcript,
-            );
-            ui.transcript_update(
-                true,
-                0,
-                original.clone(),
-                false,
-                Some((grapt_client::client::HistoryMove::Cancel, true)),
-            );
-            ui.navigation.complete(
-                (cancel, grapt_client::client::HistoryMove::Cancel, true),
-                &mut ui.transcript,
-            );
+            paged(&mut ui, original.clone(), (cancel, HistoryMove::Cancel));
         }
         for target in bar.track.y..=bar.track.bottom() - bar.thumb.height {
             mouse::handle(
@@ -167,28 +159,12 @@ fn cold_paged_thumb_drag_keeps_the_grab_under_the_pointer() -> Result<(), String
             &mut ui,
         );
         if !page_before_release {
-            ui.transcript_update(
-                true,
-                0,
+            paged(
+                &mut ui,
                 incoming.take().ok_or("missing late page")?,
-                false,
-                Some((grapt_client::client::HistoryMove::Older, true)),
+                (older, HistoryMove::Older),
             );
-            ui.navigation.complete(
-                (older, grapt_client::client::HistoryMove::Older, true),
-                &mut ui.transcript,
-            );
-            ui.transcript_update(
-                true,
-                0,
-                original,
-                false,
-                Some((grapt_client::client::HistoryMove::Cancel, true)),
-            );
-            ui.navigation.complete(
-                (cancel, grapt_client::client::HistoryMove::Cancel, true),
-                &mut ui.transcript,
-            );
+            paged(&mut ui, original, (cancel, HistoryMove::Cancel));
         }
         assert_eq!(
             ui.transcript.cell_count(),

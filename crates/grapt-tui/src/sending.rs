@@ -10,7 +10,7 @@
 //! The Tab follow-up queue is a different contract: it waits for the running
 //! work to finish successfully, while text queued here is sent the moment the
 //! previous submission is confirmed, exactly as an immediate Enter would be.
-use crate::{backend::Command, keys, send, ui::Ui, Backend};
+use crate::{backend::Command, keys, ui::Ui, Backend};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use grapt_client::wire::SessionWireId;
 use std::collections::VecDeque;
@@ -228,8 +228,7 @@ pub fn enter(ui: &mut Ui, backend: &Backend, text: String) {
     match crate::send_tracked(backend, Command::Submit(text.clone())) {
         Ok(id) if prompt => {
             ui.navigation
-                .jump(grapt_client::client::HistoryMove::Latest);
-            ui.navigation.sent(id);
+                .jumped(grapt_client::client::HistoryMove::Latest, id);
             ui.recall.replace_if_unchanged(&text, "", &mut ui.composer);
             ui.sending.start(text.clone());
             ui.pending = Some(text);
@@ -312,8 +311,11 @@ pub fn advance(ui: &mut Ui, backend: &Backend) -> bool {
     let Some(text) = ui.sending.next() else {
         return false;
     };
-    match send(backend, Command::Submit(text.clone())) {
-        Ok(()) => {
+    // Only prompts are queued, and each moves the view to the newest page.
+    match crate::send_tracked(backend, Command::Submit(text.clone())) {
+        Ok(id) => {
+            ui.navigation
+                .jumped(grapt_client::client::HistoryMove::Latest, id);
             ui.sending.start(text.clone());
             ui.pending = Some(text);
             ui.status = "Submitting queued draft".into();

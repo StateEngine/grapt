@@ -2,6 +2,7 @@
 use crate::backend::tests::boundary_fixture::{until, Fixture, Result};
 use crate::backend::{Command, Outcome, Selection};
 use grapt_client::{
+    client::HistoryMove,
     wire::{PermissionReplyChoice, SessionWireId},
     Bounds, Client, ContractDouble, FramePoll, Operation,
 };
@@ -115,6 +116,21 @@ fn commands_a_quit_discards_are_settled_and_later_sends_still_work() -> Result {
             settled.id == next && matches!(&settled.outcome, Outcome::Submission(_, true, _))
         })
     })?;
+    Ok(())
+}
+
+#[test]
+fn a_prompt_that_pages_to_the_tail_keeps_the_page_move_before_it() -> Result {
+    let fixture = Fixture::ready()?;
+    held_reply(&fixture)?;
+    // Both wait behind the reply, then run in one pass and one publication.
+    let browse = fixture.command(Command::Browse(HistoryMove::Latest))?;
+    let prompt = fixture.command(Command::Submit("sent behind the page move".into()))?;
+    fixture.gate.release();
+    let update =
+        fixture.take_until(|update| update.navigation.iter().any(|(id, ..)| *id == prompt))?;
+    let ids: Vec<_> = update.navigation.iter().map(|(id, ..)| *id).collect();
+    assert_eq!(ids, [browse, prompt]);
     Ok(())
 }
 

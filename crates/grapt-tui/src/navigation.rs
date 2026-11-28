@@ -3,6 +3,21 @@ use crate::backend::CommandId;
 use grapt_client::client::HistoryMove;
 use grapt_tui_transcript::transcript::Transcript;
 
+/// A page move that ran, with the command that asked for it and whether the
+/// page changed.
+pub type Move = (CommandId, HistoryMove, bool);
+
+/// How an update's rows meet the pending page request.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Page {
+    /// A thumb grab superseded the request: the rows are not shown.
+    Obsolete,
+    /// Another command moved the page: the rows are shown at the reading
+    /// position, which only the pending request's answer may move.
+    Foreign,
+    Current,
+}
+
 #[derive(Default)]
 pub struct Navigation {
     rows: i64,
@@ -28,8 +43,18 @@ impl Navigation {
         self.superseded
     }
 
-    pub fn obsolete_page(&self, movement: Option<(HistoryMove, bool)>) -> bool {
-        self.superseded && movement.is_none_or(|(m, _)| m != HistoryMove::Cancel)
+    /// How an update's rows meet the pending request, given the page moves
+    /// it carries.
+    pub fn page(&self, moves: &[Move]) -> Page {
+        let answer = moves.iter().find(|(id, ..)| self.ticket == Some(*id));
+        if self.superseded && answer.is_none_or(|(_, movement, _)| *movement != HistoryMove::Cancel)
+        {
+            Page::Obsolete
+        } else if self.ticket.is_some() && !moves.is_empty() && answer.is_none() {
+            Page::Foreign
+        } else {
+            Page::Current
+        }
     }
 
     pub fn clear_scroll(&mut self) {
@@ -51,6 +76,12 @@ impl Navigation {
         self.superseded = false;
         self.pending = None;
         self.ticket = None;
+    }
+
+    /// A jump to `movement` was sent as command `id`.
+    pub fn jumped(&mut self, movement: HistoryMove, id: CommandId) {
+        self.jump(movement);
+        self.sent(id);
     }
 
     /// The pending request was sent as command `id`.
@@ -126,11 +157,7 @@ impl Navigation {
     }
 
     /// Settle the pending request when `id` is the command that sent it.
-    pub fn complete(
-        &mut self,
-        (id, movement, changed): (CommandId, HistoryMove, bool),
-        transcript: &mut Transcript,
-    ) {
+    pub fn complete(&mut self, (id, movement, changed): Move, transcript: &mut Transcript) {
         let Some((expected, remaining)) = self.pending else {
             return;
         };

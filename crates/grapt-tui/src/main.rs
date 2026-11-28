@@ -612,17 +612,11 @@ fn run(config: Config, access: &grapt_console::Access) -> Result<(), String> {
                         ui.live_execution = update.execution.clone();
                         dirty |= ui.queued != update.queued;
                         ui.queued = update.queued;
-                        let page = update
-                            .navigation
-                            .map(|(_, movement, changed)| (movement, changed));
-                        let obsolete_history = ui.navigation.obsolete_page(page);
-                        dirty |= ui.transcript_update(
-                            update.reset,
-                            update.start,
-                            update.rows,
-                            update.reconcile,
-                            page,
+                        let (changed, obsolete_history) = ui.transcript_update(
+                            (update.reset, update.start, update.rows, update.reconcile),
+                            &update.navigation,
                         );
+                        dirty |= changed;
                         if !obsolete_history {
                             for (index, row) in update.patches {
                                 dirty |= ui.transcript.update(false, index, vec![row]);
@@ -685,7 +679,7 @@ fn run(config: Config, access: &grapt_console::Access) -> Result<(), String> {
                             ui.navigation.edges = update.history_edges;
                         }
                         dirty |=
-                            ui.settle_navigation(update.navigation, &update.navigation_dropped);
+                            ui.settle_navigation(&update.navigation, &update.navigation_dropped);
                     }
                 }
                 Err(error) => {

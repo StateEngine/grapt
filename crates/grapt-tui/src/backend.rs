@@ -232,7 +232,7 @@ fn serve(
     let mut followups = followups::Submissions::default();
     let mut imports = import::Import::default();
     let mut stops = interrupt::Stops::default();
-    let mut navigation = None;
+    let mut navigation = Vec::new();
     let mut navigation_dropped = Vec::new();
     let mut models = None;
     let mut models_requested = false;
@@ -427,7 +427,7 @@ fn serve(
                 mcp_detail: grapt_client::view::mcp_detail_lines(&client, 120),
                 patches: delta.patches,
                 history_edges: client.history_edges(),
-                navigation: navigation.take(),
+                navigation: std::mem::take(&mut navigation),
                 navigation_dropped: std::mem::take(&mut navigation_dropped),
                 browsing: client.browsing_history(),
                 model: client.model().cloned(),
@@ -542,7 +542,7 @@ fn serve(
                     let dispatched = submissions.submit_image(&mut client, prompt, id);
                     status = dispatched.notice;
                     if let Some((movement, changed)) = dispatched.navigation {
-                        navigation = Some((id, movement, changed));
+                        navigation.push((id, movement, changed));
                     }
                     if dispatched.models.is_some() {
                         models = dispatched.models;
@@ -574,7 +574,7 @@ fn serve(
                     let dispatched = submissions.submit(&mut client, text, literal_startup, id);
                     status = dispatched.notice;
                     if let Some((movement, changed)) = dispatched.navigation {
-                        navigation = Some((id, movement, changed));
+                        navigation.push((id, movement, changed));
                     }
                     if dispatched.models.is_some() {
                         models = dispatched.models;
@@ -608,7 +608,7 @@ fn serve(
                     }
                 }
                 Command::Select(request) => {
-                    navigation = None;
+                    navigation.clear();
                     startup = crate::launch::Readiness::Manual;
                     roster = None;
                     let lanes = (&mut client, &mut reads);
@@ -703,7 +703,7 @@ fn serve(
                 }
                 Command::Browse(movement) => {
                     let result = client.browse_history(movement);
-                    navigation = Some((id, movement, matches!(result, Ok(true))));
+                    navigation.push((id, movement, matches!(result, Ok(true))));
                     result.map(|_| ())
                 }
             };

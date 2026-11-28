@@ -446,8 +446,7 @@ pub(super) fn handle_at(
                         ui.images.sent(id);
                         if crate::backend::commands::submits_prompt(&text) {
                             ui.navigation
-                                .jump(grapt_client::client::HistoryMove::Latest);
-                            ui.navigation.sent(id);
+                                .jumped(grapt_client::client::HistoryMove::Latest, id);
                         }
                         ui.status = "Submitting; draft kept until confirmed".into();
                         ui.pending = Some(text);
