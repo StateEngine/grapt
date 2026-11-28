@@ -287,32 +287,66 @@ fn run(mut channel: std::fs::File) -> Result<i32, String> {
     let mut child = match Mxc.spawn_with_write_targets(&request, &targets) {
         Ok(child) => child,
         Err(failure) => {
-            if let Some(scratch) = scratch {
-                let _ = scratch.cleanup();
-            }
-            send(
+            let cleanup_err =
+                super::scratch::cleanup_after_stop(scratch, !failure.effects_possible);
+            let receipt_err = send(
                 &mut channel,
                 &failure.enforcement,
                 (!failure.effects_possible).then_some(false),
-            )?;
-            return Err(failure.reason);
+            )
+            .err();
+            return Err(super::scratch::combine_errors(
+                failure.reason,
+                [receipt_err, cleanup_err],
+            ));
         }
     };
     if let Err(reason) = send(&mut channel, &child.enforcement(), Some(true)) {
-        let _killed = child.kill();
-        if let Some(scratch) = scratch {
-            let _ = scratch.cleanup();
-        }
-        return Err(reason);
+        let (kill_err, reap_err, stopped) = stop_and_reap_child(&mut child);
+        let cleanup_err = super::scratch::cleanup_after_stop(scratch, stopped);
+        return Err(super::scratch::combine_errors(
+            reason,
+            [kill_err, reap_err, cleanup_err],
+        ));
     }
     drop(channel);
     let status = child
         .wait()
         .map_err(|error| format!("sandbox process observation failed: {error}"));
-    if let Some(scratch) = scratch {
-        scratch.cleanup()?;
+    match status {
+        Ok(code) => {
+            if let Some(scratch) = scratch {
+                scratch.cleanup()?;
+            }
+            Ok(code)
+        }
+        Err(wait_reason) => {
+            let (kill_err, reap_err, stopped) = stop_and_reap_child(&mut child);
+            let cleanup_err = super::scratch::cleanup_after_stop(scratch, stopped);
+            Err(super::scratch::combine_errors(
+                wait_reason,
+                [kill_err, reap_err, cleanup_err],
+            ))
+        }
     }
-    status
+}
+
+fn stop_and_reap_child(
+    child: &mut grapt_sandbox::ContainedShell,
+) -> (Option<String>, Option<String>, bool) {
+    if matches!(child.try_wait(), Ok(Some(_))) {
+        return (None, None, true);
+    }
+    let kill_err = child
+        .kill()
+        .err()
+        .map(|error| format!("sandbox kill failed: {error}"));
+    let reap_err = child
+        .wait()
+        .err()
+        .map(|error| format!("sandbox reap failed: {error}"));
+    let stopped = reap_err.is_none();
+    (kill_err, reap_err, stopped)
 }
 
 fn send(
