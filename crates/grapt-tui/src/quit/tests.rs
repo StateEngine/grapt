@@ -1,10 +1,12 @@
 use super::*;
 type TestResult = Result<(), Box<dyn std::error::Error>>;
 
-fn fixture() -> (Ui, Backend, crate::Commands) {
+/// The UI, its backend handle, the command intake, and the loop's wake: a
+/// live worker holds both receivers.
+fn fixture() -> (Ui, Backend, crate::Commands, mpsc::Receiver<()>) {
     let (commands, received) = crate::command_channel();
     let updates = crate::backend::Handoff::default();
-    let (wake, _) = mpsc::sync_channel(1);
+    let (wake, ready) = mpsc::sync_channel(1);
     (
         Ui::new(false),
         Backend {
@@ -13,6 +15,7 @@ fn fixture() -> (Ui, Backend, crate::Commands) {
             wake,
         },
         received,
+        ready,
     )
 }
 
@@ -22,7 +25,7 @@ fn ctrl_c() -> KeyEvent {
 
 #[test]
 fn first_control_c_interrupts_running_work_even_behind_a_picker() -> TestResult {
-    let (mut ui, backend, received) = fixture();
+    let (mut ui, backend, received, _ready) = fixture();
     ui.session_update(None, true);
     ui.picker = Some(crate::sessions::Picker::new(&[]));
     ui.composer.insert_str("keep this draft");
@@ -39,7 +42,7 @@ fn first_control_c_interrupts_running_work_even_behind_a_picker() -> TestResult 
 
 #[test]
 fn pending_submission_is_interrupted_before_running_status_arrives() -> TestResult {
-    let (mut ui, backend, received) = fixture();
+    let (mut ui, backend, received, _ready) = fixture();
     ui.pending = Some("submitted before status".into());
     assert_eq!(
         key(ctrl_c(), &mut ui, &backend, Duration::ZERO),
@@ -52,7 +55,7 @@ fn pending_submission_is_interrupted_before_running_status_arrives() -> TestResu
 
 #[test]
 fn idle_control_c_clears_multiline_text_without_submitting_and_keeps_undo() -> TestResult {
-    let (mut ui, backend, received) = fixture();
+    let (mut ui, backend, received, _ready) = fixture();
     ui.composer.insert_str("keep 中文\nsecond line");
     assert_eq!(
         key(ctrl_c(), &mut ui, &backend, Duration::ZERO),
@@ -67,7 +70,7 @@ fn idle_control_c_clears_multiline_text_without_submitting_and_keeps_undo() -> T
 
 #[test]
 fn idle_empty_hint_expires_and_only_a_fresh_second_press_confirms() {
-    let (mut ui, backend, _) = fixture();
+    let (mut ui, backend, _, _ready) = fixture();
     assert_eq!(
         key(ctrl_c(), &mut ui, &backend, Duration::ZERO),
         Some(false)
@@ -90,7 +93,7 @@ fn idle_empty_hint_expires_and_only_a_fresh_second_press_confirms() {
 
 #[test]
 fn key_repeats_never_quit_and_other_keys_disarm_confirmation() {
-    let (mut ui, backend, _) = fixture();
+    let (mut ui, backend, _, _ready) = fixture();
     key(ctrl_c(), &mut ui, &backend, Duration::ZERO);
     let mut repeated = ctrl_c();
     repeated.kind = KeyEventKind::Repeat;
@@ -116,9 +119,9 @@ fn key_repeats_never_quit_and_other_keys_disarm_confirmation() {
 
 #[test]
 fn quit_waits_for_the_interrupt_acknowledgement_and_blocks_new_input() -> TestResult {
-    let (mut ui, backend, received) = fixture();
+    let (mut ui, backend, _received, _ready) = fixture();
     ui.quit.request(&backend, Duration::ZERO)?;
-    let Command::Quit(reply) = received.try_recv()? else {
+    let Some(reply) = backend.updates.take_quits().pop() else {
         return Err("missing acknowledged quit".into());
     };
     assert_eq!(ui.quit.poll(&backend, Duration::from_millis(1)), None);
@@ -143,9 +146,9 @@ fn quit_waits_for_the_interrupt_acknowledgement_and_blocks_new_input() -> TestRe
 
 #[test]
 fn failed_lost_and_timed_out_stop_acknowledgements_keep_the_terminal_open() -> TestResult {
-    let (mut ui, backend, received) = fixture();
+    let (mut ui, backend, _received, _ready) = fixture();
     ui.quit.request(&backend, Duration::ZERO)?;
-    let Command::Quit(reply) = received.try_recv()? else {
+    let Some(reply) = backend.updates.take_quits().pop() else {
         return Err("missing quit".into());
     };
     reply.try_send(Err("service unavailable".into()))?;
@@ -154,7 +157,7 @@ fn failed_lost_and_timed_out_stop_acknowledgements_keep_the_terminal_open() -> T
         Some(Err("service unavailable".into()))
     );
     ui.quit.request(&backend, Duration::ZERO)?;
-    let Command::Quit(reply) = received.try_recv()? else {
+    let Some(reply) = backend.updates.take_quits().pop() else {
         return Err("missing quit".into());
     };
     drop(reply);
@@ -163,7 +166,7 @@ fn failed_lost_and_timed_out_stop_acknowledgements_keep_the_terminal_open() -> T
         Some(Err(_))
     ));
     ui.quit.request(&backend, Duration::ZERO)?;
-    let Command::Quit(_reply) = received.try_recv()? else {
+    let Some(_reply) = backend.updates.take_quits().pop() else {
         return Err("missing quit".into());
     };
     assert!(matches!(ui.quit.poll(&backend, STOP_TIMEOUT), Some(Err(_))));
@@ -174,7 +177,7 @@ fn failed_lost_and_timed_out_stop_acknowledgements_keep_the_terminal_open() -> T
 #[test]
 fn other_control_chords_do_not_exit_or_detach() -> TestResult {
     for character in ['b', 'd', 'q', 'z', '\\'] {
-        let (mut ui, backend, _received) = fixture();
+        let (mut ui, backend, _received, _ready) = fixture();
         let event = KeyEvent::new(KeyCode::Char(character), KeyModifiers::CONTROL);
         assert_eq!(key(event, &mut ui, &backend, Duration::ZERO), None);
         assert!(!keys::handle_key(event, &mut ui, &backend)?);
@@ -184,20 +187,18 @@ fn other_control_chords_do_not_exit_or_detach() -> TestResult {
 
 #[test]
 fn quit_behind_a_command_burst_is_accepted_once_and_arms_its_wait() -> TestResult {
-    let (mut ui, backend, received) = fixture();
+    let (mut ui, backend, received, _ready) = fixture();
     crate::burst(&backend)?;
     ui.quit.request(&backend, Duration::ZERO)?;
     assert!(ui.quit.waiting());
-    assert!(matches!(
-        crate::after_burst(&received)?[..],
-        [Command::Quit(_)]
-    ));
+    assert!(crate::after_burst(&received)?.is_empty());
+    assert_eq!(backend.updates.take_quits().len(), 1);
     Ok(())
 }
 
 #[test]
 fn repeated_console_breaks_never_confirm_a_quit() -> TestResult {
-    let (mut ui, backend, received) = fixture();
+    let (mut ui, backend, received, _ready) = fixture();
     ui.session_update(None, true);
     key(ctrl_c(), &mut ui, &backend, Duration::ZERO);
     for milliseconds in [10, 20] {
@@ -214,12 +215,12 @@ fn repeated_console_breaks_never_confirm_a_quit() -> TestResult {
 
 #[test]
 fn closing_console_uses_normal_interrupt_ack_and_blocks_new_work() -> TestResult {
-    let (mut ui, backend, received) = fixture();
+    let (mut ui, backend, received, _ready) = fixture();
     ui.quit.close_console(&backend, Duration::ZERO);
     assert!(ui.quit.waiting());
     assert!(ui.quit.closing());
     // The request precedes any further console input or drawing.
-    let Command::Quit(reply) = received.try_recv()? else {
+    let Some(reply) = backend.updates.take_quits().pop() else {
         return Err("closing console did not request normal interrupt".into());
     };
     assert_eq!(ui.quit.poll(&backend, Duration::ZERO), None);
@@ -238,10 +239,10 @@ fn closing_console_uses_normal_interrupt_ack_and_blocks_new_work() -> TestResult
 
 #[test]
 fn console_close_deadline_is_not_extended_by_repeated_signals() -> TestResult {
-    let (mut ui, backend, received) = fixture();
+    let (mut ui, backend, received, _ready) = fixture();
     ui.quit.close_console(&backend, Duration::ZERO);
     assert_eq!(ui.quit.poll(&backend, Duration::ZERO), None);
-    let Command::Quit(_reply) = received.try_recv()? else {
+    let Some(_reply) = backend.updates.take_quits().pop() else {
         return Err("missing console close interrupt".into());
     };
     ui.quit
@@ -263,10 +264,10 @@ fn console_close_deadline_is_not_extended_by_repeated_signals() -> TestResult {
 #[test]
 fn console_close_exits_with_an_error_on_rejected_or_disconnected_ack() -> TestResult {
     for disconnect in [false, true] {
-        let (mut ui, backend, received) = fixture();
+        let (mut ui, backend, _received, _ready) = fixture();
         ui.quit.close_console(&backend, Duration::ZERO);
         assert_eq!(ui.quit.poll(&backend, Duration::ZERO), None);
-        let Command::Quit(reply) = received.try_recv()? else {
+        let Some(reply) = backend.updates.take_quits().pop() else {
             return Err("missing console close interrupt".into());
         };
         if !disconnect {
@@ -284,7 +285,7 @@ fn console_close_exits_with_an_error_on_rejected_or_disconnected_ack() -> TestRe
 
 #[test]
 fn console_close_retries_queue_pressure_without_resending_an_accepted_request() -> TestResult {
-    let (mut ui, backend, received) = fixture();
+    let (mut ui, backend, received, _ready) = fixture();
     for _ in 0..16 {
         crate::send(&backend, Command::Models)?;
     }
@@ -295,7 +296,7 @@ fn console_close_retries_queue_pressure_without_resending_an_accepted_request() 
         assert!(matches!(received.try_recv()?, Command::Models));
     }
     assert_eq!(ui.quit.poll(&backend, Duration::from_millis(1)), None);
-    let Command::Quit(reply) = received.try_recv()? else {
+    let Some(reply) = backend.updates.take_quits().pop() else {
         return Err("queue relief did not admit console interrupt".into());
     };
     assert_eq!(ui.quit.poll(&backend, Duration::from_millis(2)), None);
@@ -310,7 +311,7 @@ fn console_close_retries_queue_pressure_without_resending_an_accepted_request() 
 
 #[test]
 fn permanently_full_console_queue_has_a_bounded_exit() -> TestResult {
-    let (mut ui, backend, _received) = fixture();
+    let (mut ui, backend, _received, _ready) = fixture();
     for _ in 0..16 {
         crate::send(&backend, Command::Models)?;
     }
@@ -325,9 +326,9 @@ fn permanently_full_console_queue_has_a_bounded_exit() -> TestResult {
 
 #[test]
 fn console_close_bounds_an_already_pending_manual_quit_without_resending() -> TestResult {
-    let (mut ui, backend, received) = fixture();
+    let (mut ui, backend, received, _ready) = fixture();
     ui.quit.request(&backend, Duration::ZERO)?;
-    let Command::Quit(_reply) = received.try_recv()? else {
+    let Some(_reply) = backend.updates.take_quits().pop() else {
         return Err("missing manual quit".into());
     };
     ui.quit.close_console(&backend, Duration::from_secs(1));
@@ -343,8 +344,9 @@ fn console_close_bounds_an_already_pending_manual_quit_without_resending() -> Te
 
 #[test]
 fn disconnected_worker_allows_local_exit_only_after_unattached_startup_failure() -> TestResult {
-    let (mut ui, backend, received) = fixture();
+    let (mut ui, backend, received, ready) = fixture();
     drop(received);
+    drop(ready);
     let error = send(&backend, Command::Models)
         .err()
         .ok_or("dead worker accepted command")?;
@@ -374,5 +376,30 @@ fn disconnected_worker_allows_local_exit_only_after_unattached_startup_failure()
         ui.quit.poll(&backend, Duration::from_millis(2)),
         Some(Ok(()))
     );
+    Ok(())
+}
+
+#[test]
+fn a_queued_draft_waits_while_quit_does_and_resumes_when_it_is_refused() -> TestResult {
+    let (mut ui, backend, received, _ready) = fixture();
+    ui.pending = Some("in flight".into());
+    crate::sending::enter(&mut ui, &backend, "queued behind it".into());
+    ui.quit.request(&backend, Duration::ZERO)?;
+    let Some(reply) = backend.updates.take_quits().pop() else {
+        return Err("missing quit".into());
+    };
+    ui.pending = None;
+    assert!(!crate::sending::advance(&mut ui, &backend));
+    assert!(
+        received.try_recv().is_err(),
+        "a queued draft was sent while quitting"
+    );
+    reply.try_send(Err("stop refused".into()))?;
+    assert!(matches!(
+        ui.quit.poll(&backend, Duration::from_millis(1)),
+        Some(Err(_))
+    ));
+    assert!(crate::sending::advance(&mut ui, &backend));
+    assert!(matches!(received.try_recv()?, Command::Submit(text) if text == "queued behind it"));
     Ok(())
 }

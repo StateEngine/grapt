@@ -61,7 +61,7 @@ impl Quit {
         }
         if self.stopping.is_none() {
             let (reply, result) = mpsc::sync_channel(1);
-            send(backend, Command::Quit(reply))?;
+            crate::request_quit(backend, reply)?;
             self.disarm();
             self.stopping = Some((now.saturating_add(STOP_TIMEOUT), result));
         }

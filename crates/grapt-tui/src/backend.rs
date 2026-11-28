@@ -23,7 +23,7 @@ mod rows;
 use idle::{wait, wake_delay};
 mod publish;
 mod reads;
-pub use publish::{heartbeat, CommandId, Handoff, Link, LAG_AFTER};
+pub use publish::{heartbeat, CommandId, Handoff, Link, QuitReply, LAG_AFTER};
 mod view;
 use view::Ledger;
 pub use view::{Failure, Outcome, Settled, Update};
@@ -32,6 +32,9 @@ use rows::RowSync;
 mod activity;
 use activity::{selected_activity, selected_running};
 mod catalog;
+mod closing;
+mod command_lane;
+mod pages;
 mod setup;
 pub(super) use catalog::CatalogRefresh;
 
@@ -230,7 +233,7 @@ fn serve(
     let mut followups = followups::Submissions::default();
     let mut imports = import::Import::default();
     let mut stops = interrupt::Stops::default();
-    let mut navigation = None;
+    let mut pages = pages::Pages::default();
     let mut models = None;
     let mut models_requested = false;
     let mut connections_refresh = false;
@@ -238,6 +241,7 @@ fn serve(
     let mut publish = true;
     let mut catalog = CatalogRefresh::default();
     let mut reads = reads::Reads::start(wake.clone())?;
+    let mut lane = command_lane::Lane::default();
     let mut family = family::Family::default();
     let mut published = tokio::time::Instant::now() - crate::FRAME_INTERVAL;
     let _ = wake.try_send(());
@@ -351,6 +355,7 @@ fn serve(
                 &client.peer_mut().connection().state,
             );
             grapt_tui_transcript::profile::update();
+            let (navigation, navigation_dropped) = pages.take();
             updates.put(Update {
                 selection: selection.take(),
                 previews: family.take_previews(),
@@ -423,7 +428,8 @@ fn serve(
                 mcp_detail: grapt_client::view::mcp_detail_lines(&client, 120),
                 patches: delta.patches,
                 history_edges: client.history_edges(),
-                navigation: navigation.take(),
+                navigation,
+                navigation_dropped,
                 browsing: client.browsing_history(),
                 model: client.model().cloned(),
                 models: models.take(),
@@ -441,7 +447,7 @@ fn serve(
         let held = client.resume_pending();
         idle::pause(
             (updates, ui_wake, &ready),
-            backlog,
+            backlog || lane.ready(),
             [
                 startup.attached().then(|| client.recovery_wait()).flatten(),
                 (startup.attached() && !held)
@@ -459,26 +465,20 @@ fn serve(
             ],
         )?;
         // Adjacent view requests have no effects between them: attach only the
-        // newest one. Preserve ordering around submissions, replies and stops.
-        let mut batch = Vec::new();
-        if updates.refresh_requested() {
-            batch.push(updates.envelope(Command::RefreshModels));
-        }
+        // newest one. Preserve ordering around submissions, replies and stops:
+        // commands behind a reply or open wait for it, a Quit never does.
         // Commands never wait for the UI to take a view: a full chunk leaves
         // a backlog, and the next pass begins without sleeping.
-        backlog = true;
-        for _ in 0..16 {
-            let Ok(command) = commands.try_recv() else {
-                backlog = false;
-                break;
-            };
-            updates.received();
-            if matches!(&command.1, Command::Select(_))
-                && matches!(batch.last(), Some((_, Command::Select(_))))
-            {
-                batch.pop();
-            }
-            batch.push(command);
+        backlog = lane.fill(&commands, updates);
+        let holders = closing::Holders {
+            ledger: &mut ledger,
+            selection: &mut selection,
+            pages: &mut pages,
+            roster: &mut roster,
+        };
+        let mut batch = lane.next(&commands, updates, (&client, holders));
+        if !lane.quitting() && updates.refresh_requested() {
+            batch.insert(0, updates.envelope(Command::RefreshModels));
         }
         let mark = ledger.len();
         for (id, command) in batch {
@@ -493,6 +493,7 @@ fn serve(
             );
             publish = true;
             submissions.cancel_for(&command);
+            pages.asked(id, &command);
             let literal_startup = matches!(&command, Command::StartupPrompt(_));
             let result = match command {
                 Command::Followup(request) if stops.pending_for(Some(&request.session)) => {
@@ -542,8 +543,8 @@ fn serve(
                 Command::SubmitImages(prompt) => {
                     let dispatched = submissions.submit_image(&mut client, prompt, id);
                     status = dispatched.notice;
-                    if let Some(movement) = dispatched.navigation {
-                        navigation = Some(movement);
+                    if let Some((movement, changed)) = dispatched.navigation {
+                        pages.moved(id, movement, changed);
                     }
                     if dispatched.models.is_some() {
                         models = dispatched.models;
@@ -574,8 +575,8 @@ fn serve(
                 Command::Submit(text) | Command::StartupPrompt(text) => {
                     let dispatched = submissions.submit(&mut client, text, literal_startup, id);
                     status = dispatched.notice;
-                    if let Some(movement) = dispatched.navigation {
-                        navigation = Some(movement);
+                    if let Some((movement, changed)) = dispatched.navigation {
+                        pages.moved(id, movement, changed);
                     }
                     if dispatched.models.is_some() {
                         models = dispatched.models;
@@ -609,16 +610,13 @@ fn serve(
                     }
                 }
                 Command::Select(request) => {
-                    selection = Some(id);
-                    navigation = None;
+                    pages.clear();
                     startup = crate::launch::Readiness::Manual;
                     roster = None;
-                    let result = setup::select(&mut client, &mut directory, &request.id);
-                    if matches!(&result, Err(grapt_client::ClientError::Status { operation, status: 404 })
-                        if *operation == grapt_client::contract::Operation::SessionGet.operation_id())
-                    {
-                        session_messages
-                            .push((id, crate::sessions::Message::Unavailable { id: request.id }));
+                    let lanes = (&mut client, &mut reads);
+                    let result = lane.open(lanes, &mut directory, id, &request.id);
+                    if result.is_err() {
+                        selection = selection.max(Some(id));
                     }
                     result
                 }
@@ -628,9 +626,7 @@ fn serve(
                     submissions.command = Some((id, done));
                     continue;
                 }
-                Command::Reply(ask, choice) => {
-                    client.reply_permission(&ask.session_id, &ask.request_id, choice)
-                }
+                Command::Reply(ask, choice) => lane.reply(&mut client, &mut reads, &ask, choice),
                 command @ (Command::Interrupt(_)
                 | Command::InterruptAndResume(_)
                 | Command::InterruptSession(_)) => {
@@ -709,7 +705,7 @@ fn serve(
                 }
                 Command::Browse(movement) => {
                     let result = client.browse_history(movement);
-                    navigation = Some((movement, matches!(result, Ok(true))));
+                    pages.moved(id, movement, matches!(result, Ok(true)));
                     result.map(|_| ())
                 }
             };
@@ -827,6 +823,8 @@ fn serve(
             reads.settle(&mut client, polls, tokio::time::Instant::now(), &wake);
         publish |= settled;
         status = notice.unwrap_or(status);
+        let answered = lane.settle(&mut client, &mut reads);
+        publish |= answered.apply(&mut session_messages, &mut selection, &mut status);
         if !client.catalog_pending() {
             if models_requested {
                 models = Some(client.models().to_vec());

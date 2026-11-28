@@ -94,22 +94,44 @@ pub struct Ui {
 }
 
 impl Ui {
+    /// Show an update's rows as the page moves it carries allow, and settle
+    /// the outstanding page request after the frame loop's other updates via
+    /// [`Self::settle_navigation`]. Returns whether the screen changed and
+    /// whether the rows were obsolete, so their patches are dropped too.
     pub fn transcript_update(
         &mut self,
-        reset: bool,
-        start: usize,
-        rows: Vec<grapt_client::Slice>,
-        reconcile: bool,
-        movement: Option<(grapt_client::client::HistoryMove, bool)>,
-    ) -> bool {
-        if self.navigation.obsolete_page(movement) {
-            return false;
+        (reset, start, rows, reconcile): (bool, usize, Vec<grapt_client::Slice>, bool),
+        moves: &[crate::navigation::Move],
+    ) -> (bool, bool) {
+        use crate::navigation::Page;
+        let page = self.navigation.page(moves);
+        if page == Page::Obsolete {
+            return (false, true);
         }
-        if reconcile || (reset && self.navigation.preserves_reading()) {
+        // Rows another command paged in keep the reading position.
+        let changed = if reconcile
+            || (reset && (page == Page::Foreign || self.navigation.preserves_reading()))
+        {
             self.transcript.reconcile(rows)
         } else {
             self.transcript.update(reset, start, rows)
+        };
+        (changed, false)
+    }
+
+    /// Settle the outstanding page request, matched by the command that sent
+    /// it. A completed move places the view; one a quit discarded leaves the
+    /// scroll and its anchor as they are.
+    pub fn settle_navigation(
+        &mut self,
+        moves: &[crate::navigation::Move],
+        dropped: &[crate::backend::CommandId],
+    ) -> bool {
+        for movement in moves {
+            self.navigation.complete(*movement, &mut self.transcript);
         }
+        self.navigation.dropped(dropped);
+        !moves.is_empty() || !dropped.is_empty()
     }
 
     pub fn new(light: bool) -> Self {
@@ -822,6 +844,83 @@ fn center(area: Rect, width: u16, height: u16) -> Rect {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::backend::CommandId;
+    use grapt_client::client::HistoryMove;
+
+    /// One long entry, laid out and read at bottom offset 37.
+    fn history() -> Vec<grapt_client::Slice> {
+        vec![grapt_client::Slice {
+            compaction: None,
+            kind: grapt_client::projection::SliceKind::User,
+            tool_id: None,
+            tool_phase: None,
+            tool_summary: None,
+            ordinal: 0,
+            text: (0..120).map(|i| format!("PAGE_{i:03}\n")).collect(),
+            read_detail_start: None,
+            marks: Vec::new(),
+            closed: true,
+            footer: None,
+            truncated_bytes: 0,
+        }]
+    }
+
+    /// A UI at bottom offset 37 and a source of command ids.
+    fn reading_at_37() -> (Ui, crate::backend::Handoff) {
+        let mut ui = Ui::new(false);
+        ui.transcript.update(true, 0, history());
+        ui.transcript.scroll = 37;
+        ui.transcript.visible(40, 10, Palette::new(false));
+        (ui, crate::backend::Handoff::default())
+    }
+
+    fn sent(ui: &mut Ui, handoff: &crate::backend::Handoff, movement: HistoryMove) -> CommandId {
+        ui.navigation.jump(movement);
+        let id = handoff
+            .envelope(crate::backend::Command::Browse(movement))
+            .0;
+        ui.navigation.sent(id);
+        id
+    }
+
+    /// An update carrying a fresh page, applied as the frame loop applies it.
+    fn paged(ui: &mut Ui, moves: &[crate::navigation::Move], dropped: &[CommandId]) {
+        ui.transcript_update((true, 0, history(), false), moves);
+        ui.settle_navigation(moves, dropped);
+    }
+
+    #[test]
+    fn a_page_request_a_quit_discarded_leaves_the_view_where_it_was() {
+        let (mut ui, handoff) = reading_at_37();
+        let home = sent(&mut ui, &handoff, HistoryMove::Beginning);
+        assert!(ui.settle_navigation(&[], &[home]));
+        assert!(!ui.navigation.loading());
+        assert_eq!((ui.transcript.from_top, ui.transcript.scroll), (false, 37));
+    }
+
+    #[test]
+    fn an_older_same_direction_move_never_settles_the_discarded_one() {
+        let (mut ui, handoff) = reading_at_37();
+        // Ctrl+Home ran; a second Ctrl+Home was discarded by a refused quit.
+        let first = sent(&mut ui, &handoff, HistoryMove::Beginning);
+        let second = sent(&mut ui, &handoff, HistoryMove::Beginning);
+        paged(&mut ui, &[(first, HistoryMove::Beginning, true)], &[second]);
+        assert!(!ui.navigation.loading());
+        assert_eq!((ui.transcript.from_top, ui.transcript.scroll), (false, 37));
+    }
+
+    #[test]
+    fn a_late_discard_never_clears_a_fresh_request() {
+        let (mut ui, handoff) = reading_at_37();
+        let discarded = sent(&mut ui, &handoff, HistoryMove::Beginning);
+        // After the refused quit, Ctrl+End asks again before the discard lands.
+        let fresh = sent(&mut ui, &handoff, HistoryMove::Latest);
+        assert!(ui.settle_navigation(&[], &[discarded]));
+        assert!(ui.navigation.loading(), "the fresh request was cleared");
+        paged(&mut ui, &[(fresh, HistoryMove::Latest, true)], &[]);
+        assert!(!ui.navigation.loading());
+    }
+
     use crate::activity::Phase;
     use grapt_client::projection::feedback::Feedback;
 

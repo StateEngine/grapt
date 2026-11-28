@@ -156,35 +156,44 @@ fn terminal_lost(
 /// its silent-loss grace expired. This guard sends the same quit request on
 /// drop and is disarmed by a close that already ran.
 struct PanicClose {
-    commands: Option<(
-        mpsc::Sender<(backend::CommandId, Command)>,
-        backend::Handoff,
-    )>,
+    quit: Option<(backend::Handoff, mpsc::SyncSender<()>)>,
 }
 
 impl PanicClose {
     fn new(backend: &Backend) -> Self {
         Self {
-            commands: Some((backend.commands.clone(), backend.updates.clone())),
+            quit: Some((backend.updates.clone(), backend.wake.clone())),
         }
     }
 
     /// A close has been asked for (or the loop is exiting normally): the guard
     /// has nothing left to add.
     fn disarm(&mut self) {
-        self.commands = None;
+        self.quit = None;
     }
 }
 
 impl Drop for PanicClose {
     fn drop(&mut self) {
-        if let Some((commands, handoff)) = self.commands.take() {
+        if let Some((handoff, wake)) = self.quit.take() {
             // Nothing will read the acknowledgement: the process is unwinding.
             // The request itself is what the service needs to stop the work.
             let (reply, _result) = mpsc::sync_channel(1);
-            let _ = commands.send(handoff.envelope(Command::Quit(reply)));
+            if handoff.request_quit(reply).is_ok() {
+                let _ = wake.try_send(());
+            }
         }
     }
+}
+
+/// Ask the backend to quit. Quit never queues behind other commands.
+fn request_quit(backend: &Backend, reply: backend::QuitReply) -> Result<(), String> {
+    backend.updates.request_quit(reply)?;
+    // A stopped loop dropped its wake; nothing will read the request.
+    if let Err(mpsc::TrySendError::Disconnected(())) = backend.wake.try_send(()) {
+        return Err("Service worker stopped; draft kept".to_owned());
+    }
+    Ok(())
 }
 
 /// Hand a human-originated command to the backend. It never waits and never
@@ -603,14 +612,11 @@ fn run(config: Config, access: &grapt_console::Access) -> Result<(), String> {
                         ui.live_execution = update.execution.clone();
                         dirty |= ui.queued != update.queued;
                         ui.queued = update.queued;
-                        let obsolete_history = ui.navigation.obsolete_page(update.navigation);
-                        dirty |= ui.transcript_update(
-                            update.reset,
-                            update.start,
-                            update.rows,
-                            update.reconcile,
-                            update.navigation,
+                        let (changed, obsolete_history) = ui.transcript_update(
+                            (update.reset, update.start, update.rows, update.reconcile),
+                            &update.navigation,
                         );
+                        dirty |= changed;
                         if !obsolete_history {
                             for (index, row) in update.patches {
                                 dirty |= ui.transcript.update(false, index, vec![row]);
@@ -672,11 +678,8 @@ fn run(config: Config, access: &grapt_console::Access) -> Result<(), String> {
                         if !obsolete_history {
                             ui.navigation.edges = update.history_edges;
                         }
-                        if let Some((movement, changed)) = update.navigation {
-                            ui.navigation
-                                .complete(movement, changed, &mut ui.transcript);
-                            dirty = true;
-                        }
+                        dirty |=
+                            ui.settle_navigation(&update.navigation, &update.navigation_dropped);
                     }
                 }
                 Err(error) => {

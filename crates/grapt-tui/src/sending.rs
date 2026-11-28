@@ -10,7 +10,7 @@
 //! The Tab follow-up queue is a different contract: it waits for the running
 //! work to finish successfully, while text queued here is sent the moment the
 //! previous submission is confirmed, exactly as an immediate Enter would be.
-use crate::{backend::Command, keys, send, ui::Ui, Backend};
+use crate::{backend::Command, keys, ui::Ui, Backend};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use grapt_client::wire::SessionWireId;
 use std::collections::VecDeque;
@@ -225,16 +225,16 @@ pub fn enter(ui: &mut Ui, backend: &Backend, text: String) {
         }
         return;
     }
-    match send(backend, Command::Submit(text.clone())) {
-        Ok(()) if prompt => {
+    match crate::send_tracked(backend, Command::Submit(text.clone())) {
+        Ok(id) if prompt => {
             ui.navigation
-                .jump(grapt_client::client::HistoryMove::Latest);
+                .jumped(grapt_client::client::HistoryMove::Latest, id);
             ui.recall.replace_if_unchanged(&text, "", &mut ui.composer);
             ui.sending.start(text.clone());
             ui.pending = Some(text);
             ui.status = "Submitting".into();
         }
-        Ok(()) => {
+        Ok(_) => {
             ui.pending = Some(text);
             ui.status = "Running command; draft kept until it completes".into();
         }
@@ -303,15 +303,19 @@ pub fn submission(
 }
 
 /// Sends the next queued text once the previous submission is confirmed.
+/// None is sent while a quit waits: it resumes only if the quit is refused.
 pub fn advance(ui: &mut Ui, backend: &Backend) -> bool {
-    if ui.pending.is_some() || !ui.launch.readiness.can_submit() {
+    if ui.pending.is_some() || !ui.launch.readiness.can_submit() || ui.quit.waiting() {
         return false;
     }
     let Some(text) = ui.sending.next() else {
         return false;
     };
-    match send(backend, Command::Submit(text.clone())) {
-        Ok(()) => {
+    // Only prompts are queued, and each moves the view to the newest page.
+    match crate::send_tracked(backend, Command::Submit(text.clone())) {
+        Ok(id) => {
+            ui.navigation
+                .jumped(grapt_client::client::HistoryMove::Latest, id);
             ui.sending.start(text.clone());
             ui.pending = Some(text);
             ui.status = "Submitting queued draft".into();

@@ -1,12 +1,30 @@
 //! Coalesce scroll intent once per frame; one page request may be outstanding.
+use crate::backend::CommandId;
 use grapt_client::client::HistoryMove;
 use grapt_tui_transcript::transcript::Transcript;
+
+/// A page move that ran, with the command that asked for it and whether the
+/// page changed.
+pub type Move = (CommandId, HistoryMove, bool);
+
+/// How an update's rows meet the pending page request.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Page {
+    /// A thumb grab superseded the request: the rows are not shown.
+    Obsolete,
+    /// Another command moved the page: the rows are shown at the reading
+    /// position, which only the pending request's answer may move.
+    Foreign,
+    Current,
+}
 
 #[derive(Default)]
 pub struct Navigation {
     rows: i64,
     superseded: bool,
     pending: Option<(HistoryMove, usize)>,
+    /// The command whose settlement answers the pending request.
+    ticket: Option<CommandId>,
     pub edges: (bool, bool),
 }
 
@@ -25,8 +43,18 @@ impl Navigation {
         self.superseded
     }
 
-    pub fn obsolete_page(&self, movement: Option<(HistoryMove, bool)>) -> bool {
-        self.superseded && movement.is_none_or(|(m, _)| m != HistoryMove::Cancel)
+    /// How an update's rows meet the pending request, given the page moves
+    /// it carries.
+    pub fn page(&self, moves: &[Move]) -> Page {
+        let answer = moves.iter().find(|(id, ..)| self.ticket == Some(*id));
+        if self.superseded && answer.is_none_or(|(_, movement, _)| *movement != HistoryMove::Cancel)
+        {
+            Page::Obsolete
+        } else if self.ticket.is_some() && !moves.is_empty() && answer.is_none() {
+            Page::Foreign
+        } else {
+            Page::Current
+        }
     }
 
     pub fn clear_scroll(&mut self) {
@@ -34,17 +62,44 @@ impl Navigation {
         self.superseded = self.pending.is_some();
         if self.superseded {
             self.pending = Some((HistoryMove::Cancel, 0));
+            self.ticket = None;
         }
     }
     pub fn jump(&mut self, movement: HistoryMove) {
         self.superseded = false;
         self.rows = 0;
         self.pending = Some((movement, 0));
+        self.ticket = None;
     }
 
     pub fn failed(&mut self) {
         self.superseded = false;
         self.pending = None;
+        self.ticket = None;
+    }
+
+    /// A jump to `movement` was sent as command `id`.
+    pub fn jumped(&mut self, movement: HistoryMove, id: CommandId) {
+        self.jump(movement);
+        self.sent(id);
+    }
+
+    /// The pending request was sent as command `id`.
+    pub fn sent(&mut self, id: CommandId) {
+        if self.pending.is_some() {
+            self.ticket = Some(id);
+        }
+    }
+
+    /// Commands a quit discarded: the pending request settles, leaving the
+    /// view where it is, only when it is one of them.
+    pub fn dropped(&mut self, discarded: &[CommandId]) {
+        if self
+            .ticket
+            .is_some_and(|ticket| discarded.contains(&ticket))
+        {
+            self.failed();
+        }
     }
 
     pub fn advance(&mut self, transcript: &mut Transcript) -> Option<HistoryMove> {
@@ -97,17 +152,20 @@ impl Navigation {
             HistoryMove::Newer
         };
         self.pending = Some((movement, remaining));
+        self.ticket = None;
         Some(movement)
     }
 
-    pub fn complete(&mut self, movement: HistoryMove, changed: bool, transcript: &mut Transcript) {
+    /// Settle the pending request when `id` is the command that sent it.
+    pub fn complete(&mut self, (id, movement, changed): Move, transcript: &mut Transcript) {
         let Some((expected, remaining)) = self.pending else {
             return;
         };
-        if expected != movement {
+        if expected != movement || self.ticket != Some(id) {
             return;
         }
         self.pending = None;
+        self.ticket = None;
         // A thumb grab owns a newer reading choice than this page request.
         if std::mem::take(&mut self.superseded) {
             return;
@@ -127,6 +185,8 @@ mod tests {
 
     #[test]
     fn six_hundred_scroll_keys_become_one_jump_and_one_page_request() {
+        let handoff = crate::backend::Handoff::default();
+        let id = || handoff.envelope(crate::backend::Command::Models).0;
         let mut navigation = Navigation {
             edges: (true, true),
             ..Navigation::default()
@@ -146,15 +206,19 @@ mod tests {
             navigation.boundary(&mut transcript),
             Some(HistoryMove::Older)
         );
+        let older = id();
+        navigation.sent(older);
         assert_eq!(navigation.boundary(&mut transcript), None);
         navigation.scroll(-40);
         assert_eq!(navigation.advance(&mut transcript), None);
-        navigation.complete(HistoryMove::Older, true, &mut transcript);
+        navigation.complete((older, HistoryMove::Older, true), &mut transcript);
         assert_eq!(transcript.scroll, 11_900);
         navigation.advance(&mut transcript);
         assert_eq!(transcript.scroll, 11_860);
         navigation.jump(HistoryMove::Latest);
-        navigation.complete(HistoryMove::Latest, true, &mut transcript);
+        let latest = id();
+        navigation.sent(latest);
+        navigation.complete((latest, HistoryMove::Latest, true), &mut transcript);
         assert_eq!(transcript.scroll, 0);
         assert!(!transcript.from_top);
     }

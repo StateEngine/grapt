@@ -53,7 +53,12 @@ pub struct Update {
     pub mcp_detail: Vec<String>,
     pub patches: Vec<(usize, Slice)>,
     pub history_edges: (bool, bool),
-    pub navigation: Option<(grapt_client::client::HistoryMove, bool)>,
+    /// Every page move that ran, in order, each with the command that asked
+    /// for it: a later move never hides the one a pending request waits on.
+    pub navigation: Vec<(CommandId, grapt_client::client::HistoryMove, bool)>,
+    /// Commands that could have moved the page, discarded by a quit: each
+    /// settles its request without moving the view.
+    pub navigation_dropped: Vec<CommandId>,
     pub browsing: bool,
     pub model: Option<grapt_client::wire::ModelRow>,
     pub models: Option<Vec<grapt_client::wire::ModelRow>>,
@@ -133,6 +138,11 @@ impl Ledger {
 
     fn push(&mut self, id: CommandId, outcome: Outcome) {
         self.settled.push(Settled { id, outcome });
+    }
+
+    /// Settle a command that never ran.
+    pub(super) fn settle(&mut self, id: CommandId, outcome: Outcome) {
+        self.push(id, outcome);
     }
 
     pub(super) fn len(&self) -> usize {
