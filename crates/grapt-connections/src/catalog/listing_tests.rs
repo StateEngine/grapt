@@ -48,6 +48,17 @@ fn a_row_without_tools_or_text_output_is_not_capable() -> TestResult {
     assert!(!provider.capable(&row(
         serde_json::json!({"architecture":{"output_modalities":["embedding"]}})
     ))?);
+    // One reading wherever a row is judged: the row's own list wins over the
+    // nested one, and an empty list states nothing.
+    assert!(!provider.capable(&row(serde_json::json!({
+        "output_modalities":["embedding"],"architecture":{"output_modalities":["text"]}
+    })))?);
+    assert!(!provider.capable(&row(serde_json::json!({
+        "output_modalities":[],"architecture":{"output_modalities":["embedding"]}
+    })))?);
+    assert!(!provider.capable(&row(serde_json::json!({
+        "output_modalities":["embedding"],"architecture":{"output_modalities":[]}
+    })))?);
     Ok(())
 }
 

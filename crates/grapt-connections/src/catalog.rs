@@ -656,13 +656,8 @@ fn capable(models: &Value, row: &Value) -> bool {
     let model = &models[id];
     // What the live row states about its request surface and output wins
     // over the bundled catalogue, as the model inventory reads it.
-    let output = [
-        &row["output_modalities"],
-        &row["architecture"]["output_modalities"],
-    ]
-    .into_iter()
-    .find_map(|items| items.as_array().filter(|items| !items.is_empty()))
-    .or_else(|| model["modalities"]["output"].as_array());
+    let output = grapt_login::key::stated_modalities(row, "output")
+        .or_else(|| model["modalities"]["output"].as_array());
     let text = output.is_none_or(|items| items.iter().any(|item| item.as_str() == Some("text")));
     let tools = match row["supported_parameters"].as_array() {
         Some(names) => names.iter().any(|name| name.as_str() == Some("tools")),

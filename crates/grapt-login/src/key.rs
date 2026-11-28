@@ -5,7 +5,7 @@ pub mod cloudflare;
 pub mod azure;
 mod cohere;
 mod endpoint_metadata;
-pub use endpoint_metadata::enrich_listing;
+pub use endpoint_metadata::{enrich_listing, stated_modalities};
 mod served_models;
 pub use served_models::{candidate_models, served_listing, ServedError};
 mod google;

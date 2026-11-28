@@ -84,15 +84,18 @@ impl ModelSetup {
     /// completion answers. Returns the provider as the checked model's wire
     /// selects it. The whole check, every model tried included, ends within
     /// the connect budget, so the client waiting on it hears the answer.
+    /// `wire` is the family a named connection being reconnected already
+    /// uses: a discovered model must run on it.
     pub(super) async fn verify(
         self,
         provider: KeyProvider,
+        wire: Option<grapt_connections::store::Family>,
         base: &str,
         secret: VaultSecret,
         id: &str,
     ) -> Result<(grapt_login::key::VerifiedKey, KeyProvider), InvalidRequestErrorDto> {
         let budget = grapt_api::u3a::INTEGRATION_KEY_CONNECT_BUDGET;
-        tokio::time::timeout(budget, self.check(provider, base, secret, id))
+        tokio::time::timeout(budget, self.check(provider, wire, base, secret, id))
             .await
             .unwrap_or_else(|_| {
                 Err(endpoint_refusal(format!(
@@ -106,6 +109,7 @@ impl ModelSetup {
     async fn check(
         self,
         provider: KeyProvider,
+        wire: Option<grapt_connections::store::Family>,
         base: &str,
         secret: VaultSecret,
         id: &str,
@@ -143,16 +147,15 @@ impl ModelSetup {
                 .await
                 .map_err(failed)?;
         // A named model is the one candidate. Otherwise the listing names the
-        // candidates it says can call tools and return text; one that cannot
-        // complete or states no window gives way to the next, so an embedding
-        // model listed first does not stop the connect.
+        // candidates it says can call tools and return text, on the wire of
+        // the connection being reconnected if there is one; a candidate that
+        // cannot complete or states no window gives way to the next, so an
+        // embedding model listed first does not stop the connect.
         let named = self.model.is_some();
         let candidates = match self.model {
             Some(model) => vec![model.into_string()],
             None => grapt_login::key::candidate_models(verified.listing(), |row| {
-                row["id"]
-                    .as_str()
-                    .is_some_and(|model| provider.for_model(model).capable(row).unwrap_or(false))
+                candidate(provider, wire, row)
             }),
         };
         let mut refusal = endpoint_refusal(format!(
@@ -187,6 +190,19 @@ impl ModelSetup {
         }
         Err(refusal)
     }
+}
+
+/// Whether a listed row may be tried: it says it can call tools and return
+/// text, and it runs on `wire` when the connection already has one.
+pub(super) fn candidate(
+    provider: KeyProvider,
+    wire: Option<grapt_connections::store::Family>,
+    row: &serde_json::Value,
+) -> bool {
+    row["id"].as_str().is_some_and(|model| {
+        let provider = provider.for_model(model);
+        wire.is_none_or(|wire| provider.family() == wire) && provider.capable(row).unwrap_or(false)
+    })
 }
 
 /// The completion check's wire for this provider and model.

@@ -292,8 +292,16 @@ impl ConnectionSetup {
                 .map_err(|_| invalid("Vertex authorization failed; check the service-account key, project permissions, model location and system clock, then retry Connect"))?,
                 (None, None, SecretInput::ApiKey(secret)) if setup.is_some() => match setup {
                     Some(setup) => {
+                        // Reconnecting a named connection keeps its wire.
+                        let wire = target.as_ref().and_then(|target| {
+                            before.as_ref()?.connections.iter().find_map(|record| {
+                                (record.id.as_str() == target.as_str()
+                                    && record.catalog_provider.as_str() == provider.id())
+                                .then_some(record.family)
+                            })
+                        });
                         let (verified, checked) =
-                            setup.verify(provider, &base, secret, id.as_str()).await?;
+                            setup.verify(provider, wire, &base, secret, id.as_str()).await?;
                         // The checked model's wire, which a discovered model
                         // may select, is the wire the connection installs.
                         provider = checked;

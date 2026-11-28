@@ -169,3 +169,26 @@ async fn the_read_goes_only_to_the_verified_base() -> Result<(), Box<dyn std::er
     );
     Ok(())
 }
+
+#[test]
+fn a_row_states_its_modalities_one_way() {
+    // The row's own list wins over the nested one; an empty list states nothing.
+    let contradictory = json!({"output_modalities":["embedding"],
+        "architecture":{"output_modalities":["text"]}});
+    assert_eq!(
+        fields(&contradictory)["output_modalities"],
+        json!(["embedding"])
+    );
+    let empty_nested = json!({"output_modalities":["embedding"],
+        "architecture":{"output_modalities":[]}});
+    assert_eq!(
+        fields(&empty_nested)["output_modalities"],
+        json!(["embedding"])
+    );
+    let empty_own = json!({"output_modalities":[],
+        "architecture":{"output_modalities":["embedding"]}});
+    assert_eq!(
+        fields(&empty_own)["output_modalities"],
+        json!(["embedding"])
+    );
+}

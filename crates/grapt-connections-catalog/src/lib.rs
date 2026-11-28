@@ -53,7 +53,7 @@ const PROVIDERS: &[EndpointProvider] = &[
 const fn local(id: &'static str, name: &'static str, base: &'static str) -> EndpointProvider {
     EndpointProvider {
         id,
-        hint: "Leave the fields empty to use the server's usual address and every model it serves. An HTTP loopback server may leave the API key empty.",
+        hint: "Leave the fields empty to use the server's usual address and every model it serves that can call tools and return text. An HTTP loopback server may leave the API key empty.",
         completion_tokens: false,
         messages_model_prefix: None,
         permits_empty_local_key: true,

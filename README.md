@@ -33,16 +33,18 @@ three binaries in the same directory and put that directory on your `PATH`.
 
 ## Connect a model
 
-Connect a hosted provider with its API key. When the provider's usual variable,
-such as `ANTHROPIC_API_KEY`, is set, `grapt login` uses it; otherwise it asks for
-the key. `--key-stdin` reads a key from standard input instead.
+Connect a hosted provider with its API key. When the provider's usual key
+variable, such as `ANTHROPIC_API_KEY`, is set, `grapt login` uses it, unless you
+pass endpoint or cloud setup or a service is already running; otherwise it asks
+for the key. `--key-stdin` reads a key from standard input instead.
 
 ```sh
 grapt login anthropic
 ```
 
 To use a model server on your own machine, name its preset. Grapt connects to
-the server's usual address and offers every model it lists:
+the server's usual address and offers every listed model that can call tools and
+return text:
 
 | Server | Command | Address |
 | --- | --- | --- |

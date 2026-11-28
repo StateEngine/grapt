@@ -68,8 +68,9 @@ the bundled providers.
 ChatGPT uses browser OAuth. --no-browser selects the device flow for a headless
 machine and displays its URL and code. Anthropic and other implemented API
 providers use a key entered without terminal echo, --key-stdin, or
---api-key-env <name>. With none of these, the provider's usual variable is used
-when it is set. Environment references store only the exported name; the
+--api-key-env <name>. With none of these and no endpoint or cloud setup, the
+provider's usual key variable is used when it is set and no service is already
+running. Environment references store only the exported name; the
 variable must be available to the service. Use openai for an OpenAI API key.
 
 --id <id>       Select or create a named connection.
@@ -78,7 +79,8 @@ variable must be available to the service. Use openai for an OpenAI API key.
                 Set explicit coordinates for account-specific or local endpoints.
                 Local presets (ollama, lmstudio, vllm, llamacpp) default to the
                 server's usual address and need no key. Without --model, every
-                model the server lists is offered, each at the window it reports.
+                listed model that can call tools and return text is offered,
+                each at the window it reports.
 Cloudflare AI Gateway requires --cf-account <account>, --cf-gateway <gateway>
 and --cf-provider <provider>, with its API token entered at the prompt or stdin.
 OpenAI/Anthropic need AI Gateway Run and stored provider keys or Unified Billing.

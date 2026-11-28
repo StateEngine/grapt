@@ -101,31 +101,39 @@ pub(super) fn fields(row: &Value) -> Value {
             fields["supported_parameters"] = json!(parameters);
         }
     }
-    let architecture = row.get("architecture");
     for side in ["input", "output"] {
-        // Under `architecture`, or on the row itself as a local server states it.
-        let name = format!("{side}_modalities");
-        if let Some(modalities) = architecture
-            .and_then(|architecture| architecture.get(&name))
-            .or_else(|| row.get(&name))
-            .and_then(Value::as_array)
-        {
-            if !modalities.is_empty()
-                && modalities.len() <= MAX_MODALITIES
-                && modalities.iter().all(|value| {
-                    value
-                        .as_str()
-                        .is_some_and(|name| !name.is_empty() && name.len() <= 32)
-                })
-            {
-                fields[name] = json!(modalities);
-            }
+        if let Some(modalities) = stated_modalities(row, side) {
+            fields[format!("{side}_modalities")] = json!(modalities);
         }
     }
     if let Some(levels) = reasoning_levels(row) {
         fields["supported_reasoning_levels"] = levels;
     }
     fields
+}
+
+/// The modalities a listing row states for one side ("input" or "output"),
+/// read one way wherever a row is judged: the row's own list first, as a local
+/// server states it, then the one under `architecture`. An empty list states
+/// nothing, and a list outside its bounds is not a model fact.
+pub fn stated_modalities<'a>(row: &'a Value, side: &str) -> Option<&'a Vec<Value>> {
+    let name = format!("{side}_modalities");
+    [
+        row.get(&name),
+        row.get("architecture")
+            .and_then(|architecture| architecture.get(&name)),
+    ]
+    .into_iter()
+    .flatten()
+    .find_map(|value| value.as_array().filter(|items| !items.is_empty()))
+    .filter(|modalities| {
+        modalities.len() <= MAX_MODALITIES
+            && modalities.iter().all(|value| {
+                value
+                    .as_str()
+                    .is_some_and(|name| !name.is_empty() && name.len() <= 32)
+            })
+    })
 }
 
 /// The reasoning efforts a row offers, each once in the row's order, kept
