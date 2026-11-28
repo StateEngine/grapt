@@ -2,16 +2,34 @@
 //! gives any refusal, so no draft, picker or form waits on them if the
 //! terminal stays open.
 use super::{commands::Completion, view::Ledger, Command, CommandId, Outcome};
+use crate::bridge::Bridge;
+use grapt_client::{client::HistoryMove, wire::AgentRow, Client};
 
 const NOT_SENT: &str = "Closing; not sent";
 
-/// Settle every discarded command; a discarded Select is answered as the
-/// view's selection.
+/// Where the protocol loop keeps what a view settles.
+pub(super) struct Holders<'a> {
+    pub(super) ledger: &'a mut Ledger,
+    /// The newest Select a view answers.
+    pub(super) selection: &'a mut Option<CommandId>,
+    pub(super) navigation: &'a mut Option<(HistoryMove, bool)>,
+    pub(super) roster: &'a mut Option<Vec<AgentRow>>,
+}
+
+/// Settle every discarded command. A Select is answered as the view's
+/// selection, never replacing a newer one; a history move as not taken; an
+/// agent choice by offering the roster again.
 pub(super) fn refuse(
     discarded: Vec<(CommandId, Command)>,
-    ledger: &mut Ledger,
-    selection: &mut Option<CommandId>,
+    client: &Client<Bridge>,
+    holders: Holders<'_>,
 ) {
+    let Holders {
+        ledger,
+        selection,
+        navigation,
+        roster,
+    } = holders;
     for (id, command) in discarded {
         let outcome = match command {
             Command::Submit(text) | Command::Retry(text) => Outcome::Submission(text, false, true),
@@ -50,7 +68,15 @@ pub(super) fn refuse(
                 Outcome::Command(done)
             }
             Command::Select(_) => {
-                *selection = Some(id);
+                *selection = (*selection).max(Some(id));
+                continue;
+            }
+            Command::Browse(movement) => {
+                *navigation = Some((movement, false));
+                continue;
+            }
+            Command::ChooseAgent(_) => {
+                *roster = Some(client.agents().to_vec());
                 continue;
             }
             // Nothing waits on these: a permission ask stays open, and the
@@ -64,9 +90,7 @@ pub(super) fn refuse(
             | Command::Models
             | Command::RefreshModels
             | Command::Commands
-            | Command::Roster
-            | Command::ChooseAgent(_)
-            | Command::Browse(_) => continue,
+            | Command::Roster => continue,
         };
         ledger.settle(id, outcome);
     }

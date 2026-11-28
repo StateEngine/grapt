@@ -467,7 +467,13 @@ fn serve(
         // Commands never wait for the UI to take a view: a full chunk leaves
         // a backlog, and the next pass begins without sleeping.
         backlog = lane.fill(&commands, updates);
-        let mut batch = lane.next(&commands, updates, (&mut ledger, &mut selection));
+        let holders = closing::Holders {
+            ledger: &mut ledger,
+            selection: &mut selection,
+            navigation: &mut navigation,
+            roster: &mut roster,
+        };
+        let mut batch = lane.next(&commands, updates, (&client, holders));
         if !lane.quitting() && updates.refresh_requested() {
             batch.insert(0, updates.envelope(Command::RefreshModels));
         }
@@ -606,7 +612,7 @@ fn serve(
                     let lanes = (&mut client, &mut reads);
                     let result = lane.open(lanes, &mut directory, id, &request.id);
                     if result.is_err() {
-                        selection = Some(id);
+                        selection = selection.max(Some(id));
                     }
                     result
                 }

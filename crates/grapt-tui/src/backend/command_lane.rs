@@ -5,7 +5,7 @@
 //! waiting when it arrives is discarded, so none takes effect after it. Each
 //! command is fenced to the attachment it was sent on: an answer from a
 //! revoked attachment is never applied.
-use super::{reads::Reads, setup, view::Ledger, Command, CommandId, Handoff};
+use super::{reads::Reads, setup, Command, CommandId, Handoff};
 use crate::bridge::Bridge;
 use grapt_client::{
     contract::Operation,
@@ -116,7 +116,8 @@ impl Answered {
         status: &mut String,
     ) -> bool {
         messages.extend(self.unavailable);
-        *selection = self.selection.or(selection.take());
+        // An older open settling never replaces a newer acknowledgement.
+        *selection = selection.take().max(self.selection);
         let Some(notice) = self.status else {
             return false;
         };
@@ -156,7 +157,7 @@ impl Lane {
         &mut self,
         commands: &Receiver<(CommandId, Command)>,
         updates: &Handoff,
-        (ledger, selection): (&mut Ledger, &mut Option<CommandId>),
+        (client, holders): (&Client<Bridge>, super::closing::Holders<'_>),
     ) -> Vec<(CommandId, Command)> {
         let quits = updates.take_quits();
         self.quitting = !quits.is_empty();
@@ -167,7 +168,7 @@ impl Lane {
         if !discarded.is_empty() {
             let count = discarded.len();
             self.notice = Some(format!("Closing: {count} queued commands were not sent"));
-            super::closing::refuse(discarded, ledger, selection);
+            super::closing::refuse(discarded, client, holders);
         }
         quits
             .into_iter()
