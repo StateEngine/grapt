@@ -96,19 +96,41 @@ async fn a_blank_tail_still_reports_the_output_it_dropped() -> TestResult {
 #[test]
 fn a_stalled_log_writer_never_holds_the_reader() -> TestResult {
     let (chunks, mut pending) = channel(1);
-    let mut sink = Sink::Log { chunks, lost: 0 };
+    let lost = Arc::new(AtomicU64::new(0));
+    let mut sink = Sink::Log {
+        chunks,
+        lost: Arc::clone(&lost),
+    };
     sink.accept(b"first");
     // The writer takes nothing: the next chunk is counted, not waited on.
     sink.accept(b"second");
-    assert!(matches!(sink, Sink::Log { lost: 6, .. }));
+    assert_eq!(lost.load(Ordering::Relaxed), 6);
     assert_eq!(pending.try_recv()?, (None, b"first".to_vec()));
     sink.accept(b"third");
     assert_eq!(
         pending.try_recv()?,
-        (
-            Some("[6 bytes of service output were not written]\n".to_owned()),
-            b"third".to_vec()
-        )
+        (Some(not_written(6)), b"third".to_vec())
+    );
+    Ok(())
+}
+
+#[test]
+fn output_dropped_just_before_the_pipe_closes_is_noted_in_the_log() -> TestResult {
+    let profile = crate::testfs::ScratchDir::new("startup-stderr-eof")?;
+    let (chunks, mut pending) = channel(1);
+    let lost = Arc::new(AtomicU64::new(0));
+    let mut sink = Sink::Log {
+        chunks,
+        lost: Arc::clone(&lost),
+    };
+    sink.accept(b"first\n");
+    sink.accept(b"lost at the end");
+    // The pipe closes with that overflow still unwritten.
+    drop(sink);
+    write_log(crate::server_log::open(&profile)?, &mut pending, &lost);
+    assert_eq!(
+        std::fs::read_to_string(crate::server_log::path(&profile))?,
+        format!("first\n{}", not_written(15))
     );
     Ok(())
 }

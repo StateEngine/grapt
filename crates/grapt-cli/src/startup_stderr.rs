@@ -11,6 +11,7 @@
 use std::collections::VecDeque;
 use std::io::Write;
 use std::path::Path;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 use tokio::io::{AsyncRead, AsyncReadExt};
@@ -28,9 +29,25 @@ const TAIL_WAIT: Duration = Duration::from_millis(500);
 type Chunk = (Option<String>, Vec<u8>);
 
 enum Sink {
-    Tail { kept: VecDeque<u8>, dropped: u64 },
-    Log { chunks: Sender<Chunk>, lost: u64 },
+    Tail {
+        kept: VecDeque<u8>,
+        dropped: u64,
+    },
+    /// `lost` counts output a full channel could not take; the next chunk
+    /// or, at the end, the writer itself notes it in the log.
+    Log {
+        chunks: Sender<Chunk>,
+        lost: Arc<AtomicU64>,
+    },
     Discard,
+}
+
+fn not_written(bytes: u64) -> String {
+    format!("[{bytes} bytes of service output were not written]\n")
+}
+
+fn length(bytes: &[u8]) -> u64 {
+    u64::try_from(bytes.len()).unwrap_or(u64::MAX)
 }
 
 impl Sink {
@@ -44,12 +61,12 @@ impl Sink {
                 *dropped = dropped.saturating_add(u64::try_from(excess).unwrap_or(u64::MAX));
             }
             Self::Log { chunks, lost } => {
-                let note = (*lost > 0)
-                    .then(|| format!("[{lost} bytes of service output were not written]\n"));
+                let pending = lost.swap(0, Ordering::Relaxed);
+                let note = (pending > 0).then(|| not_written(pending));
                 match chunks.try_send((note, bytes.to_vec())) {
-                    Ok(()) => *lost = 0,
+                    Ok(()) => {}
                     Err(TrySendError::Full(_)) => {
-                        *lost = lost.saturating_add(u64::try_from(bytes.len()).unwrap_or(u64::MAX));
+                        lost.fetch_add(pending.saturating_add(length(bytes)), Ordering::Relaxed);
                     }
                     Err(TrySendError::Closed(_)) => *self = Self::Discard,
                 }
@@ -69,18 +86,19 @@ pub(crate) struct StartupStderr {
 /// The writer ends once the pipe has closed and every sender is gone.
 pub(crate) struct Forward {
     reader: tokio::task::JoinHandle<()>,
-    writer: Option<std::thread::JoinHandle<()>>,
+    /// Signalled by the log writer thread as it returns.
+    written: Option<tokio::sync::oneshot::Receiver<()>>,
 }
 
 impl Forward {
     /// Waits at most `within` for the pipe to close and the log to be
-    /// written; past that, what is still unwritten is left behind.
+    /// written; past that, what is still unwritten is left behind and no
+    /// task is left waiting on the writer.
     pub(crate) async fn finish(self, within: Duration) {
         let deadline = tokio::time::Instant::now() + within;
         let _ = tokio::time::timeout_at(deadline, self.reader).await;
-        if let Some(writer) = self.writer {
-            let joined = tokio::task::spawn_blocking(move || writer.join());
-            let _ = tokio::time::timeout_at(deadline, joined).await;
+        if let Some(written) = self.written {
+            let _ = tokio::time::timeout_at(deadline, written).await;
         }
     }
 }
@@ -105,34 +123,40 @@ impl StartupStderr {
     }
 
     /// After readiness the profile exists: the captured output, then all
-    /// later output, goes to its server log.
+    /// later output, goes to its server log. The log is opened on the writer
+    /// thread, so a slow filesystem never holds readiness.
     pub(crate) fn into_log(self, profile: &Path) -> Forward {
-        let writer = crate::server_log::open(profile).ok().and_then(|file| {
-            let (chunks, mut pending) = channel(LOG_BACKLOG);
-            std::thread::Builder::new()
-                .name("service-stderr-log".into())
-                .spawn(move || write_log(file, &mut pending))
-                .ok()
-                .map(|writer| (chunks, writer))
-        });
+        let profile = profile.to_path_buf();
+        let lost = Arc::new(AtomicU64::new(0));
+        let (chunks, mut pending) = channel(LOG_BACKLOG);
+        let (written, finished) = tokio::sync::oneshot::channel();
+        let unwritten = Arc::clone(&lost);
+        let spawned = std::thread::Builder::new()
+            .name("service-stderr-log".into())
+            .spawn(move || {
+                if let Ok(file) = crate::server_log::open(&profile) {
+                    write_log(file, &mut pending, &unwritten);
+                }
+                let _ = written.send(());
+            });
         let mut sink = self.sink.lock().unwrap_or_else(PoisonError::into_inner);
-        let writer = match (std::mem::replace(&mut *sink, Sink::Discard), writer) {
-            (Sink::Tail { kept, dropped }, Some((chunks, writer))) => {
+        let finished = match (std::mem::replace(&mut *sink, Sink::Discard), spawned) {
+            (Sink::Tail { kept, dropped }, Ok(_detached)) => {
                 let note = (dropped > 0).then(|| {
                     format!("[{dropped} earlier bytes of startup output were not kept]\n")
                 });
                 // The channel is empty, so the captured output always fits.
                 let _ = chunks.try_send((note, kept.into()));
-                *sink = Sink::Log { chunks, lost: 0 };
-                Some(writer)
+                *sink = Sink::Log { chunks, lost };
+                Some(finished)
             }
             // No log: dropping its sender lets the writer, if any, finish.
-            (_, writer) => writer.map(|(_, writer)| writer),
+            _ => None,
         };
         drop(sink);
         Forward {
             reader: self.reader,
-            writer,
+            written: finished,
         }
     }
 
@@ -161,8 +185,9 @@ impl StartupStderr {
 }
 
 /// The log writer: stops at the first failed write, which disconnects the
-/// channel so the reader discards the rest instead of queueing it.
-fn write_log(mut file: std::fs::File, chunks: &mut Receiver<Chunk>) {
+/// channel so the reader discards the rest instead of queueing it. Once the
+/// pipe has closed it notes any output that never reached it.
+fn write_log(mut file: std::fs::File, chunks: &mut Receiver<Chunk>, lost: &AtomicU64) {
     while let Some((note, bytes)) = chunks.blocking_recv() {
         let written = note
             .map_or(Ok(()), |note| file.write_all(note.as_bytes()))
@@ -170,6 +195,10 @@ fn write_log(mut file: std::fs::File, chunks: &mut Receiver<Chunk>) {
         if written.is_err() {
             return;
         }
+    }
+    let unwritten = lost.swap(0, Ordering::Relaxed);
+    if unwritten > 0 {
+        let _ = file.write_all(not_written(unwritten).as_bytes());
     }
 }
 
