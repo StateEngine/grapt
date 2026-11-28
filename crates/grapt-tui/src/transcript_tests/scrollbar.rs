@@ -52,11 +52,19 @@ fn cold_paged_thumb_drag_keeps_the_grab_under_the_pointer() -> Result<(), String
             row: y,
             modifiers: KeyModifiers::NONE,
         };
+        // The commands that sent the page request and, on the grab, its cancel.
+        let handoff = crate::backend::Handoff::default();
+        let (older, cancel) = (
+            handoff.envelope(crate::backend::Command::Models).0,
+            handoff.envelope(crate::backend::Command::Models).0,
+        );
         ui.navigation.jump(grapt_client::client::HistoryMove::Older);
+        ui.navigation.sent(older);
         mouse::handle(
             report(MouseEventKind::Down(MouseButton::Left), bar.thumb.y),
             &mut ui,
         );
+        ui.navigation.sent(cancel);
         let target = bar.track.y + (bar.track.height - bar.thumb.height) / 2;
         mouse::handle(
             report(MouseEventKind::Drag(MouseButton::Left), target),
@@ -105,8 +113,7 @@ fn cold_paged_thumb_drag_keeps_the_grab_under_the_pointer() -> Result<(), String
                 Some((grapt_client::client::HistoryMove::Older, true)),
             );
             ui.navigation.complete(
-                grapt_client::client::HistoryMove::Older,
-                true,
+                (older, grapt_client::client::HistoryMove::Older, true),
                 &mut ui.transcript,
             );
             ui.transcript_update(
@@ -117,8 +124,7 @@ fn cold_paged_thumb_drag_keeps_the_grab_under_the_pointer() -> Result<(), String
                 Some((grapt_client::client::HistoryMove::Cancel, true)),
             );
             ui.navigation.complete(
-                grapt_client::client::HistoryMove::Cancel,
-                true,
+                (cancel, grapt_client::client::HistoryMove::Cancel, true),
                 &mut ui.transcript,
             );
         }
@@ -169,8 +175,7 @@ fn cold_paged_thumb_drag_keeps_the_grab_under_the_pointer() -> Result<(), String
                 Some((grapt_client::client::HistoryMove::Older, true)),
             );
             ui.navigation.complete(
-                grapt_client::client::HistoryMove::Older,
-                true,
+                (older, grapt_client::client::HistoryMove::Older, true),
                 &mut ui.transcript,
             );
             ui.transcript_update(
@@ -181,8 +186,7 @@ fn cold_paged_thumb_drag_keeps_the_grab_under_the_pointer() -> Result<(), String
                 Some((grapt_client::client::HistoryMove::Cancel, true)),
             );
             ui.navigation.complete(
-                grapt_client::client::HistoryMove::Cancel,
-                true,
+                (cancel, grapt_client::client::HistoryMove::Cancel, true),
                 &mut ui.transcript,
             );
         }

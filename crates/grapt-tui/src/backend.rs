@@ -233,7 +233,7 @@ fn serve(
     let mut imports = import::Import::default();
     let mut stops = interrupt::Stops::default();
     let mut navigation = None;
-    let mut navigation_dropped = false;
+    let mut navigation_dropped = Vec::new();
     let mut models = None;
     let mut models_requested = false;
     let mut connections_refresh = false;
@@ -541,8 +541,8 @@ fn serve(
                 Command::SubmitImages(prompt) => {
                     let dispatched = submissions.submit_image(&mut client, prompt, id);
                     status = dispatched.notice;
-                    if let Some(movement) = dispatched.navigation {
-                        navigation = Some(movement);
+                    if let Some((movement, changed)) = dispatched.navigation {
+                        navigation = Some((id, movement, changed));
                     }
                     if dispatched.models.is_some() {
                         models = dispatched.models;
@@ -573,8 +573,8 @@ fn serve(
                 Command::Submit(text) | Command::StartupPrompt(text) => {
                     let dispatched = submissions.submit(&mut client, text, literal_startup, id);
                     status = dispatched.notice;
-                    if let Some(movement) = dispatched.navigation {
-                        navigation = Some(movement);
+                    if let Some((movement, changed)) = dispatched.navigation {
+                        navigation = Some((id, movement, changed));
                     }
                     if dispatched.models.is_some() {
                         models = dispatched.models;
@@ -703,7 +703,7 @@ fn serve(
                 }
                 Command::Browse(movement) => {
                     let result = client.browse_history(movement);
-                    navigation = Some((movement, matches!(result, Ok(true))));
+                    navigation = Some((id, movement, matches!(result, Ok(true))));
                     result.map(|_| ())
                 }
             };

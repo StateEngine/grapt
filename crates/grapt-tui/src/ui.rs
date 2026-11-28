@@ -112,23 +112,23 @@ impl Ui {
         }
     }
 
-    /// Settle the outstanding page request. A completed move places the view
-    /// when it is the one pending; one a quit discarded leaves the scroll and
-    /// its anchor as they are. A discard is always newer than any move that
-    /// ran, so it settles last.
+    /// Settle the outstanding page request, matched by the command that sent
+    /// it. A completed move places the view; one a quit discarded leaves the
+    /// scroll and its anchor as they are.
     pub fn settle_navigation(
         &mut self,
-        movement: Option<(grapt_client::client::HistoryMove, bool)>,
-        dropped: bool,
+        movement: Option<(
+            crate::backend::CommandId,
+            grapt_client::client::HistoryMove,
+            bool,
+        )>,
+        dropped: &[crate::backend::CommandId],
     ) -> bool {
-        if let Some((movement, changed)) = movement {
-            self.navigation
-                .complete(movement, changed, &mut self.transcript);
+        if let Some(movement) = movement {
+            self.navigation.complete(movement, &mut self.transcript);
         }
-        if dropped {
-            self.navigation.failed();
-        }
-        movement.is_some() || dropped
+        self.navigation.dropped(dropped);
+        movement.is_some() || !dropped.is_empty()
     }
 
     pub fn new(light: bool) -> Self {
@@ -841,33 +841,57 @@ fn center(area: Rect, width: u16, height: u16) -> Rect {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::backend::CommandId;
+    use grapt_client::client::HistoryMove;
 
-    #[test]
-    fn a_page_request_a_quit_discarded_leaves_the_view_where_it_was() {
-        use grapt_client::client::HistoryMove;
+    /// A UI at bottom offset 37 and a source of command ids.
+    fn reading_at_37() -> (Ui, crate::backend::Handoff) {
         let mut ui = Ui::new(false);
         ui.transcript.from_top = false;
         ui.transcript.scroll = 37;
-        // Ctrl+Home asks for the beginning; a refused quit then discards it.
-        ui.navigation.jump(HistoryMove::Beginning);
-        assert!(ui.settle_navigation(None, true));
+        (ui, crate::backend::Handoff::default())
+    }
+
+    fn sent(ui: &mut Ui, handoff: &crate::backend::Handoff, movement: HistoryMove) -> CommandId {
+        ui.navigation.jump(movement);
+        let id = handoff
+            .envelope(crate::backend::Command::Browse(movement))
+            .0;
+        ui.navigation.sent(id);
+        id
+    }
+
+    #[test]
+    fn a_page_request_a_quit_discarded_leaves_the_view_where_it_was() {
+        let (mut ui, handoff) = reading_at_37();
+        let home = sent(&mut ui, &handoff, HistoryMove::Beginning);
+        assert!(ui.settle_navigation(None, &[home]));
         assert!(!ui.navigation.loading());
         assert_eq!((ui.transcript.from_top, ui.transcript.scroll), (false, 37));
     }
 
     #[test]
-    fn a_discard_settles_after_an_older_move_in_the_same_update() {
-        use grapt_client::client::HistoryMove;
-        let mut ui = Ui::new(false);
-        ui.transcript.from_top = false;
-        ui.transcript.scroll = 37;
-        // Ctrl+Home ran; Ctrl+End, pressed after it, was discarded by a quit
-        // that was then refused. Both reach the UI in one view.
-        ui.navigation.jump(HistoryMove::Beginning);
-        ui.navigation.jump(HistoryMove::Latest);
-        assert!(ui.settle_navigation(Some((HistoryMove::Beginning, true)), true));
+    fn an_older_same_direction_move_never_settles_the_discarded_one() {
+        let (mut ui, handoff) = reading_at_37();
+        // Ctrl+Home ran; a second Ctrl+Home was discarded by a refused quit.
+        let first = sent(&mut ui, &handoff, HistoryMove::Beginning);
+        let second = sent(&mut ui, &handoff, HistoryMove::Beginning);
+        let completed = Some((first, HistoryMove::Beginning, true));
+        assert!(ui.settle_navigation(completed, &[second]));
         assert!(!ui.navigation.loading());
         assert_eq!((ui.transcript.from_top, ui.transcript.scroll), (false, 37));
+    }
+
+    #[test]
+    fn a_late_discard_never_clears_a_fresh_request() {
+        let (mut ui, handoff) = reading_at_37();
+        let discarded = sent(&mut ui, &handoff, HistoryMove::Beginning);
+        // After the refused quit, Ctrl+End asks again before the discard lands.
+        let fresh = sent(&mut ui, &handoff, HistoryMove::Latest);
+        assert!(ui.settle_navigation(None, &[discarded]));
+        assert!(ui.navigation.loading(), "the fresh request was cleared");
+        assert!(ui.settle_navigation(Some((fresh, HistoryMove::Latest, true)), &[]));
+        assert!(!ui.navigation.loading());
     }
     use crate::activity::Phase;
     use grapt_client::projection::feedback::Feedback;

@@ -447,6 +447,7 @@ pub(super) fn handle_at(
                         if crate::backend::commands::submits_prompt(&text) {
                             ui.navigation
                                 .jump(grapt_client::client::HistoryMove::Latest);
+                            ui.navigation.sent(id);
                         }
                         ui.status = "Submitting; draft kept until confirmed".into();
                         ui.pending = Some(text);
@@ -475,9 +476,12 @@ pub(super) fn history_request(
     backend: &Backend,
     movement: grapt_client::client::HistoryMove,
 ) {
-    if let Err(error) = send(backend, Command::Browse(movement)) {
-        ui.navigation.failed();
-        ui.status = error;
+    match crate::send_tracked(backend, Command::Browse(movement)) {
+        Ok(id) => ui.navigation.sent(id),
+        Err(error) => {
+            ui.navigation.failed();
+            ui.status = error;
+        }
     }
 }
 

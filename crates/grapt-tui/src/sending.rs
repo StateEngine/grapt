@@ -225,16 +225,17 @@ pub fn enter(ui: &mut Ui, backend: &Backend, text: String) {
         }
         return;
     }
-    match send(backend, Command::Submit(text.clone())) {
-        Ok(()) if prompt => {
+    match crate::send_tracked(backend, Command::Submit(text.clone())) {
+        Ok(id) if prompt => {
             ui.navigation
                 .jump(grapt_client::client::HistoryMove::Latest);
+            ui.navigation.sent(id);
             ui.recall.replace_if_unchanged(&text, "", &mut ui.composer);
             ui.sending.start(text.clone());
             ui.pending = Some(text);
             ui.status = "Submitting".into();
         }
-        Ok(()) => {
+        Ok(_) => {
             ui.pending = Some(text);
             ui.status = "Running command; draft kept until it completes".into();
         }

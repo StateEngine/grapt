@@ -106,18 +106,26 @@ fn stale_drag_geometry_and_large_page_steps_share_the_viewport_bounds() {
     navigation.scroll(20);
     navigation.advance(&mut transcript);
     assert_ne!(visible(&mut transcript, 40, 10), tail);
+    let handoff = crate::backend::Handoff::default();
+    let id = || handoff.envelope(crate::backend::Command::Models).0;
     navigation.jump(grapt_client::client::HistoryMove::Beginning);
+    let beginning = id();
+    navigation.sent(beginning);
     navigation.complete(
-        grapt_client::client::HistoryMove::Beginning,
-        false,
+        (
+            beginning,
+            grapt_client::client::HistoryMove::Beginning,
+            false,
+        ),
         &mut transcript,
     );
     let top = visible(&mut transcript, 40, 10);
     assert!(top.iter().any(|row| row.contains("BOUND_000")));
     navigation.jump(grapt_client::client::HistoryMove::Latest);
+    let latest = id();
+    navigation.sent(latest);
     navigation.complete(
-        grapt_client::client::HistoryMove::Latest,
-        false,
+        (latest, grapt_client::client::HistoryMove::Latest, false),
         &mut transcript,
     );
     assert_eq!(visible(&mut transcript, 40, 10), tail);

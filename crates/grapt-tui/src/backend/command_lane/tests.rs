@@ -88,7 +88,7 @@ fn an_older_open_settling_after_a_quit_never_replaces_the_newer_selection() -> R
     let newer = updates.envelope(Command::Select(super::super::Selection { id: session }));
     let newer_id = newer.0;
     let (mut ledger, mut selection) = (Default::default(), None);
-    let (mut dropped, mut roster) = (false, None);
+    let (mut dropped, mut roster) = (Vec::new(), None);
     let holders = super::super::closing::Holders {
         ledger: &mut ledger,
         selection: &mut selection,
@@ -112,10 +112,11 @@ fn a_discarded_history_move_and_agent_choice_are_settled() -> Result {
     let updates = Handoff::default();
     let movement = grapt_client::client::HistoryMove::Older;
     let browse = updates.envelope(Command::Browse(movement));
+    let browse_id = browse.0;
     let agent = grapt_client::wire::agent_id("agt_fixture")?;
     let choose = updates.envelope(Command::ChooseAgent(agent));
     let (mut ledger, mut selection) = (Default::default(), None);
-    let (mut dropped, mut roster) = (false, None);
+    let (mut dropped, mut roster) = (Vec::new(), None);
     let holders = super::super::closing::Holders {
         ledger: &mut ledger,
         selection: &mut selection,
@@ -123,7 +124,11 @@ fn a_discarded_history_move_and_agent_choice_are_settled() -> Result {
         roster: &mut roster,
     };
     super::super::closing::refuse(vec![browse, choose], &client, holders);
-    assert!(dropped, "the history move would stay pending");
+    assert_eq!(
+        dropped,
+        vec![browse_id],
+        "the history move would stay pending"
+    );
     assert!(roster.is_some(), "the agent picker would stay pending");
     Ok(())
 }

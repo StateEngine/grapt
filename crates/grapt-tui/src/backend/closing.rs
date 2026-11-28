@@ -12,14 +12,15 @@ pub(super) struct Holders<'a> {
     pub(super) ledger: &'a mut Ledger,
     /// The newest Select a view answers.
     pub(super) selection: &'a mut Option<CommandId>,
-    /// A page request was discarded.
-    pub(super) navigation_dropped: &'a mut bool,
+    /// Commands that could have moved the page, discarded.
+    pub(super) navigation_dropped: &'a mut Vec<CommandId>,
     pub(super) roster: &'a mut Option<Vec<AgentRow>>,
 }
 
 /// Settle every discarded command. A Select is answered as the view's
-/// selection, never replacing a newer one; a history move as dropped, which
-/// leaves the view where it is; an agent choice by offering the roster again.
+/// selection, never replacing a newer one; an agent choice by offering the
+/// roster again. Any command that could have moved the page is listed as
+/// dropped, which settles its page request and leaves the view where it is.
 pub(super) fn refuse(
     discarded: Vec<(CommandId, Command)>,
     client: &Client<Bridge>,
@@ -32,6 +33,16 @@ pub(super) fn refuse(
         roster,
     } = holders;
     for (id, command) in discarded {
+        if matches!(
+            command,
+            Command::Browse(_)
+                | Command::Submit(_)
+                | Command::SubmitImages(_)
+                | Command::StartupPrompt(_)
+                | Command::Retry(_)
+        ) {
+            navigation_dropped.push(id);
+        }
         let outcome = match command {
             Command::Submit(text) | Command::Retry(text) => Outcome::Submission(text, false, true),
             Command::StartupPrompt(text) => Outcome::Submission(text, false, false),
@@ -72,10 +83,6 @@ pub(super) fn refuse(
                 *selection = (*selection).max(Some(id));
                 continue;
             }
-            Command::Browse(_) => {
-                *navigation_dropped = true;
-                continue;
-            }
             Command::ChooseAgent(_) => {
                 *roster = Some(client.agents().to_vec());
                 continue;
@@ -83,6 +90,7 @@ pub(super) fn refuse(
             // Nothing waits on these: a permission ask stays open, and the
             // rest only refresh or show what the backend already has.
             Command::Reply(..)
+            | Command::Browse(_)
             | Command::Interrupt(_)
             | Command::InterruptAndResume(_)
             | Command::InterruptSession(_)
